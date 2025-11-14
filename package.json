@@ -8,7 +8,7 @@
     "oracle": "./bin/oracle.js"
   },
   "scripts": {
-    "start": "bun ./bin/oracle.js",
+    "start": "bun ./scripts/run-cli.js",
     "lint": "bun ./scripts/check.ts",
     "test": "bun test",
     "test:coverage": "c8 --reporter=text --reporter=lcov bun test"
