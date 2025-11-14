@@ -18,7 +18,8 @@ cp .env.example .env
 ```bash
 bun install
 # Ask a question with attached files so GPT-5 sees the full context
-bun ./bin/oracle.js --prompt "Summarize the risk register" --file docs/risk-register.md
+bun ./bin/oracle.js --prompt "Summarize the risk register" \
+  --file docs/risk-register.md docs/risk-matrix.md
 ```
 
 Use `bun run start` if you prefer invoking the script through the package.json shortcut. Always attach the files (or directories) that describe the bug or decision you want GPT-5 to reason about—just verify the combined token count with `--files-report` before sending the request.
