@@ -1,11 +1,21 @@
 # Changelog
 
-## 2025-11-15
+All notable changes to this project will be documented in this file.
 
-- **Debug help shortcut** – Added `--help --verbose`/`--debug-help` output so hidden search/token/browser flags are documented without overwhelming the primary help text.
-- **Engine flag** – Introduced `--engine <api|browser>` (default `api`) so mode selection is explicit; legacy `--browser` now just aliases `--engine browser`.
-- **CLI helper refactor** – Extracted reusable CLI utilities (option parsing, session execution, prompt assembly) and expanded automated test coverage for those helpers.
-- **Transport metadata logging** – CLI now records transport errors and response metadata in session logs to make flaky network/API issues easier to diagnose.
-- **Browser helper modules + tests** – Split the browser automation stack into focused modules (`chromeLifecycle`, `cookies`, `pageActions`, `prompt`, `sessionRunner`, etc.) with targeted tests.
-- **Browser mode refactor** – Deprecated the monolithic `browserMode.ts` file in favor of the modular implementation, improving readability and maintainability.
-- **Browser tools mirror** – Copied `scripts/browser-tools.ts` into `~/Projects/agent-scripts/` so the chrome start/nav/eval/kill helpers are available to other repos without importing Oracle. Credited Mario Zechner’s [“What if you don’t need MCP?”](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/) article for inspiring the workflow.
+## 1.0.0 — 2025-11-15
+
+### Added
+- Dual-engine support (API and browser) with automatic selection: defaults to API when `OPENAI_API_KEY` is set, otherwise falls back to browser mode.
+- Session-friendly prompt guard that allows `status`/`session` commands to run without a prompt while still enforcing prompts for normal runs, previews, and dry runs.
+- Browser mode uploads each `--file` individually and logs Chrome PID/port for detachable runs.
+- Background GPT-5 Pro runs with heartbeat logging and reconnect support for long responses.
+- File token accounting (`--files-report`) and dry-run summaries for both engines.
+- Comprehensive CLI and browser automation test suites, including engine selection and prompt requirement coverage.
+
+### Changed
+- Help text, README, and browser-mode docs now describe the auto engine fallback and the deprecated `--browser` alias.
+- CLI engine resolution is centralized to keep legacy flags, model inference, and environment defaults consistent.
+
+### Fixed
+- `oracle status` and `oracle session` no longer demand `--prompt` when used directly.
+
