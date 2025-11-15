@@ -89,4 +89,13 @@ describe('resolveBrowserModelLabel', () => {
   test('preserves descriptive labels to target alternate picker entries', () => {
     expect(resolveBrowserModelLabel('ChatGPT 5.1 Instant', 'gpt-5.1')).toBe('ChatGPT 5.1 Instant');
   });
+
+  test('supports undefined or whitespace-only input', () => {
+    expect(resolveBrowserModelLabel(undefined, 'gpt-5-pro')).toBe('GPT-5 Pro');
+    expect(resolveBrowserModelLabel('   ', 'gpt-5.1')).toBe('ChatGPT 5.1');
+  });
+
+  test('trims descriptive labels before returning them', () => {
+    expect(resolveBrowserModelLabel('  ChatGPT 5.1 Thinking ', 'gpt-5.1')).toBe('ChatGPT 5.1 Thinking');
+  });
 });
