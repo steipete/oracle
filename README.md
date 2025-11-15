@@ -1,4 +1,4 @@
-# oracle — Whispering your tokens to the silicon sage
+# oracle 🧿 — Whispering your tokens to the silicon sage
 
 <p align="center">
   <img src="./README-header.png" alt="Oracle CLI header banner" width="1100">
