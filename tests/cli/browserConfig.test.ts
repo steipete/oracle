@@ -47,4 +47,20 @@ describe('buildBrowserConfig', () => {
       debug: true,
     });
   });
+
+  test('prefers explicit browser model label when provided', () => {
+    const config = buildBrowserConfig({
+      model: 'gpt-5-pro',
+      browserModelLabel: 'Instant',
+    });
+    expect(config.desiredModel).toBe('Instant');
+  });
+
+  test('falls back to canonical label when override matches base model', () => {
+    const config = buildBrowserConfig({
+      model: 'gpt-5.1',
+      browserModelLabel: 'gpt-5.1',
+    });
+    expect(config.desiredModel).toBe('ChatGPT 5.1');
+  });
 });

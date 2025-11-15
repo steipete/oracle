@@ -6,6 +6,8 @@ import {
   parseIntOption,
   parseSearchOption,
   resolvePreviewMode,
+  resolveApiModel,
+  inferModelFromLabel,
 } from '../../src/cli/options.ts';
 
 describe('collectPaths', () => {
@@ -65,5 +67,32 @@ describe('parseSearchOption', () => {
 
   test('throws on invalid input', () => {
     expect(() => parseSearchOption('maybe')).toThrow(InvalidArgumentError);
+  });
+});
+
+describe('resolveApiModel', () => {
+  test('accepts canonical names regardless of case', () => {
+    expect(resolveApiModel('gpt-5-pro')).toBe('gpt-5-pro');
+    expect(resolveApiModel('GPT-5.1')).toBe('gpt-5.1');
+  });
+
+  test('rejects unknown names', () => {
+    expect(() => resolveApiModel('instant')).toThrow(InvalidArgumentError);
+  });
+});
+
+describe('inferModelFromLabel', () => {
+  test('returns canonical names when label already matches', () => {
+    expect(inferModelFromLabel('gpt-5-pro')).toBe('gpt-5-pro');
+    expect(inferModelFromLabel('gpt-5.1')).toBe('gpt-5.1');
+  });
+
+  test('infers ChatGPT Instant variants as gpt-5.1', () => {
+    expect(inferModelFromLabel('ChatGPT 5.1 Instant')).toBe('gpt-5.1');
+    expect(inferModelFromLabel('5.1 thinking')).toBe('gpt-5.1');
+  });
+
+  test('falls back to pro when the label references pro', () => {
+    expect(inferModelFromLabel('ChatGPT Pro')).toBe('gpt-5-pro');
   });
 });

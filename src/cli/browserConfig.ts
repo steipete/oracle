@@ -20,11 +20,16 @@ export interface BrowserFlagOptions {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
+  browserModelLabel?: string;
   model: ModelName;
   verbose?: boolean;
 }
 
 export function buildBrowserConfig(options: BrowserFlagOptions): BrowserSessionConfig {
+  const desiredModelOverride = options.browserModelLabel?.trim();
+  const normalizedOverride = desiredModelOverride?.toLowerCase() ?? '';
+  const baseModel = options.model.toLowerCase();
+  const shouldUseOverride = normalizedOverride.length > 0 && normalizedOverride !== baseModel;
   return {
     chromeProfile: options.browserChromeProfile ?? null,
     chromePath: options.browserChromePath ?? null,
@@ -37,7 +42,7 @@ export function buildBrowserConfig(options: BrowserFlagOptions): BrowserSessionC
     headless: options.browserHeadless ? true : undefined,
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
-    desiredModel: mapModelToBrowserLabel(options.model),
+    desiredModel: shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model),
     debug: options.verbose ? true : undefined,
   };
 }

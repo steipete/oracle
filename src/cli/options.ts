@@ -29,13 +29,6 @@ export function parseIntOption(value: string | undefined): number | undefined {
   return parsed;
 }
 
-export function validateModel(value: string): ModelName {
-  if (!(value in MODEL_CONFIGS)) {
-    throw new InvalidArgumentError(`Unsupported model "${value}". Choose one of: ${Object.keys(MODEL_CONFIGS).join(', ')}`);
-  }
-  return value as ModelName;
-}
-
 export function usesDefaultStatusFilters(cmd: Command): boolean {
   const hoursSource = cmd.getOptionValueSource?.('hours') ?? 'default';
   const limitSource = cmd.getOptionValueSource?.('limit') ?? 'default';
@@ -62,4 +55,38 @@ export function parseSearchOption(value: string): boolean {
     return false;
   }
   throw new InvalidArgumentError('Search mode must be "on" or "off".');
+}
+
+export function normalizeModelOption(value: string | undefined): string {
+  return (value ?? '').trim();
+}
+
+export function resolveApiModel(modelValue: string): ModelName {
+  const normalized = normalizeModelOption(modelValue).toLowerCase();
+  if (normalized in MODEL_CONFIGS) {
+    return normalized as ModelName;
+  }
+  throw new InvalidArgumentError(
+    `Unsupported model "${modelValue}". Choose one of: ${Object.keys(MODEL_CONFIGS).join(', ')}`,
+  );
+}
+
+export function inferModelFromLabel(modelValue: string): ModelName {
+  const normalized = normalizeModelOption(modelValue).toLowerCase();
+  if (!normalized) {
+    return 'gpt-5-pro';
+  }
+  if (normalized in MODEL_CONFIGS) {
+    return normalized as ModelName;
+  }
+  if (normalized.includes('pro')) {
+    return 'gpt-5-pro';
+  }
+  if (normalized.includes('5.1') || normalized.includes('5_1')) {
+    return 'gpt-5.1';
+  }
+  if (normalized.includes('instant') || normalized.includes('thinking') || normalized.includes('fast')) {
+    return 'gpt-5.1';
+  }
+  return 'gpt-5.1';
 }

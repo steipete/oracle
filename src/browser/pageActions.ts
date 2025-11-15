@@ -96,50 +96,76 @@ export async function ensureModelSelection(
   desiredModel: string,
   logger: BrowserLogger,
 ) {
-  const { result } = await Runtime.evaluate({
+  const outcome = await Runtime.evaluate({
     expression: buildModelSelectionExpression(desiredModel),
+    awaitPromise: true,
     returnByValue: true,
   });
-  const status = result?.value?.status;
-  if (status === 'switched' || status === 'already-selected') {
-    logger(`Model picker: ${result.value?.label ?? desiredModel}`);
-    return;
+
+  const result = outcome.result?.value as
+    | { status: 'already-selected'; label?: string | null }
+    | { status: 'switched'; label?: string | null }
+    | { status: 'option-not-found' }
+    | { status: 'button-missing' }
+    | undefined;
+
+  switch (result?.status) {
+    case 'already-selected':
+    case 'switched': {
+      const label = result.label ?? desiredModel;
+      logger(`Model picker: ${label}`);
+      return;
+    }
+    case 'option-not-found': {
+      throw new Error(`Unable to find model option matching "${desiredModel}" in the model switcher.`);
+    }
+    case 'button-missing':
+    default: {
+      throw new Error('Unable to locate the ChatGPT model selector button.');
+    }
   }
-  throw new Error(`Failed to select model (${status ?? 'unknown'})`);
 }
 
 function buildModelSelectionExpression(targetModel: string): string {
+  const matchers = buildModelMatchersLiteral(targetModel);
+  const labelLiteral = JSON.stringify(matchers.labelTokens);
+  const idLiteral = JSON.stringify(matchers.testIdTokens);
   return `(() => {
     const BUTTON_SELECTOR = '${MODEL_BUTTON_SELECTOR}';
-    const CLICK_INTERVAL_MS = 250;
-    const MAX_WAIT_MS = 10000;
-    const formatLabel = (node) => node?.textContent?.trim?.() ?? '';
+    const LABEL_TOKENS = ${labelLiteral};
+    const TEST_IDS = ${idLiteral};
+    const CLICK_INTERVAL_MS = 50;
+    const MAX_WAIT_MS = 12000;
+
+    const button = document.querySelector(BUTTON_SELECTOR);
+    if (!button) {
+      return { status: 'button-missing' };
+    }
 
     const pointerClick = () => {
-      const button = document.querySelector(BUTTON_SELECTOR);
-      if (!button) {
-        return null;
-      }
-      button.dispatchEvent(
-        new MouseEvent('pointerdown', { bubbles: true, cancelable: true, buttons: 1, clientX: 12, clientY: 12 }),
-      );
-      button.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, cancelable: true, buttons: 1 }));
-      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      return button;
+      const down = new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse' });
+      const up = new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse' });
+      const click = new MouseEvent('click', { bubbles: true });
+      button.dispatchEvent(down);
+      button.dispatchEvent(up);
+      button.dispatchEvent(click);
     };
 
-    const { labelTokens: LABEL_TOKENS, testIdTokens: TEST_IDS } = ${JSON.stringify(buildModelMatchersLiteral(targetModel))};
-
-    const getOptionLabel = (node) => node?.textContent?.trim?.() ?? '';
+    const getOptionLabel = (node) => node?.textContent?.trim() ?? '';
     const optionIsSelected = (node) => {
-      const dataset = node.dataset ?? {};
+      if (!(node instanceof HTMLElement)) {
+        return false;
+      }
       const ariaChecked = node.getAttribute('aria-checked');
-      if (ariaChecked === 'true') {
+      const ariaSelected = node.getAttribute('aria-selected');
+      const ariaCurrent = node.getAttribute('aria-current');
+      const dataSelected = node.getAttribute('data-selected');
+      const dataState = (node.getAttribute('data-state') ?? '').toLowerCase();
+      const selectedStates = ['checked', 'selected', 'on', 'true'];
+      if (ariaChecked === 'true' || ariaSelected === 'true' || ariaCurrent === 'true') {
         return true;
       }
-      const dataSelected = dataset.selected ?? dataset.state;
-      const selectedStates = ['checked', 'selected', 'on'];
-      if (dataSelected === 'true' || selectedStates.includes(dataSelected)) {
+      if (dataSelected === 'true' || selectedStates.includes(dataState)) {
         return true;
       }
       if (node.querySelector('[data-testid*="check"], [role="img"][data-icon="check"], svg[data-icon="check"]')) {

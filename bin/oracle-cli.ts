@@ -20,9 +20,11 @@ import {
   parseFloatOption,
   parseIntOption,
   parseSearchOption,
-  validateModel,
   usesDefaultStatusFilters,
   resolvePreviewMode,
+  normalizeModelOption,
+  resolveApiModel,
+  inferModelFromLabel,
 } from '../src/cli/options.js';
 import { buildBrowserConfig } from '../src/cli/browserConfig.js';
 import { performSessionRun } from '../src/cli/sessionRunner.js';
@@ -34,7 +36,7 @@ type EngineMode = 'api' | 'browser';
 interface CliOptions extends OptionValues {
   prompt?: string;
   file?: string[];
-  model: ModelName;
+  model: string;
   slug?: string;
   filesReport?: boolean;
   maxInput?: number;
@@ -64,6 +66,8 @@ interface CliOptions extends OptionValues {
   debugHelp?: boolean;
 }
 
+type ResolvedCliOptions = Omit<CliOptions, 'model'> & { model: ModelName };
+
 interface StatusOptions extends OptionValues {
   hours: number;
   limit: number;
@@ -83,7 +87,12 @@ program
   .option('-p, --prompt <text>', 'User prompt to send to the model.')
   .option('-f, --file <paths...>', 'Paths to files or directories to append to the prompt; repeat, comma-separate, or supply a space-separated list.', collectPaths, [])
   .option('-s, --slug <words>', 'Custom session slug (3-5 words).')
-  .option('-m, --model <model>', 'Model to target (gpt-5-pro | gpt-5.1).', validateModel, 'gpt-5-pro')
+  .option(
+    '-m, --model <model>',
+    'Model to target (gpt-5-pro | gpt-5.1, or ChatGPT labels like "5.1 Instant" for browser runs).',
+    normalizeModelOption,
+    'gpt-5-pro',
+  )
   .addOption(new Option('-e, --engine <mode>', 'Execution engine (api | browser).').choices(['api', 'browser']).default('api'))
   .option('--files-report', 'Show token usage per attached file (also prints automatically when files exceed the token budget).', false)
   .option('-v, --verbose', 'Enable verbose logging for all operations.', false)
@@ -178,7 +187,7 @@ statusCommand
     console.log(`Deleted ${result.deleted} ${result.deleted === 1 ? 'session' : 'sessions'} (${scope}).`);
   });
 
-function buildRunOptions(options: CliOptions, overrides: Partial<RunOracleOptions> = {}): RunOracleOptions {
+function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOracleOptions> = {}): RunOracleOptions {
   if (!options.prompt) {
     throw new Error('Prompt is required.');
   }
@@ -259,6 +268,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     engine = 'browser';
     console.log(chalk.yellow('`--browser` is deprecated; use `--engine browser` instead.'));
   }
+  const cliModelArg = normalizeModelOption(options.model) || 'gpt-5-pro';
+  const resolvedModel: ModelName = engine === 'browser' ? inferModelFromLabel(cliModelArg) : resolveApiModel(cliModelArg);
+  const resolvedOptions: ResolvedCliOptions = { ...options, model: resolvedModel };
 
   if (options.session) {
     await attachSession(options.session);
@@ -289,7 +301,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     if (!options.prompt) {
       throw new Error('Prompt is required when using --preview.');
     }
-    const runOptions = buildRunOptions(options, { preview: true, previewMode });
+    const runOptions = buildRunOptions(resolvedOptions, { preview: true, previewMode });
     await runOracle(runOptions, { log: console.log, write: (chunk: string) => process.stdout.write(chunk) });
     return;
   }
@@ -303,10 +315,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   const sessionMode: SessionMode = engine === 'browser' ? 'browser' : 'api';
-  const browserConfig = sessionMode === 'browser' ? buildBrowserConfig(options) : undefined;
+  const browserConfig =
+    sessionMode === 'browser' ? buildBrowserConfig({ ...options, model: resolvedModel, browserModelLabel: cliModelArg }) : undefined;
 
   await ensureSessionStorage();
-  const baseRunOptions = buildRunOptions(options, { preview: false, previewMode: undefined });
+  const baseRunOptions = buildRunOptions(resolvedOptions, { preview: false, previewMode: undefined });
   const sessionMeta = await initializeSession(
     {
       ...baseRunOptions,
