@@ -31,6 +31,7 @@ function printCleanupTip(): void {
 export async function showStatus({ hours, includeAll, limit, showExamples = false }: ShowStatusOptions): Promise<void> {
   const metas = await listSessionsMetadata();
   const { entries, truncated, total } = filterSessionsByRange(metas, { hours, includeAll, limit });
+  const richTty = process.stdout.isTTY && chalk.level > 0;
   if (!entries.length) {
     console.log('No sessions found for the requested range.');
     printCleanupTip();
@@ -41,7 +42,8 @@ export async function showStatus({ hours, includeAll, limit, showExamples = fals
   }
   console.log(chalk.bold('Recent Sessions'));
   for (const entry of entries) {
-    const status = (entry.status || 'unknown').padEnd(9);
+    const statusRaw = (entry.status || 'unknown').padEnd(9);
+    const status = richTty ? colorStatus(entry.status ?? 'unknown', statusRaw) : statusRaw;
     const model = (entry.model || 'n/a').padEnd(10);
     const created = entry.createdAt.replace('T', ' ').replace('Z', '');
     console.log(`${created} | ${status} | ${model} | ${entry.id}`);
@@ -56,6 +58,19 @@ export async function showStatus({ hours, includeAll, limit, showExamples = fals
   printCleanupTip();
   if (showExamples) {
     printStatusExamples();
+  }
+}
+
+function colorStatus(status: string, padded: string): string {
+  switch (status) {
+    case 'completed':
+      return chalk.green(padded);
+    case 'error':
+      return chalk.red(padded);
+    case 'running':
+      return chalk.yellow(padded);
+    default:
+      return padded;
   }
 }
 
