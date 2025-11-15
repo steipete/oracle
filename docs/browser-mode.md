@@ -1,6 +1,6 @@
 # Browser Mode
 
-`oracle --browser` routes the assembled prompt bundle through the ChatGPT web UI instead of the Responses API. The CLI writes the same session metadata/logs as API runs, but the payload is pasted into ChatGPT via a temporary Chrome profile.
+`oracle --engine browser` routes the assembled prompt bundle through the ChatGPT web UI instead of the Responses API. (Legacy `--browser` still maps to `--engine browser`, but it will be removed.) The CLI writes the same session metadata/logs as API runs, but the payload is pasted into ChatGPT via a temporary Chrome profile.
 
 ## Current Pipeline
 
@@ -15,7 +15,7 @@
 
 ### CLI Options
 
-- `--browser`: enables browser mode.
+- `--engine browser`: enables browser mode (legacy `--browser` remains as an alias for now).
 - `--browser-chrome-profile`, `--browser-chrome-path`: cookie source + binary override.
 - `--browser-timeout`, `--browser-input-timeout`: `900s`/`30s` defaults using `ms|s|m` syntax.
 - `--browser-no-cookie-sync`, `--browser-headless`, `--browser-hide-window`, `--browser-keep-browser`, and the global `-v/--verbose` flag for detailed automation logs.
@@ -36,5 +36,5 @@ All options are persisted with the session so reruns (`oracle exec <id>`) reuse 
 
 ## Testing Notes
 
-- `pnpm test --filter browser` does not exist yet; manual runs with `--browser -v` are the current validation path.
-- Most of the heavy lifting lives in `src/browserMode.ts`. If you change selectors or the mutation observer logic, run a local `oracle --browser --browser-keep-browser` session so you can inspect DevTools before cleanup.
+- `pnpm test --filter browser` does not exist yet; manual runs with `--engine browser -v` are the current validation path.
+- Most of the heavy lifting lives in `src/browserMode.ts`. If you change selectors or the mutation observer logic, run a local `oracle --engine browser --browser-keep-browser` session so you can inspect DevTools before cleanup.

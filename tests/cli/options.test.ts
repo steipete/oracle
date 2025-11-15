@@ -4,6 +4,7 @@ import {
   collectPaths,
   parseFloatOption,
   parseIntOption,
+  parseSearchOption,
   resolvePreviewMode,
 } from '../../src/cli/options.ts';
 
@@ -51,5 +52,18 @@ describe('resolvePreviewMode', () => {
   test('returns undefined for falsey values', () => {
     expect(resolvePreviewMode(undefined)).toBeUndefined();
     expect(resolvePreviewMode(false)).toBeUndefined();
+  });
+});
+
+describe('parseSearchOption', () => {
+  test('accepts on/off variants', () => {
+    expect(parseSearchOption('on')).toBe(true);
+    expect(parseSearchOption('OFF')).toBe(false);
+    expect(parseSearchOption('Yes')).toBe(true);
+    expect(parseSearchOption('0')).toBe(false);
+  });
+
+  test('throws on invalid input', () => {
+    expect(() => parseSearchOption('maybe')).toThrow(InvalidArgumentError);
   });
 });

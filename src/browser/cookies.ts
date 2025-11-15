@@ -39,11 +39,15 @@ export async function syncCookies(
 }
 
 async function readChromeCookies(url: string, profile?: string | null): Promise<CookieParam[]> {
-  const moduleCandidate: any = await import('chrome-cookies-secure');
-  const chromeModule: ChromeCookiesSecureModule | undefined =
-    moduleCandidate && typeof moduleCandidate.getCookiesPromised === 'function'
-      ? moduleCandidate
-      : moduleCandidate?.default;
+  const moduleCandidate = (await import('chrome-cookies-secure')) as
+    | ChromeCookiesSecureModule
+    | { default?: ChromeCookiesSecureModule };
+  let chromeModule: ChromeCookiesSecureModule | undefined;
+  if ('getCookiesPromised' in moduleCandidate && typeof moduleCandidate.getCookiesPromised === 'function') {
+    chromeModule = moduleCandidate;
+  } else if ('default' in moduleCandidate) {
+    chromeModule = moduleCandidate.default;
+  }
   if (!chromeModule?.getCookiesPromised) {
     throw new Error('chrome-cookies-secure did not expose getCookiesPromised');
   }

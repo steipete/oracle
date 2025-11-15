@@ -29,6 +29,8 @@ import { performSessionRun } from '../src/cli/sessionRunner.js';
 import { attachSession, showStatus } from '../src/cli/sessionDisplay.js';
 import type { ShowStatusOptions } from '../src/cli/sessionDisplay.js';
 
+type EngineMode = 'api' | 'browser';
+
 interface CliOptions extends OptionValues {
   prompt?: string;
   file?: string[];
@@ -47,6 +49,7 @@ interface CliOptions extends OptionValues {
   execSession?: string;
   renderMarkdown?: boolean;
   sessionId?: string;
+  engine?: EngineMode;
   browser?: boolean;
   browserChromeProfile?: string;
   browserChromePath?: string;
@@ -81,6 +84,7 @@ program
   .option('-f, --file <paths...>', 'Paths to files or directories to append to the prompt; repeat, comma-separate, or supply a space-separated list.', collectPaths, [])
   .option('-s, --slug <words>', 'Custom session slug (3-5 words).')
   .option('-m, --model <model>', 'Model to target (gpt-5-pro | gpt-5.1).', validateModel, 'gpt-5-pro')
+  .addOption(new Option('-e, --engine <mode>', 'Execution engine (api | browser).').choices(['api', 'browser']).default('api'))
   .option('--files-report', 'Show token usage per attached file (also prints automatically when files exceed the token budget).', false)
   .option('-v, --verbose', 'Enable verbose logging for all operations.', false)
   .addOption(
@@ -90,7 +94,6 @@ program
   )
   .addOption(new Option('--exec-session <id>').hideHelp())
   .option('--render-markdown', 'Emit the assembled markdown bundle for prompt + files and exit.', false)
-  .option('--browser', 'Run the prompt via the ChatGPT web UI (Chrome automation).', false)
   .addOption(
     new Option('--search <mode>', 'Set server-side search behavior (on/off).')
       .argParser(parseSearchOption)
@@ -106,6 +109,7 @@ program
       .argParser(parseIntOption)
       .hideHelp(),
   )
+  .addOption(new Option('--browser', '(deprecated) Use --engine browser instead.').default(false).hideHelp())
   .addOption(new Option('--browser-chrome-profile <name>', 'Chrome profile name/path for cookie reuse.').hideHelp())
   .addOption(new Option('--browser-chrome-path <path>', 'Explicit Chrome or Chromium executable path.').hideHelp())
   .addOption(new Option('--browser-url <url>', `Override the ChatGPT URL (default ${CHATGPT_URL}).`).hideHelp())
@@ -250,6 +254,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     return;
   }
 
+  let engine: EngineMode = options.engine ?? 'api';
+  if (options.browser) {
+    engine = 'browser';
+    console.log(chalk.yellow('`--browser` is deprecated; use `--engine browser` instead.'));
+  }
+
   if (options.session) {
     await attachSession(options.session);
     return;
@@ -273,8 +283,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   if (previewMode) {
-    if (options.browser) {
-      throw new Error('--browser cannot be combined with --preview.');
+    if (engine === 'browser') {
+      throw new Error('--engine browser cannot be combined with --preview.');
     }
     if (!options.prompt) {
       throw new Error('Prompt is required when using --preview.');
@@ -292,7 +302,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     await readFiles(options.file, { cwd: process.cwd() });
   }
 
-  const sessionMode: SessionMode = options.browser ? 'browser' : 'api';
+  const sessionMode: SessionMode = engine === 'browser' ? 'browser' : 'api';
   const browserConfig = sessionMode === 'browser' ? buildBrowserConfig(options) : undefined;
 
   await ensureSessionStorage();

@@ -13,11 +13,11 @@ OPENAI_API_KEY=sk-... pnpm run oracle -- \
   --file docs/risk-register.md docs/risk-matrix.md
 
 # Browser path (no API key needed)
-pnpm run oracle -- --browser --prompt "Summarize the risk register" \
+pnpm run oracle -- --engine browser --prompt "Summarize the risk register" \
   --file docs/risk-register.md docs/risk-matrix.md
 ```
 
-Prefer the compiled binary? `pnpm run build && node dist/bin/oracle.js --prompt ...` works too. Whether you hit the API or the browser, attach the files/directories that explain the issue and run `--files-report` to stay within the ~196k-token window.
+Prefer the compiled binary? `pnpm run build && node dist/bin/oracle.js --prompt ...` works too. Whether you hit the API or the browser, attach the files/directories that explain the issue and run `--files-report` to stay within the ~196k-token window (legacy `--browser` still works but is deprecated in favor of `--engine browser`).
 
 ## Highlights
 
@@ -26,7 +26,7 @@ Prefer the compiled binary? `pnpm run build && node dist/bin/oracle.js --prompt 
 - **File attachments with Markdown wrapping** and per-file token accounting via `--files-report`.
 - **Preview & render modes** (`--preview`, `--render-markdown`) help inspect the assembled bundle before spending API credits.
 - **Detached sessions + disk logs** under `~/.oracle/sessions/<slug>` with cost + usage metadata.
-- **Browser mode** (`--browser`) automates ChatGPT in Chrome—no API key required—while mirroring the same session/usage tracking you get from the Responses API path.
+- **Browser mode** (`--engine browser`) automates ChatGPT in Chrome—no API key required—while mirroring the same session/usage tracking you get from the Responses API path (legacy `--browser` still maps to `--engine browser` for now).
 - **Advanced flags on demand** – run `oracle --help --verbose` (or `oracle --debug-help`) to reveal the less common search/token/browser toggles without cluttering the primary help output.
 
 ## Everyday flags
@@ -40,14 +40,14 @@ Prefer the compiled binary? `pnpm run build && node dist/bin/oracle.js --prompt 
 | `--files-report` | Show per-file token usage (auto-enabled when you exceed the token budget). |
 | `--preview [mode]` | Inspect token counts (and optionally JSON/markdown) without hitting the API. |
 | `--render-markdown` | Print the `[SYSTEM]`, `[USER]`, `[FILE: ...]` bundle to stdout (no API call). |
-| `--browser` | Route the run through the ChatGPT web UI (see *Browser mode* below). |
+| `-e, --engine <mode>` | Choose `api` (default) or `browser`. Legacy `--browser` still toggles the browser engine but will be removed. |
 | `-v, --verbose` | Emit verbose logs (and, when paired with `--help`, list the advanced option set). |
 
 Need search toggles, token overrides, or Chrome tweaks? `oracle --help --verbose` lists the advanced/debug-only flags, and `oracle --debug-help` prints the same summary without the rest of the help text.
 
 ## Browser mode in a nutshell
 
-`oracle --browser ...` launches a temporary Chrome profile, optionally copies cookies from your main browser, pastes the assembled `[SYSTEM]/[USER]/[FILE]` bundle into ChatGPT, waits for the answer, and logs the output just like an API run. Key points:
+`oracle --engine browser ...` launches a temporary Chrome profile, optionally copies cookies from your main browser, pastes the assembled `[SYSTEM]/[USER]/[FILE]` bundle into ChatGPT, waits for the answer, and logs the output just like an API run. Key points:
 
 - Same session workflow (`oracle status`, `oracle session <id>`) with extra metadata (Chrome PID/port/profile dir).
 - No streaming output (ChatGPT returns a full answer once the copy button fires).
