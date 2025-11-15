@@ -9,8 +9,11 @@
  */
 import { Command } from 'commander';
 import { execSync, spawn } from 'node:child_process';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import puppeteer from 'puppeteer-core';
 
 /** Utility type so TypeScript knows the async function constructor */
@@ -335,5 +338,237 @@ program
       await browser.disconnect();
     }
   });
+
+program
+  .command('inspect')
+  .description('List Chrome processes launched with --remote-debugging-port and show their open tabs.')
+  .option('--ports <list>', 'Comma-separated list of ports to include.', parseNumberListArg)
+  .option('--pids <list>', 'Comma-separated list of PIDs to include.', parseNumberListArg)
+  .option('--json', 'Emit machine-readable JSON output.', false)
+  .action(async (options) => {
+    const ports = (options.ports as number[] | undefined)?.filter((entry) => Number.isFinite(entry) && entry > 0);
+    const pids = (options.pids as number[] | undefined)?.filter((entry) => Number.isFinite(entry) && entry > 0);
+    const sessions = await describeChromeSessions({
+      ports,
+      pids,
+      includeAll: !ports?.length && !pids?.length,
+    });
+    if (options.json) {
+      console.log(JSON.stringify(sessions, null, 2));
+      return;
+    }
+    if (sessions.length === 0) {
+      console.log('No Chrome instances with DevTools ports found.');
+      return;
+    }
+    sessions.forEach((session, index) => {
+      if (index > 0) {
+        console.log('');
+      }
+      const header = [`Chrome PID ${session.pid}`, `(port ${session.port})`];
+      if (session.version?.Browser) {
+        header.push(`- ${session.version.Browser}`);
+      }
+      console.log(header.join(' '));
+      if (session.tabs.length === 0) {
+        console.log('  (no tabs reported)');
+        return;
+      }
+      session.tabs.forEach((tab, idx) => {
+        const title = tab.title || '(untitled)';
+        const url = tab.url || '(no url)';
+        console.log(`  Tab ${idx + 1}: ${title}`);
+        console.log(`           ${url}`);
+      });
+    });
+  });
+
+program
+  .command('kill')
+  .description('Terminate Chrome instances that have DevTools ports open.')
+  .option('--ports <list>', 'Comma-separated list of ports to target.', parseNumberListArg)
+  .option('--pids <list>', 'Comma-separated list of PIDs to target.', parseNumberListArg)
+  .option('--all', 'Kill every matching Chrome instance.', false)
+  .option('--force', 'Skip the confirmation prompt.', false)
+  .action(async (options) => {
+    const ports = (options.ports as number[] | undefined)?.filter((entry) => Number.isFinite(entry) && entry > 0);
+    const pids = (options.pids as number[] | undefined)?.filter((entry) => Number.isFinite(entry) && entry > 0);
+    const killAll = Boolean(options.all);
+    if (!killAll && (!ports?.length && !pids?.length)) {
+      console.error('Specify --all, --ports <list>, or --pids <list> to select targets.');
+      process.exit(1);
+    }
+    const sessions = await describeChromeSessions({ ports, pids, includeAll: killAll });
+    if (sessions.length === 0) {
+      console.log('No matching Chrome instances found.');
+      return;
+    }
+    if (!options.force) {
+      console.log('About to terminate the following Chrome sessions:');
+      sessions.forEach((session) => {
+        console.log(`  PID ${session.pid} (port ${session.port})`);
+      });
+      const rl = readline.createInterface({ input, output });
+      const answer = (await rl.question('Proceed? [y/N] ')).trim().toLowerCase();
+      rl.close();
+      if (answer !== 'y' && answer !== 'yes') {
+        console.log('Aborted.');
+        return;
+      }
+    }
+    const failures: { pid: number; error: string }[] = [];
+    sessions.forEach((session) => {
+      try {
+        process.kill(session.pid);
+        console.log(`✓ Killed Chrome PID ${session.pid} (port ${session.port})`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`✗ Failed to kill PID ${session.pid}: ${message}`);
+        failures.push({ pid: session.pid, error: message });
+      }
+    });
+    if (failures.length > 0) {
+      process.exitCode = 1;
+    }
+  });
+
+interface ChromeProcessInfo {
+  pid: number;
+  port: number;
+  command: string;
+}
+
+interface ChromeTabInfo {
+  id?: string;
+  title?: string;
+  url?: string;
+  type?: string;
+}
+
+interface ChromeSessionDescription extends ChromeProcessInfo {
+  version?: Record<string, string>;
+  tabs: ChromeTabInfo[];
+}
+
+function parseNumberListArg(value: string): number[] {
+  return parseNumberList(value) ?? [];
+}
+
+function parseNumberList(inputValue: string | undefined): number[] | undefined {
+  if (!inputValue) {
+    return undefined;
+  }
+  const parsed = inputValue
+    .split(',')
+    .map((entry) => Number.parseInt(entry.trim(), 10))
+    .filter((value) => Number.isFinite(value));
+  return parsed.length > 0 ? parsed : undefined;
+}
+
+async function describeChromeSessions(options: {
+  ports?: number[];
+  pids?: number[];
+  includeAll?: boolean;
+}): Promise<ChromeSessionDescription[]> {
+  const { ports, pids, includeAll } = options;
+  const processes = await listDevtoolsChromes();
+  const portSet = new Set(ports ?? []);
+  const pidSet = new Set(pids ?? []);
+  const candidates = processes.filter((proc) => {
+    if (includeAll) {
+      return true;
+    }
+    if (portSet.size > 0 && portSet.has(proc.port)) {
+      return true;
+    }
+    if (pidSet.size > 0 && pidSet.has(proc.pid)) {
+      return true;
+    }
+    return false;
+  });
+  const results: ChromeSessionDescription[] = [];
+  for (const proc of candidates) {
+    const [version, tabs] = await Promise.all([
+      fetchJson(`http://localhost:${proc.port}/json/version`).catch(() => undefined),
+      fetchJson(`http://localhost:${proc.port}/json/list`).catch(() => []),
+    ]);
+    results.push({
+      ...proc,
+      version: (version as Record<string, string>) ?? undefined,
+      tabs: Array.isArray(tabs) ? (tabs as ChromeTabInfo[]) : [],
+    });
+  }
+  return results;
+}
+
+async function listDevtoolsChromes(): Promise<ChromeProcessInfo[]> {
+  if (process.platform !== 'darwin' && process.platform !== 'linux') {
+    console.warn('Chrome inspection is only supported on macOS and Linux for now.');
+    return [];
+  }
+  let output = '';
+  try {
+    output = execSync('ps -ax -o pid=,command=', { encoding: 'utf8' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to enumerate processes: ${message}`);
+  }
+  const processes: ChromeProcessInfo[] = [];
+  output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach((line) => {
+      const match = line.match(/^(\d+)\s+(.+)$/);
+      if (!match) {
+        return;
+      }
+      const pid = Number.parseInt(match[1], 10);
+      const command = match[2];
+      if (!Number.isFinite(pid) || pid <= 0) {
+        return;
+      }
+      if (!/chrome/i.test(command) || !/--remote-debugging-port/.test(command)) {
+        return;
+      }
+      const portMatch = command.match(/--remote-debugging-port(?:=|\s+)(\d+)/);
+      if (!portMatch) {
+        return;
+      }
+      const port = Number.parseInt(portMatch[1], 10);
+      if (!Number.isFinite(port)) {
+        return;
+      }
+      processes.push({ pid, port, command });
+    });
+  return processes;
+}
+
+function fetchJson(url: string, timeoutMs = 2000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const request = http.get(url, { timeout: timeoutMs }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        if ((response.statusCode ?? 500) >= 400) {
+          reject(new Error(`HTTP ${response.statusCode} for ${url}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch {
+          resolve(undefined);
+        }
+      });
+    });
+    request.on('timeout', () => {
+      request.destroy(new Error(`Request to ${url} timed out`));
+    });
+    request.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
 
 program.parseAsync(process.argv);

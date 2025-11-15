@@ -33,6 +33,8 @@ pnpm tsx scripts/browser-tools.ts eval 'document.title'
 pnpm tsx scripts/browser-tools.ts screenshot
 pnpm tsx scripts/browser-tools.ts pick "Select checkout button"
 pnpm tsx scripts/browser-tools.ts cookies
+pnpm tsx scripts/browser-tools.ts inspect   # show DevTools-enabled Chrome PIDs/ports/tabs
+pnpm tsx scripts/browser-tools.ts kill --all --force   # tear down straggler DevTools sessions
 ```
 
 This mirrors Mario Zechner’s “What if you don’t need MCP?” technique and is handy when you just need a few quick interactions without spinning up additional tooling.
