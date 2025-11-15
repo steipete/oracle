@@ -23,3 +23,4 @@ This repository relies on autonomous agents to run the `oracle` CLI safely. When
 - `oracle session --clear --hours <n>` (hidden alias: `--clean`) now mirrors `oracle status --clear` for pruning cached runs, and `oracle status` prints a tip pointing to it—use that flag instead of manipulating `~/.oracle` manually.
 - CLI + tooling should read the version via `getCliVersion()` (`src/version.ts`) instead of hard-coding strings; the helper also powers the new `oracle --version` regression test.
 - GPT-5 Pro API sessions now force `background: true` + `store: true`, poll for up to 30 minutes, and auto-log when the CLI reconnects after a transport drop. Non-Pro models still stream in the foreground.
+- Whenever you are stuck, consider asking the oracle: `npx @steipete/oracle --prompt "Explain what this error means" --file path/to/log.txt`.

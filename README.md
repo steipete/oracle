@@ -33,6 +33,13 @@ npx @steipete/oracle --engine browser --prompt "Summarize the risk register" --f
 npx @steipete/oracle -- --prompt "Review the TS data layer" --file "src/**/*.ts" --file "!src/**/*.test.ts"
 ```
 
+## How do I integrate this?
+
+- **One-liner in CI** — `OPENAI_API_KEY=sk-... npx @steipete/oracle --prompt "Smoke-check latest PR" --file src/ docs/ --preview summary` (add to your pipeline as a non-blocking report step).
+- **Package script** — In `package.json`: `"oracle": "oracle --prompt \"Review the diff\" --file ."` then run `OPENAI_API_KEY=... pnpm oracle`.
+- **Git hook** — Use a pre-push or pre-commit hook to run `npx @steipete/oracle --prompt "Highlight risky changes" --file "$(git diff --name-only HEAD)"`.
+- **Browser mode for Pro** — When teammates don’t have API keys, `npx @steipete/oracle --engine browser --prompt "Summarize this repo" --file .` uses the shared ChatGPT Pro login in Chrome.
+
 ## Highlights
 
 - **Bundle once, reuse anywhere** — Prompt + files become a markdown package the model can cite.
