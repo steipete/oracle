@@ -66,7 +66,7 @@ interface CliOptions extends OptionValues {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
-  browserDebug?: boolean;
+  verbose?: boolean;
 }
 
 interface ShowStatusOptions {
@@ -129,9 +129,10 @@ program
   .version(VERSION)
   .option('-p, --prompt <text>', 'User prompt to send to the model.')
   .option('-f, --file <paths...>', 'Paths to files or directories to append to the prompt; repeat, comma-separate, or supply a space-separated list.', collectPaths, [])
-  .option('--slug <words>', 'Custom session slug (3-5 words).')
+  .option('-s, --slug <words>', 'Custom session slug (3-5 words).')
   .option('-m, --model <model>', 'Model to target (gpt-5-pro | gpt-5.1).', validateModel, 'gpt-5-pro')
   .option('--files-report', 'Show token usage per attached file (also prints automatically when files exceed the token budget).', false)
+  .option('-v, --verbose', 'Enable verbose logging for all operations.', false)
   .addOption(
     new Option('--preview [mode]', 'Preview the request without calling the API (summary | json | full).')
       .choices(['summary', 'json', 'full'])
@@ -149,7 +150,6 @@ program
   .option('--browser-headless', 'Launch Chrome in headless mode.', false)
   .option('--browser-hide-window', 'Hide the Chrome window after launch (macOS headful only).', false)
   .option('--browser-keep-browser', 'Keep Chrome running after completion.', false)
-  .option('--browser-debug', 'Enable verbose browser automation logging.', false)
   .showHelpAfterError('(use --help for usage)');
 
 program
@@ -291,10 +291,10 @@ function buildBrowserConfig(options: CliOptions): BrowserSessionConfig {
       : undefined,
     cookieSync: options.browserNoCookieSync ? false : undefined,
     headless: options.browserHeadless ? true : undefined,
-    keepBrowser: options.browserKeepBrowser ? true : undefined,
-    hideWindow: options.browserHideWindow ? true : undefined,
-    desiredModel: mapModelToBrowserLabel(options.model),
-    debug: options.browserDebug ? true : undefined,
+  keepBrowser: options.browserKeepBrowser ? true : undefined,
+  hideWindow: options.browserHideWindow ? true : undefined,
+  desiredModel: mapModelToBrowserLabel(options.model),
+  debug: options.verbose ? true : undefined,
   };
 }
 
@@ -345,6 +345,7 @@ function buildRunOptions(options: CliOptions, overrides: Partial<RunOracleOption
     previewMode: overrides.previewMode ?? options.previewMode,
     apiKey: overrides.apiKey ?? options.apiKey,
     sessionId: overrides.sessionId ?? options.sessionId,
+    verbose: overrides.verbose ?? options.verbose,
   };
 }
 
@@ -365,6 +366,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     previewMode: undefined,
     apiKey: undefined,
     sessionId: metadata.id,
+    verbose: stored.verbose,
   };
 }
 
@@ -621,6 +623,16 @@ async function runBrowserSessionExecution({
   log: (message?: string) => void;
 }): Promise<BrowserExecutionResult> {
   const promptArtifacts = await assembleBrowserPrompt(runOptions, cwd);
+  if (runOptions.verbose) {
+    log(
+      dim(
+        `[verbose] Browser config: ${JSON.stringify({
+          ...browserConfig,
+        })}`,
+      ),
+    );
+    log(dim(`[verbose] Browser prompt length: ${promptArtifacts.markdown.length} chars`));
+  }
   const headerLine = `Oracle (${VERSION}) launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens`;
   log(headerLine);
   log(dim('Chrome automation does not stream output; this may take a minute...'));

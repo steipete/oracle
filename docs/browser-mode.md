@@ -18,7 +18,7 @@
 - `--browser`: enables browser mode.
 - `--browser-chrome-profile`, `--browser-chrome-path`: cookie source + binary override.
 - `--browser-timeout`, `--browser-input-timeout`: `900s`/`30s` defaults using `ms|s|m` syntax.
-- `--browser-no-cookie-sync`, `--browser-headless`, `--browser-hide-window`, `--browser-keep-browser`, `--browser-debug`.
+- `--browser-no-cookie-sync`, `--browser-headless`, `--browser-hide-window`, `--browser-keep-browser`, and the global `-v/--verbose` flag for detailed automation logs.
 - `--browser-url`: override ChatGPT base URL if needed.
 
 All options are persisted with the session so reruns (`oracle exec <id>`) reuse the same automation settings.
@@ -36,5 +36,5 @@ All options are persisted with the session so reruns (`oracle exec <id>`) reuse 
 
 ## Testing Notes
 
-- `pnpm test --filter browser` does not exist yet; manual runs with `--browser --browser-debug` are the current validation path.
+- `pnpm test --filter browser` does not exist yet; manual runs with `--browser -v` are the current validation path.
 - Most of the heavy lifting lives in `src/browserMode.ts`. If you change selectors or the mutation observer logic, run a local `oracle --browser --browser-keep-browser` session so you can inspect DevTools before cleanup.

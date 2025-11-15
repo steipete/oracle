@@ -95,6 +95,7 @@ export interface RunOracleOptions {
   previewMode?: PreviewMode;
   apiKey?: string;
   sessionId?: string;
+  verbose?: boolean;
 }
 
 interface UsageSummary {
@@ -502,6 +503,12 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     clientFactory = createDefaultClientFactory(),
     client,
   } = deps;
+  const verbose = Boolean(options.verbose);
+  const logVerbose = (message: string): void => {
+    if (verbose) {
+      log(dim(`[verbose] ${message}`));
+    }
+  };
 
   const allowedPreviewModes = new Set(['summary', 'json', 'full']);
   const previewSource = options.previewMode ?? options.preview;
@@ -526,6 +533,17 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
 
   const inputTokenBudget = options.maxInput ?? modelConfig.inputLimit;
   const files = await readFiles(options.file ?? [], { cwd, fsModule });
+  logVerbose(`cwd: ${cwd}`);
+  if (files.length > 0) {
+    const displayPaths = files
+      .map((file) => path.relative(cwd, file.path) || file.path)
+      .slice(0, 10)
+      .join(', ');
+    const extra = files.length > 10 ? ` (+${files.length - 10} more)` : '';
+    logVerbose(`Attached files (${files.length}): ${displayPaths}${extra}`);
+  } else {
+    logVerbose('No files attached.');
+  }
   const fileTokenInfo = getFileTokenStats(files, {
     cwd,
     tokenizer: modelConfig.tokenizer,
@@ -553,6 +571,14 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   const shouldReportFiles =
     (options.filesReport || fileTokenInfo.totalTokens > inputTokenBudget) &&
     fileTokenInfo.stats.length > 0;
+  logVerbose(
+    `Search: ${options.search !== false ? 'enabled' : 'disabled'} | Max output tokens: ${
+      options.maxOutput ?? 'model-default'
+    }`,
+  );
+  logVerbose(
+    `Input tokens estimate: ${estimatedInputTokens.toLocaleString()} / ${inputTokenBudget.toLocaleString()}`,
+  );
   if (shouldReportFiles) {
     printFileTokenStats(fileTokenInfo, { inputTokenBudget, log });
   }
@@ -595,6 +621,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   }
 
   const openAiClient: ClientLike = client ?? clientFactory(apiKey);
+  logVerbose('Dispatching request to OpenAI Responses API...');
 
   const runStart = now();
   const stream: ResponseStreamLike = await openAiClient.responses.stream(requestBody);
@@ -627,6 +654,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   }
 
   const response = await stream.finalResponse();
+  logVerbose(`Response status: ${response.status ?? 'completed'}`);
   const elapsedMs = now() - runStart;
 
   if (response.status && response.status !== 'completed') {

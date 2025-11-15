@@ -43,6 +43,7 @@ export interface StoredRunOptions {
   slug?: string;
   mode?: SessionMode;
   browserConfig?: BrowserSessionConfig;
+  verbose?: boolean;
 }
 
 export interface SessionMetadata {
@@ -185,6 +186,7 @@ export async function initializeSession(options: InitializeSessionOptions, cwd: 
       slug: sessionId,
       mode,
       browserConfig,
+      verbose: options.verbose,
     },
   };
   await fs.writeFile(metaPath(sessionId), JSON.stringify(metadata, null, 2), 'utf8');
