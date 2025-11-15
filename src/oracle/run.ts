@@ -407,7 +407,7 @@ async function executeBackgroundResponse(params: BackgroundExecutionParams): Pro
       isActive: () => heartbeatActive,
       makeMessage: (elapsedMs) => {
         const elapsedText = formatElapsed(elapsedMs);
-        return `OpenAI background run still in progress — ${elapsedText} elapsed (id=${responseId}).`;
+        return `OpenAI background run still in progress — ${elapsedText} elapsed.`;
       },
     });
   }

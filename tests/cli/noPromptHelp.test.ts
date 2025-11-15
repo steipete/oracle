@@ -1,0 +1,22 @@
+import { describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
+import { shouldRequirePrompt } from '../../src/cli/promptRequirement.js';
+import { resolvePreviewMode } from '../../src/cli/options.js';
+
+describe('no prompt help', () => {
+  test('requires prompt for root command when nothing else provided', () => {
+    const requires = shouldRequirePrompt([], {});
+    expect(requires).toBe(true);
+  });
+
+  test('positional prompt prevents help trigger', () => {
+    const requires = shouldRequirePrompt(['Hello world'], { prompt: 'Hello world' });
+    expect(requires).toBe(false);
+  });
+
+  test('preview still requires prompt when absent', () => {
+    const opts = { preview: resolvePreviewMode(true) } as { preview: string; prompt?: string };
+    const requires = shouldRequirePrompt([], opts);
+    expect(requires).toBe(true);
+  });
+});
