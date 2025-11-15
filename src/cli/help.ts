@@ -71,6 +71,7 @@ function renderHelpFooter(program: Command, colors: HelpColors): string {
     `${colors.bullet('•')} Run ${colors.accent('--files-report')} to inspect token spend before hitting the API.`,
     `${colors.bullet('•')} Non-preview runs spawn detached sessions so they keep streaming even if your terminal closes — reattach anytime via ${colors.accent('pnpm oracle session <slug>')}.`,
     `${colors.bullet('•')} Set a memorable 3–5 word slug via ${colors.accent('--slug "<words>"')} to keep session IDs tidy.`,
+    `${colors.bullet('•')} Finished sessions auto-hide preamble logs when reattached; raw timestamps remain in the saved log file.`,
     `${colors.bullet('•')} Need hidden flags? Run ${colors.accent(`${program.name()} --help --verbose`)} to list search/token/browser overrides.`,
   ].join('\n');
 

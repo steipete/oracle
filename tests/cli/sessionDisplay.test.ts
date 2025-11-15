@@ -5,6 +5,7 @@ import {
   formatResponseMetadata,
   formatTransportMetadata,
   formatUserErrorMetadata,
+  trimBeforeFirstAnswer,
 } from '../../src/cli/sessionDisplay.ts';
 
 vi.useFakeTimers();
@@ -69,5 +70,17 @@ describe('buildReattachLine', () => {
       options: {},
     };
     expect(buildReattachLine(metadata)).toBeNull();
+  });
+});
+
+describe('trimBeforeFirstAnswer', () => {
+  test('returns log starting at first Answer marker', () => {
+    const input = 'intro\nnoise\nAnswer:\nactual content\n';
+    expect(trimBeforeFirstAnswer(input)).toBe('Answer:\nactual content\n');
+  });
+
+  test('returns original text when marker missing', () => {
+    const input = 'no answer yet';
+    expect(trimBeforeFirstAnswer(input)).toBe(input);
   });
 });

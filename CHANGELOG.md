@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.7 — 2025-11-15
+
+### Changed
+- Browser-mode thinking monitor now emits a text-only progress bar instead of the "Pro thinking" string.
+- `oracle session <id>` trims preamble/log noise and prints from the first `Answer:` line once a session is finished.
+
 ## 1.0.6 — 2025-11-15
 
 ### Changed

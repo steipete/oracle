@@ -251,6 +251,20 @@ function isWebSocketClosureError(error: Error): boolean {
   );
 }
 
+export function formatThinkingLog(startedAt: number, now: number, message: string, locatorSuffix: string): string {
+  const elapsedMs = now - startedAt;
+  const elapsedText = formatElapsed(elapsedMs);
+  const progress = Math.min(1, elapsedMs / 600_000); // soft target: 10 minutes
+  const barSegments = 10;
+  const filled = Math.round(progress * barSegments);
+  const bar = `${'█'.repeat(filled).padEnd(barSegments, '░')}`;
+  const pct = Math.round(progress * 100)
+    .toString()
+    .padStart(3, ' ');
+  const statusLabel = message ? ` — ${message}` : '';
+  return `[${elapsedText} / ~10m] ${bar} ${pct}%${statusLabel}${locatorSuffix}`;
+}
+
 function startThinkingStatusMonitor(
   Runtime: ChromeClient['Runtime'],
   logger: BrowserLogger,
@@ -270,7 +284,6 @@ function startThinkingStatusMonitor(
       const nextMessage = await readThinkingStatus(Runtime);
       if (nextMessage && nextMessage !== lastMessage) {
         lastMessage = nextMessage;
-        const elapsedText = formatElapsed(Date.now() - startedAt);
         let locatorSuffix = '';
         if (includeDiagnostics) {
           try {
@@ -280,7 +293,7 @@ function startThinkingStatusMonitor(
             locatorSuffix = ' | assistant-turn=error';
           }
         }
-        logger(`[${elapsedText} / ~10m] Pro thinking: ${nextMessage}${locatorSuffix}`);
+        logger(formatThinkingLog(startedAt, Date.now(), nextMessage, locatorSuffix));
       }
     } catch {
       // ignore DOM polling errors

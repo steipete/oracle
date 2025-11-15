@@ -102,6 +102,14 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
     }
   }
 
+  const shouldTrimIntro = initialStatus === 'completed' || initialStatus === 'error';
+  if (shouldTrimIntro) {
+    const fullLog = await readSessionLog(sessionId);
+    const trimmed = trimBeforeFirstAnswer(fullLog);
+    process.stdout.write(trimmed);
+    return;
+  }
+
   let lastLength = 0;
   const printNew = async () => {
     const text = await readSessionLog(sessionId);
@@ -206,6 +214,15 @@ export function buildReattachLine(metadata: SessionMetadata): string | null {
     return `Session ${metadata.id} reattached, request started ${elapsedLabel} ago.`;
   }
   return null;
+}
+
+export function trimBeforeFirstAnswer(logText: string): string {
+  const marker = 'Answer:';
+  const index = logText.indexOf(marker);
+  if (index === -1) {
+    return logText;
+  }
+  return logText.slice(index);
 }
 
 function formatRelativeDuration(referenceIso: string): string | null {
