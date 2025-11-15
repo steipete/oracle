@@ -31,6 +31,11 @@ npx @steipete/oracle --engine browser -p "Summarize the risk register" --file do
 
 # Globs/exclusions
 npx @steipete/oracle -p "Review the TS data layer" --file "src/**/*.ts" --file "!src/**/*.test.ts"
+
+# Inspect past sessions
+oracle status --clear --hours 168   # prune a week of cached runs
+oracle status                       # list runs; grab an ID
+oracle session <id>                 # replay a run locally
 ```
 
 ## How do I integrate this?
