@@ -85,7 +85,12 @@ program
   .description('One-shot GPT-5 Pro / GPT-5.1 tool for hard questions that benefit from large file context and server-side search.')
   .version(VERSION)
   .option('-p, --prompt <text>', 'User prompt to send to the model.')
-  .option('-f, --file <paths...>', 'Paths to files or directories to append to the prompt; repeat, comma-separate, or supply a space-separated list.', collectPaths, [])
+  .option(
+    '-f, --file <paths...>',
+    'Files/directories or glob patterns to attach (prefix with !pattern to exclude). Files larger than 1 MB are rejected automatically.',
+    collectPaths,
+    [],
+  )
   .option('-s, --slug <words>', 'Custom session slug (3-5 words).')
   .option(
     '-m, --model <model>',

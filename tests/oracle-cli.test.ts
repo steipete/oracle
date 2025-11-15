@@ -466,6 +466,36 @@ describe('oracle utility helpers', () => {
     }
   });
 
+  test('readFiles respects glob include/exclude syntax and size limits', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'oracle-readfiles-glob-'));
+    try {
+      const nestedDir = path.join(dir, 'src', 'nested');
+      await mkdir(nestedDir, { recursive: true });
+      await writeFile(path.join(dir, 'src', 'alpha.ts'), 'alpha', 'utf8');
+      await writeFile(path.join(dir, 'src', 'beta.test.ts'), 'beta', 'utf8');
+      await writeFile(path.join(nestedDir, 'gamma.ts'), 'gamma', 'utf8');
+
+      const files = await readFiles(['src/**/*.ts', '!src/**/*.test.ts'], { cwd: dir });
+      const basenames = files.map((file) => path.basename(file.path));
+      expect(basenames).toContain('alpha.ts');
+      expect(basenames).toContain('gamma.ts');
+      expect(basenames).not.toContain('beta.test.ts');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('readFiles rejects files larger than 1 MB', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'oracle-readfiles-large-'));
+    try {
+      const largeFile = path.join(dir, 'huge.bin');
+      await writeFile(largeFile, 'a'.repeat(1_200_000), 'utf8');
+      await expect(readFiles([largeFile], { cwd: dir })).rejects.toThrow(/exceed the 1 MB limit/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test('createFileSections renders relative paths', () => {
     const sections = createFileSections(
       [{ path: '/tmp/example/file.txt', content: 'contents' }],
@@ -573,6 +603,7 @@ function createMockFs(fileEntries: Record<string, string>): MinimalFsModule {
     async stat(targetPath: string) {
       const normalizedPath = path.resolve(targetPath);
       if (normalizedEntries[normalizedPath] != null) {
+        const size = Buffer.byteLength(normalizedEntries[normalizedPath]);
         return {
           isFile(): boolean {
             return true;
@@ -580,6 +611,7 @@ function createMockFs(fileEntries: Record<string, string>): MinimalFsModule {
           isDirectory(): boolean {
             return false;
           },
+          size,
         };
       }
       if (hasDirectory(normalizedPath)) {

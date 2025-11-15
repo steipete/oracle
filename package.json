@@ -35,6 +35,7 @@
     "chrome-remote-interface": "^0.33.3",
     "commander": "^14.0.2",
     "dotenv": "^17.2.3",
+    "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
     "keytar": "^7.9.0",
     "kleur": "^4.1.5",

@@ -29,6 +29,7 @@ export interface FileSection {
 export interface FsStats {
   isFile(): boolean;
   isDirectory(): boolean;
+  size?: number;
 }
 
 export interface MinimalFsModule {
