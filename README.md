@@ -73,6 +73,7 @@ Set `ORACLE_HOME_DIR` if you want to store logs somewhere other than your home d
 2. Fails fast if the estimated input exceeds the per-model budget (default 196k) and prints per-file breakdowns when needed.
 3. Sends a single Responses API request with the system prompt, user prompt, files, and optional search tool—or, in browser mode, drives the ChatGPT UI with Chrome DevTools.
 4. Streams output (API runs) or prints the captured markdown (browser runs), then records elapsed time, usage numbers, and cost estimates.
+5. GPT-5 Pro API runs automatically opt into Responses API background mode, so the CLI can reconnect and poll for up to 30 minutes if the transport drops mid-run.
 
 ## Testing
 

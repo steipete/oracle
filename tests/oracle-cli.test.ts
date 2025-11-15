@@ -17,6 +17,7 @@ import {
   formatElapsed,
   getFileTokenStats,
   printFileTokenStats,
+  OracleTransportError,
 } from '../src/oracle.ts';
 import { collectPaths, parseIntOption } from '../src/cli/options.ts';
 import type {
@@ -98,6 +99,8 @@ class MockClient implements ClientLike {
   public lastRequest: OracleRequestBody | null;
   public responses: {
     stream: (body: OracleRequestBody) => Promise<MockStream>;
+    create: (body: OracleRequestBody) => Promise<MockResponse>;
+    retrieve: (id: string) => Promise<MockResponse>;
   };
 
   constructor(stream: MockStream) {
@@ -108,7 +111,51 @@ class MockClient implements ClientLike {
         this.lastRequest = body;
         return this.stream;
       },
+      create: async () => {
+        throw new Error('Background mode not supported in MockClient');
+      },
+      retrieve: async () => {
+        throw new Error('Background mode not supported in MockClient');
+      },
     };
+  }
+}
+
+class MockBackgroundClient implements ClientLike {
+  public createdBodies: OracleRequestBody[] = [];
+  private entries: MockResponse[];
+  private index = 0;
+  private failNext = false;
+  public responses: {
+    stream: (body: OracleRequestBody) => Promise<ResponseStreamLike>;
+    create: (body: OracleRequestBody) => Promise<MockResponse>;
+    retrieve: (id: string) => Promise<MockResponse>;
+  };
+
+  constructor(entries: MockResponse[]) {
+    this.entries = entries;
+    this.responses = {
+      stream: async () => {
+        throw new Error('Streaming not supported in MockBackgroundClient');
+      },
+      create: async (body: OracleRequestBody) => {
+        this.createdBodies.push(body);
+        this.index = 0;
+        return this.entries[0];
+      },
+      retrieve: async () => {
+        if (this.failNext) {
+          this.failNext = false;
+          throw new OracleTransportError('connection-lost', 'mock disconnect');
+        }
+        this.index = Math.min(this.index + 1, this.entries.length - 1);
+        return this.entries[this.index];
+      },
+    };
+  }
+
+  triggerConnectionDrop(): void {
+    this.failNext = true;
   }
 }
 
@@ -199,6 +246,7 @@ describe('runOracle error handling', () => {
           prompt: 'This is a small prompt',
           model: 'gpt-5-pro',
           maxInput: 1,
+          background: false,
         },
         { apiKey: 'sk-test' },
       ),
@@ -223,6 +271,7 @@ describe('runOracle streaming output', () => {
       {
         prompt: 'Say hello',
         model: 'gpt-5-pro',
+        background: false,
       },
       {
         apiKey: 'sk-test',
@@ -259,6 +308,7 @@ describe('runOracle streaming output', () => {
         prompt: 'Say nothing',
         model: 'gpt-5-pro',
         silent: true,
+        background: false,
       },
       {
         apiKey: 'sk-test',
@@ -275,6 +325,66 @@ describe('runOracle streaming output', () => {
     expect(logs[0].startsWith('Oracle (')).toBe(true);
     const finishedLine = logs.find((line) => line.startsWith('Finished in '));
     expect(finishedLine).toBeDefined();
+  });
+});
+
+describe('runOracle background mode', () => {
+  test('uses background mode for GPT-5 Pro by default', async () => {
+    const finalResponse = buildResponse();
+    const initialResponse = { ...finalResponse, status: 'in_progress', output: [] };
+    const client = new MockBackgroundClient([initialResponse, finalResponse]);
+    const logs: string[] = [];
+    let clock = 0;
+    const now = () => clock;
+    const wait = async (ms: number) => {
+      clock += ms;
+    };
+    const result = await runOracle(
+      {
+        prompt: 'Background run',
+        model: 'gpt-5-pro',
+      },
+      {
+        apiKey: 'sk-test',
+        client,
+        log: (msg: string) => logs.push(msg),
+        now,
+        wait,
+      },
+    );
+    expect(result.mode).toBe('live');
+    expect(client.createdBodies[0]?.background).toBe(true);
+    expect(client.createdBodies[0]?.store).toBe(true);
+    expect(logs.some((line) => line.includes('background response status'))).toBe(true);
+  });
+
+  test('retries polling and logs reconnection after a transport drop', async () => {
+    const finalResponse = buildResponse();
+    const initialResponse = { ...finalResponse, status: 'in_progress', output: [] };
+    const client = new MockBackgroundClient([initialResponse, finalResponse]);
+    client.triggerConnectionDrop();
+    const logs: string[] = [];
+    let clock = 0;
+    const now = () => clock;
+    const wait = async (ms: number) => {
+      clock += ms;
+    };
+    const result = await runOracle(
+      {
+        prompt: 'Recover run',
+        model: 'gpt-5-pro',
+      },
+      {
+        apiKey: 'sk-test',
+        client,
+        log: (msg: string) => logs.push(msg),
+        now,
+        wait,
+      },
+    );
+    expect(result.mode).toBe('live');
+    expect(logs.some((line) => line.includes('Retrying in'))).toBe(true);
+    expect(logs.some((line) => line.includes('Reconnected to OpenAI background response'))).toBe(true);
   });
 });
 
@@ -296,6 +406,7 @@ describe('runOracle file reports', () => {
         file: ['alpha.md', 'beta.md'],
         filesReport: true,
         silent: true,
+        background: false,
       },
       {
         apiKey: 'sk-test',
@@ -327,6 +438,7 @@ describe('runOracle file reports', () => {
           model: 'gpt-5-pro',
           file: ['big.txt'],
           maxInput: 100,
+          background: false,
         },
         {
           apiKey: 'sk-test',
@@ -360,6 +472,7 @@ describe('runOracle file reports', () => {
         file: [dir],
         filesReport: true,
         silent: true,
+        background: false,
       },
       {
         apiKey: 'sk-test',
@@ -406,6 +519,7 @@ describe('runOracle request payload', () => {
       {
         prompt: 'Default search',
         model: 'gpt-5-pro',
+        background: false,
       },
       {
         apiKey: 'sk-test',

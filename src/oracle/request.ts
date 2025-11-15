@@ -24,6 +24,8 @@ export function buildRequestBody({
   userPrompt,
   searchEnabled,
   maxOutputTokens,
+  background,
+  storeResponse,
 }: BuildRequestBodyParams): OracleRequestBody {
   return {
     model: modelConfig.model,
@@ -42,6 +44,8 @@ export function buildRequestBody({
     tools: searchEnabled ? [{ type: 'web_search_preview' }] : undefined,
     reasoning: modelConfig.reasoning || undefined,
     max_output_tokens: maxOutputTokens,
+    background: background ? true : undefined,
+    store: storeResponse ? true : undefined,
   };
 }
 

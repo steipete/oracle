@@ -66,6 +66,8 @@ export interface ResponseStreamLike extends AsyncIterable<ResponseStreamEvent> {
 export interface ClientLike {
   responses: {
     stream(body: OracleRequestBody): Promise<ResponseStreamLike> | ResponseStreamLike;
+    create(body: OracleRequestBody): Promise<OracleResponse>;
+    retrieve(id: string): Promise<OracleResponse>;
   };
 }
 
@@ -87,6 +89,7 @@ export interface RunOracleOptions {
   verbose?: boolean;
   heartbeatIntervalMs?: number;
   browserInlineFiles?: boolean;
+  background?: boolean;
 }
 
 export interface UsageSummary {
@@ -122,6 +125,7 @@ export interface RunOracleDeps {
   now?: () => number;
   clientFactory?: (apiKey: string) => ClientLike;
   client?: ClientLike;
+  wait?: (ms: number) => Promise<void>;
 }
 
 export interface BuildRequestBodyParams {
@@ -130,6 +134,8 @@ export interface BuildRequestBodyParams {
   userPrompt: string;
   searchEnabled: boolean;
   maxOutputTokens?: number;
+  background?: boolean;
+  storeResponse?: boolean;
 }
 
 export interface ToolConfig {
@@ -149,6 +155,8 @@ export interface OracleRequestBody {
   tools?: ToolConfig[];
   reasoning?: { effort: 'high' };
   max_output_tokens?: number;
+  background?: boolean;
+  store?: boolean;
 }
 
 export interface ResponseContentPart {

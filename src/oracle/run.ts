@@ -7,10 +7,12 @@ import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
+import { APIConnectionError, APIConnectionTimeoutError } from 'openai';
 import type {
   ClientLike,
   MinimalFsModule,
   OracleResponse,
+  OracleRequestBody,
   PreviewMode,
   ResponseStreamLike,
   RunOracleDeps,
@@ -24,6 +26,7 @@ import { formatElapsed, formatUSD } from './format.js';
 import { getFileTokenStats, printFileTokenStats } from './tokenStats.js';
 import {
   OracleResponseError,
+  OracleTransportError,
   PromptValidationError,
   describeTransportError,
   toTransportError,
@@ -36,6 +39,15 @@ const require = createRequire(import.meta.url);
 const pkg = require(pkgPath);
 const isTty = process.stdout.isTTY;
 const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
+const BACKGROUND_MAX_WAIT_MS = 30 * 60 * 1000;
+const BACKGROUND_POLL_INTERVAL_MS = 5000;
+const BACKGROUND_RETRY_BASE_MS = 3000;
+const BACKGROUND_RETRY_MAX_MS = 15000;
+
+const defaultWait = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps = {}): Promise<RunOracleResult> {
   const {
@@ -47,6 +59,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     now = () => performance.now(),
     clientFactory = createDefaultClientFactory(),
     client,
+    wait = defaultWait,
   } = deps;
 
   const logVerbose = (message: string): void => {
@@ -71,6 +84,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
       { model: options.model },
     );
   }
+  const useBackground = options.background ?? (options.model === 'gpt-5-pro');
 
   const inputTokenBudget = options.maxInput ?? modelConfig.inputLimit;
   const files = await readFiles(options.file ?? [], { cwd, fsModule });
@@ -110,7 +124,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   if (!isPreview) {
     log(headerLine);
     if (options.model === 'gpt-5-pro') {
-      log(dim('Pro is thinking, this can take up to 10 minutes...'));
+      log(dim('Pro is thinking, this can take up to 30 minutes...'));
     }
     log(dim('Press Ctrl+C to cancel.'));
   }
@@ -130,6 +144,8 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     userPrompt: promptWithFiles,
     searchEnabled,
     maxOutputTokens: options.maxOutput,
+    background: useBackground,
+    storeResponse: useBackground,
   });
 
   if (isPreview && previewMode) {
@@ -159,30 +175,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   logVerbose('Dispatching request to OpenAI Responses API...');
 
   const runStart = now();
-  const stream: ResponseStreamLike = await openAiClient.responses.stream(requestBody);
-  let heartbeatActive = false;
-  let stopHeartbeat: (() => void) | null = null;
-  const stopHeartbeatNow = () => {
-    if (!heartbeatActive) {
-      return;
-    }
-    heartbeatActive = false;
-    stopHeartbeat?.();
-    stopHeartbeat = null;
-  };
-  if (options.heartbeatIntervalMs && options.heartbeatIntervalMs > 0) {
-    heartbeatActive = true;
-    stopHeartbeat = startHeartbeat({
-      intervalMs: options.heartbeatIntervalMs,
-      log: (message) => log(message),
-      isActive: () => heartbeatActive,
-      makeMessage: (elapsedMs) => {
-        const elapsedText = formatElapsed(elapsedMs);
-        return `API connection active — ${elapsedText} elapsed. Expect up to ~10 min before GPT-5 responds.`;
-      },
-    });
-  }
-  let sawTextDelta: boolean = false;
+  let response: OracleResponse | null = null;
+  let elapsedMs = 0;
+  let sawTextDelta = false;
   let answerHeaderPrinted = false;
   const ensureAnswerHeader = () => {
     if (!options.silent && !answerHeaderPrinted) {
@@ -191,31 +186,70 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     }
   };
 
-  try {
-    for await (const event of stream) {
-      if (event.type === 'response.output_text.delta') {
-        stopHeartbeatNow();
-        sawTextDelta = true;
-        ensureAnswerHeader();
-        if (!options.silent && typeof event.delta === 'string') {
-          write(event.delta);
+  if (useBackground) {
+    response = await executeBackgroundResponse({
+      client: openAiClient,
+      requestBody,
+      log,
+      wait,
+      heartbeatIntervalMs: options.heartbeatIntervalMs,
+      now,
+    });
+    elapsedMs = now() - runStart;
+  } else {
+    const stream: ResponseStreamLike = await openAiClient.responses.stream(requestBody);
+    let heartbeatActive = false;
+    let stopHeartbeat: (() => void) | null = null;
+    const stopHeartbeatNow = () => {
+      if (!heartbeatActive) {
+        return;
+      }
+      heartbeatActive = false;
+      stopHeartbeat?.();
+      stopHeartbeat = null;
+    };
+    if (options.heartbeatIntervalMs && options.heartbeatIntervalMs > 0) {
+      heartbeatActive = true;
+      stopHeartbeat = startHeartbeat({
+        intervalMs: options.heartbeatIntervalMs,
+        log: (message) => log(message),
+        isActive: () => heartbeatActive,
+        makeMessage: (elapsedMs) => {
+          const elapsedText = formatElapsed(elapsedMs);
+          return `API connection active — ${elapsedText} elapsed. Expect up to ~10 min before GPT-5 responds.`;
+        },
+      });
+    }
+    try {
+      for await (const event of stream) {
+        if (event.type === 'response.output_text.delta') {
+          stopHeartbeatNow();
+          sawTextDelta = true;
+          ensureAnswerHeader();
+          if (!options.silent && typeof event.delta === 'string') {
+            write(event.delta);
+          }
         }
       }
+    } catch (streamError) {
+      if (typeof stream.abort === 'function') {
+        stream.abort();
+      }
+      stopHeartbeatNow();
+      const transportError = toTransportError(streamError);
+      log(chalk.yellow(describeTransportError(transportError)));
+      throw transportError;
     }
-  } catch (streamError) {
-    if (typeof stream.abort === 'function') {
-      stream.abort();
-    }
+    response = await stream.finalResponse();
     stopHeartbeatNow();
-    const transportError = toTransportError(streamError);
-    log(chalk.yellow(describeTransportError(transportError)));
-    throw transportError;
+    elapsedMs = now() - runStart;
   }
 
-  const response = await stream.finalResponse();
-  stopHeartbeatNow();
+  if (!response) {
+    throw new Error('OpenAI did not return a response.');
+  }
+
   logVerbose(`Response status: ${response.status ?? 'completed'}`);
-  const elapsedMs = now() - runStart;
 
   if (response.status && response.status !== 'completed') {
     const detail = response.error?.message || response.incomplete_details?.reason || response.status;
@@ -318,6 +352,169 @@ export function extractTextOutput(response: OracleResponse): string {
     return segments.join('\n');
   }
   return '';
+}
+
+interface BackgroundExecutionParams {
+  client: ClientLike;
+  requestBody: OracleRequestBody;
+  log: (message: string) => void;
+  wait: (ms: number) => Promise<void>;
+  heartbeatIntervalMs?: number;
+  now: () => number;
+}
+
+async function executeBackgroundResponse(params: BackgroundExecutionParams): Promise<OracleResponse> {
+  const { client, requestBody, log, wait, heartbeatIntervalMs, now } = params;
+  const initialResponse = await client.responses.create(requestBody);
+  if (!initialResponse || !initialResponse.id) {
+    throw new OracleResponseError('OpenAI did not return a response ID for the background run.', initialResponse);
+  }
+  const responseId = initialResponse.id;
+  log(
+    dim(
+      `OpenAI scheduled background response ${responseId} (status=${initialResponse.status ?? 'unknown'}). Monitoring up to ${Math.round(
+        BACKGROUND_MAX_WAIT_MS / 60000,
+      )} minutes for completion...`,
+    ),
+  );
+  let heartbeatActive = false;
+  let stopHeartbeat: (() => void) | null = null;
+  const stopHeartbeatNow = () => {
+    if (!heartbeatActive) {
+      return;
+    }
+    heartbeatActive = false;
+    stopHeartbeat?.();
+    stopHeartbeat = null;
+  };
+  if (heartbeatIntervalMs && heartbeatIntervalMs > 0) {
+    heartbeatActive = true;
+    stopHeartbeat = startHeartbeat({
+      intervalMs: heartbeatIntervalMs,
+      log: (message) => log(message),
+      isActive: () => heartbeatActive,
+      makeMessage: (elapsedMs) => {
+        const elapsedText = formatElapsed(elapsedMs);
+        return `OpenAI background run still in progress — ${elapsedText} elapsed (id=${responseId}).`;
+      },
+    });
+  }
+  try {
+    return await pollBackgroundResponse({
+      client,
+      responseId,
+      initialResponse,
+      log,
+      wait,
+      now,
+      maxWaitMs: BACKGROUND_MAX_WAIT_MS,
+    });
+  } finally {
+    stopHeartbeatNow();
+  }
+}
+
+interface BackgroundPollParams {
+  client: ClientLike;
+  responseId: string;
+  initialResponse: OracleResponse;
+  log: (message: string) => void;
+  wait: (ms: number) => Promise<void>;
+  now: () => number;
+  maxWaitMs: number;
+}
+
+async function pollBackgroundResponse(params: BackgroundPollParams): Promise<OracleResponse> {
+  const { client, responseId, initialResponse, log, wait, now, maxWaitMs } = params;
+  const startMark = now();
+  let response = initialResponse;
+  let firstCycle = true;
+  let lastStatus: string | undefined = response.status;
+  while (true) {
+    const status = response.status ?? 'completed';
+    if (firstCycle) {
+      firstCycle = false;
+      log(dim(`OpenAI background response status=${status}. We'll keep retrying automatically.`));
+    } else if (status !== lastStatus && status !== 'completed') {
+      log(dim(`OpenAI background response status=${status}.`));
+    }
+    lastStatus = status;
+
+    if (status === 'completed') {
+      return response;
+    }
+    if (status !== 'in_progress') {
+      const detail = response.error?.message || response.incomplete_details?.reason || status;
+      throw new OracleResponseError(`Response did not complete: ${detail}`, response);
+    }
+    if (now() - startMark >= maxWaitMs) {
+      throw new OracleTransportError('client-timeout', 'Timed out waiting for OpenAI background response to finish.');
+    }
+
+    await wait(BACKGROUND_POLL_INTERVAL_MS);
+    if (now() - startMark >= maxWaitMs) {
+      throw new OracleTransportError('client-timeout', 'Timed out waiting for OpenAI background response to finish.');
+    }
+    const { response: nextResponse, reconnected } = await retrieveBackgroundResponseWithRetry({
+      client,
+      responseId,
+      wait,
+      now,
+      maxWaitMs,
+      startMark,
+      log,
+    });
+    if (reconnected) {
+      const nextStatus = nextResponse.status ?? 'in_progress';
+      log(dim(`Reconnected to OpenAI background response (status=${nextStatus}). OpenAI is still working...`));
+    }
+    response = nextResponse;
+  }
+}
+
+interface RetrieveRetryParams {
+  client: ClientLike;
+  responseId: string;
+  wait: (ms: number) => Promise<void>;
+  now: () => number;
+  maxWaitMs: number;
+  startMark: number;
+  log: (message: string) => void;
+}
+
+async function retrieveBackgroundResponseWithRetry(
+  params: RetrieveRetryParams,
+): Promise<{ response: OracleResponse; reconnected: boolean }> {
+  const { client, responseId, wait, now, maxWaitMs, startMark, log } = params;
+  let retries = 0;
+  while (true) {
+    try {
+      const next = await client.responses.retrieve(responseId);
+      return { response: next, reconnected: retries > 0 };
+    } catch (error) {
+      const transportError = asRetryableTransportError(error);
+      if (!transportError) {
+        throw error;
+      }
+      retries += 1;
+      const delay = Math.min(BACKGROUND_RETRY_BASE_MS * 2 ** (retries - 1), BACKGROUND_RETRY_MAX_MS);
+      log(chalk.yellow(`${describeTransportError(transportError)} Retrying in ${formatElapsed(delay)}...`));
+      await wait(delay);
+      if (now() - startMark >= maxWaitMs) {
+        throw new OracleTransportError('client-timeout', 'Timed out waiting for OpenAI background response to finish.');
+      }
+    }
+  }
+}
+
+function asRetryableTransportError(error: unknown): OracleTransportError | null {
+  if (error instanceof OracleTransportError) {
+    return error;
+  }
+  if (error instanceof APIConnectionError || error instanceof APIConnectionTimeoutError) {
+    return toTransportError(error);
+  }
+  return null;
 }
 
 function resolvePackageJsonPath(moduleUrl: string): string {

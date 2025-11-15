@@ -240,6 +240,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
     verbose: overrides.verbose ?? options.verbose,
     heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? resolveHeartbeatIntervalMs(options.heartbeat),
     browserInlineFiles: overrides.browserInlineFiles ?? options.browserInlineFiles ?? false,
+    background: overrides.background ?? undefined,
   };
 }
 
@@ -270,6 +271,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     verbose: stored.verbose,
     heartbeatIntervalMs: stored.heartbeatIntervalMs,
     browserInlineFiles: stored.browserInlineFiles,
+    background: stored.background,
   };
 }
 
@@ -382,6 +384,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     },
     process.cwd(),
   );
+  const reattachCommand = `pnpm oracle session ${sessionMeta.id}`;
+  console.log(chalk.bold(`Reattach later with: ${chalk.cyan(reattachCommand)}`));
+  console.log('');
   const liveRunOptions: RunOracleOptions = { ...baseRunOptions, sessionId: sessionMeta.id };
   const detached = await launchDetachedSession(sessionMeta.id).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
