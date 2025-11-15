@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { Command, Option } from 'commander';
 import type { OptionValues } from 'commander';
+import { resolveEngine, type EngineMode } from '../src/cli/engine.js';
 import chalk from 'chalk';
 import {
   ensureSessionStorage,
@@ -38,8 +39,6 @@ import { isErrorLogged } from '../src/cli/errorUtils.js';
 import { handleStatusFlag } from '../src/cli/rootAlias.js';
 import { getCliVersion } from '../src/version.js';
 import { runDryRunSummary } from '../src/cli/dryRun.js';
-
-type EngineMode = 'api' | 'browser';
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -120,7 +119,12 @@ program
     normalizeModelOption,
     'gpt-5-pro',
   )
-  .addOption(new Option('-e, --engine <mode>', 'Execution engine (api | browser).').choices(['api', 'browser']).default('api'))
+  .addOption(
+    new Option(
+      '-e, --engine <mode>',
+      'Execution engine (api | browser). If omitted, Oracle picks api when OPENAI_API_KEY is set, otherwise browser.',
+    ).choices(['api', 'browser'])
+  )
   .option('--files-report', 'Show token usage per attached file (also prints automatically when files exceed the token budget).', false)
   .option('-v, --verbose', 'Enable verbose logging for all operations.', false)
   .option('--dry-run', 'Validate inputs and show token estimates without calling the model.', false)
@@ -331,9 +335,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error('--dry-run cannot be combined with --render-markdown.');
   }
 
-  let engine: EngineMode = options.engine ?? 'api';
+  const engine: EngineMode = resolveEngine({ engine: options.engine, browserFlag: options.browser, env: process.env });
   if (options.browser) {
-    engine = 'browser';
     console.log(chalk.yellow('`--browser` is deprecated; use `--engine browser` instead.'));
   }
   const cliModelArg = normalizeModelOption(options.model) || 'gpt-5-pro';

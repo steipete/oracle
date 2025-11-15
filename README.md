@@ -15,10 +15,10 @@ Oracle gives your agents a simple, reliable way to bundle a prompt plus the righ
 
 ## Two engines, one CLI
 
-- **API engine (default)** — Calls the OpenAI Responses API. Needs `OPENAI_API_KEY`.
+- **API engine** — Calls the OpenAI Responses API. Needs `OPENAI_API_KEY`.
 - **Browser engine** — Automates ChatGPT in Chrome so you can use your Pro account directly. Toggle with `--engine browser`; no API key required.
 
-Switch engines as needed with `-e, --engine {api|browser}`. Everything else (prompt assembly, file handling, session logging) stays the same.
+If you omit `--engine`, Oracle prefers the API engine when `OPENAI_API_KEY` is present; otherwise it falls back to browser mode. Switch explicitly with `-e, --engine {api|browser}` when you want to override the auto choice. Everything else (prompt assembly, file handling, session logging) stays the same.
 
 ## Quick start
 
@@ -52,7 +52,7 @@ pnpm run oracle -- --prompt "Review the TS data layer" --file "src/**/*.ts" --fi
 | --- | --- |
 | `-p, --prompt <text>` | Required prompt. |
 | `-f, --file <paths...>` | Attach files/dirs (supports globs and `!` excludes). |
-| `-e, --engine <api|browser>` | Choose API (default) or browser automation. |
+| `-e, --engine <api|browser>` | Choose API or browser automation. Omitted: API when `OPENAI_API_KEY` is set, otherwise browser. |
 | `-m, --model <name>` | `gpt-5-pro` (default) or `gpt-5.1`. |
 | `--files-report` | Print per-file token usage. |
 | `--preview [summary|json|full]` | Inspect the request without sending. |
