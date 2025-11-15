@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-type SessionModule = typeof import('../src/sessionManager.js');
+type SessionModule = typeof import('../src/sessionManager.ts');
 type SessionMetadata = Awaited<ReturnType<SessionModule['initializeSession']>>;
 
 let sessionModule: SessionModule;
@@ -12,7 +12,7 @@ let oracleHomeDir: string;
 beforeAll(async () => {
   oracleHomeDir = await mkdtemp(path.join(os.tmpdir(), 'oracle-session-tests-'));
   process.env.ORACLE_HOME_DIR = oracleHomeDir;
-  sessionModule = await import('../src/sessionManager.js');
+  sessionModule = await import('../src/sessionManager.ts');
   await sessionModule.ensureSessionStorage();
 });
 

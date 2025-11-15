@@ -44,7 +44,7 @@ interface FsStats {
 export interface MinimalFsModule {
   stat(targetPath: string): Promise<FsStats>;
   readdir(targetPath: string): Promise<string[]>;
-  readFile(targetPath: string, encoding: BufferEncoding): Promise<string>;
+  readFile(targetPath: string, encoding: NodeJS.BufferEncoding): Promise<string>;
 }
 
 interface FileTokenEntry {
@@ -61,20 +61,20 @@ interface FileTokenStats {
 
 export type PreviewMode = 'summary' | 'json' | 'full';
 
-interface ResponseStreamEvent {
+export interface ResponseStreamEvent {
   type: string;
   delta?: string;
   [key: string]: unknown;
 }
 
-interface ResponseStreamLike extends AsyncIterable<ResponseStreamEvent> {
-  finalResponse(): Promise<any>;
+export interface ResponseStreamLike extends AsyncIterable<ResponseStreamEvent> {
+  finalResponse(): Promise<OracleResponse>;
   abort?: () => void;
 }
 
-interface ClientLike {
+export interface ClientLike {
   responses: {
-    stream(body: any): Promise<ResponseStreamLike> | ResponseStreamLike;
+    stream(body: OracleRequestBody): Promise<ResponseStreamLike> | ResponseStreamLike;
   };
 }
 
@@ -104,14 +104,14 @@ interface UsageSummary {
 interface PreviewResult {
   mode: 'preview';
   previewMode: PreviewMode;
-  requestBody: any;
+  requestBody: OracleRequestBody;
   estimatedInputTokens: number;
   inputTokenBudget: number;
 }
 
 interface LiveResult {
   mode: 'live';
-  response: any;
+  response: OracleResponse;
   usage: UsageSummary;
   elapsedMs: number;
 }
@@ -135,6 +135,50 @@ interface BuildRequestBodyParams {
   userPrompt: string;
   searchEnabled: boolean;
   maxOutputTokens?: number;
+}
+
+interface ToolConfig {
+  type: 'web_search_preview';
+}
+
+export interface OracleRequestBody {
+  model: string;
+  instructions: string;
+  input: Array<{
+    role: 'user';
+    content: Array<{
+      type: 'input_text';
+      text: string;
+    }>;
+  }>;
+  tools?: ToolConfig[];
+  reasoning?: { effort: 'high' };
+  max_output_tokens?: number;
+}
+
+interface ResponseContentPart {
+  type?: string;
+  text?: string;
+}
+
+interface ResponseOutputItem {
+  type?: string;
+  content?: ResponseContentPart[];
+  text?: string;
+}
+
+export interface OracleResponse {
+  status?: string;
+  error?: { message?: string };
+  incomplete_details?: { reason?: string };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    reasoning_tokens?: number;
+    total_tokens?: number;
+  };
+  output_text?: string[];
+  output?: ResponseOutputItem[];
 }
 
 const require = createRequire(import.meta.url);
@@ -197,7 +241,7 @@ export function parseIntOption(value: string | undefined): number | undefined {
 }
 
 async function expandToFiles(targetPath: string, fsModule: MinimalFsModule): Promise<string[]> {
-  let stats;
+  let stats: FsStats;
   try {
     stats = await fsModule.stat(targetPath);
   } catch (_error) {
@@ -264,7 +308,7 @@ export function buildPrompt(basePrompt: string, files: FileContent[], cwd = proc
   return `${basePrompt.trim()}\n\n### Attached Files\n${sections.map((section) => section.sectionText).join('\n\n')}`;
 }
 
-export function extractTextOutput(response: any): string {
+export function extractTextOutput(response: OracleResponse): string {
   if (Array.isArray(response.output_text) && response.output_text.length > 0) {
     return response.output_text.join('\n').trim();
   }
@@ -273,17 +317,13 @@ export function extractTextOutput(response: any): string {
   }
   const textChunks = [];
   for (const item of response.output) {
-    if (item.type === 'message' && Array.isArray(item.content)) {
+    if (item?.type === 'message' && Array.isArray(item.content)) {
       for (const contentItem of item.content) {
-        if (contentItem.type === 'text' && typeof contentItem.text === 'string') {
-          textChunks.push(contentItem.text);
-        }
-        if (contentItem.type === 'output_text' && typeof contentItem.text === 'string') {
+        if (typeof contentItem?.text === 'string') {
           textChunks.push(contentItem.text);
         }
       }
-    }
-    if (item.type === 'output_text' && typeof item.text === 'string') {
+    } else if (item?.type === 'output_text' && typeof item.text === 'string') {
       textChunks.push(item.text);
     }
   }
@@ -394,7 +434,7 @@ export function buildRequestBody({
   userPrompt,
   searchEnabled,
   maxOutputTokens,
-}: BuildRequestBodyParams) {
+}: BuildRequestBodyParams): OracleRequestBody {
   return {
     model: modelConfig.model,
     instructions: systemPrompt,
@@ -415,6 +455,21 @@ export function buildRequestBody({
   };
 }
 
+function createDefaultClientFactory(): (apiKey: string) => ClientLike {
+  return (key: string): ClientLike => {
+    const instance = new OpenAI({
+      apiKey: key,
+      timeout: 15 * 60 * 1000,
+    });
+    return {
+      responses: {
+        stream: (body: OracleRequestBody) =>
+          instance.responses.stream(body) as unknown as ResponseStreamLike,
+      },
+    };
+  };
+}
+
 export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps = {}): Promise<RunOracleResult> {
   const {
     apiKey = options.apiKey ?? process.env.OPENAI_API_KEY,
@@ -423,11 +478,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     log = console.log,
     write = (text: string) => process.stdout.write(text),
     now = () => performance.now(),
-    clientFactory = ((key: string) =>
-      new OpenAI({
-        apiKey: key,
-        timeout: 15 * 60 * 1000, // allow up to 15-minute reasoning runs
-      })) as (apiKey: string) => ClientLike,
+    clientFactory = createDefaultClientFactory(),
     client,
   } = deps;
 

@@ -224,7 +224,7 @@ export async function deleteSessionsOlderThan({
 
   for (const entry of entries) {
     const dir = sessionDir(entry);
-    let createdMs;
+    let createdMs: number | undefined;
     const meta = await readSessionMetadata(entry);
     if (meta?.createdAt) {
       const parsed = Date.parse(meta.createdAt);

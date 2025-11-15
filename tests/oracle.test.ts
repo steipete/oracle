@@ -19,21 +19,21 @@ import {
   formatElapsed,
   getFileTokenStats,
   printFileTokenStats,
-} from '../src/oracle.js';
+} from '../src/oracle.ts';
+import type {
+  MinimalFsModule,
+  ClientLike,
+  ResponseStreamLike,
+  ResponseStreamEvent,
+  OracleResponse,
+  OracleRequestBody,
+} from '../src/oracle.ts';
 
 chalk.level = 0;
 
 type TempFile = { dir: string; filePath: string };
 
-type ResponseEvent = {
-  type: string;
-  delta?: string;
-  output_index?: number;
-  content_index?: number;
-  [key: string]: unknown;
-};
-
-interface MockResponse {
+interface MockResponse extends OracleResponse {
   status: string;
   usage: {
     input_tokens: number;
@@ -54,12 +54,12 @@ async function createTempFile(contents: string): Promise<TempFile> {
   return { dir, filePath };
 }
 
-class MockStream implements AsyncIterable<ResponseEvent> {
-  private events: ResponseEvent[];
+class MockStream implements ResponseStreamLike {
+  private events: ResponseStreamEvent[];
   private finalResponseValue: MockResponse;
   private aborted: boolean;
 
-  constructor(events: ResponseEvent[], finalResponse: MockResponse) {
+  constructor(events: ResponseStreamEvent[], finalResponse: MockResponse) {
     this.events = events;
     this.finalResponseValue = finalResponse;
     this.aborted = false;
@@ -69,7 +69,7 @@ class MockStream implements AsyncIterable<ResponseEvent> {
     this.aborted = true;
   }
 
-  [Symbol.asyncIterator](): AsyncIterator<ResponseEvent> {
+  [Symbol.asyncIterator](): AsyncIterator<ResponseStreamEvent> {
     let index = 0;
     const events = this.events;
     return {
@@ -91,18 +91,18 @@ class MockStream implements AsyncIterable<ResponseEvent> {
   }
 }
 
-class MockClient {
+class MockClient implements ClientLike {
   public stream: MockStream;
-  public lastRequest: Record<string, unknown> | null;
+  public lastRequest: OracleRequestBody | null;
   public responses: {
-    stream: (body: Record<string, unknown>) => Promise<MockStream>;
+    stream: (body: OracleRequestBody) => Promise<MockStream>;
   };
 
   constructor(stream: MockStream) {
     this.stream = stream;
     this.lastRequest = null;
     this.responses = {
-      stream: async (body: Record<string, unknown>) => {
+      stream: async (body: OracleRequestBody) => {
         this.lastRequest = body;
         return this.stream;
       },
@@ -557,7 +557,7 @@ describe('oracle utility helpers', () => {
   });
 });
 
-function createMockFs(fileEntries: Record<string, string>) {
+function createMockFs(fileEntries: Record<string, string>): MinimalFsModule {
   const normalizedEntries = Object.fromEntries(
     Object.entries(fileEntries).map(([key, value]) => [path.resolve(key), value]),
   ) as Record<string, string>;

@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowJs": false,
+    "allowImportingTsExtensions": true,
     "checkJs": false,
     "noEmit": true,
     "jsx": "preserve",
