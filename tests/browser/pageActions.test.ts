@@ -4,6 +4,9 @@ import {
   waitForAssistantResponse,
   uploadAttachmentFile,
   waitForAttachmentCompletion,
+  navigateToChatGPT,
+  ensurePromptReady,
+  ensureNotBlocked,
 } from '../../src/browser/pageActions.js';
 import type { ChromeClient } from '../../src/browser/types.js';
 
@@ -38,6 +41,63 @@ describe('ensureModelSelection', () => {
     await expect(ensureModelSelection(runtime, 'Instant', logger)).rejects.toThrow(
       /Unable to locate the ChatGPT model selector button/,
     );
+  });
+});
+
+describe('navigateToChatGPT', () => {
+  test('navigates and waits for ready state', async () => {
+    const navigate = vi.fn().mockResolvedValue(undefined);
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: 'loading' } })
+        .mockResolvedValueOnce({ result: { value: 'complete' } }),
+    } as unknown as ChromeClient['Runtime'];
+    await navigateToChatGPT(
+      { navigate } as unknown as ChromeClient['Page'],
+      runtime,
+      'https://chat.openai.com',
+      logger,
+    );
+    expect(navigate).toHaveBeenCalledWith({ url: 'https://chat.openai.com' });
+    expect(runtime.evaluate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ensurePromptReady', () => {
+  test('resolves when input selector enabled', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: true } }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensurePromptReady(runtime, 1000, logger)).resolves.toBeUndefined();
+    expect(logger).toHaveBeenCalledWith('Prompt textarea ready');
+  });
+
+  test('throws when timeout reached', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: false } }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensurePromptReady(runtime, 0, logger)).rejects.toThrow(/textarea did not appear/i);
+  });
+});
+
+describe('ensureNotBlocked', () => {
+  test('throws descriptive error when cloudflare detected', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: 'Just a moment...' } }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensureNotBlocked(runtime, true, logger)).rejects.toThrow(/headless mode/i);
+    expect(logger).toHaveBeenCalledWith('Cloudflare anti-bot page detected');
+  });
+
+  test('passes through when title clean', async () => {
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: 'ChatGPT' } })
+        .mockResolvedValueOnce({ result: { value: false } }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensureNotBlocked(runtime, false, logger)).resolves.toBeUndefined();
   });
 });
 
