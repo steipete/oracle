@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.10 — 2025-11-17
+
+### Added
+- Rich terminals that support OSC 9;4 (Ghostty 1.2+, WezTerm, Windows Terminal) now show an inline progress bar while Oracle waits for the OpenAI response; disable with `ORACLE_NO_OSC_PROGRESS=1`, force with `ORACLE_FORCE_OSC_PROGRESS=1`.
+
 ## 1.0.9 — 2025-11-16
 
 ### Added
@@ -9,6 +14,7 @@ All notable changes to this project will be documented in this file.
 - Hidden root-level `--session <id>` alias attaches directly to a stored session (for agents/automation).
 - README now recommends preferring API engine for reliability and longer uninterrupted runs when an API key is available.
 - Session rendering now uses Markdansi (micromark/mdast-based), removing markdown-it-terminal and eliminating HTML leakage/crashes during replays.
+- Added a local Markdansi type shim for now; switch to official types once the npm package ships them.
 
 ## 1.0.8 — 2025-11-16
 
