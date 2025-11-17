@@ -77,10 +77,10 @@ oracle session <id>                 # replay a run locally
 | --- | --- |
 | `-p, --prompt <text>` | Required prompt. |
 | `-f, --file <paths...>` | Attach files/dirs (supports globs and `!` excludes). |
-| `-e, --engine <api|browser>` | Choose API or browser automation. Omitted: API when `OPENAI_API_KEY` is set, otherwise browser. |
+| `-e, --engine <api\|browser>` | Choose API or browser automation. Omitted: API when `OPENAI_API_KEY` is set, otherwise browser. |
 | `-m, --model <name>` | `gpt-5-pro` (default) or `gpt-5.1`. |
 | `--files-report` | Print per-file token usage. |
-| `--preview [summary|json|full]` | Inspect the request without sending. |
+| `--preview [summary\|json\|full]` | Inspect the request without sending. |
 | `--render-markdown` | Print the assembled `[SYSTEM]/[USER]/[FILE]` bundle. |
 | `-v, --verbose` | Extra logging (also surfaces advanced flags with `--help`). |
 
