@@ -44,7 +44,7 @@
     "gpt-tokenizer": "^3.4.0",
     "keytar": "^7.9.0",
     "kleur": "^4.1.5",
-    "markdansi": "file:../markdansi",
+    "markdansi": "^0.1.0",
     "openai": "^6.9.0",
     "sqlite3": "^5.1.7"
   },

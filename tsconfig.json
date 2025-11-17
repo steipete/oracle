@@ -14,7 +14,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "types": [],
-    "typeRoots": ["./src/types", "./node_modules/@types"]
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "paths": {
+      "markdansi": ["./node_modules/markdansi/dist/index"]
+    }
   },
   "include": ["bin/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist", ".bun-check"]
