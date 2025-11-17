@@ -10,25 +10,31 @@ import {
   type BrowserSessionConfig,
 } from '../../sessionManager.js';
 import { performSessionRun } from '../../cli/sessionRunner.js';
-import { consultInputSchema } from '../types.js';
 import { CHATGPT_URL } from '../../browser/constants.js';
+
+const consultInputSchema = z.object({
+  prompt: z.string().min(1, 'Prompt is required.'),
+  files: z.array(z.string()).default([]),
+  model: z.string().optional(),
+  engine: z.enum(['api', 'browser']).optional(),
+  slug: z.string().optional(),
+});
 
 const consultOutputSchema = z.object({
   sessionId: z.string(),
   status: z.string(),
   output: z.string(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export function registerConsultTool(server: McpServer): void {
-  const inputSchema = consultInputSchema as z.ZodType<object>;
   server.registerTool(
     'consult',
     {
       title: 'Run an Oracle session',
       description: 'Execute a prompt with optional files via the Oracle CLI engines and return the stored session result.',
-      inputSchema,
-      outputSchema: consultOutputSchema as z.ZodType<object>,
+      inputSchema: consultInputSchema,
+      outputSchema: consultOutputSchema,
     },
     async (input: unknown) => {
       const { prompt, files, model, engine, slug } = consultInputSchema.parse(input);

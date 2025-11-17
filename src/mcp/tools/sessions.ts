@@ -8,9 +8,15 @@ import {
   readSessionLog,
   readSessionMetadata,
 } from '../../sessionManager.js';
-import { sessionsInputSchema } from '../types.js';
+const sessionsInputSchema = z.object({
+  id: z.string().optional(),
+  hours: z.number().optional(),
+  limit: z.number().optional(),
+  includeAll: z.boolean().optional(),
+  detail: z.boolean().optional(),
+});
 
-const sessionOutputSchema = z.object({
+const sessionsOutputSchema = z.object({
   entries: z
     .array(
       z.object({
@@ -26,22 +32,21 @@ const sessionOutputSchema = z.object({
   truncated: z.boolean().optional(),
   session: z
     .object({
-      metadata: z.record(z.any()),
+      metadata: z.record(z.string(), z.any()),
       log: z.string(),
-      request: z.record(z.any()).optional(),
+      request: z.record(z.string(), z.any()).optional(),
     })
     .optional(),
 });
 
 export function registerSessionsTool(server: McpServer): void {
-  const inputSchema = sessionsInputSchema as z.ZodType<object>;
   server.registerTool(
     'sessions',
     {
       title: 'List or fetch Oracle sessions',
       description: 'List stored sessions or return full stored data for a given session ID/slug.',
-      inputSchema,
-      outputSchema: sessionOutputSchema as z.ZodType<object>,
+      inputSchema: sessionsInputSchema,
+      outputSchema: sessionsOutputSchema,
     },
     async (input: unknown) => {
       const { id, hours = 24, limit = 100, includeAll = false, detail = false } = sessionsInputSchema.parse(input);
