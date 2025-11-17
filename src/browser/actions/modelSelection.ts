@@ -46,12 +46,14 @@ function buildModelSelectionExpression(targetModel: string): string {
   const matchers = buildModelMatchersLiteral(targetModel);
   const labelLiteral = JSON.stringify(matchers.labelTokens);
   const idLiteral = JSON.stringify(matchers.testIdTokens);
+  const primaryLabelLiteral = JSON.stringify(targetModel);
   const menuContainerLiteral = JSON.stringify(MENU_CONTAINER_SELECTOR);
   const menuItemLiteral = JSON.stringify(MENU_ITEM_SELECTOR);
   return `(() => {
     const BUTTON_SELECTOR = '${MODEL_BUTTON_SELECTOR}';
     const LABEL_TOKENS = ${labelLiteral};
     const TEST_IDS = ${idLiteral};
+    const PRIMARY_LABEL = ${primaryLabelLiteral};
     const CLICK_INTERVAL_MS = 50;
     const MAX_WAIT_MS = 12000;
     const normalizeText = (value) => {
@@ -64,6 +66,11 @@ function buildModelSelectionExpression(targetModel: string): string {
         .replace(/\\s+/g, ' ')
         .trim();
     };
+    const normalizedTarget = normalizeText(PRIMARY_LABEL);
+    const normalizedTokens = Array.from(new Set([normalizedTarget, ...LABEL_TOKENS]))
+      .map((token) => normalizeText(token))
+      .filter(Boolean);
+    const targetWords = normalizedTarget.split(' ').filter(Boolean);
 
     const button = document.querySelector(BUTTON_SELECTOR);
     if (!button) {
@@ -104,28 +111,62 @@ function buildModelSelectionExpression(targetModel: string): string {
       return false;
     };
 
-    const findOption = () => {
+    const scoreOption = (normalizedText, testid) => {
+      if (!normalizedText && !testid) {
+        return 0;
+      }
+      let score = 0;
+      const normalizedTestId = (testid ?? '').toLowerCase();
+      if (normalizedTestId && TEST_IDS.some((id) => normalizedTestId.includes(id))) {
+        score += 1000;
+      }
+      if (normalizedText && normalizedTarget) {
+        if (normalizedText === normalizedTarget) {
+          score += 500;
+        } else if (normalizedText.startsWith(normalizedTarget)) {
+          score += 420;
+        } else if (normalizedText.includes(normalizedTarget)) {
+          score += 380;
+        }
+      }
+      for (const token of normalizedTokens) {
+        if (token && normalizedText.includes(token)) {
+          const tokenWeight = Math.min(120, Math.max(10, token.length * 4));
+          score += tokenWeight;
+        }
+      }
+      if (targetWords.length > 1) {
+        let missing = 0;
+        for (const word of targetWords) {
+          if (!normalizedText.includes(word)) {
+            missing += 1;
+          }
+        }
+        score -= missing * 12;
+      }
+      return Math.max(score, 0);
+    };
+
+    const findBestOption = () => {
+      let bestMatch = null;
       const menus = Array.from(document.querySelectorAll(${menuContainerLiteral}));
       for (const menu of menus) {
         const buttons = Array.from(menu.querySelectorAll(${menuItemLiteral}));
         for (const option of buttons) {
-          const testid = (option.getAttribute('data-testid') ?? '').toLowerCase();
           const text = option.textContent ?? '';
           const normalizedText = normalizeText(text);
-          const matchesTestId = testid && TEST_IDS.some((id) => testid.includes(id));
-          const matchesText = LABEL_TOKENS.some((token) => {
-            const normalizedToken = normalizeText(token);
-            if (!normalizedToken) {
-              return false;
-            }
-            return normalizedText.includes(normalizedToken);
-          });
-          if (matchesTestId || matchesText) {
-            return option;
+          const testid = option.getAttribute('data-testid') ?? '';
+          const score = scoreOption(normalizedText, testid);
+          if (score <= 0) {
+            continue;
+          }
+          const label = getOptionLabel(option);
+          if (!bestMatch || score > bestMatch.score) {
+            bestMatch = { node: option, label, score };
           }
         }
       }
-      return null;
+      return bestMatch;
     };
 
     pointerClick();
@@ -139,14 +180,14 @@ function buildModelSelectionExpression(targetModel: string): string {
       };
       const attempt = () => {
         ensureMenuOpen();
-        const option = findOption();
-        if (option) {
-          if (optionIsSelected(option)) {
-            resolve({ status: 'already-selected', label: getOptionLabel(option) });
+        const match = findBestOption();
+        if (match) {
+          if (optionIsSelected(match.node)) {
+            resolve({ status: 'already-selected', label: match.label });
             return;
           }
-          option.click();
-          resolve({ status: 'switched', label: getOptionLabel(option) });
+          match.node.click();
+          resolve({ status: 'switched', label: match.label });
           return;
         }
         if (performance.now() - start > MAX_WAIT_MS) {
@@ -212,4 +253,3 @@ function buildModelMatchersLiteral(targetModel: string): { labelTokens: string[]
     testIdTokens: Array.from(testIdTokens).filter(Boolean),
   };
 }
-
