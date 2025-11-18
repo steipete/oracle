@@ -63,8 +63,8 @@ async function main() {
     console.log('\n✓ POC successful! Remote Chrome connection works.');
     console.log('\nTo use Oracle with remote Chrome, you would need to:');
     console.log('1. Ensure cookies are loaded in remote Chrome');
-    console.log('2. Modify Oracle to accept --remote-chrome-host and --remote-chrome-port flags');
-    console.log('3. Skip local Chrome launch when remote is specified');
+    console.log('2. Configure Oracle with --remote-chrome <host:port> to use this instance');
+    console.log('3. Ensure Oracle skips local Chrome launch when --remote-chrome is specified');
 
   } catch (error) {
     console.error('✗ Connection failed:', error instanceof Error ? error.message : error);

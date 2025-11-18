@@ -103,15 +103,20 @@ export async function uploadAttachmentViaDataTransfer(
   const evalResult = await runtime.evaluate({ expression, returnByValue: true });
 
   // Check for JavaScript exceptions during evaluation
-  if ('exceptionDetails' in evalResult && evalResult.exceptionDetails) {
+  if (evalResult.exceptionDetails) {
     const description = evalResult.exceptionDetails.text ?? 'JS evaluation failed';
     throw new Error(`Failed to transfer file to remote browser: ${description}`);
   }
 
+  // Validate result structure before accessing
+  if (!evalResult.result || typeof evalResult.result.value !== 'object' || evalResult.result.value == null) {
+    throw new Error('Failed to transfer file to remote browser: unexpected evaluation result');
+  }
+
   const uploadResult = evalResult.result.value as { success?: boolean; error?: string; fileName?: string; size?: number };
 
-  if (!uploadResult?.success) {
-    throw new Error(`Failed to transfer file to remote browser: ${uploadResult?.error || 'Unknown error'}`);
+  if (!uploadResult.success) {
+    throw new Error(`Failed to transfer file to remote browser: ${uploadResult.error || 'Unknown error'}`);
   }
 
   logger(`File transferred: ${uploadResult.fileName} (${uploadResult.size} bytes)`);

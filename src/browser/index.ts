@@ -58,6 +58,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   // Remote Chrome mode - connect to existing browser
   if (config.remoteChrome) {
+    // Warn about ignored local-only options
+    if (config.headless || config.hideWindow || config.keepBrowser || config.chromePath) {
+      logger(
+        'Note: --remote-chrome ignores local Chrome flags ' +
+        '(--browser-headless, --browser-hide-window, --browser-keep-browser, --browser-chrome-path).'
+      );
+    }
+
     return runRemoteBrowserMode(promptText, attachments, config, logger, options);
   }
 
