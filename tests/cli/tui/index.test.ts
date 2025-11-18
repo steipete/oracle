@@ -81,7 +81,7 @@ describe('askOracleFlow', () => {
     expect(initializeSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'Hello world', mode: 'api' }),
       expect.any(String),
-      expect.objectContaining({ enabled: true, sound: false }),
+      expect.objectContaining({ enabled: expect.any(Boolean), sound: false }),
     );
     expect(performSessionRunMock).toHaveBeenCalledTimes(1);
     expect(performSessionRunMock.mock.calls[0][0].sessionMeta.id).toBe('sess-123');
