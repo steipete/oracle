@@ -21,6 +21,15 @@ export async function uploadAttachmentViaDataTransfer(
 
   // Read file content from local filesystem
   const fileContent = await readFile(attachment.path);
+
+  // Enforce file size limit to avoid CDP protocol issues
+  const MAX_BYTES = 20 * 1024 * 1024; // 20MB limit for CDP transfer
+  if (fileContent.length > MAX_BYTES) {
+    throw new Error(
+      `Attachment ${path.basename(attachment.path)} is too large for remote upload (${fileContent.length} bytes). Maximum size is ${MAX_BYTES} bytes.`
+    );
+  }
+
   const base64Content = fileContent.toString('base64');
   const fileName = path.basename(attachment.path);
   const mimeType = guessMimeType(fileName);
@@ -48,9 +57,16 @@ export async function uploadAttachmentViaDataTransfer(
   // Inject file via JavaScript DataTransfer API
   const expression = `
     (function() {
+      if (!('File' in window) || !('Blob' in window) || !('DataTransfer' in window) || typeof atob !== 'function') {
+        return { success: false, error: 'Required file APIs are not available in this browser' };
+      }
+
       const fileInput = document.querySelector(${JSON.stringify(fileInputSelector)});
       if (!fileInput) {
         return { success: false, error: 'File input not found' };
+      }
+      if (!(fileInput instanceof HTMLInputElement) || fileInput.type !== 'file') {
+        return { success: false, error: 'Found element is not a file input' };
       }
 
       const base64Data = ${JSON.stringify(base64Content)};
@@ -91,6 +107,14 @@ export async function uploadAttachmentViaDataTransfer(
         }
       }
       if (!assigned) {
+        try {
+          fileInput.files = dataTransfer.files;
+          assigned = true;
+        } catch {
+          assigned = false;
+        }
+      }
+      if (!assigned) {
         return { success: false, error: 'Unable to assign FileList to input' };
       }
 
@@ -101,8 +125,15 @@ export async function uploadAttachmentViaDataTransfer(
     })()
   `;
 
-  const { result } = await runtime.evaluate({ expression, returnByValue: true });
-  const uploadResult = result.value as { success?: boolean; error?: string; fileName?: string; size?: number };
+  const evalResult = await runtime.evaluate({ expression, returnByValue: true });
+
+  // Check for JavaScript exceptions during evaluation
+  if ('exceptionDetails' in evalResult && evalResult.exceptionDetails) {
+    const description = evalResult.exceptionDetails.text ?? 'JS evaluation failed';
+    throw new Error(`Failed to transfer file to remote browser: ${description}`);
+  }
+
+  const uploadResult = evalResult.result.value as { success?: boolean; error?: string; fileName?: string; size?: number };
 
   if (!uploadResult?.success) {
     throw new Error(`Failed to transfer file to remote browser: ${uploadResult?.error || 'Unknown error'}`);
@@ -121,24 +152,15 @@ async function waitForAttachmentRecognition(
   const deadline = Date.now() + timeoutMs;
   const checkExpression = `
     (() => {
-      // Check for any file attachment indicators in the composer
-      const indicators = [
-        // Look for file name in any element
-        ...Array.from(document.querySelectorAll('*')).filter(el => {
-          const text = el.textContent || '';
-          return text.includes(${JSON.stringify(expectedFileName)}) &&
-                 el.getBoundingClientRect().height > 0;
-        }),
-        // Look for file input that has files
-        ...Array.from(document.querySelectorAll('input[type="file"]')).filter(input => {
-          return input.files && input.files.length > 0;
-        })
-      ];
-
-      return indicators.length > 0;
+      const attachmentSelector = '[data-testid*="attachment"], [data-testid*="upload"]';
+      const attachments = Array.from(document.querySelectorAll(attachmentSelector));
+      if (attachments.some((node) => node.textContent?.includes(${JSON.stringify(expectedFileName)}))) {
+        return true;
+      }
+      const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      return inputs.some((input) => input.files && input.files.length > 0);
     })()
   `;
-
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression: checkExpression, returnByValue: true });
     if (result.value === true) {
@@ -146,15 +168,19 @@ async function waitForAttachmentRecognition(
     }
     await delay(250);
   }
-
   throw new Error(`Attachment ${expectedFileName} did not register with ChatGPT composer in time.`);
 }
+
 
 function guessMimeType(fileName: string): string {
   const ext = path.extname(fileName).toLowerCase();
   const mimeTypes: Record<string, string> = {
+    // Text files
     '.txt': 'text/plain',
     '.md': 'text/markdown',
+    '.csv': 'text/csv',
+
+    // Code files
     '.json': 'application/json',
     '.js': 'text/javascript',
     '.ts': 'text/typescript',
@@ -166,20 +192,38 @@ function guessMimeType(fileName: string): string {
     '.cpp': 'text/x-c++',
     '.h': 'text/x-c',
     '.hpp': 'text/x-c++',
+    '.sh': 'text/x-sh',
+    '.bash': 'text/x-sh',
+
+    // Web files
     '.html': 'text/html',
     '.css': 'text/css',
     '.xml': 'text/xml',
     '.yaml': 'text/yaml',
     '.yml': 'text/yaml',
-    '.sh': 'text/x-sh',
-    '.bash': 'text/x-sh',
+
+    // Documents
     '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+
+    // Images
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.gif': 'image/gif',
     '.svg': 'image/svg+xml',
+    '.webp': 'image/webp',
+
+    // Archives
     '.zip': 'application/zip',
+    '.tar': 'application/x-tar',
+    '.gz': 'application/gzip',
+    '.7z': 'application/x-7z-compressed',
   };
 
   return mimeTypes[ext] || 'application/octet-stream';
