@@ -157,7 +157,8 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   const estimatedInputTokens = estimateRequestTokens(requestBody, modelConfig);
   const tokenLabel = richTty ? chalk.green(estimatedInputTokens.toLocaleString()) : estimatedInputTokens.toLocaleString();
   const fileLabel = richTty ? chalk.magenta(fileCount.toString()) : fileCount.toString();
-  const headerLine = `oracle (${cliVersion}) consulting ${headerModelLabel}'s crystal ball with ${tokenLabel} tokens and ${fileLabel} files...`;
+  const filesPhrase = fileCount === 0 ? 'no files' : `${fileLabel} files`;
+  const headerLine = `🧿 oracle (${cliVersion}) summons ${headerModelLabel} — ${tokenLabel} tokens, ${filesPhrase}`;
   const shouldReportFiles =
     (options.filesReport || fileTokenInfo.totalTokens > inputTokenBudget) && fileTokenInfo.stats.length > 0;
   if (!isPreview) {

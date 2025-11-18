@@ -423,7 +423,7 @@ describe('runOracle streaming output', () => {
 
     expect(result.mode).toBe('live');
     expect(writes.join('')).toBe('Hello world\n\n');
-    expect(logs.some((line) => line.startsWith('oracle ('))).toBe(true);
+    expect(logs.some((line) => line.startsWith('🧿 oracle ('))).toBe(true);
     expect(logs.some((line) => line.startsWith('Finished in '))).toBe(true);
   });
 
@@ -455,7 +455,7 @@ describe('runOracle streaming output', () => {
     );
 
     expect(writes).toEqual([]);
-    expect(logs.some((line) => line.startsWith('oracle ('))).toBe(true);
+    expect(logs.some((line) => line.startsWith('🧿 oracle ('))).toBe(true);
     const finishedLine = logs.find((line) => line.startsWith('Finished in '));
     expect(finishedLine).toBeDefined();
   });
@@ -601,7 +601,7 @@ describe('runOracle file reports', () => {
         log: (msg: string) => logs.push(msg),
       },
     );
-    expect(logs.some((line) => line.startsWith('oracle ('))).toBe(true);
+    expect(logs.some((line) => line.startsWith('🧿 oracle ('))).toBe(true);
     const fileUsageIndex = logs.indexOf('File Token Usage');
     expect(fileUsageIndex).toBeGreaterThan(-1);
     const fileLines = logs.slice(fileUsageIndex + 1, fileUsageIndex + 3);
@@ -636,7 +636,7 @@ describe('runOracle file reports', () => {
         },
       ),
     ).rejects.toThrow('Input too large');
-    expect(logs.some((line) => line.startsWith('oracle ('))).toBe(true);
+    expect(logs.some((line) => line.startsWith('🧿 oracle ('))).toBe(true);
     expect(logs.find((line) => line === 'File Token Usage')).toBeDefined();
   });
 
@@ -667,7 +667,7 @@ describe('runOracle file reports', () => {
       },
     );
 
-    expect(logs.some((line) => line.startsWith('oracle ('))).toBe(true);
+    expect(logs.some((line) => line.startsWith('🧿 oracle ('))).toBe(true);
     const fileLogIndex = logs.indexOf('File Token Usage');
     expect(fileLogIndex).toBeGreaterThan(-1);
     expect(logs.some((line) => line.includes('note.txt'))).toBe(true);
