@@ -4,7 +4,6 @@ import {
   bundledLanguages,
   bundledThemes,
   createHighlighter,
-  type BundledLanguage,
   type BundledTheme,
 } from 'shiki';
 

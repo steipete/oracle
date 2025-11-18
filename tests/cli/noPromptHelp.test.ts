@@ -8,6 +8,21 @@ describe('no prompt help', () => {
     expect(requires).toBe(true);
   });
 
+  test('message alias satisfies prompt requirement', () => {
+    const rawArgs = ['--preview'];
+    const opts = { preview: resolvePreviewMode(true), prompt: undefined, message: 'via message' } as {
+      preview: string;
+      prompt?: string;
+      message?: string;
+    };
+    // simulate hidden alias normalization
+    if (!opts.prompt && opts.message) {
+      opts.prompt = opts.message;
+    }
+    const requires = shouldRequirePrompt(rawArgs, opts);
+    expect(requires).toBe(false);
+  });
+
   test('positional prompt prevents help trigger', () => {
     const requires = shouldRequirePrompt(['Hello world'], { prompt: 'Hello world' });
     expect(requires).toBe(false);

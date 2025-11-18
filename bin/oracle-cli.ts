@@ -31,6 +31,7 @@ import {
   inferModelFromLabel,
   parseHeartbeatOption,
 } from '../src/cli/options.js';
+import { applyHiddenAliases } from '../src/cli/hiddenAliases.js';
 import { buildBrowserConfig, resolveBrowserModelLabel } from '../src/cli/browserConfig.js';
 import { performSessionRun } from '../src/cli/sessionRunner.js';
 import { attachSession, showStatus } from '../src/cli/sessionDisplay.js';
@@ -40,10 +41,13 @@ import { isErrorLogged } from '../src/cli/errorUtils.js';
 import { handleSessionAlias, handleStatusFlag } from '../src/cli/rootAlias.js';
 import { getCliVersion } from '../src/version.js';
 import { runDryRunSummary } from '../src/cli/dryRun.js';
+import { launchTui } from '../src/cli/tui/index.js';
 
 interface CliOptions extends OptionValues {
   prompt?: string;
+  message?: string;
   file?: string[];
+  include?: string[];
   model: string;
   slug?: string;
   filesReport?: boolean;
@@ -84,7 +88,9 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & { model: ModelName };
 const VERSION = getCliVersion();
 const CLI_ENTRYPOINT = fileURLToPath(import.meta.url);
 const rawCliArgs = process.argv.slice(2);
+const userCliArgs = rawCliArgs[0] === CLI_ENTRYPOINT ? rawCliArgs.slice(1) : rawCliArgs;
 const isTty = process.stdout.isTTY;
+const tuiEnabled = () => isTty && process.env.ORACLE_NO_TUI !== '1';
 
 const program = new Command();
 applyHelpStyling(program, VERSION, isTty);
@@ -92,16 +98,17 @@ program.hook('preAction', (thisCommand) => {
   if (thisCommand !== program) {
     return;
   }
-  if (rawCliArgs.some((arg) => arg === '--help' || arg === '-h')) {
+  if (userCliArgs.some((arg) => arg === '--help' || arg === '-h')) {
     return;
   }
   const opts = thisCommand.optsWithGlobals() as CliOptions;
+  applyHiddenAliases(opts, (key, value) => thisCommand.setOptionValue(key, value));
   const positional = thisCommand.args?.[0] as string | undefined;
   if (!opts.prompt && positional) {
     opts.prompt = positional;
     thisCommand.setOptionValue('prompt', positional);
   }
-  if (shouldRequirePrompt(rawCliArgs, opts)) {
+  if (shouldRequirePrompt(userCliArgs, opts)) {
     console.log(chalk.yellow('Prompt is required. Provide it via --prompt "<text>" or positional [prompt].'));
     thisCommand.help({ error: false });
     process.exitCode = 1;
@@ -114,11 +121,18 @@ program
   .version(VERSION)
   .argument('[prompt]', 'Prompt text (shorthand for --prompt).')
   .option('-p, --prompt <text>', 'User prompt to send to the model.')
+  .addOption(new Option('--message <text>', 'Alias for --prompt.').hideHelp())
   .option(
     '-f, --file <paths...>',
     'Files/directories or glob patterns to attach (prefix with !pattern to exclude). Files larger than 1 MB are rejected automatically.',
     collectPaths,
     [],
+  )
+  .addOption(
+    new Option('--include <paths...>', 'Alias for --file.')
+      .argParser(collectPaths)
+      .default([])
+      .hideHelp(),
   )
   .option('-s, --slug <words>', 'Custom session slug (3-5 words).')
   .option(
@@ -203,6 +217,7 @@ const sessionCommand = program
   .option('--limit <count>', 'Maximum sessions to show when listing (max 1000).', parseIntOption, 100)
   .option('--all', 'Include all stored sessions regardless of age.', false)
   .option('--clear', 'Delete stored sessions older than the provided window (24h default).', false)
+  .option('--hide-prompt', 'Hide stored prompt when displaying a session.', false)
   .option('--render', 'Render completed session output as markdown (rich TTY only).', false)
   .option('--render-markdown', 'Alias for --render.', false)
   .option('--path', 'Print the stored session paths instead of attaching.', false)
@@ -220,6 +235,7 @@ const statusCommand = program
   .option('--clear', 'Delete stored sessions older than the provided window (24h default).', false)
   .option('--render', 'Render completed session output as markdown (rich TTY only).', false)
   .option('--render-markdown', 'Alias for --render.', false)
+  .option('--hide-prompt', 'Hide stored prompt when displaying a session.', false)
   .addOption(new Option('--clean', 'Deprecated alias for --clear.').default(false).hideHelp())
   .action(async (sessionId: string | undefined, _options: StatusOptions, command: Command) => {
     const statusOptions = command.opts<StatusOptions>();
@@ -243,7 +259,11 @@ const statusCommand = program
       return;
     }
     if (sessionId) {
-      await attachSession(sessionId);
+      const autoRender = !command.getOptionValueSource?.('render') && !command.getOptionValueSource?.('renderMarkdown')
+        ? process.stdout.isTTY
+        : false;
+      const renderMarkdown = Boolean(statusOptions.render || statusOptions.renderMarkdown || autoRender);
+      await attachSession(sessionId, { renderMarkdown, renderPrompt: !statusOptions.hidePrompt });
       return;
     }
     const showExamples = usesDefaultStatusFilters(command);
@@ -333,7 +353,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   const previewMode = resolvePreviewMode(options.preview);
 
-  if (rawCliArgs.length === 0) {
+  if (userCliArgs.length === 0) {
+    if (tuiEnabled()) {
+      await launchTui({ version: VERSION });
+      return;
+    }
     console.log(chalk.yellow('No prompt or subcommand supplied. See `oracle --help` for usage.'));
     program.help({ error: false });
     return;

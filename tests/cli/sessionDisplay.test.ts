@@ -16,6 +16,7 @@ vi.mock('../../src/sessionManager.ts', () => {
   return {
     readSessionMetadata: vi.fn(),
     readSessionLog: vi.fn(),
+    readSessionRequest: vi.fn(),
     wait: vi.fn(),
     listSessionsMetadata: vi.fn(),
     filterSessionsByRange: vi.fn(),
@@ -35,6 +36,7 @@ const markdownMock = await import('../../src/cli/markdownRenderer.ts');
 const renderMarkdownMock = markdownMock.renderMarkdownAnsi as unknown as { mockClear?: () => void };
 const readSessionMetadataMock = sessionManagerMock.readSessionMetadata as unknown as ReturnType<typeof vi.fn>;
 const readSessionLogMock = sessionManagerMock.readSessionLog as unknown as ReturnType<typeof vi.fn>;
+const _readSessionRequestMock = sessionManagerMock.readSessionRequest as unknown as ReturnType<typeof vi.fn>;
 
 const originalIsTty = process.stdout.isTTY;
 const originalChalkLevel = chalk.level;
