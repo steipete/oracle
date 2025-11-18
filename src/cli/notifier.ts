@@ -74,6 +74,7 @@ export async function sendSessionNotification(
     if (await tryMacNativeNotifier(title, message, settings)) {
       return;
     }
+    // Fallback to toasted-notifier (cross-platform). macAppIconOption() is only honored on macOS.
     await notifier.notify({
       title,
       message,

@@ -242,7 +242,7 @@ export async function readSessionMetadata(sessionId: string): Promise<SessionMet
   try {
     const raw = await fs.readFile(metaPath(sessionId), 'utf8');
     const parsed = JSON.parse(raw) as SessionMetadata;
-    return await markZombie(parsed, { persist: false });
+    return await markZombie(parsed, { persist: false }); // transient check; do not touch disk on single read
   } catch {
     return null;
   }
@@ -277,7 +277,7 @@ export async function listSessionsMetadata(): Promise<SessionMetadata[]> {
   for (const entry of entries) {
     let meta = await readSessionMetadata(entry);
     if (meta) {
-      meta = await markZombie(meta, { persist: true });
+      meta = await markZombie(meta, { persist: true }); // keep stored metadata consistent with zombie detection
       metas.push(meta);
     }
   }

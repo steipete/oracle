@@ -279,12 +279,13 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   logVerbose(`Response status: ${response.status ?? 'completed'}`);
 
   if (response.status && response.status !== 'completed') {
+    // OpenAI can reply `in_progress` even after the stream closes; give it a brief grace poll.
     if (response.id && response.status === 'in_progress') {
       const polishingStart = now();
       const pollIntervalMs = 2_000;
       const maxWaitMs = 60_000;
       log(chalk.dim('Response still in_progress; polling until completion...'));
-      // Poll retrieve until completed or timeout.
+      // Short polling loop — we don't want to hang forever, just catch late finalization.
       while (now() - polishingStart < maxWaitMs) {
         await wait(pollIntervalMs);
         const refreshed = await openAiClient.responses.retrieve(response.id);

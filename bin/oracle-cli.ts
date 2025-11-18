@@ -423,6 +423,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const resolvedModel: ModelName = engine === 'browser' ? inferModelFromLabel(cliModelArg) : resolveApiModel(cliModelArg);
   const resolvedOptions: ResolvedCliOptions = { ...options, model: resolvedModel };
 
+  // Decide whether to block until completion:
+  // - explicit --wait / --no-wait wins
+  // - otherwise block for fast models (gpt-5.1, browser) and detach by default for gpt-5-pro API
   const waitPreference = resolveWaitFlag({
     waitFlag: options.wait,
     noWaitFlag: options.noWait,
