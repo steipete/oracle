@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { handleStatusFlag } from '../../src/cli/rootAlias.ts';
+import { handleSessionAlias, handleStatusFlag } from '../../src/cli/rootAlias.ts';
 
 const createDeps = () => {
   return {
@@ -31,5 +31,21 @@ describe('handleStatusFlag', () => {
     expect(handled).toBe(true);
     expect(deps.showStatus).toHaveBeenCalledWith({ hours: 24, includeAll: false, limit: 100, showExamples: true });
     expect(deps.attachSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleSessionAlias', () => {
+  test('returns false when session flag not set', async () => {
+    const deps = createDeps();
+    const handled = await handleSessionAlias({ session: undefined }, deps);
+    expect(handled).toBe(false);
+    expect(deps.attachSession).not.toHaveBeenCalled();
+  });
+
+  test('attaches session when flag is provided', async () => {
+    const deps = createDeps();
+    const handled = await handleSessionAlias({ session: 'sess-123' }, deps);
+    expect(handled).toBe(true);
+    expect(deps.attachSession).toHaveBeenCalledWith('sess-123');
   });
 });

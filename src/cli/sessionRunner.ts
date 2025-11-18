@@ -8,10 +8,16 @@ import {
   OracleTransportError,
   extractResponseMetadata,
   asOracleUserError,
+  extractTextOutput,
 } from '../oracle.js';
 import { runBrowserSessionExecution } from '../browser/sessionRunner.js';
 import { formatResponseMetadata, formatTransportMetadata } from './sessionDisplay.js';
 import { markErrorLogged } from './errorUtils.js';
+import {
+  type NotificationSettings,
+  sendSessionNotification,
+  deriveNotificationSettingsFromMetadata,
+} from './notifier.js';
 
 const isTty = process.stdout.isTTY;
 const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
@@ -25,6 +31,7 @@ export interface SessionRunParams {
   log: (message?: string) => void;
   write: (chunk: string) => boolean;
   version: string;
+  notifications?: NotificationSettings;
 }
 
 export async function performSessionRun({
@@ -36,6 +43,7 @@ export async function performSessionRun({
   log,
   write,
   version,
+  notifications,
 }: SessionRunParams): Promise<void> {
   await updateSessionMetadata(sessionMeta.id, {
     status: 'running',
@@ -43,6 +51,7 @@ export async function performSessionRun({
     mode,
     ...(browserConfig ? { browser: { config: browserConfig } } : {}),
   });
+  const notificationSettings = notifications ?? deriveNotificationSettingsFromMetadata(sessionMeta, process.env);
   try {
     if (mode === 'browser') {
       if (!browserConfig) {
@@ -65,6 +74,18 @@ export async function performSessionRun({
         transport: undefined,
         error: undefined,
       });
+      await sendSessionNotification(
+        {
+          sessionId: sessionMeta.id,
+          sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
+          mode,
+          model: sessionMeta.model,
+          usage: result.usage,
+          characters: result.answerText?.length,
+        },
+        notificationSettings,
+        log,
+      );
       return;
     }
     const result = await runOracle(runOptions, {
@@ -84,6 +105,19 @@ export async function performSessionRun({
       transport: undefined,
       error: undefined,
     });
+    const answerText = extractTextOutput(result.response);
+    await sendSessionNotification(
+      {
+        sessionId: sessionMeta.id,
+        sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
+        mode,
+        model: sessionMeta.model ?? runOptions.model,
+        usage: result.usage,
+        characters: answerText.length,
+      },
+      notificationSettings,
+      log,
+    );
   } catch (error: unknown) {
     const message = formatError(error);
     log(`ERROR: ${message}`);

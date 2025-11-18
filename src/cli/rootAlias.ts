@@ -29,3 +29,30 @@ export async function handleStatusFlag(
   await deps.showStatus({ hours: 24, includeAll: false, limit: 100, showExamples: true });
   return true;
 }
+
+export interface SessionAliasOptions {
+  session?: string;
+}
+
+export interface SessionAliasDependencies {
+  attachSession: (sessionId: string) => Promise<void>;
+}
+
+const defaultSessionDeps: SessionAliasDependencies = {
+  attachSession,
+};
+
+/**
+ * Hidden root-level alias to attach to a stored session (`--session <id>`).
+ * Returns true when the alias was handled so callers can short-circuit.
+ */
+export async function handleSessionAlias(
+  options: SessionAliasOptions,
+  deps: SessionAliasDependencies = defaultSessionDeps,
+): Promise<boolean> {
+  if (!options.session) {
+    return false;
+  }
+  await deps.attachSession(options.session);
+  return true;
+}

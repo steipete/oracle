@@ -109,6 +109,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     await Network.clearBrowserCookies();
 
     if (config.cookieSync) {
+      logger(
+        'Heads-up: macOS may prompt for your Keychain password to read Chrome cookies; approve it to stay signed in or rerun with --browser-no-cookie-sync / --browser-allow-cookie-errors.',
+      );
       const cookieCount = await syncCookies(
         Network,
         config.url,
@@ -215,7 +218,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       logger(`Chrome window closed before completion: ${normalizedError.message}`);
       logger(normalizedError.stack);
     }
-    throw new Error('Chrome window closed before Oracle finished. Please keep it open until completion.', {
+    throw new Error('Chrome window closed before oracle finished. Please keep it open until completion.', {
       cause: normalizedError,
     });
   } finally {

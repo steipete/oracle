@@ -12,6 +12,11 @@ vi.mock('../../src/browser/sessionRunner.ts', () => ({
   runBrowserSessionExecution: vi.fn(),
 }));
 
+vi.mock('../../src/cli/notifier.ts', () => ({
+  sendSessionNotification: vi.fn(),
+  deriveNotificationSettingsFromMetadata: vi.fn(() => ({ enabled: true, sound: false })),
+}));
+
 vi.mock('../../src/sessionManager.ts', async () => {
   const actual = await vi.importActual<typeof import('../../src/sessionManager.ts')>(
     '../../src/sessionManager.ts',
@@ -28,6 +33,7 @@ import { BrowserAutomationError, FileValidationError, OracleResponseError, Oracl
 import type { OracleResponse, RunOracleResult } from '../../src/oracle.ts';
 import { runBrowserSessionExecution } from '../../src/browser/sessionRunner.ts';
 import { updateSessionMetadata } from '../../src/sessionManager.ts';
+import { sendSessionNotification } from '../../src/cli/notifier.ts';
 import { getCliVersion } from '../../src/version.ts';
 
 const baseSessionMeta: SessionMetadata = {
@@ -78,6 +84,7 @@ describe('performSessionRun', () => {
       usage: { totalTokens: 30 },
       response: expect.objectContaining({ responseId: expect.any(String) }),
     });
+    expect(vi.mocked(sendSessionNotification)).toHaveBeenCalled();
   });
 
   test('invokes browser runner when mode is browser', async () => {
@@ -85,6 +92,7 @@ describe('performSessionRun', () => {
       usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150 },
       elapsedMs: 2000,
       runtime: { chromePid: 123, chromePort: 9222, userDataDir: '/tmp/profile' },
+      answerText: 'Answer',
     });
 
     await performSessionRun({
@@ -99,6 +107,7 @@ describe('performSessionRun', () => {
     });
 
     expect(vi.mocked(runBrowserSessionExecution)).toHaveBeenCalled();
+    expect(vi.mocked(sendSessionNotification)).toHaveBeenCalled();
     const finalUpdate = vi.mocked(updateSessionMetadata).mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({
       status: 'completed',

@@ -27,6 +27,18 @@
         "${CHROME_DEVTOOLS_URL}"
       ],
       "lifecycle": "ephemeral"
+    },
+    "iterm": {
+      "command": "/Users/steipete/Projects/iterm-mcp/build/index.js"
+    },
+    "oracle": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@steipete/oracle",
+        "oracle-mcp"
+      ],
+      "root": ".."
     }
   },
   "imports": []

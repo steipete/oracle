@@ -24,8 +24,8 @@ describe('assembleBrowserPrompt', () => {
     expect(result.markdown).toContain('[SYSTEM]');
     expect(result.markdown).toContain('[USER]');
     expect(result.markdown).toContain('[FILE: a.txt]');
-    expect(result.composerText).toContain(DEFAULT_SYSTEM_PROMPT);
-    expect(result.composerText).toContain('Explain the bug');
+    expect(result.composerText).not.toContain(DEFAULT_SYSTEM_PROMPT);
+    expect(result.composerText).toBe('Explain the bug');
     expect(result.composerText).not.toContain('[SYSTEM]');
     expect(result.composerText).not.toContain('[USER]');
     expect(result.composerText).not.toContain('[FILE:');
@@ -95,8 +95,11 @@ describe('assembleBrowserPrompt', () => {
     });
 
     expect(result.attachments).toHaveLength(1);
-    expect(result.attachments[0]?.displayPath).toBe('attachments-bundle.txt');
+    expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
     expect(result.inlineFileCount).toBe(0);
-    expect(result.bundled).toEqual({ originalCount: 11, bundlePath: 'attachments-bundle.txt' });
+    expect(result.bundled).toEqual({
+      originalCount: 11,
+      bundlePath: result.attachments[0]?.displayPath,
+    });
   });
 });

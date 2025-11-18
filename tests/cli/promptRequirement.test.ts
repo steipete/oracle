@@ -21,4 +21,9 @@ describe('shouldRequirePrompt', () => {
     const requires = shouldRequirePrompt([], { preview: 'summary' });
     expect(requires).toBe(true);
   });
+
+  test('allows root --session flag without prompt', () => {
+    const requires = shouldRequirePrompt(['--session', 'abc123'], { session: 'abc123' });
+    expect(requires).toBe(false);
+  });
 });

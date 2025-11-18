@@ -17,6 +17,30 @@ if (!ENABLE_LIVE || !LIVE_API_KEY) {
 
   describe('OpenAI live smoke tests', () => {
     test(
+      'gpt-5.1 returns completed (no in_progress)',
+      async () => {
+        const result = await runOracle(
+          {
+            prompt: 'Reply with "live 5.1 completion" on one line.',
+            model: 'gpt-5.1',
+            silent: true,
+            background: false,
+            heartbeatIntervalMs: 0,
+            maxOutput: 64,
+          },
+          sharedDeps,
+        );
+        if (result.mode !== 'live') {
+          throw new Error('Expected live result');
+        }
+        const text = extractTextOutput(result.response).toLowerCase();
+        expect(text).toContain('live 5.1 completion');
+        expect(result.response.status ?? 'completed').toBe('completed');
+      },
+      5 * 60 * 1000,
+    );
+
+    test(
       'gpt-5-pro background flow eventually completes',
       async () => {
         const result = await runOracle(

@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Guardrail shim that wraps every command with the Bun runner; when behavior changes, record the note via ./scripts/committer \"docs: update AGENTS for runner\" \"AGENTS.md\" so fellow agents keep pace.
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+is_env_assignment() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*=.+ ]]
+}
+
+is_wrapper_command() {
+  case "$1" in
+    sudo|/usr/bin/sudo|env|/usr/bin/env|command|/bin/command|nohup|/usr/bin/nohup)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_primary_command() {
+  local tokens=("$@")
+  local index=0
+  local total=${#tokens[@]}
+
+  while (( index < total )); do
+    local candidate=${tokens[$index]}
+    [[ -z "$candidate" ]] && ((index++)) && continue
+    if is_env_assignment "$candidate"; then
+      ((index++))
+      continue
+    fi
+    break
+  done
+
+  while (( index < total )); do
+    local wrapper=${tokens[$index]}
+    if ! is_wrapper_command "$wrapper"; then
+      break
+    fi
+    ((index++))
+    while (( index < total )); do
+      local assignment=${tokens[$index]}
+      if is_env_assignment "$assignment"; then
+        ((index++))
+        continue
+      fi
+      break
+    done
+  done
+
+  if (( index < total )); then
+    printf '%s' "${tokens[$index]}"
+  fi
+}
+
+PRIMARY_COMMAND=$(resolve_primary_command "$@")
+if [[ -n "$PRIMARY_COMMAND" ]]; then
+  case "${PRIMARY_COMMAND##*/}" in
+    tmux)
+      exec "$@"
+      ;;
+  esac
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "[runner] bun is required but was not found on PATH." >&2
+  echo "[runner] Install Bun from https://bun.sh and retry." >&2
+  exit 1
+fi
+
+exec bun "$ROOT_DIR/scripts/runner.ts" "$@"

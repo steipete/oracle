@@ -1,9 +1,9 @@
-# Agent Instructions
-
 <shared>
 # AGENTS.md
 
 Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (state as of **November 15, 2025**). This document highlights the rules that show up again and again; still read the repo-local instructions before making changes.
+
+Usage: In repo copies, the shared content lives inside `<shared>…</shared>` and the tool list inside `<tools>…</tools>`. Keep those tagged blocks identical across repos; anything outside them is repo-local and can be customized freely.
 
 ## Codex Global Instructions
 - Keep the system-wide Codex guidance at `~/.codex/AGENTS.md` (the Codex home; override via `CODEX_HOME` if needed) so every task inherits these rules by default.
@@ -19,6 +19,8 @@ Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (sta
 - Stick to the package manager and runtime mandated by the repo (pnpm-only, bun-only, swift-only, go-only, etc.). Never swap in alternatives without approval.
 - When editing shared guardrail scripts (runners, committer helpers, browser tools, etc.), mirror the same change back into the `agent-scripts` folder so the canonical copy stays current.
 - Ask the user before adding dependencies, changing build tooling, or altering project-wide configuration.
+- When discussing dependencies, always provide a GitHub URL.
+- Keep the project’s `AGENTS.md` `<tools></tools>` block in sync with the full tool list from `TOOLS.md` so downstream repos get the latest tool descriptions.
 
 ### tmux & Long Tasks
 - Run any command that could hang (tests, servers, log streams, browser automation) inside tmux using the repository’s preferred entry point.
@@ -29,6 +31,7 @@ Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (sta
 - Before handing off work, run the full “green gate” for that repo (lint, type-check, tests, doc scripts, etc.). Follow the same command set humans run—no ad-hoc shortcuts.
 - Leave existing watchers running unless the owner tells you to stop them; keep their tmux panes healthy if you started them.
 - Treat every bug fix as a chance to add or extend automated tests that prove the behavior.
+- When someone asks to “fix CI,” use the GitHub CLI (`gh`) to inspect, rerun, and unblock failing workflows on GitHub until they are green.
 
 ### Code Quality & Naming
 - Refactor in place. Never create duplicate files with suffixes such as “V2”, “New”, or “Fixed”; update the canonical file and remove obsolete paths entirely.
@@ -38,11 +41,14 @@ Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (sta
 
 ### Git, Commits & Releases
 - Invoke git through the provided wrappers, especially for status, diffs, and commits. Only commit or push when the user asks you to do so.
+- To resolve a rebase, `git add`/`git commit` is allowed.
 - Follow the documented release or deployment checklists instead of inventing new steps.
+- Oracle release checklist lives at `docs/RELEASING.md`—run it before publishing.
 - Do not delete or rename unfamiliar files without double-checking with the user or the repo instructions.
 
 ### Documentation & Knowledge Capture
 - Update existing docs whenever your change affects them, including front-matter metadata if the repo’s `docs:list` tooling depends on it.
+- Whenever doing a large refactor, track work in `docs/refactor/<title><date>.md`, update it as you go, and delete it when the work is finished.
 - Only create new documentation when the user or local instructions explicitly request it; otherwise, edit the canonical file in place.
 - When you uncover a reproducible tooling or CI issue, record the repro steps and workaround in the designated troubleshooting doc for that repo.
 
@@ -71,30 +77,36 @@ Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (sta
 - When editing UI code, follow the established component patterns (Tailwind via helper utilities, TanStack Query for data flow, etc.) and keep files under the preferred size limit by extracting helpers proactively.
 
 Keep this master file up to date as you notice new rules that recur across repositories, and reflect those updates back into every workspace’s local guardrail documents.
+
 </shared>
 
-This repository relies on autonomous agents to run the `oracle` CLI safely. When you update the runner or CLI behavior, add a short note here so future agents inherit the latest expectations. These guidelines supplement the existing system/developer instructions.
+<tools>
+# TOOLS
 
-## Current Expectations
+Edit guidance: keep the actual tool list inside the `<tools></tools>` block below so downstream AGENTS syncs can copy the block contents verbatim (without wrapping twice).
 
-- **NPM publishes require explicit user approval per release.** Never publish to npm unless the user authorizes that specific release; one approval covers one publish only.
-- When a user pastes a CLI command that is failing and you implement a fix, only execute that command yourself as the *final* verification step. (Skip the rerun entirely if the command would be destructive or dangerous—ask the user instead.)
-- Browser runs now exist (`oracle --browser`). They spin up a Chrome helper process, log its PID in the session output, and shouldn't be combined with `--preview`. If you modify this flow, keep `docs/browser-mode.md` updated.
-- Browser mode now uploads every `--file` path individually via the ChatGPT composer (system/user text stays inline). The automation waits for uploads to finish before hitting submit. Use `--browser-inline-files` as a debug escape hatch when you need to fall back to pasting file contents, and keep this note + `docs/browser-mode.md` updated if the behavior changes.
-- **Commits go through `scripts/committer`** – whenever you need to stage/commit, run `./scripts/committer "your message" path/to/file1 path/to/file2`. Never call `git add`/`git commit` directly; the helper enforces the guardrails used across repos.
-- Browser mode inherits the `--model` flag as its picker target—pass strings like `--model "ChatGPT 5.1 Instant"` to hit UI-only variants; canonical API names still map to their default labels automatically. Cookie sync now defaults to Chrome's `"Default"` profile so you stay signed in unless you override it, and the run aborts if cookie copying fails (use the hidden `--browser-allow-cookie-errors` override only when you truly want to proceed logged out).
-- Headful debugging: if you need to inspect the live Chrome composer, run the browser command inside `tmux` with `--browser-keep-browser`, note the logged DevTools port, and hook up `chrome-devtools-mcp` (see `docs/manual-tests.md` for the full checklist).
-- Need ad‑hoc browser control? Use `pnpm tsx scripts/browser-tools.ts --help` for Mario Zechner–style start/nav/eval/screenshot tools before reaching for MCP servers.
-- Browser-mode token estimates now explicitly state when inline files are included or when attachments are excluded; leave that log line intact so users understand whether file uploads affected the count.
-- Use `--dry-run` when you just need token/file summaries—Commander now enforces `--prompt` automatically, and the dry-run output should show inline vs attachment handling for browser mode.
-- For local testing you can set `ORACLE_NO_DETACH=1` to keep the CLI runner inline instead of spawning a detached process (the integration suite relies on this).
-- **Always ask before changing tooling** – package installs, `pnpm approve-builds`, or swaps like `sqlite3` → `@vscode/sqlite3` require explicit user confirmation. Suggest the change and wait for approval before touching dependencies or system-wide configs.
-- **Interactive prompts** – when you must run an interactive command (e.g., `pnpm approve-builds`, `git rebase --interactive`), start a `tmux` session first (`tmux new -s oracle`) so the UI survives and the user can attach if needed.
-- **tmux etiquette** – tmux is how we detect runs that hang. Never wrap it in polling loops like `while tmux has-session …`; that defeats the safety net. If you need to check progress, grab the pane output, `sleep`, and re-check manually instead of blocking the terminal with a loop.
-- **Unattended-friendly debugging** – every workflow should be end-to-end debuggable without babysitting. If you can’t make a run observable unattended (e.g., need a debugger port or special tooling), pause and tell the operator exactly what’s missing so they can unblock you instead of guessing.
-- **Release hygiene** – when prepping npm releases, follow `docs/release.md` rather than improvising. If anything in the checklist is unclear or blocked, surface it early.
-- **Respect existing files** – do not delete or rename folders/files you don’t recognize. Other agents (or humans) are working here; ask before removing shared artifacts like `config/`.
-- `oracle session --clear --hours <n>` (hidden alias: `--clean`) now mirrors `oracle status --clear` for pruning cached runs, and `oracle status` prints a tip pointing to it—use that flag instead of manipulating `~/.oracle` manually.
-- CLI + tooling should read the version via `getCliVersion()` (`src/version.ts`) instead of hard-coding strings; the helper also powers the new `oracle --version` regression test.
-- GPT-5 Pro API sessions now force `background: true` + `store: true`, poll for up to 30 minutes, and auto-log when the CLI reconnects after a transport drop. Non-Pro models still stream in the foreground.
-- Whenever you are stuck, consider asking the oracle: `npx @steipete/oracle --prompt "Explain what this error means" --file path/to/log.txt`.
+<tools>
+- `runner`: Bash shim that routes every command through Bun guardrails (timeouts, git policy, safe deletes).
+- `git` / `bin/git`: Git shim that forces git through the guardrails; use `./git --help` to inspect.
+- `scripts/committer`: Stages the files you list and creates the commit safely.
+- `scripts/docs-list.ts`: Walks `docs/`, enforces front-matter, prints summaries; run `tsx scripts/docs-list.ts`.
+- `bin/browser-tools`: Compiled Chrome helper for remote control/screenshot/eval—use the binary (`bin/browser-tools --help`). Source lives in `scripts/browser-tools.ts`; edit there before rebuilding.
+- `scripts/runner.ts`: Bun implementation backing `runner`; run `bun scripts/runner.ts --help`.
+- `bin/sleep`: Sleep shim that enforces the 30s ceiling; run `bin/sleep --help`.
+- `xcp`: Xcode project/workspace helper; run `xcp --help`.
+- `oracle`: CLI to bundle prompt + files for another AI; run `npx -y @steipete/oracle --help`.
+- `mcporter`: MCP launcher for any registered MCP server; run `npx mcporter`.
+- `iterm`: Full TTY terminal via MCP; run `npx mcporter iterm`.
+- `firecrawl`: MCP-powered site fetcher to Markdown; run `npx mcporter firecrawl`.
+- `XcodeBuildMCP`: MCP wrapper around Xcode tooling; run `npx mcporter XcodeBuildMCP`.
+- `gh`: GitHub CLI for PRs, CI logs, releases, repo queries; run `gh help`.
+</tools>
+
+</tools>
+
+Guideline: ignore any project folders whose names either contain "copy" or end with a number (e.g., `sweetistics copy`, `sweetistics2`, `VibeMeter3`).
+
+## Project-specific notes (Oracle CLI)
+
+- **Live smoke tests:** OpenAI live tests are opt-in. Run `ORACLE_LIVE_TEST=1 pnpm vitest run tests/live/openai-live.test.ts` with a real `OPENAI_API_KEY` when you want to cover the background path. gpt-5-pro can take ~10 minutes.
+- **Wait defaults:** gpt-5-pro API runs now detach by default; use `--wait` to stay attached. gpt-5.1 and browser runs block by default. Every run prints `oracle session <id>` for reattach.

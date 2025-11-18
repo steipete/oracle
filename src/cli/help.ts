@@ -66,8 +66,9 @@ function renderHelpBanner(version: string, colors: HelpColors): string {
 
 function renderHelpFooter(program: Command, colors: HelpColors): string {
   const tips = [
-    `${colors.bullet('•')} Attach source files for best results, but keep total input under ~196k tokens.`,
-    `${colors.bullet('•')} The model has no built-in knowledge of your project—open with the architecture, key components, and why you’re asking.`,
+    `${colors.bullet('•')} Attach lots of source (whole directories beat single files) and keep total input under ~196k tokens.`,
+    `${colors.bullet('•')} Oracle starts empty—open with a short project briefing (stack, services, build steps), spell out the question and prior attempts, and why it matters; the more explanation and context you provide, the better the response will be.`,
+    `${colors.bullet('•')} Oracle is one-shot: it does not remember prior runs, so start fresh each time with full context.`,
     `${colors.bullet('•')} Run ${colors.accent('--files-report')} to inspect token spend before hitting the API.`,
     `${colors.bullet('•')} Non-preview runs spawn detached sessions so they keep streaming even if your terminal closes — reattach anytime via ${colors.accent('pnpm oracle session <slug>')}.`,
     `${colors.bullet('•')} Set a memorable 3–5 word slug via ${colors.accent('--slug "<words>"')} to keep session IDs tidy.`,

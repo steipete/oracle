@@ -17,6 +17,7 @@ export interface BrowserExecutionResult {
   };
   elapsedMs: number;
   runtime: BrowserRuntimeMetadata;
+  answerText: string;
 }
 
 interface RunBrowserSessionArgs {
@@ -54,7 +55,7 @@ export async function runBrowserSessionExecution(
       if (promptArtifacts.bundled) {
         log(
           chalk.yellow(
-            `[browser] More than 10 files provided; bundled ${promptArtifacts.bundled.originalCount} files into ${promptArtifacts.bundled.bundlePath} to satisfy ChatGPT upload limits.`,
+            `[browser] Bundled ${promptArtifacts.bundled.originalCount} files into ${promptArtifacts.bundled.bundlePath}.`,
           ),
         );
       }
@@ -62,7 +63,7 @@ export async function runBrowserSessionExecution(
       log(chalk.dim('[verbose] Browser inline file fallback enabled (pasting file contents).'));
     }
   }
-  const headerLine = `Oracle (${cliVersion}) launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens`;
+  const headerLine = `oracle (${cliVersion}) launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens`;
   const automationLogger: BrowserLogger = ((message?: string) => {
     if (typeof message === 'string') {
       log(message);
@@ -95,6 +96,7 @@ export async function runBrowserSessionExecution(
     log(browserResult.answerMarkdown || browserResult.answerText || chalk.dim('(no text output)'));
     log('');
   }
+  const answerText = browserResult.answerMarkdown || browserResult.answerText || '';
   const usage = {
     inputTokens: promptArtifacts.estimatedInputTokens,
     outputTokens: browserResult.answerTokens,
@@ -115,5 +117,6 @@ export async function runBrowserSessionExecution(
       chromePort: browserResult.chromePort,
       userDataDir: browserResult.userDataDir,
     },
+    answerText,
   };
 }

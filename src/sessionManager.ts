@@ -66,6 +66,7 @@ export interface StoredRunOptions {
   verbose?: boolean;
   heartbeatIntervalMs?: number;
   browserInlineFiles?: boolean;
+  browserBundleFiles?: boolean;
   background?: boolean;
 }
 
@@ -77,6 +78,7 @@ export interface SessionMetadata {
   model?: string;
   cwd?: string;
   options: StoredRunOptions;
+  notifications?: SessionNotifications;
   startedAt?: string;
   completedAt?: string;
   mode?: SessionMode;
@@ -85,6 +87,7 @@ export interface SessionMetadata {
     outputTokens: number;
     reasoningTokens: number;
     totalTokens: number;
+    cost?: number;
   };
   errorMessage?: string;
   elapsedMs?: number;
@@ -92,6 +95,11 @@ export interface SessionMetadata {
   response?: SessionResponseMetadata;
   transport?: SessionTransportMetadata;
   error?: SessionUserErrorMetadata;
+}
+
+export interface SessionNotifications {
+  enabled: boolean;
+  sound: boolean;
 }
 
 interface SessionLogWriter {
@@ -109,6 +117,7 @@ interface InitializeSessionOptions extends StoredRunOptions {
 const ORACLE_HOME = process.env.ORACLE_HOME_DIR ?? path.join(os.homedir(), '.oracle');
 const SESSIONS_DIR = path.join(ORACLE_HOME, 'sessions');
 const MAX_STATUS_LIMIT = 1000;
+const ZOMBIE_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_SLUG = 'session';
 const MAX_SLUG_WORDS = 5;
 const MIN_CUSTOM_SLUG_WORDS = 3;
@@ -183,7 +192,11 @@ async function ensureUniqueSessionId(baseSlug: string): Promise<string> {
   return candidate;
 }
 
-export async function initializeSession(options: InitializeSessionOptions, cwd: string): Promise<SessionMetadata> {
+export async function initializeSession(
+  options: InitializeSessionOptions,
+  cwd: string,
+  notifications?: SessionNotifications,
+): Promise<SessionMetadata> {
   await ensureSessionStorage();
   const baseSlug = createSessionId(options.prompt || DEFAULT_SLUG, options.slug);
   const sessionId = await ensureUniqueSessionId(baseSlug);
@@ -200,6 +213,7 @@ export async function initializeSession(options: InitializeSessionOptions, cwd: 
     cwd,
     mode,
     browser: browserConfig ? { config: browserConfig } : undefined,
+    notifications,
     options: {
       prompt: options.prompt,
       file: options.file ?? [],
@@ -215,6 +229,7 @@ export async function initializeSession(options: InitializeSessionOptions, cwd: 
       verbose: options.verbose,
       heartbeatIntervalMs: options.heartbeatIntervalMs,
       browserInlineFiles: options.browserInlineFiles,
+      browserBundleFiles: options.browserBundleFiles,
       background: options.background,
     },
   };
@@ -227,7 +242,8 @@ export async function initializeSession(options: InitializeSessionOptions, cwd: 
 export async function readSessionMetadata(sessionId: string): Promise<SessionMetadata | null> {
   try {
     const raw = await fs.readFile(metaPath(sessionId), 'utf8');
-    return JSON.parse(raw) as SessionMetadata;
+    const parsed = JSON.parse(raw) as SessionMetadata;
+    return await markZombie(parsed, { persist: false }); // transient check; do not touch disk on single read
   } catch {
     return null;
   }
@@ -260,8 +276,9 @@ export async function listSessionsMetadata(): Promise<SessionMetadata[]> {
   const entries = await fs.readdir(SESSIONS_DIR).catch(() => []);
   const metas: SessionMetadata[] = [];
   for (const entry of entries) {
-    const meta = await readSessionMetadata(entry);
+    let meta = await readSessionMetadata(entry);
     if (meta) {
+      meta = await markZombie(meta, { persist: true }); // keep stored metadata consistent with zombie detection
       metas.push(meta);
     }
   }
@@ -288,6 +305,15 @@ export async function readSessionLog(sessionId: string): Promise<string> {
     return await fs.readFile(logPath(sessionId), 'utf8');
   } catch {
     return '';
+  }
+}
+
+export async function readSessionRequest(sessionId: string): Promise<StoredRunOptions | null> {
+  try {
+    const raw = await fs.readFile(requestPath(sessionId), 'utf8');
+    return JSON.parse(raw) as StoredRunOptions;
+  } catch {
+    return null;
   }
 }
 
@@ -336,3 +362,61 @@ export async function wait(ms: number): Promise<void> {
 }
 
 export { ORACLE_HOME, SESSIONS_DIR, MAX_STATUS_LIMIT };
+export { ZOMBIE_MAX_AGE_MS };
+
+export async function getSessionPaths(sessionId: string): Promise<{
+  dir: string;
+  metadata: string;
+  log: string;
+  request: string;
+}> {
+  const dir = sessionDir(sessionId);
+  const metadata = metaPath(sessionId);
+  const log = logPath(sessionId);
+  const request = requestPath(sessionId);
+
+  const required = [metadata, log, request];
+  const missing: string[] = [];
+  for (const file of required) {
+    if (!(await fileExists(file))) {
+      missing.push(path.basename(file));
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Session "${sessionId}" is missing: ${missing.join(', ')}`);
+  }
+
+  return { dir, metadata, log, request };
+}
+
+async function markZombie(meta: SessionMetadata, { persist }: { persist: boolean }): Promise<SessionMetadata> {
+  if (!isZombie(meta)) {
+    return meta;
+  }
+  const updated: SessionMetadata = {
+    ...meta,
+    status: 'error',
+    errorMessage: 'Session marked as zombie (>30m stale)',
+    completedAt: new Date().toISOString(),
+  };
+  if (persist) {
+    await fs.writeFile(metaPath(meta.id), JSON.stringify(updated, null, 2), 'utf8');
+  }
+  return updated;
+}
+
+function isZombie(meta: SessionMetadata): boolean {
+  if (meta.status !== 'running') {
+    return false;
+  }
+  const reference = meta.startedAt ?? meta.createdAt;
+  if (!reference) {
+    return false;
+  }
+  const startedMs = Date.parse(reference);
+  if (Number.isNaN(startedMs)) {
+    return false;
+  }
+  return Date.now() - startedMs > ZOMBIE_MAX_AGE_MS;
+}

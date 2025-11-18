@@ -6,13 +6,18 @@ import {
   listSessionsMetadata,
   readSessionLog,
   readSessionMetadata,
+  readSessionRequest,
   SESSIONS_DIR,
   wait,
 } from '../sessionManager.js';
 import type { OracleResponseMetadata } from '../oracle.js';
+import { renderMarkdownAnsi } from './markdownRenderer.js';
+import { formatElapsed, formatUSD } from '../oracle/format.js';
+import { MODEL_CONFIGS } from '../oracle.js';
 
-const isTty = process.stdout.isTTY;
-const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
+const isTty = (): boolean => Boolean(process.stdout.isTTY);
+const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
+export const MAX_RENDER_BYTES = 200_000;
 
 export interface ShowStatusOptions {
   hours: number;
@@ -36,12 +41,17 @@ export async function showStatus({ hours, includeAll, limit, showExamples = fals
     return;
   }
   console.log(chalk.bold('Recent Sessions'));
+  console.log(chalk.dim('Timestamp             Chars  Cost  Status     Model      ID'));
   for (const entry of entries) {
     const statusRaw = (entry.status || 'unknown').padEnd(9);
     const status = richTty ? colorStatus(entry.status ?? 'unknown', statusRaw) : statusRaw;
     const model = (entry.model || 'n/a').padEnd(9);
-    const created = entry.createdAt.replace('T', ' ').replace('Z', '');
-    console.log(`${created} | ${status} | ${model} | ${entry.id}`);
+    const created = formatTimestamp(entry.createdAt);
+    const chars = entry.options?.prompt?.length ?? entry.promptPreview?.length ?? 0;
+    const charLabel = chars > 0 ? String(chars).padStart(5) : '    -';
+    const costValue = resolveCost(entry);
+    const costLabel = costValue != null ? formatCostTable(costValue) : '     -';
+    console.log(`${created} | ${charLabel} | ${costLabel} | ${status} | ${model} | ${entry.id}`);
   }
   if (truncated) {
     console.log(
@@ -70,7 +80,19 @@ function colorStatus(status: string, padded: string): string {
 
 export interface AttachSessionOptions {
   suppressMetadata?: boolean;
+  renderMarkdown?: boolean;
+  renderPrompt?: boolean;
 }
+
+type LiveRenderState = {
+  pending: string;
+  inFence: boolean;
+  fenceDelimiter?: string;
+  inTable: boolean;
+  renderedBytes: number;
+  fallback: boolean;
+  noticedFallback: boolean;
+};
 
 export async function attachSession(sessionId: string, options?: AttachSessionOptions): Promise<void> {
   const metadata = await readSessionMetadata(sessionId);
@@ -80,6 +102,8 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
     return;
   }
   const initialStatus = metadata.status;
+  const wantsRender = Boolean(options?.renderMarkdown);
+  const isVerbose = Boolean(process.env.ORACLE_VERBOSE_RENDER);
   if (!options?.suppressMetadata) {
     const reattachLine = buildReattachLine(metadata);
     if (reattachLine) {
@@ -103,19 +127,116 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
   }
 
   const shouldTrimIntro = initialStatus === 'completed' || initialStatus === 'error';
+  if (options?.renderPrompt !== false) {
+    const prompt = await readStoredPrompt(sessionId);
+    if (prompt) {
+      console.log(chalk.bold('Prompt:'));
+      console.log(renderMarkdownAnsi(prompt));
+      console.log(dim('---'));
+    }
+  }
   if (shouldTrimIntro) {
     const fullLog = await readSessionLog(sessionId);
     const trimmed = trimBeforeFirstAnswer(fullLog);
-    process.stdout.write(trimmed);
+    const size = Buffer.byteLength(trimmed, 'utf8');
+    const canRender = wantsRender && isTty() && size <= MAX_RENDER_BYTES;
+    if (wantsRender && size > MAX_RENDER_BYTES) {
+      const msg = `Render skipped (log too large: ${size} bytes > ${MAX_RENDER_BYTES}). Showing raw text.`;
+      console.log(dim(msg));
+      if (isVerbose) {
+        console.log(dim(`Verbose: renderMarkdown=true tty=${isTty()} size=${size}`));
+      }
+    } else if (wantsRender && !isTty()) {
+      const msg = 'Render requested but stdout is not a TTY; showing raw text.';
+      console.log(dim(msg));
+      if (isVerbose) {
+        console.log(dim(`Verbose: renderMarkdown=true tty=${isTty()} size=${size}`));
+      }
+    }
+    if (canRender) {
+      if (isVerbose) {
+        console.log(dim(`Verbose: rendering markdown (size=${size}, tty=${isTty()})`));
+      }
+      process.stdout.write(renderMarkdownAnsi(trimmed));
+    } else {
+      process.stdout.write(trimmed);
+    }
+    const summary = formatCompletionSummary(metadata, { includeSlug: true });
+    if (summary) {
+      console.log(`\n${chalk.green.bold(summary)}`);
+    }
     return;
   }
 
+  if (wantsRender) {
+    console.log(dim('Render will apply after completion; streaming raw text meanwhile...'));
+    if (isVerbose) {
+      console.log(dim(`Verbose: streaming phase renderMarkdown=true tty=${isTty()}`));
+    }
+  }
+
+  const liveRenderState: LiveRenderState | null = wantsRender && isTty()
+    ? { pending: '', inFence: false, inTable: false, renderedBytes: 0, fallback: false, noticedFallback: false }
+    : null;
+
   let lastLength = 0;
+  const renderLiveChunk = (chunk: string): void => {
+    if (!liveRenderState || chunk.length === 0) {
+      process.stdout.write(chunk);
+      return;
+    }
+    if (liveRenderState.fallback) {
+      process.stdout.write(chunk);
+      return;
+    }
+
+    liveRenderState.pending += chunk;
+    const { chunks, remainder } = extractRenderableChunks(liveRenderState.pending, liveRenderState);
+    liveRenderState.pending = remainder;
+
+    for (const candidate of chunks) {
+      const projected = liveRenderState.renderedBytes + Buffer.byteLength(candidate, 'utf8');
+      if (projected > MAX_RENDER_BYTES) {
+        if (!liveRenderState.noticedFallback) {
+          console.log(dim(`Render skipped (log too large: > ${MAX_RENDER_BYTES} bytes). Showing raw text.`));
+          liveRenderState.noticedFallback = true;
+        }
+        liveRenderState.fallback = true;
+        process.stdout.write(candidate + liveRenderState.pending);
+        liveRenderState.pending = '';
+        return;
+      }
+      process.stdout.write(renderMarkdownAnsi(candidate));
+      liveRenderState.renderedBytes += Buffer.byteLength(candidate, 'utf8');
+    }
+  };
+
+  const flushRemainder = (): void => {
+    if (!liveRenderState || liveRenderState.fallback) {
+      return;
+    }
+    if (liveRenderState.pending.length === 0) {
+      return;
+    }
+    const text = liveRenderState.pending;
+    liveRenderState.pending = '';
+    const projected = liveRenderState.renderedBytes + Buffer.byteLength(text, 'utf8');
+    if (projected > MAX_RENDER_BYTES) {
+      if (!liveRenderState.noticedFallback) {
+        console.log(dim(`Render skipped (log too large: > ${MAX_RENDER_BYTES} bytes). Showing raw text.`));
+      }
+      process.stdout.write(text);
+      liveRenderState.fallback = true;
+      return;
+    }
+    process.stdout.write(renderMarkdownAnsi(text));
+  };
+
   const printNew = async () => {
     const text = await readSessionLog(sessionId);
     const nextChunk = text.slice(lastLength);
     if (nextChunk.length > 0) {
-      process.stdout.write(nextChunk);
+      renderLiveChunk(nextChunk);
       lastLength = text.length;
     }
   };
@@ -130,14 +251,22 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
     }
     if (latest.status === 'completed' || latest.status === 'error') {
       await printNew();
+      flushRemainder();
       if (!options?.suppressMetadata) {
         if (latest.status === 'error' && latest.errorMessage) {
           console.log('\nResult:');
           console.log(`Session failed: ${latest.errorMessage}`);
         }
-        if (latest.usage && initialStatus === 'running') {
-          const usage = latest.usage;
-          console.log(`\nFinished (tok i/o/r/t: ${usage.inputTokens}/${usage.outputTokens}/${usage.reasoningTokens}/${usage.totalTokens})`);
+        if (latest.status === 'completed' && latest.usage) {
+          const summary = formatCompletionSummary(latest, { includeSlug: true });
+          if (summary) {
+            console.log(`\n${chalk.green.bold(summary)}`);
+          } else {
+            const usage = latest.usage;
+            console.log(
+              `\nFinished (tok i/o/r/t: ${usage.inputTokens}/${usage.outputTokens}/${usage.reasoningTokens}/${usage.totalTokens})`,
+            );
+          }
         }
       }
       break;
@@ -274,4 +403,115 @@ function printStatusExamples(): void {
   console.log(`${chalk.bold('  oracle session <session-id>')}`);
   console.log(dim('    Attach to a specific running/completed session to stream its output.'));
   console.log(dim(CLEANUP_TIP));
+}
+
+function extractRenderableChunks(text: string, state: LiveRenderState): { chunks: string[]; remainder: string } {
+  const chunks: string[] = [];
+  let buffer = '';
+  const lines = text.split(/(\n)/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const segment = lines[i];
+    if (segment === '\n') {
+      buffer += segment;
+      // Detect code fences
+      const prev = lines[i - 1] ?? '';
+      const fenceMatch = prev.match(/^(\s*)(`{3,}|~{3,})(.*)$/);
+      if (!state.inFence && fenceMatch) {
+        state.inFence = true;
+        state.fenceDelimiter = fenceMatch[2];
+      } else if (state.inFence && state.fenceDelimiter && prev.startsWith(state.fenceDelimiter)) {
+        state.inFence = false;
+        state.fenceDelimiter = undefined;
+      }
+
+      const trimmed = prev.trim();
+      if (!state.inFence) {
+        if (!state.inTable && trimmed.startsWith('|') && trimmed.includes('|')) {
+          state.inTable = true;
+        }
+        if (state.inTable && trimmed === '') {
+          state.inTable = false;
+        }
+      }
+
+      const safeBreak = !state.inFence && !state.inTable && trimmed === '';
+      if (safeBreak) {
+        chunks.push(buffer);
+        buffer = '';
+      }
+      continue;
+    }
+    buffer += segment;
+  }
+  return { chunks, remainder: buffer };
+}
+
+function formatTimestamp(iso: string): string {
+  const date = new Date(iso);
+  const locale = 'en-US';
+  const opts: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: undefined,
+    hour12: true,
+  };
+  const formatted = date.toLocaleString(locale, opts);
+  return formatted.replace(/(, )(\d:)/, '$1 $2');
+}
+
+export function formatCompletionSummary(
+  metadata: SessionMetadata,
+  options: { includeSlug?: boolean } = {},
+): string | null {
+  if (!metadata.usage || metadata.elapsedMs == null) {
+    return null;
+  }
+  const modeLabel = metadata.mode === 'browser' ? `${metadata.model ?? 'n/a'}[browser]` : metadata.model ?? 'n/a';
+  const usage = metadata.usage;
+  const cost = metadata.mode === 'browser' ? null : resolveCost(metadata);
+  const costPart = cost != null ? ` | ${formatUSD(cost)}` : '';
+  const tokensDisplay = `${usage.inputTokens}/${usage.outputTokens}/${usage.reasoningTokens}/${usage.totalTokens}`;
+  const filesCount = metadata.options?.file?.length ?? 0;
+  const filesPart = filesCount > 0 ? ` | files=${filesCount}` : '';
+  const slugPart = options.includeSlug ? ` | slug=${metadata.id}` : '';
+  return `Finished in ${formatElapsed(metadata.elapsedMs)} (${modeLabel}${costPart} | tok(i/o/r/t)=${tokensDisplay}${filesPart}${slugPart})`;
+}
+
+function resolveCost(metadata: SessionMetadata): number | null {
+  if (metadata.mode === 'browser') {
+    return null;
+  }
+  if (metadata.usage?.cost != null) {
+    return metadata.usage.cost;
+  }
+  if (!metadata.model || !metadata.usage) {
+    return null;
+  }
+  const pricing = MODEL_CONFIGS[metadata.model as keyof typeof MODEL_CONFIGS]?.pricing;
+  if (!pricing) {
+    return null;
+  }
+  const input = metadata.usage.inputTokens ?? 0;
+  const output = metadata.usage.outputTokens ?? 0;
+  const cost = input * pricing.inputPerToken + output * pricing.outputPerToken;
+  return cost > 0 ? cost : null;
+}
+
+function formatCostTable(cost: number): string {
+  return `$${cost.toFixed(3)}`.padStart(7);
+}
+
+async function readStoredPrompt(sessionId: string): Promise<string | null> {
+  const request = await readSessionRequest(sessionId);
+  if (request?.prompt && request.prompt.trim().length > 0) {
+    return request.prompt;
+  }
+  const meta = await readSessionMetadata(sessionId);
+  if (meta?.options?.prompt && meta.options.prompt.trim().length > 0) {
+    return meta.options.prompt;
+  }
+  return null;
 }

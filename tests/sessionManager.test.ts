@@ -123,6 +123,18 @@ describe('session lifecycle', () => {
     expect(first.id).toBe('alpha-beta-gamma');
     expect(second.id).toBe('alpha-beta-gamma-2');
   });
+
+  test('marks stale running sessions as zombies after 30 minutes', async () => {
+    const meta = await sessionModule.initializeSession({ prompt: 'Zombie', model: 'gpt-5-pro' }, '/tmp/cwd');
+    const staleStarted = new Date(Date.now() - sessionModule.ZOMBIE_MAX_AGE_MS - 60_000).toISOString();
+    await sessionModule.updateSessionMetadata(meta.id, { status: 'running', startedAt: staleStarted });
+    const listed = await sessionModule.listSessionsMetadata();
+    const zombie = listed.find((m) => m.id === meta.id);
+    expect(zombie?.status).toBe('error');
+    expect(zombie?.errorMessage).toMatch(/zombie/i);
+    const persisted = await sessionModule.readSessionMetadata(meta.id);
+    expect(persisted?.status).toBe('error');
+  });
 });
 
 describe('session listing and filtering', () => {

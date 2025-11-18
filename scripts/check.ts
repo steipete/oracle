@@ -1,7 +1,14 @@
 #!/usr/bin/env bun
 import process from 'node:process';
 
-type BunBuildConfig = Parameters<typeof Bun.build>[0] & { write?: boolean };
+type BunBuildConfig = {
+  entrypoints: string[];
+  outdir?: string;
+  target?: string;
+  minify?: boolean;
+  write?: boolean;
+  sourcemap?: 'inline' | 'external' | 'none';
+};
 
 const buildConfig: BunBuildConfig = {
   entrypoints: ['./bin/oracle-cli.js'],

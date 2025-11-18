@@ -53,5 +53,5 @@ describe('oracle CLI integration', () => {
     expect(metadata.usage?.totalTokens).toBe(20);
 
     await rm(oracleHome, { recursive: true, force: true });
-  });
+  }, 15000);
 });

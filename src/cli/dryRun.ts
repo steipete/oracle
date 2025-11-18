@@ -8,6 +8,7 @@ import {
   getFileTokenStats,
   printFileTokenStats,
   type RunOracleOptions,
+  type PreviewMode,
 } from '../oracle.js';
 import { assembleBrowserPrompt, type BrowserPromptArtifacts } from '../browser/prompt.js';
 import type { BrowserAttachment } from '../browser/types.js';
@@ -102,21 +103,77 @@ async function runBrowserDryRun(
   const suffix = buildTokenEstimateSuffix(artifacts);
   const headerLine = `[dry-run] Oracle (${version}) would launch browser mode (${runOptions.model}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
   log(chalk.cyan(headerLine));
-  logBrowserFileSummary(artifacts, log);
+  logBrowserFileSummary(artifacts, log, 'dry-run');
 }
 
-function logBrowserFileSummary(artifacts: BrowserPromptArtifacts, log: (message: string) => void) {
+function logBrowserFileSummary(artifacts: BrowserPromptArtifacts, log: (message: string) => void, label: string) {
   if (artifacts.attachments.length > 0) {
-    log(chalk.bold('[dry-run] Attachments to upload:'));
+    const prefix = artifacts.bundled ? `[${label}] Bundled upload:` : `[${label}] Attachments to upload:`;
+    log(chalk.bold(prefix));
     artifacts.attachments.forEach((attachment: BrowserAttachment) => {
       log(`  • ${formatAttachmentLabel(attachment)}`);
     });
+    if (artifacts.bundled) {
+      log(
+        chalk.dim(
+          `  (bundled ${artifacts.bundled.originalCount} files into ${artifacts.bundled.bundlePath})`,
+        ),
+      );
+    }
     return;
   }
   if (artifacts.inlineFileCount > 0) {
-    log(chalk.bold('[dry-run] Inline file content:'));
+    log(chalk.bold(`[${label}] Inline file content:`));
     log(`  • ${artifacts.inlineFileCount} file${artifacts.inlineFileCount === 1 ? '' : 's'} pasted directly into the composer.`);
     return;
   }
-  log(chalk.dim('[dry-run] No files attached.'));
+  log(chalk.dim(`[${label}] No files attached.`));
+}
+
+export async function runBrowserPreview(
+  {
+    runOptions,
+    cwd,
+    version,
+    previewMode,
+    log,
+  }: {
+    runOptions: RunOracleOptions;
+    cwd: string;
+    version: string;
+    previewMode: PreviewMode;
+    log: (message: string) => void;
+  },
+  deps: DryRunDeps = {},
+): Promise<void> {
+  const assemblePromptImpl = deps.assembleBrowserPromptImpl ?? assembleBrowserPrompt;
+  const artifacts = await assemblePromptImpl(runOptions, { cwd });
+  const suffix = buildTokenEstimateSuffix(artifacts);
+  const headerLine = `[preview] Oracle (${version}) browser mode (${runOptions.model}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
+  log(chalk.cyan(headerLine));
+  logBrowserFileSummary(artifacts, log, 'preview');
+  if (previewMode === 'json' || previewMode === 'full') {
+    const attachmentSummary = artifacts.attachments.map((attachment) => ({
+      path: attachment.path,
+      displayPath: attachment.displayPath,
+      sizeBytes: attachment.sizeBytes,
+    }));
+    const previewPayload = {
+      model: runOptions.model,
+      engine: 'browser' as const,
+      composerText: artifacts.composerText,
+      attachments: attachmentSummary,
+      inlineFileCount: artifacts.inlineFileCount,
+      bundled: artifacts.bundled,
+      tokenEstimate: artifacts.estimatedInputTokens,
+    };
+    log('');
+    log(chalk.bold('Preview JSON'));
+    log(JSON.stringify(previewPayload, null, 2));
+  }
+  if (previewMode === 'full') {
+    log('');
+    log(chalk.bold('Composer Text'));
+    log(artifacts.composerText || chalk.dim('(empty prompt)'));
+  }
 }

@@ -18,6 +18,7 @@ import type {
 import { DEFAULT_SYSTEM_PROMPT, MODEL_CONFIGS, TOKENIZER_OPTIONS } from './config.js';
 import { readFiles } from './files.js';
 import { buildPrompt, buildRequestBody } from './request.js';
+import { estimateRequestTokens } from './tokenEstimate.js';
 import { formatElapsed, formatUSD } from './format.js';
 import { getFileTokenStats, printFileTokenStats } from './tokenStats.js';
 import {
@@ -29,6 +30,7 @@ import {
 } from './errors.js';
 import { createDefaultClientFactory } from './client.js';
 import { startHeartbeat } from '../heartbeat.js';
+import { startOscProgress } from './oscProgress.js';
 import { getCliVersion } from '../version.js';
 import { createFsAdapter } from './fsAdapter.js';
 const isTty = process.stdout.isTTY;
@@ -121,19 +123,23 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
 
   const systemPrompt = options.system?.trim() || DEFAULT_SYSTEM_PROMPT;
   const promptWithFiles = buildPrompt(options.prompt, files, cwd);
-  const tokenizerInput = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: promptWithFiles },
-  ];
-  const estimatedInputTokens = modelConfig.tokenizer(tokenizerInput, TOKENIZER_OPTIONS);
-  logVerbose(`Estimated tokens (prompt + files): ${estimatedInputTokens.toLocaleString()}`);
   const fileCount = files.length;
   const cliVersion = getCliVersion();
   const richTty = process.stdout.isTTY && chalk.level > 0;
   const headerModelLabel = richTty ? chalk.cyan(modelConfig.model) : modelConfig.model;
+  const requestBody = buildRequestBody({
+    modelConfig,
+    systemPrompt,
+    userPrompt: promptWithFiles,
+    searchEnabled,
+    maxOutputTokens: options.maxOutput,
+    background: useBackground,
+    storeResponse: useBackground,
+  });
+  const estimatedInputTokens = estimateRequestTokens(requestBody, modelConfig);
   const tokenLabel = richTty ? chalk.green(estimatedInputTokens.toLocaleString()) : estimatedInputTokens.toLocaleString();
   const fileLabel = richTty ? chalk.magenta(fileCount.toString()) : fileCount.toString();
-  const headerLine = `Oracle (${cliVersion}) consulting ${headerModelLabel}'s crystal ball with ${tokenLabel} tokens and ${fileLabel} files...`;
+  const headerLine = `oracle (${cliVersion}) consulting ${headerModelLabel}'s crystal ball with ${tokenLabel} tokens and ${fileLabel} files...`;
   const shouldReportFiles =
     (options.filesReport || fileTokenInfo.totalTokens > inputTokenBudget) && fileTokenInfo.stats.length > 0;
   if (!isPreview) {
@@ -153,15 +159,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     );
   }
 
-  const requestBody = buildRequestBody({
-    modelConfig,
-    systemPrompt,
-    userPrompt: promptWithFiles,
-    searchEnabled,
-    maxOutputTokens: options.maxOutput,
-    background: useBackground,
-    storeResponse: useBackground,
-  });
+  logVerbose(`Estimated tokens (request body): ${estimatedInputTokens.toLocaleString()}`);
 
   if (isPreview && previewMode) {
     if (previewMode === 'json' || previewMode === 'full') {
@@ -188,6 +186,11 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
 
   const openAiClient: ClientLike = client ?? clientFactory(apiKey);
   logVerbose('Dispatching request to OpenAI Responses API...');
+  const stopOscProgress = startOscProgress({
+    label: useBackground ? 'Waiting for OpenAI (background)' : 'Waiting for OpenAI',
+    targetMs: useBackground ? BACKGROUND_MAX_WAIT_MS : 10 * 60_000,
+    write,
+  });
 
   const runStart = now();
   let response: OracleResponse | null = null;
@@ -202,63 +205,68 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     }
   };
 
-  if (useBackground) {
-    response = await executeBackgroundResponse({
-      client: openAiClient,
-      requestBody,
-      log,
-      wait,
-      heartbeatIntervalMs: options.heartbeatIntervalMs,
-      now,
-    });
-    elapsedMs = now() - runStart;
-  } else {
-    const stream: ResponseStreamLike = await openAiClient.responses.stream(requestBody);
-    let heartbeatActive = false;
-    let stopHeartbeat: (() => void) | null = null;
-    const stopHeartbeatNow = () => {
-      if (!heartbeatActive) {
-        return;
-      }
-      heartbeatActive = false;
-      stopHeartbeat?.();
-      stopHeartbeat = null;
-    };
-    if (options.heartbeatIntervalMs && options.heartbeatIntervalMs > 0) {
-      heartbeatActive = true;
-      stopHeartbeat = startHeartbeat({
-        intervalMs: options.heartbeatIntervalMs,
-        log: (message) => log(message),
-        isActive: () => heartbeatActive,
-        makeMessage: (elapsedMs) => {
-          const elapsedText = formatElapsed(elapsedMs);
-          return `API connection active — ${elapsedText} elapsed. Expect up to ~10 min before GPT-5 responds.`;
-        },
+  try {
+    if (useBackground) {
+      response = await executeBackgroundResponse({
+        client: openAiClient,
+        requestBody,
+        log,
+        wait,
+        heartbeatIntervalMs: options.heartbeatIntervalMs,
+        now,
       });
-    }
-    try {
-      for await (const event of stream) {
-        if (event.type === 'response.output_text.delta') {
-          stopHeartbeatNow();
-          sawTextDelta = true;
-          ensureAnswerHeader();
-          if (!options.silent && typeof event.delta === 'string') {
-            write(event.delta);
+      elapsedMs = now() - runStart;
+    } else {
+      const stream: ResponseStreamLike = await openAiClient.responses.stream(requestBody);
+      let heartbeatActive = false;
+      let stopHeartbeat: (() => void) | null = null;
+      const stopHeartbeatNow = () => {
+        if (!heartbeatActive) {
+          return;
+        }
+        heartbeatActive = false;
+        stopHeartbeat?.();
+        stopHeartbeat = null;
+      };
+      if (options.heartbeatIntervalMs && options.heartbeatIntervalMs > 0) {
+        heartbeatActive = true;
+        stopHeartbeat = startHeartbeat({
+          intervalMs: options.heartbeatIntervalMs,
+          log: (message) => log(message),
+          isActive: () => heartbeatActive,
+          makeMessage: (elapsedMs) => {
+            const elapsedText = formatElapsed(elapsedMs);
+            return `API connection active — ${elapsedText} elapsed. Expect up to ~10 min before GPT-5 responds.`;
+          },
+        });
+      }
+      try {
+        for await (const event of stream) {
+          if (event.type === 'response.output_text.delta') {
+            stopOscProgress();
+            stopHeartbeatNow();
+            sawTextDelta = true;
+            ensureAnswerHeader();
+            if (!options.silent && typeof event.delta === 'string') {
+              write(event.delta);
+            }
           }
         }
+      } catch (streamError) {
+        if (typeof stream.abort === 'function') {
+          stream.abort();
+        }
+        stopHeartbeatNow();
+        const transportError = toTransportError(streamError);
+        log(chalk.yellow(describeTransportError(transportError)));
+        throw transportError;
       }
-    } catch (streamError) {
-      if (typeof stream.abort === 'function') {
-        stream.abort();
-      }
+      response = await stream.finalResponse();
       stopHeartbeatNow();
-      const transportError = toTransportError(streamError);
-      log(chalk.yellow(describeTransportError(transportError)));
-      throw transportError;
+      elapsedMs = now() - runStart;
     }
-    response = await stream.finalResponse();
-    stopHeartbeatNow();
-    elapsedMs = now() - runStart;
+  } finally {
+    stopOscProgress();
   }
 
   if (!response) {
@@ -268,15 +276,34 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   logVerbose(`Response status: ${response.status ?? 'completed'}`);
 
   if (response.status && response.status !== 'completed') {
-    const detail = response.error?.message || response.incomplete_details?.reason || response.status;
-    log(
-      chalk.yellow(
-        `OpenAI ended the run early (status=${response.status}${
-          response.incomplete_details?.reason ? `, reason=${response.incomplete_details.reason}` : ''
-        }).`,
-      ),
-    );
-    throw new OracleResponseError(`Response did not complete: ${detail}`, response);
+    // OpenAI can reply `in_progress` even after the stream closes; give it a brief grace poll.
+    if (response.id && response.status === 'in_progress') {
+      const polishingStart = now();
+      const pollIntervalMs = 2_000;
+      const maxWaitMs = 60_000;
+      log(chalk.dim('Response still in_progress; polling until completion...'));
+      // Short polling loop — we don't want to hang forever, just catch late finalization.
+      while (now() - polishingStart < maxWaitMs) {
+        await wait(pollIntervalMs);
+        const refreshed = await openAiClient.responses.retrieve(response.id);
+        if (refreshed.status === 'completed') {
+          response = refreshed;
+          break;
+        }
+      }
+    }
+
+    if (response.status !== 'completed') {
+      const detail = response.error?.message || response.incomplete_details?.reason || response.status;
+      log(
+        chalk.yellow(
+          `OpenAI ended the run early (status=${response.status}${
+            response.incomplete_details?.reason ? `, reason=${response.incomplete_details.reason}` : ''
+          }).`,
+        ),
+      );
+      throw new OracleResponseError(`Response did not complete: ${detail}`, response);
+    }
   }
 
   const answerText = extractTextOutput(response);
@@ -307,6 +334,14 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     .map((value, index) => formatTokenValue(value, usage, index))
     .join('/');
   statsParts.push(`tok(i/o/r/t)=${tokensDisplay}`);
+  const actualInput = usage.input_tokens;
+  if (actualInput !== undefined) {
+    const delta = actualInput - estimatedInputTokens;
+    const deltaText = delta === 0 ? '' : delta > 0 ? ` (+${delta.toLocaleString()})` : ` (${delta.toLocaleString()})`;
+    statsParts.push(
+      `est→actual=${estimatedInputTokens.toLocaleString()}→${actualInput.toLocaleString()}${deltaText}`,
+    );
+  }
   if (!searchEnabled) {
     statsParts.push('search=off');
   }
@@ -319,7 +354,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   return {
     mode: 'live',
     response,
-    usage: { inputTokens, outputTokens, reasoningTokens, totalTokens },
+    usage: { inputTokens, outputTokens, reasoningTokens, totalTokens, cost },
     elapsedMs,
   };
 }

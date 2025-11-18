@@ -171,7 +171,10 @@ program
     const { browser, page } = await getActivePage(port);
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filePath = path.join(os.tmpdir(), `screenshot-${timestamp}.png`);
+      const filePath = path.join(
+        os.tmpdir(),
+        `screenshot-${timestamp}.png`,
+      ) as `${string}.png`;
       await page.screenshot({ path: filePath });
       console.log(filePath);
     } finally {

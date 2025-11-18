@@ -89,6 +89,7 @@ export interface RunOracleOptions {
   verbose?: boolean;
   heartbeatIntervalMs?: number;
   browserInlineFiles?: boolean;
+  browserBundleFiles?: boolean;
   background?: boolean;
 }
 
@@ -97,6 +98,7 @@ export interface UsageSummary {
   outputTokens: number;
   reasoningTokens: number;
   totalTokens: number;
+  cost?: number;
 }
 
 export interface PreviewResult {

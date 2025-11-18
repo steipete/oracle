@@ -195,7 +195,7 @@ async function attemptSqliteRebuild(): Promise<boolean> {
   attemptedSqliteRebuild = true;
   if (process.env.ORACLE_ALLOW_SQLITE_REBUILD !== '1') {
     console.warn(
-      '[oracle] sqlite3 bindings missing. Set ORACLE_ALLOW_SQLITE_REBUILD=1 if you want Oracle to attempt an automatic rebuild, or run `pnpm rebuild chrome-cookies-secure sqlite3 keytar --workspace-root` manually.',
+      '[oracle] sqlite3 bindings missing. Set ORACLE_ALLOW_SQLITE_REBUILD=1 if you want oracle to attempt an automatic rebuild, or run `pnpm rebuild chrome-cookies-secure sqlite3 keytar --workspace-root` manually.',
     );
     return false;
   }

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { RunOracleOptions } from '../oracle.js';
-import { readFiles, createFileSections, DEFAULT_SYSTEM_PROMPT, MODEL_CONFIGS, TOKENIZER_OPTIONS } from '../oracle.js';
+import { readFiles, createFileSections, MODEL_CONFIGS, TOKENIZER_OPTIONS } from '../oracle.js';
 import type { BrowserAttachment } from './types.js';
 
 export interface BrowserPromptArtifacts {
@@ -29,7 +29,7 @@ export async function assembleBrowserPrompt(
   const files = await readFilesFn(runOptions.file ?? [], { cwd });
   const basePrompt = (runOptions.prompt ?? '').trim();
   const userPrompt = basePrompt;
-  const systemPrompt = runOptions.system?.trim() || DEFAULT_SYSTEM_PROMPT;
+  const systemPrompt = runOptions.system?.trim() || '';
   const sections = createFileSections(files, cwd);
   const lines = ['[SYSTEM]', systemPrompt, '', '[USER]', userPrompt, ''];
   sections.forEach((section) => {
@@ -65,7 +65,8 @@ export async function assembleBrowserPrompt(
       }));
 
   const MAX_BROWSER_ATTACHMENTS = 10;
-  if (!inlineFiles && attachments.length > MAX_BROWSER_ATTACHMENTS) {
+  const shouldBundle = !inlineFiles && (runOptions.browserBundleFiles || attachments.length > MAX_BROWSER_ATTACHMENTS);
+  if (shouldBundle) {
     const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), 'oracle-browser-bundle-'));
     const bundlePath = path.join(bundleDir, 'attachments-bundle.txt');
     const bundleLines: string[] = [];
@@ -79,7 +80,7 @@ export async function assembleBrowserPrompt(
     attachments.length = 0;
     attachments.push({
       path: bundlePath,
-      displayPath: 'attachments-bundle.txt',
+      displayPath: bundlePath,
       sizeBytes: Buffer.byteLength(bundleText, 'utf8'),
     });
   }
@@ -108,7 +109,7 @@ export async function assembleBrowserPrompt(
     inlineFileCount,
     tokenEstimateIncludesInlineFiles,
     bundled:
-      !inlineFiles && attachments.length === 1 && sections.length > MAX_BROWSER_ATTACHMENTS && attachments[0]?.displayPath
+      shouldBundle && attachments.length === 1 && attachments[0]?.displayPath
         ? { originalCount: sections.length, bundlePath: attachments[0].displayPath }
         : null,
   };
