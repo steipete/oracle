@@ -581,6 +581,36 @@ describe('runOracle file reports', () => {
     );
     expect(captured).toEqual([{ apiKey: 'sk-test', baseUrl: 'https://litellm.test/v1' }]);
   });
+
+  test('passes azure config to clientFactory', async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const captured: Array<{ apiKey: string; azure?: unknown }> = [];
+    const azureOptions = {
+      endpoint: 'https://my-azure.com/',
+      deployment: 'gpt-4-test',
+      apiVersion: '2024-01-01',
+    };
+
+    await runOracle(
+      {
+        prompt: 'Azure test',
+        model: 'gpt-5-pro',
+        azure: azureOptions,
+        background: false,
+      },
+      {
+        apiKey: 'sk-test',
+        clientFactory: (apiKey, options) => {
+          captured.push({ apiKey, azure: options?.azure });
+          return client;
+        },
+        log: () => {},
+        write: () => true,
+      },
+    );
+    expect(captured).toEqual([{ apiKey: 'sk-test', azure: azureOptions }]);
+  });
 });
 
 describe('renderPromptMarkdown', () => {
