@@ -23,6 +23,7 @@ import {
   waitForAttachmentCompletion,
   readAssistantSnapshot,
 } from './pageActions.js';
+import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
 import { estimateTokenCount, withRetries } from './utils.js';
 import { formatElapsed } from '../oracle/format.js';
 
@@ -298,9 +299,10 @@ async function runRemoteBrowserMode(
       if (!DOM) {
         throw new Error('Chrome DOM domain unavailable while uploading attachments.');
       }
+      // Use remote file transfer for remote Chrome (reads local files and injects via CDP)
       for (const attachment of attachments) {
         logger(`Uploading attachment: ${attachment.displayPath}`);
-        await uploadAttachmentFile({ runtime: Runtime, dom: DOM }, attachment, logger);
+        await uploadAttachmentViaDataTransfer({ runtime: Runtime, dom: DOM }, attachment, logger);
       }
       const waitBudget = Math.max(config.inputTimeoutMs ?? 30_000, 30_000);
       await waitForAttachmentCompletion(Runtime, waitBudget, logger);
