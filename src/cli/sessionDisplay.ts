@@ -50,7 +50,7 @@ export async function showStatus({ hours, includeAll, limit, showExamples = fals
     const chars = entry.options?.prompt?.length ?? entry.promptPreview?.length ?? 0;
     const charLabel = chars > 0 ? String(chars).padStart(5) : '    -';
     const costValue = resolveCost(entry);
-    const costLabel = costValue != null ? formatUSD(costValue).padStart(6) : '     -';
+    const costLabel = costValue != null ? formatCostTable(costValue) : '     -';
     console.log(`${created} | ${charLabel} | ${costLabel} | ${status} | ${model} | ${entry.id}`);
   }
   if (truncated) {
@@ -160,6 +160,10 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
       process.stdout.write(renderMarkdownAnsi(trimmed));
     } else {
       process.stdout.write(trimmed);
+    }
+    const summary = formatCompletionSummary(metadata, { includeSlug: true });
+    if (summary) {
+      console.log(`\n${chalk.green.bold(summary)}`);
     }
     return;
   }
@@ -494,6 +498,10 @@ function resolveCost(metadata: SessionMetadata): number | null {
   const output = metadata.usage.outputTokens ?? 0;
   const cost = input * pricing.inputPerToken + output * pricing.outputPerToken;
   return cost > 0 ? cost : null;
+}
+
+function formatCostTable(cost: number): string {
+  return `$${cost.toFixed(3)}`.padStart(7);
 }
 
 async function readStoredPrompt(sessionId: string): Promise<string | null> {

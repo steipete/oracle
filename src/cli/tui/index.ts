@@ -6,7 +6,6 @@ import os from 'node:os';
 import fs from 'node:fs/promises';
 import { MODEL_CONFIGS, type ModelName, type RunOracleOptions } from '../../oracle.js';
 import { renderMarkdownAnsi } from '../markdownRenderer.js';
-import { formatUSD } from '../../oracle/format.js';
 import {
   createSessionLogWriter,
   getSessionPaths,
@@ -62,7 +61,7 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
     }
     choices.push(new inquirer.Separator());
     choices.push(new inquirer.Separator('Actions'));
-    choices.push({ name: chalk.bold.green('Ask Oracle'), value: '__ask__' });
+    choices.push({ name: chalk.bold.green('ask oracle'), value: '__ask__' });
     if (hasMoreOlder) {
       choices.push({ name: 'Load older', value: '__more__' });
     }
@@ -136,7 +135,7 @@ function formatSessionLabel(meta: SessionMetadata): string {
   const chars = meta.options?.prompt?.length ?? meta.promptPreview?.length ?? 0;
   const charLabel = chars > 0 ? chalk.gray(String(chars).padStart(5)) : chalk.gray('    -');
   const cost = mode === 'browser' ? null : resolveCost(meta);
-  const costLabel = cost != null ? chalk.gray(formatUSD(cost).padStart(6)) : chalk.gray('     -');
+  const costLabel = cost != null ? chalk.gray(formatCostTable(cost)) : chalk.gray('      -');
   return `${status} ${chalk.white(model.padEnd(10))} ${chalk.gray(mode.padEnd(7))} ${chalk.gray(created)} ${charLabel} ${costLabel}  ${chalk.cyan(
     slug,
   )}`;
@@ -155,6 +154,10 @@ function resolveCost(meta: SessionMetadata): number | null {
   const output = meta.usage.outputTokens ?? 0;
   const cost = input * pricing.inputPerToken + output * pricing.outputPerToken;
   return cost > 0 ? cost : null;
+}
+
+function formatCostTable(cost: number): string {
+  return `$${cost.toFixed(3)}`.padStart(7);
 }
 
 function formatTimestampAligned(iso: string): string {
