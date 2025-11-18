@@ -46,7 +46,7 @@ This mirrors Mario Zechner’s “What if you don’t need MCP?” technique and
      ```bash
      pnpm run oracle -- --engine browser --model "5.1 Instant" --prompt "Smoke test cookie sync."
      ```
-   - Expect immediate failure with `Chrome cookie sync needs sqlite3 bindings...`.
+   - Expect an early failure: `Unable to load chrome-cookies-secure. Cookie copy is required.` plus the sqlite rebuild hint.  
    - Restore `sqlite3` and rebuild; rerun to confirm cookies copy successfully (`Copied N cookies from Chrome profile Default`).
 
 2. **Prompt Submission & Model Switching**
@@ -79,7 +79,7 @@ This mirrors Mario Zechner’s “What if you don’t need MCP?” technique and
   - Run with `--browser-allow-cookie-errors` while intentionally breaking bindings.
   - Confirm log shows `Cookie sync failed (continuing with override)` and the run proceeds headless/logged-out.
 - Remember: the browser composer now pastes the system instructions verbatim as the first paragraph, followed by the user prompt. If you see `[SYSTEM]` blocks or any extra prefixes (e.g., “System instructions: …”) in the ChatGPT composer, something regressed in `assembleBrowserPrompt` and you should stop and file a bug.
-- Heartbeats: Oracle now emits status heartbeats every 30 s by default (`Browser automation in progress — 2m 0s elapsed...`). Tweak via `--heartbeat 15` or disable with `--heartbeat 0` when recording clean logs.
+- Heartbeats: Browser runs do **not** emit `--heartbeat` logs today. Heartbeat settings apply to streaming API runs only; ignore heartbeat toggles when validating browser mode.
 
 ## Post-Run Validation
 
@@ -87,6 +87,13 @@ This mirrors Mario Zechner’s “What if you don’t need MCP?” technique and
 - `~/.oracle/sessions/<id>/session.json` must include `browser.config` metadata (model label, cookie settings) and `browser.runtime` (PID/port).
 
 Document results (pass/fail, session IDs) in PR descriptions so reviewers can audit real-world behavior.
+
+## Recent Smoke Runs
+
+- 2025-11-18 — API gpt-5.1 (`api-smoke-give-two-words`): returned “blue sky” in 2.5s.
+- 2025-11-18 — API gpt-5-pro (`api-smoke-pro-three-words`): completed in 3m08s with “Fast API verification”.
+- 2025-11-18 — Browser gpt-5.1 Instant (`browser-smoke-instant-two-words`): completed in ~10s; replied with a clarification prompt.
+- 2025-11-18 — Browser gpt-5-pro (`browser-smoke-pro-three-words`): completed in ~1m33s; response noted “Search tool used.”.
 
 ## Browser Regression Checklist (manual)
 

@@ -37,6 +37,10 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
 
 ## Precedence
 
-CLI flags → environment (`ORACLE_*`, `OPENAI_API_KEY`, etc.) → `config.json` → built-in defaults.
+CLI flags → `config.json` → environment → built-in defaults.
+
+- `engine`, `model`, `search`, `filesReport`, and `heartbeatSeconds` in `config.json` override the auto-detected values unless explicitly set on the CLI.
+- `OPENAI_API_KEY` only influences engine selection when neither the CLI nor `config.json` specify an engine (API when present, otherwise browser).
+- `ORACLE_NOTIFY*` env vars still layer on top of the config’s `notify` block.
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
