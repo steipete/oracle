@@ -87,3 +87,19 @@ describe('askOracleFlow', () => {
     expect(performSessionRunMock.mock.calls[0][0].sessionMeta.id).toBe('sess-123');
   });
 });
+
+describe('resolveCost basics', () => {
+  test('computes cost for api sessions without stored cost', async () => {
+    const { resolveCost } = await import('../../../src/cli/tui/index.ts');
+    const apiMeta = {
+      id: 'a',
+      createdAt: new Date().toISOString(),
+      status: 'completed',
+      usage: { inputTokens: 1000, outputTokens: 2000, reasoningTokens: 0, totalTokens: 3000 },
+      model: 'gpt-5-pro',
+      mode: 'api' as const,
+      options: {},
+    };
+    expect(resolveCost(apiMeta)).toBeGreaterThan(0);
+  });
+});

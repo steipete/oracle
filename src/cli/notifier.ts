@@ -63,7 +63,7 @@ export async function sendSessionNotification(
   settings: NotificationSettings,
   log: (message: string) => void,
 ): Promise<void> {
-  if (!settings.enabled) {
+  if (!settings.enabled || isTestEnv(process.env)) {
     return;
   }
 
@@ -237,5 +237,13 @@ function muteByConfig(env: NodeJS.ProcessEnv, config?: NotifyConfig): boolean {
   return (
     (config.muteIn.includes('CI') && bool(env.CI)) ||
     (config.muteIn.includes('SSH') && bool(env.SSH_CONNECTION))
+  );
+}
+
+function isTestEnv(env: NodeJS.ProcessEnv): boolean {
+  return (
+    env.ORACLE_DISABLE_NOTIFICATIONS === '1' ||
+    env.NODE_ENV === 'test' ||
+    Boolean(env.VITEST || env.VITEST_WORKER_ID || env.JEST_WORKER_ID)
   );
 }

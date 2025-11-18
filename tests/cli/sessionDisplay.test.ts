@@ -7,6 +7,7 @@ import {
   formatUserErrorMetadata,
   trimBeforeFirstAnswer,
   attachSession,
+  formatCompletionSummary,
 } from '../../src/cli/sessionDisplay.ts';
 import chalk from 'chalk';
 
@@ -220,6 +221,22 @@ describe('attachSession rendering', () => {
     await attachSession('sess', { renderMarkdown: true, renderPrompt: false });
 
     expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Prompt:'));
+  });
+
+  test('shows completion summary with cost and slug when available', async () => {
+    const metaWithUsage: SessionMetadata = {
+      ...baseMeta,
+      status: 'completed',
+      model: 'gpt-5-pro',
+      mode: 'api',
+      elapsedMs: 1234,
+      usage: { inputTokens: 10, outputTokens: 20, reasoningTokens: 0, totalTokens: 30, cost: 1.23 },
+    } as SessionMetadata;
+    const summary = formatCompletionSummary(metaWithUsage, { includeSlug: true });
+    expect(summary).not.toBeNull();
+    expect(summary).toContain('Finished in');
+    expect(summary).toContain('$1.23');
+    expect(summary).toContain('slug=sess');
   });
 
   test('falls back to metadata prompt when request is missing', async () => {
