@@ -71,6 +71,8 @@ export interface ClientLike {
   };
 }
 
+export type ClientFactory = (apiKey: string, options?: { baseUrl?: string }) => ClientLike;
+
 export interface RunOracleOptions {
   prompt: string;
   model: ModelName;
@@ -85,6 +87,7 @@ export interface RunOracleOptions {
   preview?: boolean | string;
   previewMode?: PreviewMode;
   apiKey?: string;
+  baseUrl?: string;
   sessionId?: string;
   verbose?: boolean;
   heartbeatIntervalMs?: number;
@@ -125,7 +128,7 @@ export interface RunOracleDeps {
   log?: (message: string) => void;
   write?: (chunk: string) => boolean;
   now?: () => number;
-  clientFactory?: (apiKey: string) => ClientLike;
+  clientFactory?: ClientFactory;
   client?: ClientLike;
   wait?: (ms: number) => Promise<void>;
 }

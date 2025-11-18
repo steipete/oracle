@@ -57,6 +57,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     client,
     wait = defaultWait,
   } = deps;
+  const baseUrl = options.baseUrl?.trim() || process.env.OPENAI_BASE_URL?.trim();
 
   const maskApiKey = (key: string | undefined | null): string | null => {
     if (!key) return null;
@@ -84,6 +85,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   const maskedKey = maskApiKey(apiKey);
   if (maskedKey) {
     log(dim(`Using OPENAI_API_KEY=${maskedKey}`));
+  }
+  if (baseUrl) {
+    log(dim(`Using OpenAI BASE URL: ${baseUrl}`));
   }
 
   const modelConfig = MODEL_CONFIGS[options.model];
@@ -184,7 +188,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     };
   }
 
-  const openAiClient: ClientLike = client ?? clientFactory(apiKey);
+  const openAiClient: ClientLike = client ?? clientFactory(apiKey, { baseUrl });
   logVerbose('Dispatching request to OpenAI Responses API...');
   const stopOscProgress = startOscProgress({
     label: useBackground ? 'Waiting for OpenAI (background)' : 'Waiting for OpenAI',

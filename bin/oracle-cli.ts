@@ -27,6 +27,7 @@ import {
   usesDefaultStatusFilters,
   resolvePreviewMode,
   normalizeModelOption,
+  normalizeBaseUrl,
   resolveApiModel,
   inferModelFromLabel,
   parseHeartbeatOption,
@@ -92,6 +93,7 @@ interface CliOptions extends OptionValues {
   dryRun?: boolean;
   wait?: boolean;
   noWait?: boolean;
+  baseUrl?: string;
 }
 
 type ResolvedCliOptions = Omit<CliOptions, 'model'> & { model: ModelName };
@@ -196,6 +198,10 @@ program
     new Option('--max-output <tokens>', 'Override the max output tokens for the selected model.')
       .argParser(parseIntOption)
       .hideHelp(),
+  )
+  .option(
+    '--base-url <url>',
+    'Override the OpenAI-compatible base URL for API runs (e.g. LiteLLM proxy endpoint).',
   )
   .addOption(new Option('--browser', '(deprecated) Use --engine browser instead.').default(false).hideHelp())
   .addOption(new Option('--browser-chrome-profile <name>', 'Chrome profile name/path for cookie reuse.').hideHelp())
@@ -304,6 +310,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
   if (!options.prompt) {
     throw new Error('Prompt is required.');
   }
+  const normalizedBaseUrl = normalizeBaseUrl(overrides.baseUrl ?? options.baseUrl);
   return {
     prompt: options.prompt,
     model: options.model,
@@ -318,6 +325,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
     preview: overrides.preview ?? undefined,
     previewMode: overrides.previewMode ?? options.previewMode,
     apiKey: overrides.apiKey ?? options.apiKey,
+    baseUrl: normalizedBaseUrl,
     sessionId: overrides.sessionId ?? options.sessionId,
     verbose: overrides.verbose ?? options.verbose,
     heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? resolveHeartbeatIntervalMs(options.heartbeat),
@@ -361,6 +369,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     preview: false,
     previewMode: undefined,
     apiKey: undefined,
+    baseUrl: normalizeBaseUrl(stored.baseUrl),
     sessionId: metadata.id,
     verbose: stored.verbose,
     heartbeatIntervalMs: stored.heartbeatIntervalMs,
@@ -381,6 +390,11 @@ function getBrowserConfigFromMetadata(metadata: SessionMetadata): BrowserSession
 async function runRootCommand(options: CliOptions): Promise<void> {
   const userConfig = (await loadUserConfig()).config;
   const helpRequested = rawCliArgs.some((arg: string) => arg === '--help' || arg === '-h');
+  const optionUsesDefault = (name: string): boolean => {
+    // Commander reports undefined for untouched options, so treat undefined/default the same
+    const source = program.getOptionValueSource?.(name);
+    return source == null || source === 'default';
+  };
   if (helpRequested) {
     if (options.verbose) {
       console.log('');
@@ -418,21 +432,26 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   if (options.browser) {
     console.log(chalk.yellow('`--browser` is deprecated; use `--engine browser` instead.'));
   }
-  if (program.getOptionValueSource?.('model') === 'default' && userConfig.model) {
+  if (optionUsesDefault('model') && userConfig.model) {
     options.model = userConfig.model;
   }
-  if (program.getOptionValueSource?.('search') === 'default' && userConfig.search) {
+  if (optionUsesDefault('search') && userConfig.search) {
     options.search = userConfig.search === 'on';
   }
-  if (program.getOptionValueSource?.('filesReport') === 'default' && userConfig.filesReport != null) {
+  if (optionUsesDefault('filesReport') && userConfig.filesReport != null) {
     options.filesReport = Boolean(userConfig.filesReport);
   }
-  if (program.getOptionValueSource?.('heartbeat') === 'default' && typeof userConfig.heartbeatSeconds === 'number') {
+  if (optionUsesDefault('heartbeat') && typeof userConfig.heartbeatSeconds === 'number') {
     options.heartbeat = userConfig.heartbeatSeconds;
+  }
+  if (optionUsesDefault('baseUrl') && userConfig.apiBaseUrl) {
+    options.baseUrl = userConfig.apiBaseUrl;
   }
   const cliModelArg = normalizeModelOption(options.model) || 'gpt-5-pro';
   const resolvedModel: ModelName = engine === 'browser' ? inferModelFromLabel(cliModelArg) : resolveApiModel(cliModelArg);
+  const resolvedBaseUrl = normalizeBaseUrl(options.baseUrl ?? process.env.OPENAI_BASE_URL);
   const resolvedOptions: ResolvedCliOptions = { ...options, model: resolvedModel };
+  resolvedOptions.baseUrl = resolvedBaseUrl;
 
   // Decide whether to block until completion:
   // - explicit --wait / --no-wait wins
@@ -477,7 +496,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       options.prompt = `${options.prompt.trim()}\n${userConfig.promptSuffix}`;
     }
     resolvedOptions.prompt = options.prompt;
-    const runOptions = buildRunOptions(resolvedOptions, { preview: true, previewMode });
+    const runOptions = buildRunOptions(resolvedOptions, { preview: true, previewMode, baseUrl: resolvedBaseUrl });
     if (engine === 'browser') {
       await runBrowserPreview(
         {
@@ -505,7 +524,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   resolvedOptions.prompt = options.prompt;
 
   if (options.dryRun) {
-    const baseRunOptions = buildRunOptions(resolvedOptions, { preview: false, previewMode: undefined });
+    const baseRunOptions = buildRunOptions(resolvedOptions, {
+      preview: false,
+      previewMode: undefined,
+      baseUrl: resolvedBaseUrl,
+    });
     await runDryRunSummary(
       {
         engine,
@@ -549,6 +572,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     preview: false,
     previewMode: undefined,
     background: userConfig.background ?? resolvedOptions.background,
+    baseUrl: resolvedBaseUrl,
   });
   enforceBrowserSearchFlag(baseRunOptions, sessionMode, console.log);
   if (sessionMode === 'browser' && baseRunOptions.search === false) {

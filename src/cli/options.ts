@@ -85,6 +85,11 @@ export function normalizeModelOption(value: string | undefined): string {
   return (value ?? '').trim();
 }
 
+export function normalizeBaseUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed?.length ? trimmed : undefined;
+}
+
 export function resolveApiModel(modelValue: string): ModelName {
   const normalized = normalizeModelOption(modelValue).toLowerCase();
   if (normalized in MODEL_CONFIGS) {

@@ -32,6 +32,7 @@ export interface UserConfig {
   filesReport?: boolean;
   background?: boolean;
   promptSuffix?: string;
+  apiBaseUrl?: string;
 }
 
 function resolveConfigPath(): string {

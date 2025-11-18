@@ -2,7 +2,7 @@ import type { RunOracleOptions } from '../oracle.js';
 import type { UserConfig } from '../config.js';
 import type { EngineMode } from './engine.js';
 import { resolveEngine } from './engine.js';
-import { normalizeModelOption, inferModelFromLabel, resolveApiModel } from './options.js';
+import { normalizeModelOption, inferModelFromLabel, resolveApiModel, normalizeBaseUrl } from './options.js';
 
 export interface ResolveRunOptionsInput {
   prompt: string;
@@ -41,6 +41,8 @@ export function resolveRunOptionsFromConfig({
   const heartbeatIntervalMs =
     userConfig?.heartbeatSeconds !== undefined ? userConfig.heartbeatSeconds * 1000 : 30_000;
 
+  const baseUrl = normalizeBaseUrl(userConfig?.apiBaseUrl ?? env.OPENAI_BASE_URL);
+
   const runOptions: RunOracleOptions = {
     prompt: promptWithSuffix,
     model: resolvedModel,
@@ -49,6 +51,7 @@ export function resolveRunOptionsFromConfig({
     heartbeatIntervalMs,
     filesReport: userConfig?.filesReport,
     background: userConfig?.background,
+    baseUrl,
   };
 
   return { runOptions, resolvedEngine };

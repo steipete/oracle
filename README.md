@@ -38,6 +38,9 @@ npx -y @steipete/oracle -p "Review the TS data layer" --file "src/**/*.ts" --fil
 # Mixed glob + single file
 npx -y @steipete/oracle -p "Audit data layer" --file "src/**/*.ts" --file README.md
 
+# Alternate base URL (LiteLLM, Azure, self-hosted gateways)
+OPENAI_API_KEY=sk-... oracle --base-url https://litellm.example.com/v1 -p "Summarize the risk register"
+
 # Inspect past sessions
 oracle status --clear --hours 168   # prune a week of cached runs
 oracle status                       # list runs; grab an ID
@@ -86,6 +89,7 @@ Put per-user defaults in `~/.oracle/config.json` (parsed as JSON5, so comments/t
 | `-f, --file <paths...>` | Attach files/dirs (supports globs and `!` excludes). |
 | `-e, --engine <api\|browser>` | Choose API or browser automation. Omitted: API when `OPENAI_API_KEY` is set, otherwise browser. |
 | `-m, --model <name>` | `gpt-5-pro` (default) or `gpt-5.1`. |
+| `--base-url <url>` | Point the API engine at any OpenAI-compatible endpoint (LiteLLM, Azure, etc.). |
 | `--files-report` | Print per-file token usage. |
 | `--preview [summary\|json\|full]` | Inspect the request without sending. |
 | `--render-markdown` | Print the assembled `[SYSTEM]/[USER]/[FILE]` bundle. |

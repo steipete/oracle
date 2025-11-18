@@ -1,18 +1,25 @@
 import OpenAI from 'openai';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import type { ClientLike, OracleRequestBody, OracleResponse, ResponseStreamLike } from './types.js';
+import type {
+  ClientFactory,
+  ClientLike,
+  OracleRequestBody,
+  OracleResponse,
+  ResponseStreamLike,
+} from './types.js';
 
 const CUSTOM_CLIENT_FACTORY = loadCustomClientFactory();
 
-export function createDefaultClientFactory(): (apiKey: string) => ClientLike {
+export function createDefaultClientFactory(): ClientFactory {
   if (CUSTOM_CLIENT_FACTORY) {
     return CUSTOM_CLIENT_FACTORY;
   }
-  return (key: string): ClientLike => {
+  return (key: string, options?: { baseUrl?: string }): ClientLike => {
     const instance = new OpenAI({
       apiKey: key,
       timeout: 20 * 60 * 1000,
+      baseURL: options?.baseUrl,
     });
     return {
       responses: {
@@ -26,7 +33,7 @@ export function createDefaultClientFactory(): (apiKey: string) => ClientLike {
   };
 }
 
-function loadCustomClientFactory(): ((apiKey: string) => ClientLike) | null {
+function loadCustomClientFactory(): ClientFactory | null {
   const override = process.env.ORACLE_CLIENT_FACTORY;
   if (!override) {
     return null;
@@ -44,7 +51,7 @@ function loadCustomClientFactory(): ((apiKey: string) => ClientLike) | null {
             ? moduleExports.createClientFactory
             : null;
     if (typeof factory === 'function') {
-      return factory as (apiKey: string) => ClientLike;
+      return factory as ClientFactory;
     }
     console.warn(`Custom client factory at ${resolved} did not export a function.`);
   } catch (error) {

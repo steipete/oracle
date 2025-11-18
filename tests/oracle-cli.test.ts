@@ -557,6 +557,30 @@ describe('runOracle file reports', () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  test('passes baseUrl through to clientFactory', async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const captured: Array<{ apiKey: string; baseUrl?: string }> = [];
+    await runOracle(
+      {
+        prompt: 'Custom endpoint',
+        model: 'gpt-5-pro',
+        baseUrl: 'https://litellm.test/v1',
+        background: false,
+      },
+      {
+        apiKey: 'sk-test',
+        clientFactory: (apiKey, options) => {
+          captured.push({ apiKey, baseUrl: options?.baseUrl });
+          return client;
+        },
+        log: () => {},
+        write: () => true,
+      },
+    );
+    expect(captured).toEqual([{ apiKey: 'sk-test', baseUrl: 'https://litellm.test/v1' }]);
+  });
 });
 
 describe('renderPromptMarkdown', () => {

@@ -64,6 +64,24 @@ describe('resolveRunOptionsFromConfig', () => {
     expect(runOptions.filesReport).toBe(true);
     expect(runOptions.background).toBe(false);
   });
+
+  it('includes apiBaseUrl from config', () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      userConfig: { apiBaseUrl: 'https://proxy.test/v1' },
+    });
+    expect(runOptions.baseUrl).toBe('https://proxy.test/v1');
+  });
+
+  it('falls back to OPENAI_BASE_URL env', () => {
+    const env = {} as NodeJS.ProcessEnv;
+    env.OPENAI_BASE_URL = 'https://env.example/v2';
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      env,
+    });
+    expect(runOptions.baseUrl).toBe('https://env.example/v2');
+  });
 });
 
 describe('estimateRequestTokens', () => {

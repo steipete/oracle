@@ -68,6 +68,7 @@ export interface StoredRunOptions {
   browserBundleFiles?: boolean;
   background?: boolean;
   search?: boolean;
+  baseUrl?: string;
 }
 
 export interface SessionMetadata {
@@ -232,6 +233,7 @@ export async function initializeSession(
       browserBundleFiles: options.browserBundleFiles,
       background: options.background,
       search: options.search,
+      baseUrl: options.baseUrl,
     },
   };
   await fs.writeFile(metaPath(sessionId), JSON.stringify(metadata, null, 2), 'utf8');
