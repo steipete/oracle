@@ -36,10 +36,16 @@ export async function readFiles(
     candidatePaths = await expandWithCustomFs(partitioned, fsModule);
   }
 
-  const resolvedLiteralDirs = new Set(partitioned.literalDirectories.map((dir) => path.resolve(dir)));
+  const allowedLiteralDirs = partitioned.literalDirectories
+    .map((dir) => path.resolve(dir))
+    .filter((dir) => DEFAULT_IGNORED_DIRS.includes(path.basename(dir)));
+  const allowedLiteralFiles = partitioned.literalFiles.map((file) => path.resolve(file));
+  const resolvedLiteralDirs = new Set(allowedLiteralDirs);
+  const allowedPaths = new Set([...allowedLiteralDirs, ...allowedLiteralFiles]);
+  const ignoredWhitelist = await buildIgnoredWhitelist(candidatePaths, cwd, fsModule);
   const ignoredLog = new Set<string>();
   const filteredCandidates = candidatePaths.filter((filePath) => {
-    const ignoredDir = findIgnoredAncestor(filePath, cwd, resolvedLiteralDirs);
+    const ignoredDir = findIgnoredAncestor(filePath, cwd, resolvedLiteralDirs, allowedPaths, ignoredWhitelist);
     if (!ignoredDir) {
       return true;
     }
@@ -208,17 +214,57 @@ function isGitignored(filePath: string, sets: GitignoreSet[]): boolean {
   return false;
 }
 
-function findIgnoredAncestor(filePath: string, cwd: string, literalDirs: Set<string>): string | null {
+async function buildIgnoredWhitelist(filePaths: string[], cwd: string, fsModule: MinimalFsModule): Promise<Set<string>> {
+  const whitelist = new Set<string>();
+  for (const filePath of filePaths) {
+    const absolute = path.resolve(filePath);
+    const rel = path.relative(cwd, absolute);
+    const parts = rel.split(path.sep).filter(Boolean);
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      const part = parts[i];
+      if (!DEFAULT_IGNORED_DIRS.includes(part)) {
+        continue;
+      }
+      const dirPath = path.resolve(cwd, ...parts.slice(0, i + 1));
+      if (whitelist.has(dirPath)) {
+        continue;
+      }
+      try {
+        const stats = await fsModule.stat(path.join(dirPath, '.gitignore'));
+        if (stats.isFile()) {
+          whitelist.add(dirPath);
+        }
+      } catch {
+        // no .gitignore at this level; keep ignored
+      }
+    }
+  }
+  return whitelist;
+}
+
+function findIgnoredAncestor(
+  filePath: string,
+  cwd: string,
+  _literalDirs: Set<string>,
+  allowedPaths: Set<string>,
+  ignoredWhitelist: Set<string>,
+): string | null {
   const absolute = path.resolve(filePath);
-  if (literalDirs.has(absolute) || Array.from(literalDirs).some((dir) => absolute.startsWith(`${dir}${path.sep}`))) {
-    return null; // explicitly requested directory/file overrides default ignore
+  if (Array.from(allowedPaths).some((allowed) => absolute === allowed || absolute.startsWith(`${allowed}${path.sep}`))) {
+    return null; // explicitly requested path overrides default ignore when the ignored dir itself was passed
   }
   const rel = path.relative(cwd, absolute);
   const parts = rel.split(path.sep);
-  for (const part of parts) {
-    if (DEFAULT_IGNORED_DIRS.includes(part)) {
-      return part;
+  for (let idx = 0; idx < parts.length; idx += 1) {
+    const part = parts[idx];
+    if (!DEFAULT_IGNORED_DIRS.includes(part)) {
+      continue;
     }
+    const ignoredDir = path.resolve(cwd, parts.slice(0, idx + 1).join(path.sep));
+    if (ignoredWhitelist.has(ignoredDir)) {
+      continue;
+    }
+    return part;
   }
   return null;
 }

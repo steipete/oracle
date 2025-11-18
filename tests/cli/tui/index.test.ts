@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import type { UserConfig } from '../../../src/config.js';
 
 const promptMock = vi.fn();
 const performSessionRunMock = vi.fn();
@@ -58,7 +59,8 @@ describe('askOracleFlow', () => {
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
-    await tui.askOracleFlow('1.1.0');
+    const config: UserConfig = {};
+    await tui.askOracleFlow('1.1.0', config);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Cancelled'));
     expect(performSessionRunMock).not.toHaveBeenCalled();
@@ -72,12 +74,14 @@ describe('askOracleFlow', () => {
       files: [],
     });
 
-    await tui.askOracleFlow('1.1.0');
+    const config: UserConfig = {};
+    await tui.askOracleFlow('1.1.0', config);
 
     expect(ensureSessionStorageMock).toHaveBeenCalled();
     expect(initializeSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: 'Hello world', mode: 'api' }),
       expect.any(String),
+      expect.objectContaining({ enabled: true }),
     );
     expect(performSessionRunMock).toHaveBeenCalledTimes(1);
     expect(performSessionRunMock.mock.calls[0][0].sessionMeta.id).toBe('sess-123');

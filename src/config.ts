@@ -34,8 +34,10 @@ export interface UserConfig {
   promptSuffix?: string;
 }
 
-const ORACLE_HOME = process.env.ORACLE_HOME_DIR ?? path.join(os.homedir(), '.oracle');
-const CONFIG_PATH = path.join(ORACLE_HOME, 'config.json');
+function resolveConfigPath(): string {
+  const oracleHome = process.env.ORACLE_HOME_DIR ?? path.join(os.homedir(), '.oracle');
+  return path.join(oracleHome, 'config.json');
+}
 
 export interface LoadConfigResult {
   config: UserConfig;
@@ -44,6 +46,7 @@ export interface LoadConfigResult {
 }
 
 export async function loadUserConfig(): Promise<LoadConfigResult> {
+  const CONFIG_PATH = resolveConfigPath();
   try {
     const raw = await fs.readFile(CONFIG_PATH, 'utf8');
     const parsed = JSON5.parse(raw) as UserConfig;
@@ -57,5 +60,6 @@ export async function loadUserConfig(): Promise<LoadConfigResult> {
     return { config: {}, path: CONFIG_PATH, loaded: false };
   }
 }
-
-export const configPath = CONFIG_PATH;
+export function configPath(): string {
+  return resolveConfigPath();
+}
