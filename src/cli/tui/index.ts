@@ -47,14 +47,11 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
   const userConfig = (await loadUserConfig()).config;
   console.log(chalk.bold(`🧿 oracle v${version}`), dim('— Whispering your tokens to the silicon sage'));
   console.log('');
-  let olderOffset = 0;
   let showingOlder = false;
   for (;;) {
-    const { recent, older, olderTotal } = await fetchSessionBuckets(olderOffset);
+    const { recent, older, olderTotal } = await fetchSessionBuckets();
     type HeaderChoice = { name: string; value: string; disabled: boolean };
     const choices: Array<SessionChoice | inquirer.Separator | HeaderChoice> = [];
-    const hasOlderPrev = olderOffset > 0;
-    const hasOlderNext = olderOffset + PAGE_SIZE < olderTotal;
 
     const headerLabel = dim(
       `${'Status'.padEnd(STATUS_PAD)} ${'Model'.padEnd(MODEL_PAD)} ${'Mode'.padEnd(MODE_PAD)} ${'Timestamp'.padEnd(
@@ -62,7 +59,7 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
       )} ${'Chars'.padStart(CHARS_PAD)} ${'Cost'.padStart(COST_PAD)}  Slug`,
     );
 
-    // Start with a selectable row so PageUp/PageDown never land on a separator
+    // Start with a selectable row so focus never lands on a separator
     choices.push({ name: chalk.bold.green('ask oracle'), value: '__ask__' });
     choices.push(new inquirer.Separator());
 
@@ -87,12 +84,6 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
     if (!showingOlder && olderTotal > 0) {
       choices.push({ name: 'Older page', value: '__older__' });
     } else {
-      if (hasOlderPrev) {
-        choices.push({ name: 'Page up', value: '__prev__' });
-      }
-      if (hasOlderNext) {
-        choices.push({ name: 'Page down', value: '__more__' });
-      }
       choices.push({ name: 'Newer (recent)', value: '__reset__' });
     }
 
@@ -131,20 +122,10 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
     }
     if (selection === '__older__') {
       showingOlder = true;
-      olderOffset = 0;
-      continue;
-    }
-    if (selection === '__more__') {
-      olderOffset = Math.min(olderOffset + PAGE_SIZE, Math.max(0, olderTotal - PAGE_SIZE));
-      continue;
-    }
-    if (selection === '__prev__') {
-      olderOffset = Math.max(0, olderOffset - PAGE_SIZE);
       continue;
     }
     if (selection === '__reset__') {
       showingOlder = false;
-      olderOffset = 0;
       continue;
     }
 
@@ -152,7 +133,7 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
   }
 }
 
-async function fetchSessionBuckets(olderOffset: number): Promise<{
+async function fetchSessionBuckets(): Promise<{
   recent: SessionMetadata[];
   older: SessionMetadata[];
   hasMoreOlder: boolean;
@@ -162,8 +143,8 @@ async function fetchSessionBuckets(olderOffset: number): Promise<{
   const cutoff = Date.now() - RECENT_WINDOW_HOURS * 60 * 60 * 1000;
   const recent = all.filter((meta) => new Date(meta.createdAt).getTime() >= cutoff).slice(0, PAGE_SIZE);
   const olderAll = all.filter((meta) => new Date(meta.createdAt).getTime() < cutoff);
-  const older = olderAll.slice(olderOffset, olderOffset + PAGE_SIZE);
-  const hasMoreOlder = olderAll.length > olderOffset + PAGE_SIZE;
+  const older = olderAll.slice(0, PAGE_SIZE);
+  const hasMoreOlder = olderAll.length > PAGE_SIZE;
 
   if (recent.length === 0 && older.length === 0 && olderAll.length > 0) {
     // No recent entries; fall back to top 10 overall.

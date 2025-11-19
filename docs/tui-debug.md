@@ -17,7 +17,7 @@ Repro steps
 Mitigations implemented
 - Start the list with a selectable row (“ask oracle”) to avoid initial pointer on a separator.
 - Render table headers as disabled choices (not separators) so paging over them is safer.
-- Intercept PageUp/PageDown keys: map PageDown to “older/page down”, PageUp to “page up/back to recent”; set `loop:false` to prevent wraparound; swallow selection errors and reset to recent.
+- Removed PageUp/PageDown shortcuts entirely; navigation now relies on the on-screen Older/Newer actions.
 
 Open follow-ups
 - Consider a custom prompt wrapper (outside Inquirer’s list) for key handling to avoid relying on private UI internals.
