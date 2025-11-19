@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - Inline runs now print a single completion line (removed duplicate “Finished” summary), keeping output concise.
 - Gemini runs stay on API (no browser detours), and the CLI logs the resolved model id alongside masked keys when it differs.
 - `--dry-run [summary|json|full]` is now the single preview flag; `--preview` remains as a hidden alias for compatibility.
+- `--show-model-id` prints the resolved id for all models (Gemini/GPT).
 
 ## 1.2.0 — 2025-11-18
 

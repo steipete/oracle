@@ -189,7 +189,6 @@ program
       .argParser(parseTimeoutOption)
       .default('auto'),
   )
-  .option('--dry-run', 'Validate inputs and show token estimates without calling the model.', false)
   .addOption(
     new Option(
       '--preview [mode]',
