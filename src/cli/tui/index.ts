@@ -313,6 +313,7 @@ interface WizardAnswers {
   models?: ModelName[];
   files: string[];
   chromeProfile?: string;
+  chromeCookiePath?: string;
   headless?: boolean;
   hideWindow?: boolean;
   keepBrowser?: boolean;
@@ -398,6 +399,12 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       when: (ans) => ans.mode === 'browser',
     },
     {
+      name: 'chromeCookiePath',
+      type: 'input',
+      message: 'Cookie DB path (Chromium/Edge, optional):',
+      when: (ans) => ans.mode === 'browser',
+    },
+    {
       name: 'headless',
       type: 'confirm',
       message: 'Run Chrome headless?',
@@ -465,6 +472,7 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
     mode === 'browser'
       ? await buildBrowserConfig({
           browserChromeProfile: answers.chromeProfile,
+          browserCookiePath: answers.chromeCookiePath,
           browserHeadless: answers.headless,
           browserHideWindow: answers.hideWindow,
           browserKeepBrowser: answers.keepBrowser,
