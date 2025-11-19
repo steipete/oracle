@@ -30,6 +30,12 @@ const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
 
 const RECENT_WINDOW_HOURS = 24;
 const PAGE_SIZE = 10;
+const STATUS_PAD = 9;
+const MODEL_PAD = 13;
+const MODE_PAD = 7;
+const TIMESTAMP_PAD = 19;
+const CHARS_PAD = 5;
+const COST_PAD = 7;
 
 type SessionChoice = { name: string; value: string };
 
@@ -50,7 +56,11 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
     const hasOlderPrev = olderOffset > 0;
     const hasOlderNext = olderOffset + PAGE_SIZE < olderTotal;
 
-    const headerLabel = dim('Status  Model         Mode    Timestamp           Chars  Cost  Slug');
+    const headerLabel = dim(
+      `${'Status'.padEnd(STATUS_PAD)} ${'Model'.padEnd(MODEL_PAD)} ${'Mode'.padEnd(MODE_PAD)} ${'Timestamp'.padEnd(
+        TIMESTAMP_PAD,
+      )} ${'Chars'.padStart(CHARS_PAD)} ${'Cost'.padStart(COST_PAD)}  Slug`,
+    );
 
     // Start with a selectable row so PageUp/PageDown never land on a separator
     choices.push({ name: chalk.bold.green('ask oracle'), value: '__ask__' });
@@ -111,7 +121,6 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
         if (resolved) return;
         resolved = true;
         input?.off('keypress', onKeypress);
-        promptUi.ui?.close();
         resolve(value);
       };
       const onKeypress = (_: unknown, key: { name?: string }): void => {
@@ -207,10 +216,12 @@ function formatSessionLabel(meta: SessionMetadata): string {
   const mode = meta.mode ?? meta.options?.mode ?? 'api';
   const slug = meta.id;
   const chars = meta.options?.prompt?.length ?? meta.promptPreview?.length ?? 0;
-  const charLabel = chars > 0 ? chalk.gray(String(chars).padStart(5)) : chalk.gray('    -');
+  const charLabel = chars > 0 ? chalk.gray(String(chars).padStart(CHARS_PAD)) : chalk.gray(''.padStart(CHARS_PAD - 1) + '-');
   const cost = mode === 'browser' ? null : resolveCost(meta);
-  const costLabel = cost != null ? chalk.gray(formatCostTable(cost)) : chalk.gray('      -');
-  return `${status} ${chalk.white(model.padEnd(13))} ${chalk.gray(mode.padEnd(7))} ${chalk.gray(created)} ${charLabel} ${costLabel}  ${chalk.cyan(
+  const costLabel = cost != null ? chalk.gray(formatCostTable(cost)) : chalk.gray(''.padStart(COST_PAD - 1) + '-');
+  return `${status} ${chalk.white(model.padEnd(MODEL_PAD))} ${chalk.gray(mode.padEnd(MODE_PAD))} ${chalk.gray(created.padEnd(
+    TIMESTAMP_PAD,
+  ))} ${charLabel} ${costLabel}  ${chalk.cyan(
     slug,
   )}`;
 }
@@ -231,7 +242,7 @@ function resolveCost(meta: SessionMetadata): number | null {
 }
 
 function formatCostTable(cost: number): string {
-  return `$${cost.toFixed(3)}`.padStart(7);
+  return `$${cost.toFixed(3)}`.padStart(COST_PAD);
 }
 
 function formatTimestampAligned(iso: string): string {
