@@ -84,6 +84,7 @@ export interface ClientLike {
 export interface RunOracleOptions {
   prompt: string;
   model: ModelName;
+  models?: ModelName[];
   file?: string[];
   slug?: string;
   filesReport?: boolean;

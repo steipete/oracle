@@ -1,4 +1,4 @@
-import type { RunOracleOptions } from '../oracle.js';
+import type { RunOracleOptions, ModelName } from '../oracle.js';
 import type { UserConfig } from '../config.js';
 import type { EngineMode } from './engine.js';
 import { resolveEngine } from './engine.js';
@@ -9,6 +9,7 @@ export interface ResolveRunOptionsInput {
   prompt: string;
   files?: string[];
   model?: string;
+  models?: string[];
   engine?: EngineMode;
   userConfig?: UserConfig;
   env?: NodeJS.ProcessEnv;
@@ -23,15 +24,21 @@ export function resolveRunOptionsFromConfig({
   prompt,
   files = [],
   model,
+  models,
   engine,
   userConfig,
   env = process.env,
 }: ResolveRunOptionsInput): ResolvedRunOptions {
   const resolvedEngine = resolveEngineWithConfig({ engine, configEngine: userConfig?.engine, env });
   const browserRequested = engine === 'browser';
+  const requestedModelList = Array.isArray(models) ? models : [];
+  const normalizedRequestedModels = requestedModelList.map((entry) => normalizeModelOption(entry)).filter(Boolean);
 
   const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || 'gpt-5-pro';
-  const resolvedModel = resolvedEngine === 'browser' ? inferModelFromLabel(cliModelArg) : resolveApiModel(cliModelArg);
+  const resolvedModel =
+    resolvedEngine === 'browser' && normalizedRequestedModels.length === 0
+      ? inferModelFromLabel(cliModelArg)
+      : resolveApiModel(cliModelArg);
   const isGemini = resolvedModel.startsWith('gemini');
   // Keep the resolved model id alongside the canonical model name so we can log
   // and dispatch the exact identifier (useful for Gemini preview aliases).
@@ -41,7 +48,8 @@ export function resolveRunOptionsFromConfig({
     throw new Error('Gemini is only supported via API. Use --engine api.');
   }
   // When Gemini is selected, always force API engine (overrides config/env auto browser).
-  const fixedEngine: EngineMode = isGemini ? 'api' : resolvedEngine;
+  const fixedEngine: EngineMode =
+    isGemini || normalizedRequestedModels.length > 0 ? 'api' : resolvedEngine;
 
   const promptWithSuffix =
     userConfig?.promptSuffix && userConfig.promptSuffix.trim().length > 0
@@ -54,10 +62,15 @@ export function resolveRunOptionsFromConfig({
     userConfig?.heartbeatSeconds !== undefined ? userConfig.heartbeatSeconds * 1000 : 30_000;
 
   const baseUrl = normalizeBaseUrl(userConfig?.apiBaseUrl ?? env.OPENAI_BASE_URL);
+  const uniqueMultiModels: ModelName[] =
+    normalizedRequestedModels.length > 0
+      ? Array.from(new Set(normalizedRequestedModels.map((entry) => resolveApiModel(entry))))
+      : [];
 
   const runOptions: RunOracleOptions = {
     prompt: promptWithSuffix,
-    model: resolvedModel,
+    model: uniqueMultiModels[0] ?? resolvedModel,
+    models: uniqueMultiModels.length > 0 ? uniqueMultiModels : undefined,
     file: files ?? [],
     search,
     heartbeatIntervalMs,

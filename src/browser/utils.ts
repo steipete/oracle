@@ -19,10 +19,11 @@ export function parseDuration(input: string, fallback: number): number {
   const multiDuration = /([0-9]+)(ms|h|m|s)/g;
   let total = 0;
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = multiDuration.exec(normalized)) !== null) {
+  let match: RegExpExecArray | null = multiDuration.exec(normalized);
+  while (match !== null) {
     total += convertUnit(Number(match[1]), match[2]);
     lastIndex = multiDuration.lastIndex;
+    match = multiDuration.exec(normalized);
   }
   if (total > 0 && lastIndex === normalized.length) {
     return total;

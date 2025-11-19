@@ -15,6 +15,7 @@ export interface StatusOptions extends OptionValues {
   path?: boolean;
   verboseRender?: boolean;
   hidePrompt?: boolean;
+  model?: string;
 }
 
 interface SessionCommandDependencies {
@@ -33,7 +34,7 @@ const defaultDependencies: SessionCommandDependencies = {
   getSessionPaths,
 };
 
-const SESSION_OPTION_KEYS = new Set(['hours', 'limit', 'all', 'clear', 'clean', 'render', 'renderMarkdown', 'path']);
+const SESSION_OPTION_KEYS = new Set(['hours', 'limit', 'all', 'clear', 'clean', 'render', 'renderMarkdown', 'path', 'model']);
 
 export async function handleSessionCommand(
   sessionId: string | undefined,
@@ -96,6 +97,7 @@ export async function handleSessionCommand(
       includeAll: sessionOptions.all,
       limit: sessionOptions.limit,
       showExamples,
+      modelFilter: sessionOptions.model,
     });
     return;
   }
@@ -105,7 +107,11 @@ export async function handleSessionCommand(
     console.log(`Ignoring flags on session attach: ${ignoredFlags.join(', ')}`);
   }
   const renderMarkdown = Boolean(sessionOptions.render || sessionOptions.renderMarkdown || autoRender);
-  await deps.attachSession(sessionId, { renderMarkdown, renderPrompt: !sessionOptions.hidePrompt });
+  await deps.attachSession(sessionId, {
+    renderMarkdown,
+    renderPrompt: !sessionOptions.hidePrompt,
+    model: sessionOptions.model,
+  });
 }
 
 export function formatSessionCleanupMessage(

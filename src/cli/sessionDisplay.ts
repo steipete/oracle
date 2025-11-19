@@ -1,10 +1,17 @@
 import chalk from 'chalk';
 import kleur from 'kleur';
-import type { SessionMetadata, SessionTransportMetadata, SessionUserErrorMetadata } from '../sessionManager.js';
+import type {
+  SessionMetadata,
+  SessionTransportMetadata,
+  SessionUserErrorMetadata,
+  SessionStatus,
+  SessionModelRun,
+} from '../sessionManager.js';
 import {
   filterSessionsByRange,
   listSessionsMetadata,
   readSessionLog,
+  readModelLog,
   readSessionMetadata,
   readSessionRequest,
   SESSIONS_DIR,
@@ -18,22 +25,31 @@ import { MODEL_CONFIGS } from '../oracle.js';
 const isTty = (): boolean => Boolean(process.stdout.isTTY);
 const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
 export const MAX_RENDER_BYTES = 200_000;
+const MODEL_COLUMN_WIDTH = 18;
 
 export interface ShowStatusOptions {
   hours: number;
   includeAll: boolean;
   limit: number;
   showExamples?: boolean;
+  modelFilter?: string;
 }
 
 const CLEANUP_TIP =
   'Tip: Run "oracle session --clear --hours 24" to prune cached runs (add --all to wipe everything).';
 
-export async function showStatus({ hours, includeAll, limit, showExamples = false }: ShowStatusOptions): Promise<void> {
+export async function showStatus({
+  hours,
+  includeAll,
+  limit,
+  showExamples = false,
+  modelFilter,
+}: ShowStatusOptions): Promise<void> {
   const metas = await listSessionsMetadata();
   const { entries, truncated, total } = filterSessionsByRange(metas, { hours, includeAll, limit });
+  const filteredEntries = modelFilter ? entries.filter((entry) => matchesModel(entry, modelFilter)) : entries;
   const richTty = process.stdout.isTTY && chalk.level > 0;
-  if (!entries.length) {
+  if (!filteredEntries.length) {
     console.log(CLEANUP_TIP);
     if (showExamples) {
       printStatusExamples();
@@ -41,17 +57,17 @@ export async function showStatus({ hours, includeAll, limit, showExamples = fals
     return;
   }
   console.log(chalk.bold('Recent Sessions'));
-  console.log(chalk.dim('Timestamp             Chars  Cost  Status     Model      ID'));
-  for (const entry of entries) {
+  console.log(chalk.dim('Timestamp             Chars  Cost  Status     Models              ID'));
+  for (const entry of filteredEntries) {
     const statusRaw = (entry.status || 'unknown').padEnd(9);
     const status = richTty ? colorStatus(entry.status ?? 'unknown', statusRaw) : statusRaw;
-    const model = (entry.model || 'n/a').padEnd(9);
+    const modelColumn = formatModelColumn(entry, MODEL_COLUMN_WIDTH, richTty);
     const created = formatTimestamp(entry.createdAt);
     const chars = entry.options?.prompt?.length ?? entry.promptPreview?.length ?? 0;
     const charLabel = chars > 0 ? String(chars).padStart(5) : '    -';
     const costValue = resolveCost(entry);
     const costLabel = costValue != null ? formatCostTable(costValue) : '     -';
-    console.log(`${created} | ${charLabel} | ${costLabel} | ${status} | ${model} | ${entry.id}`);
+    console.log(`${created} | ${charLabel} | ${costLabel} | ${status} | ${modelColumn} | ${entry.id}`);
   }
   if (truncated) {
     console.log(
@@ -82,6 +98,7 @@ export interface AttachSessionOptions {
   suppressMetadata?: boolean;
   renderMarkdown?: boolean;
   renderPrompt?: boolean;
+  model?: string;
 }
 
 type LiveRenderState = {
@@ -100,6 +117,17 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
     console.error(chalk.red(`No session found with ID ${sessionId}`));
     process.exitCode = 1;
     return;
+  }
+  const normalizedModelFilter = options?.model?.trim().toLowerCase();
+  if (normalizedModelFilter) {
+    const availableModels =
+      metadata.models?.map((model) => model.model.toLowerCase()) ??
+      (metadata.model ? [metadata.model.toLowerCase()] : []);
+    if (!availableModels.includes(normalizedModelFilter)) {
+      console.error(chalk.red(`Model "${options?.model}" not found in session ${sessionId}.`));
+      process.exitCode = 1;
+      return;
+    }
   }
   const initialStatus = metadata.status;
   const wantsRender = Boolean(options?.renderMarkdown);
@@ -136,7 +164,7 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
     }
   }
   if (shouldTrimIntro) {
-    const fullLog = await readSessionLog(sessionId);
+    const fullLog = await buildSessionLogForDisplay(sessionId, metadata, normalizedModelFilter);
     const trimmed = trimBeforeFirstAnswer(fullLog);
     const size = Buffer.byteLength(trimmed, 'utf8');
     const canRender = wantsRender && isTty() && size <= MAX_RENDER_BYTES;
@@ -233,7 +261,7 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
   };
 
   const printNew = async () => {
-    const text = await readSessionLog(sessionId);
+    const text = await buildSessionLogForDisplay(sessionId, metadata, normalizedModelFilter);
     const nextChunk = text.slice(lastLength);
     if (nextChunk.length > 0) {
       renderLiveChunk(nextChunk);
@@ -403,6 +431,86 @@ function printStatusExamples(): void {
   console.log(`${chalk.bold('  oracle session <session-id>')}`);
   console.log(dim('    Attach to a specific running/completed session to stream its output.'));
   console.log(dim(CLEANUP_TIP));
+}
+
+function matchesModel(entry: SessionMetadata, filter: string): boolean {
+  const normalized = filter.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  const models =
+    entry.models?.map((model) => model.model.toLowerCase()) ?? (entry.model ? [entry.model.toLowerCase()] : []);
+  return models.includes(normalized);
+}
+
+function formatModelColumn(entry: SessionMetadata, width: number, richTty: boolean): string {
+  const models =
+    entry.models && entry.models.length > 0
+      ? entry.models
+      : entry.model
+        ? [{ model: entry.model, status: entry.status as SessionStatus }]
+        : [];
+  if (models.length === 0) {
+    return 'n/a'.padEnd(width);
+  }
+  const badges = models.map((model) => formatModelBadge(model, richTty));
+  const text = badges.join(' ');
+  if (text.length > width) {
+    return `${text.slice(0, width - 1)}…`;
+  }
+  return text.padEnd(width);
+}
+
+function formatModelBadge(model: SessionModelRun, richTty: boolean): string {
+  const glyph = statusGlyph(model.status);
+  const text = `${model.model}${glyph}`;
+  return richTty ? chalk.cyan(text) : text;
+}
+
+function statusGlyph(status: SessionStatus | undefined): string {
+  switch (status) {
+    case 'completed':
+      return '✓';
+    case 'running':
+      return '⌛';
+    case 'pending':
+      return '…';
+    case 'error':
+      return '✖';
+    case 'cancelled':
+      return '⦻';
+    default:
+      return '?';
+  }
+}
+
+async function buildSessionLogForDisplay(
+  sessionId: string,
+  fallbackMeta: SessionMetadata,
+  modelFilter?: string,
+): Promise<string> {
+  const normalizedFilter = modelFilter?.trim().toLowerCase();
+  const freshMetadata = (await readSessionMetadata(sessionId)) ?? fallbackMeta;
+  const models = freshMetadata.models ?? fallbackMeta.models ?? [];
+  if (models.length === 0) {
+    if (normalizedFilter) {
+      return await readModelLog(sessionId, modelFilter as string);
+    }
+    return await readSessionLog(sessionId);
+  }
+  const candidates =
+    normalizedFilter != null
+      ? models.filter((model) => model.model.toLowerCase() === normalizedFilter)
+      : models;
+  if (candidates.length === 0) {
+    return '';
+  }
+  const sections: string[] = [];
+  for (const model of candidates) {
+    const body = await readModelLog(sessionId, model.model);
+    sections.push(`=== ${model.model} ===\n${body}`.trimEnd());
+  }
+  return sections.join('\n\n');
 }
 
 function extractRenderableChunks(text: string, state: LiveRenderState): { chunks: string[]; remainder: string } {

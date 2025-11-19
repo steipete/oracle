@@ -22,6 +22,7 @@ import { CHATGPT_URL } from '../src/browserMode.js';
 import { applyHelpStyling } from '../src/cli/help.js';
 import {
   collectPaths,
+  collectModelList,
   parseFloatOption,
   parseIntOption,
   parseSearchOption,
@@ -60,6 +61,7 @@ interface CliOptions extends OptionValues {
   file?: string[];
   include?: string[];
   model: string;
+  models?: string[];
   slug?: string;
   filesReport?: boolean;
   maxInput?: number;
@@ -108,7 +110,7 @@ interface CliOptions extends OptionValues {
   showModelId?: boolean;
 }
 
-type ResolvedCliOptions = Omit<CliOptions, 'model'> & { model: ModelName };
+type ResolvedCliOptions = Omit<CliOptions, 'model'> & { model: ModelName; models?: ModelName[] };
 
 const VERSION = getCliVersion();
 const CLI_ENTRYPOINT = fileURLToPath(import.meta.url);
@@ -169,6 +171,14 @@ program
     'Model to target (gpt-5-pro | gpt-5.1, or ChatGPT labels like "5.1 Instant" for browser runs).',
     normalizeModelOption,
     'gpt-5-pro',
+  )
+  .addOption(
+    new Option(
+      '--models <models>',
+      'Comma-separated API model list to query in parallel (e.g., "gpt-5-pro,gemini-3-pro").',
+    )
+      .argParser(collectModelList)
+      .default([]),
   )
   .addOption(
     new Option(
@@ -290,6 +300,7 @@ const sessionCommand = program
   .option('--hide-prompt', 'Hide stored prompt when displaying a session.', false)
   .option('--render', 'Render completed session output as markdown (rich TTY only).', false)
   .option('--render-markdown', 'Alias for --render.', false)
+  .option('--model <name>', 'Filter sessions/output for a specific model.', '')
   .option('--path', 'Print the stored session paths instead of attaching.', false)
   .addOption(new Option('--clean', 'Deprecated alias for --clear.').default(false).hideHelp())
   .action(async (sessionId, _options: StatusOptions, cmd: Command) => {
@@ -305,6 +316,7 @@ const statusCommand = program
   .option('--clear', 'Delete stored sessions older than the provided window (24h default).', false)
   .option('--render', 'Render completed session output as markdown (rich TTY only).', false)
   .option('--render-markdown', 'Alias for --render.', false)
+  .option('--model <name>', 'Filter sessions/output for a specific model.', '')
   .option('--hide-prompt', 'Hide stored prompt when displaying a session.', false)
   .addOption(new Option('--clean', 'Deprecated alias for --clear.').default(false).hideHelp())
   .action(async (sessionId: string | undefined, _options: StatusOptions, command: Command) => {
@@ -362,6 +374,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
   return {
     prompt: options.prompt,
     model: options.model,
+    models: overrides.models ?? options.models,
     effectiveModelId: overrides.effectiveModelId ?? options.effectiveModelId ?? options.model,
     file: overrides.file ?? options.file ?? [],
     slug: overrides.slug ?? options.slug,
@@ -409,6 +422,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
   return {
     prompt: stored.prompt ?? '',
     model: (stored.model as ModelName) ?? 'gpt-5-pro',
+    models: stored.models as ModelName[] | undefined,
     effectiveModelId: stored.effectiveModelId ?? stored.model,
     file: stored.file ?? [],
     slug: stored.slug,
@@ -448,6 +462,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   const userConfig = (await loadUserConfig()).config;
   const helpRequested = rawCliArgs.some((arg: string) => arg === '--help' || arg === '-h');
+  const multiModelProvided = Array.isArray(options.models) && options.models.length > 0;
+  if (multiModelProvided) {
+    const modelSource = program.getOptionValueSource?.('model');
+    if (modelSource === 'cli') {
+      throw new Error('--models cannot be combined with --model.');
+    }
+  }
   const optionUsesDefault = (name: string): boolean => {
     // Commander reports undefined for untouched options, so treat undefined/default the same
     const source = program.getOptionValueSource?.(name);
@@ -528,7 +549,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const cliModelArg = normalizeModelOption(options.model) || 'gpt-5-pro';
   const resolvedModelCandidate: ModelName =
     engine === 'browser' ? inferModelFromLabel(cliModelArg) : resolveApiModel(cliModelArg);
-  const isGemini = resolvedModelCandidate.startsWith('gemini');
+  const normalizedMultiModels: ModelName[] = multiModelProvided
+    ? Array.from(new Set(options.models!.map((entry) => resolveApiModel(entry))))
+    : [];
+  const primaryModelCandidate = normalizedMultiModels[0] ?? resolvedModelCandidate;
+  const isGemini = primaryModelCandidate.startsWith('gemini');
   const userForcedBrowser = options.browser || options.engine === 'browser';
   if (isGemini && userForcedBrowser) {
     throw new Error('Gemini is only supported via API. Use --engine api.');
@@ -536,10 +561,18 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   if (isGemini && engine === 'browser') {
     engine = 'api';
   }
-  const resolvedModel: ModelName = isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate;
+  if (normalizedMultiModels.length > 0) {
+    engine = 'api';
+  }
+  const resolvedModel: ModelName =
+    normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
   const effectiveModelId = resolvedModel.startsWith('gemini') ? resolveGeminiModelId(resolvedModel) : resolvedModel;
   const resolvedBaseUrl = normalizeBaseUrl(options.baseUrl ?? process.env.OPENAI_BASE_URL);
-  const resolvedOptions: ResolvedCliOptions = { ...options, model: resolvedModel };
+  const { models: _rawModels, ...optionsWithoutModels } = options;
+  const resolvedOptions: ResolvedCliOptions = { ...optionsWithoutModels, model: resolvedModel };
+  if (normalizedMultiModels.length > 0) {
+    resolvedOptions.models = normalizedMultiModels;
+  }
   resolvedOptions.baseUrl = resolvedBaseUrl;
 
   // Decide whether to block until completion:

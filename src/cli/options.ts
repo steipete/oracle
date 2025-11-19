@@ -10,6 +10,17 @@ export function collectPaths(value: string | string[] | undefined, previous: str
   return previous.concat(nextValues.flatMap((entry) => entry.split(',')).map((entry) => entry.trim()).filter(Boolean));
 }
 
+export function collectModelList(value: string, previous: string[] = []): string[] {
+  if (!value) {
+    return previous;
+  }
+  const entries = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return previous.concat(entries);
+}
+
 export function parseFloatOption(value: string): number {
   const parsed = Number.parseFloat(value);
   if (Number.isNaN(parsed)) {
