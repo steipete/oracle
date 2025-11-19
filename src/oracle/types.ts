@@ -1,6 +1,8 @@
 export type TokenizerFn = (input: unknown, options?: Record<string, unknown>) => number;
 
-export type ModelName = 'gpt-5-pro' | 'gpt-5.1' | 'gpt-5.1-codex' | 'gemini-3-pro';
+export type ModelName = 'gpt-5.1-pro' | 'gpt-5-pro' | 'gpt-5.1' | 'gpt-5.1-codex' | 'gemini-3-pro';
+
+export type ProModelName = Extract<ModelName, 'gpt-5.1-pro' | 'gpt-5-pro'>;
 
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 

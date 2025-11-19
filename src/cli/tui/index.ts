@@ -4,7 +4,7 @@ import kleur from 'kleur';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
-import { MODEL_CONFIGS, type ModelName, type RunOracleOptions } from '../../oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS, type ModelName, type RunOracleOptions } from '../../oracle.js';
 import { renderMarkdownAnsi } from '../markdownRenderer.js';
 import type { SessionMetadata, SessionMode, BrowserSessionConfig, SessionModelRun } from '../../sessionStore.js';
 import { sessionStore, pruneOldSessions } from '../../sessionStore.js';
@@ -402,7 +402,7 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       name: 'model',
       type: 'list',
       message: 'Model',
-      default: 'gpt-5-pro',
+      default: DEFAULT_MODEL,
       choices: modelChoices,
     },
     {

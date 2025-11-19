@@ -36,7 +36,7 @@ Non-goals: batching unrelated prompts, merging responses, or performing auto-deb
 1. CLI normalizes `--models` into an ordered `ModelName[]`.
 2. Shared prompt/files resolved once (build prompt, token estimates).
 3. Controller kicks off `runOracleSingle(model)` for each model using the existing streaming pipeline but with dedicated log sinks (one per model).
-4. Output printed to stdout sequentially: `[gpt-5-pro] ...answer...` followed by `[gemini-3-pro] ...`. Live streaming uses the per-model logs so viewing tools never see interleaved tokens.
+4. Output printed to stdout sequentially: `[gpt-5.1-pro] ...answer...` followed by `[gemini-3-pro] ...`. Live streaming uses the per-model logs so viewing tools never see interleaved tokens.
 
 ---
 
@@ -49,8 +49,8 @@ sessionId/
 ├── meta.json             # shared session metadata + request payload
 ├── output.log            # combined view (headers + concatenated model logs)
 └── models/
-    ├── gpt-5-pro.json    # per-model metadata snapshot
-    ├── gpt-5-pro.log     # streaming log (append-only, plain text)
+    ├── gpt-5.1-pro.json    # per-model metadata snapshot
+    ├── gpt-5.1-pro.log     # streaming log (append-only, plain text)
     ├── gemini-3-pro.json
     ├── gemini-3-pro.log
     └── ...               # repeat for every model in the run
@@ -59,11 +59,11 @@ sessionId/
 Properties:
 
 - `meta.json` mirrors the old `session.json` payload (prompt, files, flags, effective model ids), so replay tools can load context without parsing every per-model file.
-- `output.log` remains the human-readable combined transcript. We append a header (`=== gpt-5-pro ===`) before each per-model log dump so `oracle session <id>` can replay everything sequentially without interleaving tokens.
+- `output.log` remains the human-readable combined transcript. We append a header (`=== gpt-5.1-pro ===`) before each per-model log dump so `oracle session <id>` can replay everything sequentially without interleaving tokens.
 - `models/<name>.json` stores:
   ```json5
   {
-    "model": "gpt-5-pro",
+    "model": "gpt-5.1-pro",
     "status": "completed",
     "queuedAt": "2025-11-19T00:00:00.000Z",
     "startedAt": "2025-11-19T00:00:02.123Z",
@@ -72,10 +72,10 @@ Properties:
     "response": { "id": "resp_...", "requestId": "req_..." },
     "transport": { "reason": null },
     "error": null,
-    "log": { "path": "models/gpt-5-pro.log", "bytes": 18234 }
+    "log": { "path": "models/gpt-5.1-pro.log", "bytes": 18234 }
   }
   ```
-- `models/<name>.log` is the raw stream. We append “header” lines (e.g., `🧿 oracle summons gpt-5-pro…`) so replays look identical to the live run. Logs stay on disk indefinitely so we can reattach/watch old sessions without embedding huge strings into JSON.
+- `models/<name>.log` is the raw stream. We append “header” lines (e.g., `🧿 oracle summons gpt-5.1-pro…`) so replays look identical to the live run. Logs stay on disk indefinitely so we can reattach/watch old sessions without embedding huge strings into JSON.
 
 Backward compatibility: new CLI loads `models/*.json`. If none exist (old session), it falls back to the legacy `session.json` layout.
 
@@ -97,7 +97,7 @@ The overall session status is implicit: if any model is `running`, we render the
 
 ## CLI Rendering Rules
 
-- **Status table**: one row per session. The “Model” column becomes a compact string of `<alias><state-icon>` pairs (e.g., `5-pro✓ 5.1⌛ gem3❌`). Icons reflect each model’s current state.
+- **Status table**: one row per session. The “Model” column becomes a compact string of `<alias><state-icon>` pairs (e.g., `5.1-pro✓ 5.1⌛ gem3❌`). Icons reflect each model’s current state.
 - **Session attach**:
   - Without `--model`: iterate models in alphabetical order, printing a header and then the corresponding log file (entire contents once completed; live tail when still running).
   - With `--model foo`: only print metadata and log for `foo`.
@@ -106,7 +106,7 @@ The overall session status is implicit: if any model is `running`, we render the
 ## TUI / Session Detail UX
 
 - Launch `oracle` with no args to open the TUI. Selecting a session now shows a `Models:` summary that lists each model, status, and token usage totals.
-- Actions include “View combined log” plus one entry per model (`View gpt-5-pro log (completed)` etc.). This keeps the combined log deterministic while still letting you inspect an individual log in isolation.
+- Actions include “View combined log” plus one entry per model (`View gpt-5.1-pro log (completed)` etc.). This keeps the combined log deterministic while still letting you inspect an individual log in isolation.
 - Refreshing the detail screen re-reads metadata/logs so partial completions (some models done, others still running) are accurately reflected without restarting the TUI.
 
 ---

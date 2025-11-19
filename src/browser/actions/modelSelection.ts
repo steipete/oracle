@@ -267,6 +267,11 @@ function buildModelMatchersLiteral(targetModel: string): { labelTokens: string[]
     push('research grade', labelTokens);
     push('advanced reasoning', labelTokens);
     testIdTokens.add('gpt-5-pro');
+    if (base.includes('5.1') || base.includes('5-1') || base.includes('51')) {
+      testIdTokens.add('gpt-5.1-pro');
+      testIdTokens.add('gpt-5-1-pro');
+      testIdTokens.add('gpt51pro');
+    }
     testIdTokens.add('pro');
     testIdTokens.add('proresearch');
   }

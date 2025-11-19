@@ -16,7 +16,7 @@ import type {
   RunOracleResult,
   ModelName,
 } from './types.js';
-import { DEFAULT_SYSTEM_PROMPT, MODEL_CONFIGS, TOKENIZER_OPTIONS } from './config.js';
+import { DEFAULT_SYSTEM_PROMPT, MODEL_CONFIGS, PRO_MODELS, TOKENIZER_OPTIONS } from './config.js';
 import { readFiles } from './files.js';
 import { buildPrompt, buildRequestBody } from './request.js';
 import { estimateRequestTokens } from './tokenEstimate.js';
@@ -43,7 +43,9 @@ const BACKGROUND_MAX_WAIT_MS = 30 * 60 * 1000;
 const BACKGROUND_POLL_INTERVAL_MS = 5000;
 const BACKGROUND_RETRY_BASE_MS = 3000;
 const BACKGROUND_RETRY_MAX_MS = 15000;
-const DEFAULT_TIMEOUT_NON_PRO_MS = 30_000;
+// Non-Pro models (incl. gpt-5.1-codex) often need >30s to return first tokens.
+// Give them a more forgiving default while still preserving fast-fail behavior.
+const DEFAULT_TIMEOUT_NON_PRO_MS = 120_000;
 const DEFAULT_TIMEOUT_PRO_MS = 60 * 60 * 1000;
 
 const defaultWait = (ms: number): Promise<void> =>
@@ -94,8 +96,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
 
   const minPromptLength = Number.parseInt(process.env.ORACLE_MIN_PROMPT_CHARS ?? '20', 10);
   const promptLength = options.prompt?.trim().length ?? 0;
-  // Enforce the short-prompt guardrail only for gpt-5-pro because it's costly; cheaper models can run short prompts without blocking.
-  if (options.model === 'gpt-5-pro' && !Number.isNaN(minPromptLength) && promptLength < minPromptLength) {
+  // Enforce the short-prompt guardrail on pro-tier models because they're costly; cheaper models can run short prompts without blocking.
+  const isProTierModel = PRO_MODELS.has(options.model as Parameters<typeof PRO_MODELS.has>[0]);
+  if (isProTierModel && !Number.isNaN(minPromptLength) && promptLength < minPromptLength) {
     throw new PromptValidationError(
       `Prompt is too short (<${minPromptLength} chars). This was likely accidental; please provide more detail.`,
       { minPromptLength, promptLength },
@@ -109,7 +112,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
       { model: options.model },
     );
   }
-  const isLongRunningModel = options.model === 'gpt-5-pro';
+  const isLongRunningModel = isProTierModel;
   const useBackground = options.background ?? isLongRunningModel;
 
   const inputTokenBudget = options.maxInput ?? modelConfig.inputLimit;
@@ -310,8 +313,12 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
             isActive: () => heartbeatActive,
             makeMessage: (elapsedMs) => {
               const elapsedText = formatElapsed(elapsedMs);
-              const timeoutLabel = Math.round(timeoutMs / 60000);
-              return `API connection active — ${elapsedText} elapsed. Timeout in ~${timeoutLabel} min if no response.`;
+              const remainingMs = Math.max(timeoutMs - elapsedMs, 0);
+              const remainingLabel =
+                remainingMs >= 60_000
+                  ? `${Math.ceil(remainingMs / 60_000)} min`
+                  : `${Math.max(1, Math.ceil(remainingMs / 1000))}s`;
+              return `API connection active — ${elapsedText} elapsed. Timeout in ~${remainingLabel} if no response.`;
             },
           });
         }
@@ -335,7 +342,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
         // stream.abort() is not available on the interface
         stopHeartbeatNow();
         const transportError = toTransportError(streamError);
-        log(chalk.yellow(describeTransportError(transportError)));
+        log(chalk.yellow(describeTransportError(transportError, timeoutMs)));
         throw transportError;
       }
       response = await stream.finalResponse();
@@ -646,7 +653,7 @@ async function retrieveBackgroundResponseWithRetry(
       }
       retries += 1;
       const delay = Math.min(BACKGROUND_RETRY_BASE_MS * 2 ** (retries - 1), BACKGROUND_RETRY_MAX_MS);
-      log(chalk.yellow(`${describeTransportError(transportError)} Retrying in ${formatElapsed(delay)}...`));
+      log(chalk.yellow(`${describeTransportError(transportError, maxWaitMs)} Retrying in ${formatElapsed(delay)}...`));
       await wait(delay);
       if (now() - startMark >= maxWaitMs) {
         throw new OracleTransportError('client-timeout', 'Timed out waiting for API background response to finish.');

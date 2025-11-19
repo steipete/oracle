@@ -1,11 +1,13 @@
+import { PRO_MODELS } from '../oracle.js';
+
 export type EngineMode = 'api' | 'browser';
 
 export function defaultWaitPreference(model: string, engine: EngineMode): boolean {
-  // gpt-5-pro runs can take a long time; prefer non-blocking
-  if (engine === 'api' && model === 'gpt-5-pro') {
+  // Pro-class API runs can take a long time; prefer non-blocking unless explicitly overridden.
+  if (engine === 'api' && PRO_MODELS.has(model as Parameters<typeof PRO_MODELS.has>[0])) {
     return false;
   }
-  return true; // browser or gpt-5.1 are fast enough to block by default
+  return true; // browser or non-pro models are fast enough to block by default
 }
 
 /**

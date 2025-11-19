@@ -41,12 +41,12 @@ if (!ENABLE_LIVE || !LIVE_API_KEY) {
     );
 
     test(
-      'gpt-5-pro background flow eventually completes',
+      'gpt-5.1-pro background flow eventually completes',
       async () => {
         const result = await runOracle(
           {
             prompt: 'Reply with "live pro smoke test" on a single line.',
-            model: 'gpt-5-pro',
+            model: 'gpt-5.1-pro',
             silent: true,
             heartbeatIntervalMs: 2000,
           },

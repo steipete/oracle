@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveRunOptionsFromConfig } from '../src/cli/runOptions.js';
 import { estimateRequestTokens } from '../src/oracle/tokenEstimate.js';
-import { MODEL_CONFIGS } from '../src/oracle/config.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS } from '../src/oracle/config.js';
 
 describe('resolveRunOptionsFromConfig', () => {
   const basePrompt = 'This prompt is comfortably above twenty characters.';
@@ -22,6 +22,13 @@ describe('resolveRunOptionsFromConfig', () => {
       userConfig: { engine: 'browser' },
     });
     expect(resolvedEngine).toBe('api');
+  });
+
+  it('defaults to gpt-5.1-pro when model not provided', () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+    });
+    expect(runOptions.model).toBe(DEFAULT_MODEL);
   });
 
   it('uses config model when caller does not provide one', () => {

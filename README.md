@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Oracle gives your agents a simple, reliable way to **bundle a prompt plus the right files and hand them to another AI**. It currently speaks GPT-5.1, GPT-5.1 Codex (API-only), and GPT-5 Pro; Pro and Codex Max runs can take up to an hour and often return remarkably strong answers.
+Oracle gives your agents a simple, reliable way to **bundle a prompt plus the right files and hand them to another AI**. It currently speaks GPT-5.1 Pro (new default), GPT-5.1 Codex (API-only), GPT-5.1, and still understands legacy GPT-5 Pro; Pro and Codex Max runs can take up to an hour and often return remarkably strong answers.
 
 ## Two engines, one CLI
 
@@ -83,7 +83,7 @@ oracle session <id>                 # replay a run locally
 
 - **Bundle once, reuse anywhere** — Prompt + files become a markdown package the model can cite.
 - **Flexible file selection** — Glob patterns and `!` excludes let you scoop up or skip files without scripting.
-- **Pro-friendly** — GPT-5 Pro background runs stay alive for ~10 minutes with reconnection + token/cost tracking.
+- **Pro-friendly** — GPT-5.1 Pro background runs stay alive for ~10 minutes with reconnection + token/cost tracking (legacy GPT-5 Pro still supported).
 - **Two paths, one UX** — API or browser, same flags and session logs.
 - **Search on by default** — The model can ground answers with fresh citations.
 - **File safety** — Per-file token accounting and size guards; `--files-report` shows exactly what you’re sending.
@@ -100,7 +100,7 @@ Put per-user defaults in `~/.oracle/config.json` (parsed as JSON5, so comments/t
 | `-p, --prompt <text>` | Required prompt. |
 | `-f, --file <paths...>` | Attach files/dirs (supports globs and `!` excludes). |
 | `-e, --engine <api\|browser>` | Choose API or browser automation. Omitted: API when `OPENAI_API_KEY` is set, otherwise browser. |
-| `-m, --model <name>` | `gpt-5-pro` (default), `gpt-5.1`, or `gpt-5.1-codex` (API-only). |
+| `-m, --model <name>` | `gpt-5.1-pro` (default), `gpt-5.1`, or `gpt-5.1-codex` (API-only). |
 | `--base-url <url>` | Point the API engine at any OpenAI-compatible endpoint (LiteLLM, Azure, etc.). |
 | `--azure-endpoint <url>` | Use Azure OpenAI (switches client automatically). |
 | `--files-report` | Print per-file token usage. |
@@ -115,7 +115,7 @@ Add `--render` (alias `--render-markdown`) when attaching to pretty-print the st
 
 **Recommendation:** Prefer the API engine when you have an API key (`--engine api` or just set `OPENAI_API_KEY`). The API delivers more reliable results and supports longer, uninterrupted runs than the browser engine in most cases.
 
-**Wait vs no-wait:** gpt-5-pro API runs default to detaching (shows a reattach hint); add `--wait` to stay attached. gpt-5.1, gpt-5.1-codex, and browser runs block by default. You can reattach anytime via `oracle session <id>`.
+**Wait vs no-wait:** gpt-5.1-pro (and legacy gpt-5-pro) API runs default to detaching (shows a reattach hint); add `--wait` to stay attached. gpt-5.1, gpt-5.1-codex, and browser runs block by default. You can reattach anytime via `oracle session <id>`.
 
 ## Testing
 

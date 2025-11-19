@@ -1,4 +1,5 @@
 import type { RunOracleOptions, ModelName } from '../oracle.js';
+import { DEFAULT_MODEL } from '../oracle.js';
 import type { UserConfig } from '../config.js';
 import type { EngineMode } from './engine.js';
 import { resolveEngine } from './engine.js';
@@ -35,7 +36,7 @@ export function resolveRunOptionsFromConfig({
   const requestedModelList = Array.isArray(models) ? models : [];
   const normalizedRequestedModels = requestedModelList.map((entry) => normalizeModelOption(entry)).filter(Boolean);
 
-  const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || 'gpt-5-pro';
+  const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || DEFAULT_MODEL;
   const resolvedModel =
     resolvedEngine === 'browser' && normalizedRequestedModels.length === 0
       ? inferModelFromLabel(cliModelArg)

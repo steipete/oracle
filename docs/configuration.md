@@ -8,7 +8,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
 {
   // Default engine when neither CLI flag nor env decide
   engine: "api",           // or "browser"
-  model: "gpt-5-pro",
+  model: "gpt-5.1-pro",
   search: "on",            // "on" | "off"
 
   notify: {

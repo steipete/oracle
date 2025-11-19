@@ -5,6 +5,7 @@ import { createWriteStream } from 'node:fs';
 import type { WriteStream } from 'node:fs';
 import type { CookieParam } from './browser/types.js';
 import type { TransportFailureReason, AzureOptions, ModelName } from './oracle.js';
+import { DEFAULT_MODEL } from './oracle.js';
 
 export type SessionMode = 'api' | 'browser';
 
@@ -25,7 +26,7 @@ export interface BrowserSessionConfig {
   desiredModel?: string | null;
   debug?: boolean;
   allowCookieErrors?: boolean;
-  remoteChrome?: { host: string; port: number };
+  remoteChrome?: { host: string; port: number } | null;
 }
 
 export interface BrowserRuntimeMetadata {
@@ -371,7 +372,7 @@ export async function initializeSession(
   await ensureDir(modelsDir(sessionId));
   await fs.writeFile(metaPath(sessionId), JSON.stringify(metadata, null, 2), 'utf8');
   await Promise.all(
-    (modelList.length > 0 ? modelList : [metadata.model ?? 'gpt-5-pro']).map(async (modelName) => {
+    (modelList.length > 0 ? modelList : [metadata.model ?? DEFAULT_MODEL]).map(async (modelName) => {
       const jsonPath = modelJsonPath(sessionId, modelName);
       const logFilePath = modelLogPath(sessionId, modelName);
       const modelRecord: SessionModelRun = {

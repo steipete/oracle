@@ -1,6 +1,6 @@
 import { InvalidArgumentError, type Command } from 'commander';
 import type { ModelName, PreviewMode } from '../oracle.js';
-import { MODEL_CONFIGS } from '../oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS } from '../oracle.js';
 
 export function collectPaths(value: string | string[] | undefined, previous: string[] = []): string[] {
   if (!value) {
@@ -117,6 +117,12 @@ export function resolveApiModel(modelValue: string): ModelName {
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
   }
+  if (normalized.includes('5.1') && normalized.includes('pro')) {
+    return 'gpt-5.1-pro';
+  }
+  if (normalized.includes('5.0') && normalized.includes('pro')) {
+    return 'gpt-5-pro';
+  }
   if (normalized.includes('codex')) {
     if (normalized.includes('max')) {
       throw new InvalidArgumentError('gpt-5.1-codex-max is not available yet. OpenAI has not released the API.');
@@ -134,7 +140,7 @@ export function resolveApiModel(modelValue: string): ModelName {
 export function inferModelFromLabel(modelValue: string): ModelName {
   const normalized = normalizeModelOption(modelValue).toLowerCase();
   if (!normalized) {
-    return 'gpt-5-pro';
+    return DEFAULT_MODEL;
   }
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
@@ -145,8 +151,17 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (normalized.includes('gemini')) {
     return 'gemini-3-pro';
   }
-  if (normalized.includes('pro')) {
+  if (normalized.includes('classic')) {
     return 'gpt-5-pro';
+  }
+  if ((normalized.includes('5.1') || normalized.includes('5_1')) && normalized.includes('pro')) {
+    return 'gpt-5.1-pro';
+  }
+  if (normalized.includes('5.0') && normalized.includes('pro')) {
+    return 'gpt-5-pro';
+  }
+  if (normalized.includes('pro')) {
+    return 'gpt-5.1-pro';
   }
   if (normalized.includes('5.1') || normalized.includes('5_1')) {
     return 'gpt-5.1';

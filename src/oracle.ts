@@ -1,6 +1,8 @@
 export * from './oracle/types.js';
 export {
   MODEL_CONFIGS,
+  DEFAULT_MODEL,
+  PRO_MODELS,
   DEFAULT_SYSTEM_PROMPT,
   TOKENIZER_OPTIONS,
 } from './oracle/config.js';

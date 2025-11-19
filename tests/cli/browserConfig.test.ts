@@ -3,7 +3,7 @@ import { buildBrowserConfig, resolveBrowserModelLabel } from '../../src/cli/brow
 
 describe('buildBrowserConfig', () => {
   test('uses defaults when optional flags omitted', async () => {
-    const config = await buildBrowserConfig({ model: 'gpt-5-pro' });
+    const config = await buildBrowserConfig({ model: 'gpt-5.1-pro' });
     expect(config).toMatchObject({
       chromeProfile: 'Default',
       chromePath: null,
@@ -15,7 +15,7 @@ describe('buildBrowserConfig', () => {
       headless: undefined,
       keepBrowser: undefined,
       hideWindow: undefined,
-      desiredModel: 'GPT-5 Pro',
+      desiredModel: 'GPT-5.1 Pro',
       debug: undefined,
       allowCookieErrors: undefined,
     });
@@ -131,6 +131,7 @@ describe('buildBrowserConfig', () => {
 
 describe('resolveBrowserModelLabel', () => {
   test('returns canonical ChatGPT label when CLI value matches API model', () => {
+    expect(resolveBrowserModelLabel('gpt-5.1-pro', 'gpt-5.1-pro')).toBe('GPT-5.1 Pro');
     expect(resolveBrowserModelLabel('gpt-5-pro', 'gpt-5-pro')).toBe('GPT-5 Pro');
     expect(resolveBrowserModelLabel('GPT-5.1', 'gpt-5.1')).toBe('GPT-5.1');
   });
@@ -144,6 +145,7 @@ describe('resolveBrowserModelLabel', () => {
   });
 
   test('supports undefined or whitespace-only input', () => {
+    expect(resolveBrowserModelLabel(undefined, 'gpt-5.1-pro')).toBe('GPT-5.1 Pro');
     expect(resolveBrowserModelLabel(undefined, 'gpt-5-pro')).toBe('GPT-5 Pro');
     expect(resolveBrowserModelLabel('   ', 'gpt-5.1')).toBe('GPT-5.1');
   });
