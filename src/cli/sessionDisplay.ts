@@ -301,7 +301,7 @@ export function formatTransportMetadata(metadata?: SessionTransportMetadata): st
     return null;
   }
   const reasonLabels: Record<string, string> = {
-    'client-timeout': 'client timeout (20m deadline hit)',
+    'client-timeout': 'client timeout (60m deadline hit)',
     'connection-lost': 'connection lost before completion',
     'client-abort': 'request aborted locally',
     unknown: 'unknown transport failure',

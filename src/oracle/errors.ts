@@ -127,7 +127,7 @@ export function toTransportError(error: unknown): OracleTransportError {
 export function describeTransportError(error: OracleTransportError): string {
   switch (error.reason) {
     case 'client-timeout':
-      return 'Client-side timeout: OpenAI streaming call exceeded the 20m deadline.';
+      return 'Client-side timeout: OpenAI streaming call exceeded the 60m deadline.';
     case 'connection-lost':
       return 'Connection to OpenAI ended unexpectedly before the response completed.';
     case 'client-abort':

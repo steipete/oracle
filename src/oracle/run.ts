@@ -44,7 +44,7 @@ const BACKGROUND_POLL_INTERVAL_MS = 5000;
 const BACKGROUND_RETRY_BASE_MS = 3000;
 const BACKGROUND_RETRY_MAX_MS = 15000;
 const DEFAULT_TIMEOUT_NON_PRO_MS = 30_000;
-const DEFAULT_TIMEOUT_PRO_MS = 20 * 60 * 1000;
+const DEFAULT_TIMEOUT_PRO_MS = 60 * 60 * 1000;
 
 const defaultWait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -195,7 +195,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
       log(dim(pendingShortPromptTip));
     }
     if (options.model === 'gpt-5-pro') {
-      log(dim('Pro is thinking, this can take up to 30 minutes...'));
+      log(dim('Pro is thinking, this can take up to 60 minutes...'));
     }
     log(dim('Press Ctrl+C to cancel.'));
   }

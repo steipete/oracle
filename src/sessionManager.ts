@@ -124,7 +124,7 @@ interface InitializeSessionOptions extends StoredRunOptions {
 const ORACLE_HOME = process.env.ORACLE_HOME_DIR ?? path.join(os.homedir(), '.oracle');
 const SESSIONS_DIR = path.join(ORACLE_HOME, 'sessions');
 const MAX_STATUS_LIMIT = 1000;
-const ZOMBIE_MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+const ZOMBIE_MAX_AGE_MS = 60 * 60 * 1000; // 60 minutes
 const DEFAULT_SLUG = 'session';
 const MAX_SLUG_WORDS = 5;
 const MIN_CUSTOM_SLUG_WORDS = 3;
@@ -407,7 +407,7 @@ async function markZombie(meta: SessionMetadata, { persist }: { persist: boolean
   const updated: SessionMetadata = {
     ...meta,
     status: 'error',
-    errorMessage: 'Session marked as zombie (>30m stale)',
+    errorMessage: 'Session marked as zombie (>60m stale)',
     completedAt: new Date().toISOString(),
   };
   if (persist) {
