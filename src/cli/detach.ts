@@ -14,9 +14,7 @@ export function shouldDetachSession({
   disableDetachEnv: boolean;
 }): boolean {
   if (disableDetachEnv) return false;
-  // Gemini runs must stay inline: forcing detachment can launch the background session runner,
-  // which previously led to silent hangs when Gemini picked the browser path. Keep it simple: no detach.
-  if (model.startsWith('gemini')) return false;
-  // For other models, keep legacy behavior (detach if allowed, then reattach when waitPreference=true).
-  return true;
+  // Only GPT-5 Pro should start detached by default; everything else stays inline for clarity.
+  if (model === 'gpt-5-pro') return true;
+  return false;
 }
