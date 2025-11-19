@@ -15,13 +15,14 @@ export async function syncCookies(
     allowErrors?: boolean;
     filterNames?: string[] | null;
     inlineCookies?: CookieParam[] | null;
+    cookiePath?: string | null;
   } = {},
 ) {
-  const { allowErrors = false, filterNames, inlineCookies } = options;
+  const { allowErrors = false, filterNames, inlineCookies, cookiePath } = options;
   try {
     const cookies = inlineCookies?.length
       ? normalizeInlineCookies(inlineCookies, new URL(url).hostname)
-      : await readChromeCookies(url, profile, filterNames ?? undefined);
+      : await readChromeCookies(url, profile, filterNames ?? undefined, cookiePath ?? undefined);
     if (!cookies.length) {
       return 0;
     }
@@ -53,6 +54,7 @@ async function readChromeCookies(
   url: string,
   profile?: string | null,
   filterNames?: string[],
+  cookiePath?: string | null,
 ): Promise<CookieParam[]> {
   const chromeModule = await loadChromeCookiesModule();
   const urlsToCheck = Array.from(new Set([stripQuery(url), ...COOKIE_URLS]));
@@ -60,7 +62,8 @@ async function readChromeCookies(
   const allowlist = normalizeCookieNames(filterNames);
   for (const candidateUrl of urlsToCheck) {
     let rawCookies: unknown;
-    rawCookies = await chromeModule.getCookiesPromised(candidateUrl, 'puppeteer', profile ?? undefined);
+    const profileOrPath = cookiePath ?? profile ?? undefined;
+    rawCookies = await chromeModule.getCookiesPromised(candidateUrl, 'puppeteer', profileOrPath);
     if (!Array.isArray(rawCookies)) {
       continue;
     }

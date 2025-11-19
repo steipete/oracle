@@ -19,6 +19,7 @@ const BROWSER_MODEL_LABELS: Record<ModelName, string> = {
 export interface BrowserFlagOptions {
   browserChromeProfile?: string;
   browserChromePath?: string;
+  browserCookiePath?: string;
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
@@ -51,6 +52,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
   return {
     chromeProfile: options.browserChromeProfile ?? DEFAULT_CHROME_PROFILE,
     chromePath: options.browserChromePath ?? null,
+    chromeCookiePath: options.browserCookiePath ?? null,
     url: options.browserUrl,
     timeoutMs: options.browserTimeout ? parseDuration(options.browserTimeout, DEFAULT_BROWSER_TIMEOUT_MS) : undefined,
     inputTimeoutMs: options.browserInputTimeout

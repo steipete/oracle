@@ -4,6 +4,7 @@ import type { BrowserAutomationConfig, ResolvedBrowserConfig } from './types.js'
 export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   chromeProfile: null,
   chromePath: null,
+  chromeCookiePath: null,
   url: CHATGPT_URL,
   timeoutMs: 1_200_000,
   inputTimeoutMs: 30_000,
@@ -36,6 +37,7 @@ export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined
     desiredModel: config?.desiredModel ?? DEFAULT_BROWSER_CONFIG.desiredModel,
     chromeProfile: config?.chromeProfile ?? DEFAULT_BROWSER_CONFIG.chromeProfile,
     chromePath: config?.chromePath ?? DEFAULT_BROWSER_CONFIG.chromePath,
+    chromeCookiePath: config?.chromeCookiePath ?? DEFAULT_BROWSER_CONFIG.chromeCookiePath,
     debug: config?.debug ?? DEFAULT_BROWSER_CONFIG.debug,
     allowCookieErrors: config?.allowCookieErrors ?? DEFAULT_BROWSER_CONFIG.allowCookieErrors,
   };

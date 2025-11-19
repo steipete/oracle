@@ -7,6 +7,7 @@ describe('buildBrowserConfig', () => {
     expect(config).toMatchObject({
       chromeProfile: 'Default',
       chromePath: null,
+      chromeCookiePath: null,
       url: undefined,
       timeoutMs: undefined,
       inputTimeoutMs: undefined,
@@ -25,6 +26,7 @@ describe('buildBrowserConfig', () => {
       model: 'gpt-5.1',
       browserChromeProfile: 'Profile 2',
       browserChromePath: '/Applications/Chrome.app',
+      browserCookiePath: '/tmp/cookies.db',
       browserUrl: 'https://chat.example.com',
       browserTimeout: '120s',
       browserInputTimeout: '5s',
@@ -38,6 +40,7 @@ describe('buildBrowserConfig', () => {
     expect(config).toMatchObject({
       chromeProfile: 'Profile 2',
       chromePath: '/Applications/Chrome.app',
+      chromeCookiePath: '/tmp/cookies.db',
       url: 'https://chat.example.com',
       timeoutMs: 120_000,
       inputTimeoutMs: 5_000,

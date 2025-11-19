@@ -11,6 +11,7 @@ export type SessionMode = 'api' | 'browser';
 export interface BrowserSessionConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
+  chromeCookiePath?: string | null;
   url?: string;
   timeoutMs?: number;
   inputTimeoutMs?: number;

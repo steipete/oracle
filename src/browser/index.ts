@@ -100,6 +100,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         allowErrors: config.allowCookieErrors ?? false,
         filterNames: config.cookieNames ?? undefined,
         inlineCookies: config.inlineCookies ?? undefined,
+        cookiePath: config.chromeCookiePath ?? undefined,
       });
       logger(
         cookieCount > 0

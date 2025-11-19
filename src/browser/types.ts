@@ -38,6 +38,7 @@ export interface BrowserAttachment {
 export interface BrowserAutomationConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
+  chromeCookiePath?: string | null;
   url?: string;
   timeoutMs?: number;
   inputTimeoutMs?: number;
@@ -75,10 +76,11 @@ export interface BrowserRunResult {
 }
 
 export type ResolvedBrowserConfig = Required<
-  Omit<BrowserAutomationConfig, 'chromeProfile' | 'chromePath' | 'desiredModel'>
+  Omit<BrowserAutomationConfig, 'chromeProfile' | 'chromePath' | 'chromeCookiePath' | 'desiredModel'>
 > & {
   chromeProfile?: string | null;
   chromePath?: string | null;
+  chromeCookiePath?: string | null;
   desiredModel?: string | null;
   inlineCookiesSource?: string | null;
 };

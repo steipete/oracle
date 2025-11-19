@@ -20,6 +20,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
   browser: {
     chromeProfile: "Default",
     chromePath: null,
+    chromeCookiePath: null,
     url: null,
     timeoutMs: 1200000,
     inputTimeoutMs: 30000,
@@ -45,3 +46,5 @@ CLI flags → `config.json` → environment → built-in defaults.
 - `ORACLE_NOTIFY*` env vars still layer on top of the config’s `notify` block.
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
+
+Chromium-based browsers usually need both `chromePath` (binary) and `chromeCookiePath` (cookie DB) set so automation can launch the right executable and reuse your login. See [docs/chromium-forks.md](chromium-forks.md) for detailed paths per browser/OS.
