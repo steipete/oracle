@@ -14,6 +14,7 @@ export interface NotifyConfig {
 export interface BrowserConfigDefaults {
   chromeProfile?: string | null;
   chromePath?: string | null;
+  chromeCookiePath?: string | null;
   url?: string;
   timeoutMs?: number;
   inputTimeoutMs?: number;

@@ -27,6 +27,10 @@ Your system password is needed to copy cookies. To skip Chrome/Keychain entirely
 `--browser-inline-cookies <json|base64>` or `--browser-inline-cookies-file <path>` (fallback files at
 `~/.oracle/cookies.json` or `~/.oracle/cookies.base64`). API engine is stable and should be preferred.
 
+### Chromium-based browsers
+
+Want to launch Chromium or Microsoft Edge instead of Chrome? Override the executable with `--browser-chrome-path` (or `browser.chromePath` in config) and point cookie sync at the fork’s `Cookies` database via `--browser-cookie-path`. The full walkthrough—including sample paths for macOS/Linux/Windows—is in [docs/chromium-forks.md](docs/chromium-forks.md).
+
 ## Quick start
 
 ```bash

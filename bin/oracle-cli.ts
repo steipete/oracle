@@ -77,6 +77,7 @@ interface CliOptions extends OptionValues {
   timeout?: number | 'auto';
   browserChromeProfile?: string;
   browserChromePath?: string;
+  browserCookiePath?: string;
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
@@ -242,6 +243,9 @@ program
   .addOption(new Option('--browser', '(deprecated) Use --engine browser instead.').default(false).hideHelp())
   .addOption(new Option('--browser-chrome-profile <name>', 'Chrome profile name/path for cookie reuse.').hideHelp())
   .addOption(new Option('--browser-chrome-path <path>', 'Explicit Chrome or Chromium executable path.').hideHelp())
+  .addOption(
+    new Option('--browser-cookie-path <path>', 'Explicit Chrome/Chromium cookie DB path for session reuse.').hideHelp(),
+  )
   .addOption(new Option('--browser-url <url>', `Override the ChatGPT URL (default ${CHATGPT_URL}).`).hideHelp())
   .addOption(new Option('--browser-timeout <ms|s|m>', 'Maximum time to wait for an answer (default 1200s / 20m).').hideHelp())
   .addOption(
@@ -900,6 +904,7 @@ function printDebugHelp(cliName: string): void {
   printDebugOptionGroup([
     ['--browser-chrome-profile <name>', 'Reuse cookies from a specific Chrome profile.'],
     ['--browser-chrome-path <path>', 'Point to a custom Chrome/Chromium binary.'],
+    ['--browser-cookie-path <path>', 'Use a specific Chrome/Chromium cookie store file.'],
     ['--browser-url <url>', 'Hit an alternate ChatGPT host.'],
     ['--browser-timeout <ms|s|m>', 'Cap total wait time for the assistant response.'],
     ['--browser-input-timeout <ms|s|m>', 'Cap how long we wait for the composer textarea.'],
@@ -946,6 +951,9 @@ function applyBrowserDefaultsFromConfig(options: CliOptions, config: UserConfig)
   }
   if (source('browserChromePath') === 'default' && browser.chromePath !== undefined) {
     options.browserChromePath = browser.chromePath ?? undefined;
+  }
+  if (source('browserCookiePath') === 'default' && browser.chromeCookiePath !== undefined) {
+    options.browserCookiePath = browser.chromeCookiePath ?? undefined;
   }
   if (source('browserUrl') === 'default' && browser.url !== undefined) {
     options.browserUrl = browser.url;
