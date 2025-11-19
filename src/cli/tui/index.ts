@@ -47,16 +47,16 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
     const choices: Array<SessionChoice | inquirer.Separator> = [];
     if (recent.length > 0) {
       choices.push(new inquirer.Separator());
-      choices.push(new inquirer.Separator('Status  Model      Mode    Timestamp           Chars  Cost  Slug'));
+      choices.push(new inquirer.Separator('Status  Model         Mode    Timestamp           Chars  Cost  Slug'));
       choices.push(...recent.map(toSessionChoice));
     } else if (older.length > 0 && olderOffset === 0) {
       choices.push(new inquirer.Separator());
-      choices.push(new inquirer.Separator('Status  Model      Mode    Timestamp           Chars  Cost  Slug'));
+      choices.push(new inquirer.Separator('Status  Model         Mode    Timestamp           Chars  Cost  Slug'));
       choices.push(...older.slice(0, PAGE_SIZE).map(toSessionChoice));
     }
     if (older.length > 0 && olderOffset > 0) {
       choices.push(new inquirer.Separator());
-      choices.push(new inquirer.Separator('Status  Model      Mode    Timestamp           Chars  Cost  Slug'));
+      choices.push(new inquirer.Separator('Status  Model         Mode    Timestamp           Chars  Cost  Slug'));
       choices.push(...older.slice(0, PAGE_SIZE).map(toSessionChoice));
     }
     choices.push(new inquirer.Separator());
@@ -136,7 +136,7 @@ function formatSessionLabel(meta: SessionMetadata): string {
   const charLabel = chars > 0 ? chalk.gray(String(chars).padStart(5)) : chalk.gray('    -');
   const cost = mode === 'browser' ? null : resolveCost(meta);
   const costLabel = cost != null ? chalk.gray(formatCostTable(cost)) : chalk.gray('      -');
-  return `${status} ${chalk.white(model.padEnd(10))} ${chalk.gray(mode.padEnd(7))} ${chalk.gray(created)} ${charLabel} ${costLabel}  ${chalk.cyan(
+  return `${status} ${chalk.white(model.padEnd(13))} ${chalk.gray(mode.padEnd(7))} ${chalk.gray(created)} ${charLabel} ${costLabel}  ${chalk.cyan(
     slug,
   )}`;
 }
