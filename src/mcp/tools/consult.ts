@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getCliVersion } from '../../version.js';
 import { LoggingMessageNotificationParamsSchema } from '@modelcontextprotocol/sdk/types.js';
 import { ensureBrowserAvailable, mapConsultToRunOptions } from '../utils.js';
-import type { BrowserSessionConfig } from '../../sessionStore.js';
+import type { BrowserSessionConfig, SessionModelRun } from '../../sessionStore.js';
 import { sessionStore } from '../../sessionStore.js';
 
 async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<string | null> {
@@ -36,11 +36,77 @@ const consultInputShape = {
   slug: z.string().optional(),
 } satisfies z.ZodRawShape;
 
+const consultModelSummaryShape = z.object({
+  model: z.string(),
+  status: z.string(),
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  usage: z
+    .object({
+      inputTokens: z.number().optional(),
+      outputTokens: z.number().optional(),
+      reasoningTokens: z.number().optional(),
+      totalTokens: z.number().optional(),
+      cost: z.number().optional(),
+    })
+    .optional(),
+  response: z
+    .object({
+      id: z.string().optional(),
+      requestId: z.string().optional(),
+      status: z.string().optional(),
+    })
+    .optional(),
+  error: z
+    .object({
+      category: z.string().optional(),
+      message: z.string().optional(),
+    })
+    .optional(),
+  logPath: z.string().optional(),
+});
+
 const consultOutputShape = {
   sessionId: z.string(),
   status: z.string(),
   output: z.string(),
+  models: z.array(consultModelSummaryShape).optional(),
 } satisfies z.ZodRawShape;
+
+export type ConsultModelSummary = z.infer<typeof consultModelSummaryShape>;
+
+export function summarizeModelRunsForConsult(
+  runs?: SessionModelRun[] | null,
+): ConsultModelSummary[] | undefined {
+  if (!runs || runs.length === 0) {
+    return undefined;
+  }
+  return runs.map((run) => {
+    const response = run.response
+      ? {
+          id: run.response.id ?? undefined,
+          requestId: run.response.requestId ?? undefined,
+          status: run.response.status ?? undefined,
+        }
+      : undefined;
+    const error = run.error
+      ? {
+          category: run.error.category,
+          message: run.error.message,
+        }
+      : undefined;
+    return {
+      model: run.model,
+      status: run.status ?? 'unknown',
+      startedAt: run.startedAt,
+      completedAt: run.completedAt,
+      usage: run.usage,
+      response,
+      error,
+      logPath: run.log?.path,
+    };
+  });
+}
 
 export function registerConsultTool(server: McpServer): void {
   server.registerTool(
@@ -165,12 +231,14 @@ export function registerConsultTool(server: McpServer): void {
         const finalMeta = (await sessionStore.readSession(sessionMeta.id)) ?? sessionMeta;
         const summary = `Session ${sessionMeta.id} (${finalMeta.status})`;
         const logTail = await readSessionLogTail(sessionMeta.id, 4000);
+        const modelsSummary = summarizeModelRunsForConsult(finalMeta.models);
         return {
           content: textContent([summary, logTail || '(log empty)'].join('\n').trim()),
           structuredContent: {
             sessionId: sessionMeta.id,
             status: finalMeta.status,
             output: logTail ?? '',
+            models: modelsSummary,
           },
         };
       } catch (error) {
