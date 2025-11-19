@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.3.0 — Unreleased
+## 1.3.0 — 2025-11-19
 
 ### Added
 - Native Azure OpenAI support! Set `AZURE_OPENAI_ENDPOINT` (plus `AZURE_OPENAI_API_KEY` and optionally `AZURE_OPENAI_DEPLOYMENT`/`AZURE_OPENAI_API_VERSION`) or use the new CLI flags (`--azure-endpoint`, `--azure-deployment`, etc.) to switch automatically to the Azure client.
