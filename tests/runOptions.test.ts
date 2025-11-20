@@ -176,7 +176,7 @@ describe('resolveRunOptionsFromConfig', () => {
       models: ['claude-4.5-sonnet', 'gpt-5.1-pro'],
     });
     expect(runOptions.model).toBe('claude-4.5-sonnet');
-    expect(runOptions.effectiveModelId).toBe('claude-4.5-sonnet');
+    expect(runOptions.effectiveModelId).toBe('claude-sonnet-4-5');
   });
 });
 

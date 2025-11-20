@@ -1,5 +1,5 @@
 import type { RunOracleOptions, ModelName } from '../oracle.js';
-import { DEFAULT_MODEL } from '../oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS } from '../oracle.js';
 import type { UserConfig } from '../config.js';
 import type { EngineMode } from './engine.js';
 import { resolveEngine } from './engine.js';
@@ -108,5 +108,6 @@ function resolveEffectiveModelId(model: ModelName): string {
   if (model.startsWith('gemini')) {
     return resolveGeminiModelId(model);
   }
-  return model;
+  const config = MODEL_CONFIGS[model];
+  return config?.apiModel ?? model;
 }

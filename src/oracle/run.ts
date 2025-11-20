@@ -190,7 +190,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   // Track the concrete model id we dispatch to (especially for Gemini preview aliases)
   const effectiveModelId =
     options.effectiveModelId ??
-    (options.model.startsWith('gemini') ? resolveGeminiModelId(options.model) : modelConfig.model);
+    (options.model.startsWith('gemini')
+      ? resolveGeminiModelId(options.model)
+      : modelConfig.apiModel ?? modelConfig.model);
   const headerModelLabel = richTty ? chalk.cyan(modelConfig.model) : modelConfig.model;
   const requestBody = buildRequestBody({
     modelConfig,

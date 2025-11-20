@@ -29,7 +29,7 @@ export function buildRequestBody({
   storeResponse,
 }: BuildRequestBodyParams): OracleRequestBody {
   return {
-    model: modelConfig.model,
+    model: modelConfig.apiModel ?? modelConfig.model,
     instructions: systemPrompt,
     input: [
       {

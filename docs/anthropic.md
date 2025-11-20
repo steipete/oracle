@@ -12,8 +12,8 @@ Status: **shipped in 1.3.1** (November 20, 2025)
 Scope: API support for Claude 4.5 Sonnet and Claude 4.1 Opus in the Oracle CLI.
 
 ## Models & Pricing (public list prices)
-- **claude-4.5-sonnet** — 200k context, ~$3 / 1M input tokens, ~$15 / 1M output tokens.
-- **claude-4.1-opus** — 200k context, ~$15 / 1M input tokens, ~$75 / 1M output tokens.
+- **claude-sonnet-4-5** (CLI alias: `claude-4.5-sonnet`) — 200k context, ~$3 / 1M input tokens, ~$15 / 1M output tokens.
+- **claude-opus-4-1** (CLI alias: `claude-4.1-opus`) — 200k context, ~$15 / 1M input tokens, ~$75 / 1M output tokens.
 - Prompt-caching premium (not modeled in CLI costs): cached input portion >200k is billed higher (Sonnet ~$6 / 1M; Opus ~$18.75 / 1M).
 
 ## Requirements
@@ -50,6 +50,7 @@ Scope: API support for Claude 4.5 Sonnet and Claude 4.1 Opus in the Oracle CLI.
 - Env selection: `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL`; log masked key per provider.
 - Token estimates: wrapper flattens Oracle message arrays into text before calling `countTokens`.
 - Multi-model: shared `runOptions.background` is gated by per-model `supportsBackground`; Claude never enters the background polling path.
+- Model IDs: Anthropic renamed Claude endpoints (e.g., `claude-sonnet-4-5`, `claude-opus-4-1`); Oracle keeps the older CLI aliases but sends the new API IDs under the hood to avoid 404s.
 - Docs to update alongside code: this file, `README.md` model list, `docs/configuration.md`, `docs/multimodel.md`.
 
 ## Limitations / Caveats

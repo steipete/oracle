@@ -68,6 +68,7 @@ export const MODEL_CONFIGS: Record<ModelName, ModelConfig> = {
   },
   'claude-4.5-sonnet': {
     model: 'claude-4.5-sonnet',
+    apiModel: 'claude-sonnet-4-5',
     tokenizer: countTokensAnthropic,
     inputLimit: 200000,
     pricing: {
@@ -80,6 +81,7 @@ export const MODEL_CONFIGS: Record<ModelName, ModelConfig> = {
   },
   'claude-4.1-opus': {
     model: 'claude-4.1-opus',
+    apiModel: 'claude-opus-4-1',
     tokenizer: countTokensAnthropic,
     inputLimit: 200000,
     pricing: {

@@ -10,7 +10,7 @@ import { shouldRequirePrompt } from '../src/cli/promptRequirement.js';
 import chalk from 'chalk';
 import type { SessionMetadata, SessionMode, BrowserSessionConfig } from '../src/sessionStore.js';
 import { sessionStore, pruneOldSessions } from '../src/sessionStore.js';
-import { DEFAULT_MODEL, runOracle, renderPromptMarkdown, readFiles } from '../src/oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS, runOracle, renderPromptMarkdown, readFiles } from '../src/oracle.js';
 import type { ModelName, PreviewMode, RunOracleOptions } from '../src/oracle.js';
 import { CHATGPT_URL } from '../src/browserMode.js';
 import { loadChromeCookies } from '../src/browser/chromeCookies.js';
@@ -701,10 +701,17 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   const resolvedModel: ModelName =
     normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
-  const effectiveModelId = resolvedModel.startsWith('gemini') ? resolveGeminiModelId(resolvedModel) : resolvedModel;
+  const modelConfig = MODEL_CONFIGS[resolvedModel];
+  const effectiveModelId = resolvedModel.startsWith('gemini')
+    ? resolveGeminiModelId(resolvedModel)
+    : modelConfig?.apiModel ?? resolvedModel;
   const resolvedBaseUrl = normalizeBaseUrl(options.baseUrl ?? process.env.OPENAI_BASE_URL);
   const { models: _rawModels, ...optionsWithoutModels } = options;
-  const resolvedOptions: ResolvedCliOptions = { ...optionsWithoutModels, model: resolvedModel };
+  const resolvedOptions: ResolvedCliOptions = {
+    ...optionsWithoutModels,
+    model: resolvedModel,
+    effectiveModelId,
+  };
   if (normalizedMultiModels.length > 0) {
     resolvedOptions.models = normalizedMultiModels;
   }
