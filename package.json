@@ -67,6 +67,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@anthropic-ai/tokenizer": "^0.0.4",
     "@biomejs/biome": "^2.3.5",
     "@types/chrome-remote-interface": "^0.31.14",
     "@types/inquirer": "^9.0.9",
@@ -92,5 +93,6 @@
       "sqlite3",
       "win-dpapi"
     ]
-  }
+  },
+  "packageManager": "pnpm@10.23.0+sha512.21c4e5698002ade97e4efe8b8b4a89a8de3c85a37919f957e7a0f30f38fbc5bbdd05980ffe29179b2fb6e6e691242e098d945d1601772cad0fef5fb6411e2a4b"
 }
