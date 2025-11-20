@@ -62,7 +62,6 @@ export async function ensurePromptReady(Runtime: ChromeClient['Runtime'], timeou
     await logDomFailure(Runtime, logger, 'prompt-textarea');
     throw new Error('Prompt textarea did not appear before timeout');
   }
-  logger('Prompt textarea ready');
 }
 
 async function waitForDocumentReady(Runtime: ChromeClient['Runtime'], timeoutMs: number) {

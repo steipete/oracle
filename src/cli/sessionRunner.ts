@@ -75,10 +75,7 @@ export async function performSessionRun({
           startedAt: new Date().toISOString(),
         });
       }
-      const result = await runBrowserSessionExecution(
-        { runOptions, browserConfig, cwd, log, cliVersion: version },
-        browserDeps,
-      );
+      const result = await runBrowserSessionExecution({ runOptions, browserConfig, cwd, log }, browserDeps);
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: 'completed',

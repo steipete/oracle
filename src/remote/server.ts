@@ -183,6 +183,10 @@ export async function createRemoteServer(
   }
   logger(color(chalk.cyanBright.bold, `${eye} Remote Oracle listening at ${address.address}:${address.port}`));
   logger(color(chalk.yellowBright, `Access token: ${authToken}`));
+  const reachable = formatReachableAddresses(address.address, address.port);
+  if (reachable.length > 0) {
+    logger(color(chalk.greenBright, `Reachable at: ${reachable.join(', ')}`));
+  }
 
   return {
     port: address.port,
@@ -215,6 +219,25 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
   });
+}
+
+function formatReachableAddresses(host: string, port: number): string[] {
+  const addresses = new Set<string>();
+  if (host === '0.0.0.0' || host === '::') {
+    addresses.add(`http://127.0.0.1:${port}`);
+    addresses.add(`http://localhost:${port}`);
+    const nets = os.networkInterfaces();
+    for (const entries of Object.values(nets)) {
+      for (const entry of entries ?? []) {
+        if (entry.family === 'IPv4' && !entry.internal && entry.address) {
+          addresses.add(`http://${entry.address}:${port}`);
+        }
+      }
+    }
+  } else {
+    addresses.add(`http://${host}:${port}`);
+  }
+  return Array.from(addresses);
 }
 
 async function readRequestBody(req: http.IncomingMessage): Promise<string> {

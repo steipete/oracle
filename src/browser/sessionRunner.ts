@@ -25,7 +25,6 @@ interface RunBrowserSessionArgs {
   browserConfig: BrowserSessionConfig;
   cwd: string;
   log: (message?: string) => void;
-  cliVersion: string;
 }
 
 export interface BrowserSessionRunnerDeps {
@@ -34,7 +33,7 @@ export interface BrowserSessionRunnerDeps {
 }
 
 export async function runBrowserSessionExecution(
-  { runOptions, browserConfig, cwd, log, cliVersion }: RunBrowserSessionArgs,
+  { runOptions, browserConfig, cwd, log }: RunBrowserSessionArgs,
   deps: BrowserSessionRunnerDeps = {},
 ): Promise<BrowserExecutionResult> {
   if (runOptions.model.startsWith('gemini')) {
@@ -68,13 +67,9 @@ export async function runBrowserSessionExecution(
       log(chalk.dim('[verbose] Browser inline file fallback enabled (pasting file contents).'));
     }
   }
-  const headerLine = `oracle (${cliVersion}) launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens`;
+  const headerLine = `launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens`;
   if (promptArtifacts.bundled) {
-    log(
-      chalk.yellow(
-        `[browser] Packed ${promptArtifacts.bundled.originalCount} files into ${promptArtifacts.bundled.bundlePath}. If automation fails, you can drag this file into ChatGPT manually.`,
-      ),
-    );
+    log(chalk.yellow(`[browser] Packed ${promptArtifacts.bundled.originalCount} files into 1 bundle.`));
   }
   const automationLogger: BrowserLogger = ((message?: string) => {
     if (typeof message === 'string') {
@@ -85,7 +80,10 @@ export async function runBrowserSessionExecution(
   automationLogger.sessionLog = log;
 
   log(headerLine);
-  log(chalk.dim('Chrome automation does not stream output; this may take a minute...'));
+  log(chalk.dim('This run can take up to an hour (usually ~10 minutes).'));
+  if (runOptions.verbose) {
+    log(chalk.dim('Chrome automation does not stream output; this may take a minute...'));
+  }
   let browserResult: BrowserRunResult;
   try {
     browserResult = await executeBrowser({

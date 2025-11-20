@@ -39,7 +39,7 @@ export async function uploadAttachmentFile(
     await logDomFailure(runtime, logger, 'file-upload');
     throw new Error('Attachment did not register with the ChatGPT composer in time.');
   }
-  logger(`Attachment queued: ${attachment.displayPath}`);
+    logger('Attachment queued');
 }
 
 export async function waitForAttachmentCompletion(
@@ -101,4 +101,3 @@ async function waitForAttachmentSelection(
   }
   return false;
 }
-

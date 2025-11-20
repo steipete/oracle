@@ -3,7 +3,6 @@ import type { RunOracleOptions } from '../../src/oracle.js';
 import type { BrowserSessionConfig } from '../../src/sessionStore.js';
 import { runBrowserSessionExecution } from '../../src/browser/sessionRunner.js';
 import { BrowserAutomationError } from '../../src/oracle/errors.js';
-import { getCliVersion } from '../../src/version.js';
 
 const baseRunOptions: RunOracleOptions = {
   prompt: 'Hello world',
@@ -13,7 +12,6 @@ const baseRunOptions: RunOracleOptions = {
 };
 
 const baseConfig: BrowserSessionConfig = {};
-const cliVersion = getCliVersion();
 
 describe('runBrowserSessionExecution', () => {
   test('logs stats and returns usage/runtime', async () => {
@@ -24,7 +22,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -57,7 +54,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: { keepBrowser: true },
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -88,7 +84,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -122,7 +117,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -164,7 +158,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -192,7 +185,6 @@ describe('runBrowserSessionExecution', () => {
           browserConfig: baseConfig,
           cwd: '/repo',
           log,
-          cliVersion,
         },
         {
           assemblePrompt: async () => ({ markdown: 'prompt', composerText: 'prompt', estimatedInputTokens: 1, attachments: [], inlineFileCount: 0, tokenEstimateIncludesInlineFiles: false }),

@@ -34,7 +34,7 @@ export interface LaunchTuiOptions {
 
 export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
   const userConfig = (await loadUserConfig()).config;
-  console.log(chalk.bold(`🧿 oracle v${version}`), dim('— Whispering your tokens to the silicon sage'));
+  console.log(chalk.bold('🧿 oracle'), `v${version}`, dim('— Whispering your tokens to the silicon sage'));
   console.log('');
   let showingOlder = false;
   for (;;) {

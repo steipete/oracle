@@ -71,7 +71,7 @@ describe('ensurePromptReady', () => {
       evaluate: vi.fn().mockResolvedValue({ result: { value: true } }),
     } as unknown as ChromeClient['Runtime'];
     await expect(ensurePromptReady(runtime, 1000, logger)).resolves.toBeUndefined();
-    expect(logger).toHaveBeenCalledWith('Prompt textarea ready');
+    expect(logger).not.toHaveBeenCalled();
   });
 
   test('throws when timeout reached', async () => {
