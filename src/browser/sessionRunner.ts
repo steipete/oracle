@@ -69,7 +69,7 @@ export async function runBrowserSessionExecution(
   }
   const headerLine = `launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens`;
   if (promptArtifacts.bundled) {
-    log(chalk.yellow(`[browser] Packed ${promptArtifacts.bundled.originalCount} files into 1 bundle.`));
+    log(chalk.dim(`[browser] Packed ${promptArtifacts.bundled.originalCount} files into 1 bundle.`));
   }
   const automationLogger: BrowserLogger = ((message?: string) => {
     if (!runOptions.verbose) return;
