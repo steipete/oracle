@@ -1,18 +1,15 @@
 ---
-title: Anthropic (Claude) Integration
-status: planned
-date: 2025-11-20
----
-
-title: Anthropic (Claude) Integration
-status: planned
+title: Anthropic (Claude) Support
+summary: Behavior, pricing, and guardrails for Claude 4.5 Sonnet and Claude 4.1 Opus in Oracle.
+description: Plan and behavior notes for Claude 4.5 Sonnet and Claude 4.1 Opus in Oracle.
+status: shipped
 date: 2025-11-20
 ---
 
 # Anthropic (Claude) Integration Plan
 
-Status: **planned** (November 20, 2025)  
-Scope: Add API support for Claude 4.5 Sonnet and Claude 4.1 Opus to Oracle CLI.
+Status: **shipped in 1.3.1** (November 20, 2025)  
+Scope: API support for Claude 4.5 Sonnet and Claude 4.1 Opus in the Oracle CLI.
 
 ## Models & Pricing (public list prices)
 - **claude-4.5-sonnet** — 200k context, ~$3 / 1M input tokens, ~$15 / 1M output tokens.

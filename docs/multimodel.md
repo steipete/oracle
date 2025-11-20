@@ -1,3 +1,10 @@
+---
+title: Multi-model execution
+summary: Architecture for fanning one prompt/files out to multiple API models in one run.
+status: in-progress
+date: 2025-11-19
+---
+
 # Multi-Model Execution
 
 Status: **in progress** (November 19, 2025)  

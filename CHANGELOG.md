@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 1.3.1 — Unreleased
 
 ### Added
+- Anthropic Claude 4.5 Sonnet and 4.1 Opus (API-only) with cost estimates (marked “approx”), `ANTHROPIC_API_KEY`/`ANTHROPIC_BASE_URL`, and per-model background/search disablement so Claude runs stay on streaming messages.
 - Remote Chrome automation: pass `--remote-chrome <host:port>` (IPv6 supported via `[host]:port`) to reuse an existing browser session on another machine, including remote attachment uploads and improved validation errors.
 - Browser engine can now target Chromium/Edge by pairing `--browser-chrome-path` with the new `--browser-cookie-path` (also configurable via `browser.chromePath` / `browser.chromeCookiePath`). See the new [docs/chromium-forks.md](docs/chromium-forks.md) for OS-specific paths and setup steps.
 - Remote browser service: `oracle serve` now launches Chrome plus an HTTP/SSE host, and `--remote-host` / `--remote-token` let another machine run browser sessions end-to-end. Cookie shipping from the client is disabled; the service reuses the host’s own ChatGPT cookies and prompts for login once if none are present.

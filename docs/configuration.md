@@ -1,3 +1,10 @@
+---
+title: Local configuration
+summary: How Oracle reads and prioritizes CLI flags, env vars, and ~/.oracle/config.json.
+status: reference
+date: 2025-11-19
+---
+
 # Local configuration (JSON5)
 
 Oracle reads an optional per-user config from `~/.oracle/config.json`. The file uses JSON5 parsing, so trailing commas and comments are allowed.
@@ -68,8 +75,3 @@ Under the hood, pruning removes entire session directories (metadata + logs). Th
 - `--timeout <seconds|auto>` controls the overall API deadline for a run.
 - Defaults: `auto` = 60 m for `gpt-5.1-pro`; non-pro API models use `120s` if you don’t set a value.
 - Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.
----
-title: Local configuration
-status: reference
-date: 2025-11-19
----

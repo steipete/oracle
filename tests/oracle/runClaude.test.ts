@@ -62,7 +62,7 @@ describe('runOracle with Claude models', () => {
     const client = createMockClient(flags);
     let capturedBaseUrl: string | undefined;
 
-    const clientFactory = vi.fn((key: string, opts?: { baseUrl?: string }) => {
+    const clientFactory = vi.fn((_key: string, opts?: { baseUrl?: string }) => {
       capturedBaseUrl = opts?.baseUrl;
       return client;
     });
