@@ -107,6 +107,8 @@ export interface RunOracleOptions {
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
   background?: boolean;
+  /** Optional absolute path to save only the assistant's final text output. */
+  writeOutputPath?: string;
   /** Number of seconds to wait before timing out, or 'auto' to use model defaults. */
   timeoutSeconds?: number | 'auto';
 }

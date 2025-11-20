@@ -3,6 +3,8 @@ import 'dotenv/config';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
+import path from 'node:path';
+import os from 'node:os';
 import { Command, Option } from 'commander';
 import type { OptionValues } from 'commander';
 import { resolveEngine, type EngineMode, defaultWaitPreference } from '../src/cli/engine.js';
@@ -105,6 +107,8 @@ interface CliOptions extends OptionValues {
   azureApiVersion?: string;
   showModelId?: boolean;
   retainHours?: number;
+  writeOutput?: string;
+  writeOutputPath?: string;
 }
 
 type ResolvedCliOptions = Omit<CliOptions, 'model'> & { model: ModelName; models?: ModelName[] };
@@ -220,6 +224,7 @@ program
   .addOption(new Option('--status', 'Show stored sessions (alias for `oracle status`).').default(false).hideHelp())
   .option('--render-markdown', 'Emit the assembled markdown bundle for prompt + files and exit.', false)
   .option('--verbose-render', 'Show render/TTY diagnostics when replaying sessions.', false)
+  .option('--write-output <path>', 'Write only the final assistant message to this file (overwrites, no CLI logs).')
   .addOption(
     new Option('--search <mode>', 'Set server-side search behavior (on/off).')
       .argParser(parseSearchOption)
@@ -407,6 +412,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
     browserInlineFiles: overrides.browserInlineFiles ?? options.browserInlineFiles ?? false,
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
     background: overrides.background ?? undefined,
+    writeOutputPath: overrides.writeOutputPath ?? options.writeOutputPath,
   };
 }
 
@@ -426,6 +432,14 @@ function resolveHeartbeatIntervalMs(seconds: number | undefined): number | undef
     return undefined;
   }
   return Math.round(seconds * 1000);
+}
+
+function resolveOutputPath(input: string | undefined, cwd: string): string | undefined {
+  if (!input || input.trim().length === 0) {
+    return undefined;
+  }
+  const expanded = input.startsWith('~/') ? path.join(os.homedir(), input.slice(2)) : input;
+  return path.isAbsolute(expanded) ? expanded : path.resolve(cwd, expanded);
 }
 
 function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOptions {
@@ -454,6 +468,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserInlineFiles: stored.browserInlineFiles,
     browserBundleFiles: stored.browserBundleFiles,
     background: stored.background,
+    writeOutputPath: stored.writeOutputPath,
   };
 }
 
@@ -602,6 +617,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     resolvedOptions.models = normalizedMultiModels;
   }
   resolvedOptions.baseUrl = resolvedBaseUrl;
+  resolvedOptions.writeOutputPath = resolveOutputPath(options.writeOutput, process.cwd());
 
   // Decide whether to block until completion:
   // - explicit --wait / --no-wait wins

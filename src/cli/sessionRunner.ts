@@ -1,4 +1,6 @@
 import kleur from 'kleur';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { SessionMetadata, SessionMode, BrowserSessionConfig } from '../sessionStore.js';
 import type { RunOracleOptions, UsageSummary } from '../oracle.js';
 import {
@@ -83,6 +85,7 @@ export async function performSessionRun({
         transport: undefined,
         error: undefined,
       });
+      await writeAssistantOutput(runOptions.writeOutputPath, result.answerText, log);
       await sendSessionNotification(
         {
           sessionId: sessionMeta.id,
@@ -99,6 +102,9 @@ export async function performSessionRun({
       return;
     }
     const multiModels = Array.isArray(runOptions.models) ? runOptions.models.filter(Boolean) : [];
+    if (runOptions.writeOutputPath && multiModels.length > 1) {
+      throw new Error('--write-output is not supported when running multiple models. Run one model at a time.');
+    }
     if (multiModels.length > 1) {
       const summary = await runMultiModelApiSession({
         sessionMeta,
@@ -180,6 +186,7 @@ export async function performSessionRun({
       error: undefined,
     });
     const answerText = extractTextOutput(result.response);
+    await writeAssistantOutput(runOptions.writeOutputPath, answerText, log);
     await sendSessionNotification(
       {
         sessionId: sessionMeta.id,
@@ -234,6 +241,14 @@ export async function performSessionRun({
     }
     throw error;
   }
+}
+
+async function writeAssistantOutput(targetPath: string | undefined, content: string, log: (message: string) => void) {
+  if (!targetPath) return;
+  const payload = content.endsWith('\n') ? content : `${content}\n`;
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, payload, 'utf8');
+  log(dim(`Saved assistant output to ${targetPath}`));
 }
 
 function formatError(error: unknown): string {

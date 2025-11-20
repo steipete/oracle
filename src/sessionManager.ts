@@ -78,6 +78,7 @@ export interface StoredRunOptions {
   baseUrl?: string;
   azure?: AzureOptions;
   effectiveModelId?: string;
+  writeOutputPath?: string;
 }
 
 export interface SessionMetadata {
@@ -366,6 +367,7 @@ export async function initializeSession(
       search: options.search,
       baseUrl: options.baseUrl,
       azure: options.azure,
+      writeOutputPath: options.writeOutputPath,
     },
   };
   await ensureDir(modelsDir(sessionId));
