@@ -4,7 +4,7 @@ import type { RunOracleOptions } from '../../src/oracle.js';
 
 const baseRunOptions: RunOracleOptions = {
   prompt: 'Explain the issue',
-  model: 'gpt-5-pro',
+  model: 'gpt-5.1-pro',
   file: [],
 };
 
@@ -23,7 +23,7 @@ describe('runDryRunSummary', () => {
         readFilesImpl: async () => [{ path: '/repo/notes.md', content: 'console.log("dry run")' }],
       },
     );
-    const header = log.mock.calls.find(([entry]) => String(entry).includes('would call gpt-5-pro'));
+    const header = log.mock.calls.find(([entry]) => String(entry).includes('would call gpt-5.1-pro'));
     expect(header?.[0]).toContain('[dry-run]');
     expect(log.mock.calls.some(([entry]) => String(entry).includes('File Token Usage'))).toBe(true);
   });

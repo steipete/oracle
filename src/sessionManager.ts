@@ -5,6 +5,7 @@ import { createWriteStream } from 'node:fs';
 import type { WriteStream } from 'node:fs';
 import type { CookieParam } from './browser/types.js';
 import type { TransportFailureReason, AzureOptions, ModelName } from './oracle.js';
+import { DEFAULT_MODEL } from './oracle.js';
 
 export type SessionMode = 'api' | 'browser';
 
@@ -12,6 +13,7 @@ export interface BrowserSessionConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
+  chatgptUrl?: string | null;
   url?: string;
   timeoutMs?: number;
   inputTimeoutMs?: number;
@@ -25,7 +27,7 @@ export interface BrowserSessionConfig {
   desiredModel?: string | null;
   debug?: boolean;
   allowCookieErrors?: boolean;
-  remoteChrome?: { host: string; port: number };
+  remoteChrome?: { host: string; port: number } | null;
 }
 
 export interface BrowserRuntimeMetadata {
@@ -163,6 +165,7 @@ const ZOMBIE_MAX_AGE_MS = 60 * 60 * 1000; // 60 minutes
 const DEFAULT_SLUG = 'session';
 const MAX_SLUG_WORDS = 5;
 const MIN_CUSTOM_SLUG_WORDS = 3;
+const MAX_SLUG_WORD_LENGTH = 10;
 
 async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true });
@@ -175,7 +178,9 @@ export async function ensureSessionStorage(): Promise<void> {
 function slugify(text: string | undefined, maxWords = MAX_SLUG_WORDS): string {
   const normalized = text?.toLowerCase() ?? '';
   const words = normalized.match(/[a-z0-9]+/g) ?? [];
-  const trimmed = words.slice(0, maxWords);
+  const trimmed = words
+    .slice(0, maxWords)
+    .map((word) => word.slice(0, MAX_SLUG_WORD_LENGTH));
   return trimmed.length > 0 ? trimmed.join('-') : DEFAULT_SLUG;
 }
 
@@ -351,6 +356,7 @@ export async function initializeSession(
       file: options.file ?? [],
       model: options.model,
       models: modelList,
+      effectiveModelId: options.effectiveModelId,
       maxInput: options.maxInput,
       system: options.system,
       maxOutput: options.maxOutput,
@@ -373,7 +379,7 @@ export async function initializeSession(
   await ensureDir(modelsDir(sessionId));
   await fs.writeFile(metaPath(sessionId), JSON.stringify(metadata, null, 2), 'utf8');
   await Promise.all(
-    (modelList.length > 0 ? modelList : [metadata.model ?? 'gpt-5-pro']).map(async (modelName) => {
+    (modelList.length > 0 ? modelList : [metadata.model ?? DEFAULT_MODEL]).map(async (modelName) => {
       const jsonPath = modelJsonPath(sessionId, modelName);
       const logFilePath = modelLogPath(sessionId, modelName);
       const modelRecord: SessionModelRun = {

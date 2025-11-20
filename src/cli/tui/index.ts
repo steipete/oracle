@@ -4,7 +4,7 @@ import kleur from 'kleur';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
-import { MODEL_CONFIGS, type ModelName, type RunOracleOptions } from '../../oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS, type ModelName, type RunOracleOptions } from '../../oracle.js';
 import { renderMarkdownAnsi } from '../markdownRenderer.js';
 import type { SessionMetadata, SessionMode, BrowserSessionConfig, SessionModelRun } from '../../sessionStore.js';
 import { sessionStore, pruneOldSessions } from '../../sessionStore.js';
@@ -34,7 +34,12 @@ export interface LaunchTuiOptions {
 
 export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
   const userConfig = (await loadUserConfig()).config;
-  console.log(chalk.bold(`🧿 oracle v${version}`), dim('— Whispering your tokens to the silicon sage'));
+  const rich = isTty();
+  if (rich) {
+    console.log(chalk.bold('🧿 oracle'), `${version}`, dim('— Whispering your tokens to the silicon sage'));
+  } else {
+    console.log(`🧿 oracle ${version} — Whispering your tokens to the silicon sage`);
+  }
   console.log('');
   let showingOlder = false;
   for (;;) {
@@ -351,7 +356,6 @@ interface WizardAnswers {
   files: string[];
   chromeProfile?: string;
   chromeCookiePath?: string;
-  headless?: boolean;
   hideWindow?: boolean;
   keepBrowser?: boolean;
   mode?: SessionMode;
@@ -402,7 +406,7 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       name: 'model',
       type: 'list',
       message: 'Model',
-      default: 'gpt-5-pro',
+      default: DEFAULT_MODEL,
       choices: modelChoices,
     },
     {
@@ -439,13 +443,6 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       name: 'chromeCookiePath',
       type: 'input',
       message: 'Cookie DB path (Chromium/Edge, optional):',
-      when: (ans) => ans.mode === 'browser',
-    },
-    {
-      name: 'headless',
-      type: 'confirm',
-      message: 'Run Chrome headless?',
-      default: false,
       when: (ans) => ans.mode === 'browser',
     },
     {
@@ -511,7 +508,6 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       ? await buildBrowserConfig({
           browserChromeProfile: answers.chromeProfile,
           browserCookiePath: answers.chromeCookiePath,
-          browserHeadless: answers.headless,
           browserHideWindow: answers.hideWindow,
           browserKeepBrowser: answers.keepBrowser,
           browserModelLabel: resolveBrowserModelLabel(undefined, answers.model),

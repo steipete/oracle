@@ -11,6 +11,7 @@ import type {
   ModelName,
 } from './types.js';
 import { createGeminiClient } from './gemini.js';
+import { createClaudeClient } from './claude.js';
 
 const CUSTOM_CLIENT_FACTORY = loadCustomClientFactory();
 
@@ -23,8 +24,11 @@ export function createDefaultClientFactory(): ClientFactory {
     options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string },
   ): ClientLike => {
     if (options?.model?.startsWith('gemini')) {
-    // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
-    return createGeminiClient(key, options.model, options.resolvedModelId);
+      // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
+      return createGeminiClient(key, options.model, options.resolvedModelId);
+    }
+    if (options?.model?.startsWith('claude')) {
+      return createClaudeClient(key, options.model, options.resolvedModelId, options.baseUrl);
     }
 
     let instance: OpenAI;

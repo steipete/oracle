@@ -28,7 +28,7 @@ describe('sessionStore', () => {
 
   test('creates sessions and reads metadata/request', async () => {
     const meta = await store.createSession(
-      { prompt: 'Inspect me', model: 'gpt-5-pro', search: false },
+      { prompt: 'Inspect me', model: 'gpt-5.1-pro', search: false },
       process.cwd(),
     );
     const fetched = await store.readSession(meta.id);
@@ -42,12 +42,12 @@ describe('sessionStore', () => {
     const meta = await store.createSession(
       {
         prompt: 'Combine logs',
-        model: 'gpt-5-pro',
-        models: ['gpt-5-pro', 'gemini-3-pro'],
+        model: 'gpt-5.1-pro',
+        models: ['gpt-5.1-pro', 'gemini-3-pro'],
       },
       process.cwd(),
     );
-    const writerPro = store.createLogWriter(meta.id, 'gpt-5-pro');
+    const writerPro = store.createLogWriter(meta.id, 'gpt-5.1-pro');
     writerPro.logLine('pro-line');
     writerPro.stream.end();
     await new Promise<void>((resolve) => writerPro.stream.once('close', () => resolve()));
@@ -58,17 +58,17 @@ describe('sessionStore', () => {
     await new Promise<void>((resolve) => writerGem.stream.once('close', () => resolve()));
 
     const combined = await store.readLog(meta.id);
-    expect(combined).toContain('gpt-5-pro');
+    expect(combined).toContain('gpt-5.1-pro');
     expect(combined).toContain('gemini-3-pro');
     expect(combined).toContain('pro-line');
     expect(combined).toContain('gem-line');
 
-    const proLog = await store.readModelLog(meta.id, 'gpt-5-pro');
+    const proLog = await store.readModelLog(meta.id, 'gpt-5.1-pro');
     expect(proLog).toContain('pro-line');
   });
 
   test('readLog falls back to combined log when per-model logs missing', async () => {
-    const meta = await store.createSession({ prompt: 'fallback', model: 'gpt-5-pro' }, process.cwd());
+    const meta = await store.createSession({ prompt: 'fallback', model: 'gpt-5.1-pro' }, process.cwd());
     const writer = store.createLogWriter(meta.id);
     writer.logLine('combined-only');
     writer.stream.end();
@@ -79,8 +79,8 @@ describe('sessionStore', () => {
   });
 
   test('deleteOlderThan prunes sessions past cutoff', async () => {
-    const recent = await store.createSession({ prompt: 'recent', model: 'gpt-5-pro' }, process.cwd());
-    const old = await store.createSession({ prompt: 'old', model: 'gpt-5-pro' }, process.cwd());
+    const recent = await store.createSession({ prompt: 'recent', model: 'gpt-5.1-pro' }, process.cwd());
+    const old = await store.createSession({ prompt: 'old', model: 'gpt-5.1-pro' }, process.cwd());
     await store.updateSession(old.id, {
       createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
     });

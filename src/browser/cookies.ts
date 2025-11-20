@@ -113,6 +113,10 @@ function attachUrl(cookie: CookieParam, fallbackUrl: string): CookieParam {
       cookieWithUrl.url = `https://${cookieWithUrl.domain}`;
     }
   }
+  // When url is present, let Chrome derive the host from it; keeping domain can trigger CDP sanitization errors.
+  if (cookieWithUrl.url) {
+    delete (cookieWithUrl as { domain?: string }).domain;
+  }
   return cookieWithUrl;
 }
 

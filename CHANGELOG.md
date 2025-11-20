@@ -7,22 +7,33 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Remote Chrome automation: pass `--remote-chrome <host:port>` (IPv6 supported via `[host]:port`) to reuse an existing browser session on another machine, including remote attachment uploads and improved validation errors.
 - Browser engine can now target Chromium/Edge by pairing `--browser-chrome-path` with the new `--browser-cookie-path` (also configurable via `browser.chromePath` / `browser.chromeCookiePath`). See the new [docs/chromium-forks.md](docs/chromium-forks.md) for OS-specific paths and setup steps.
+ - Remote browser service: `oracle serve` now launches Chrome plus an HTTP/SSE host, and `--remote-host` / `--remote-token` let another machine run browser sessions end-to-end. Cookie shipping from the client is disabled; the service reuses the host’s own ChatGPT cookies and prompts for login once if none are present.
+- Browser engine: `--chatgpt-url` (alias `--browser-url`) and `browser.chatgptUrl` config let you target specific ChatGPT workspace/folder URLs while keeping API `--base-url` separate.
+- Multi-model API runner: orchestrates multiple API models in one command and aggregates usage/cost; browser engine stays single-model.
 - GPT-5.1 Codex (API-only) now works end-to-end with high reasoning; `--model gpt-5.1-codex` forces the API engine automatically so browser runs keep targeting ChatGPT Instant.
 - GPT-5.1 Codex Max isn’t available via API yet. As soon as OpenAI opens the endpoint we’ll add it to `MODEL_CONFIGS`, but for now the CLI rejects that model name.
+- GPT-5.1 Pro API support; it’s the new default model.
+- Added `gpt-5-pro` (aliases: `gpt-5`, `gpt-5.0-pro`) alongside GPT-5.1 Pro for accounts that are still on the earlier Pro rollout.
+- Duplicate prompt guard remains active: Oracle blocks a second run when the exact prompt is already running (we briefly removed this note during unreleased edits, but the behavior never left production).
 
 ### Changed
-- Replaced `chrome-cookies-secure` with an internal cookie reader (sqlite + Keychain/DPAPI) so we can auto-detect Chromium/Edge profiles and avoid optional rebuild loops. Rebuild instructions now target `sqlite3`, `keytar`, and `win-dpapi` directly.
-- Reject prompts shorter than 20 characters with a friendly hint (prevents accidental single-character runs). Override via ORACLE_MIN_PROMPT_CHARS for automated environments.
-- Browser engine default timeout bumped from 15m (900s) to 20m (1200s) so long GPT-5 Pro responses don’t get cut off; CLI docs/help text now reflect the new ceiling.
+- Cookie sync covers Chrome, Chromium, Edge, Brave, and Vivaldi profiles; targets chatgpt.com, chat.openai.com, and atlas.openai.com.
+- Reject prompts shorter than 20 characters with a friendly hint for pro-tier models (`gpt-5.1-pro`) only (prevents accidental costly runs while leaving cheaper models unblocked). Override via ORACLE_MIN_PROMPT_CHARS for automated environments.
+- Browser engine default timeout bumped from 15m (900s) to 20m (1200s) so long GPT-5.x Pro responses don’t get cut off; CLI docs/help text now reflect the new ceiling.
 - Duration flags such as `--browser-timeout`/`--browser-input-timeout` now accept chained units (`1h2m10s`, `3m10s`, etc.) plus `h`, `m`, `s`, or `ms` suffixes, matching the formats we already log.
-- GPT-5 Pro API runs now default to a 60-minute timeout (was 20m) and the “zombie” detector waits the same hour before marking sessions as `error`; CLI messaging/docs updated accordingly so a single “auto” limit covers both behaviors.
+- GPT-5.1 Pro and GPT-5 Pro API runs now default to a 60-minute timeout (was 20m) and the “zombie” detector waits the same hour before marking sessions as `error`; CLI messaging/docs updated accordingly so a single “auto” limit covers both behaviors.
+- Browser-to-API coercion now happens automatically for GPT-5.1 Codex and Gemini (with a console hint) instead of failing when `--engine browser` is set.
+- Gemini client now uses Google’s `@google/genai` SDK (replacing the deprecated `@google/generative-ai`) while preserving streaming final responses and token accounting.
+- Session slugs now trim individual words to 10 characters to keep auto-generated IDs readable when prompts include very long tokens.
+- CLI: `--mode` is now a silent alias for `--engine` for backward compatibility with older docs/scripts; prefer `--engine`.
+- CLI guardrail: if a session with the same prompt is already running, new runs abort with guidance to reattach unless `--force` is provided (prevents unintended duplicate API/browser runs).
 
 ## 1.3.0 — 2025-11-19
 
 ### Added
 - Native Azure OpenAI support! Set `AZURE_OPENAI_ENDPOINT` (plus `AZURE_OPENAI_API_KEY` and optionally `AZURE_OPENAI_DEPLOYMENT`/`AZURE_OPENAI_API_VERSION`) or use the new CLI flags (`--azure-endpoint`, `--azure-deployment`, etc.) to switch automatically to the Azure client.
 - **Gemini 3 Pro Support**: Use Google's latest model via `oracle --model gemini`. Requires `GEMINI_API_KEY`.
-- Configurable API timeout: `--timeout <seconds|auto>` (auto = 20m for most models, 60m for gpt-5-pro as of 1.3.1). Enforced for streaming and background runs.
+- Configurable API timeout: `--timeout <seconds|auto>` (auto = 20m for most models, 60m for pro models such as gpt-5.1-pro as of 1.3.1). Enforced for streaming and background runs.
 - OpenAI-compatible base URL override: `--base-url` (or `apiBaseUrl` in config / `OPENAI_BASE_URL`) lets you target LiteLLM proxies, Azure gateways, and other compatible hosts.
 - Help text tip: best results come from 6–30 sentences plus key source files; very short prompts tend to be generic.
 - Browser inline cookies: `--browser-inline-cookies[(-file)]` (or env) accepts JSON/base64 payloads, auto-loads `~/.oracle/cookies.{json,base64}`, adds a cookie allowlist (`--browser-cookie-names`), and dry-run now reports whether cookies come from Chrome or inline sources.
@@ -56,7 +67,7 @@ All notable changes to this project will be documented in this file.
 - Directory/glob expansions now honor `.gitignore` files and skip dotfiles by default; explicitly matching patterns (e.g., `--file "src/**/.keep"`) still opt in.
 - Default ignores when crawling project roots now drop common build/cache folders (`node_modules`, `dist`, `coverage`, `.git`, `.turbo`, `.next`, `build`, `tmp`) unless the path is passed explicitly. Oracle logs each skipped path for transparency.
 - Browser engine now logs a one-line warning before cookie sync, noting macOS may prompt for a Keychain password and how to bypass via `--browser-no-cookie-sync` or `--browser-allow-cookie-errors`.
-- gpt-5-pro API runs default to non-blocking; add `--wait` to block. `gpt-5.1` and browser runs still block by default. CLI now polls once for `in_progress` responses before failing.
+- gpt-5.1-pro API runs default to non-blocking; add `--wait` to block. `gpt-5.1` and browser runs still block by default. CLI now polls once for `in_progress` responses before failing.
 - macOS notifier helper now ships signed/notarized with the Oracle icon and auto-repairs execute bits for the fallback terminal-notifier.
 - Session summaries and cost displays are clearer, with zombie-session detection to avoid stale runs.
 - Token estimation now uses the full request body (instructions + input text + tools/reasoning/background/store) and compares estimated vs actual tokens in the finished stats to reduce 400/413 surprises.
@@ -84,6 +95,13 @@ All notable changes to this project will be documented in this file.
   }
   ```
 - The MCP `consult` tool honors `~/.oracle/config.json` defaults (engine/model/search/prompt suffix/heartbeat/background/filesReport) unless the caller overrides them.
+
+## 1.1.1 — 2025-11-20
+
+### Added
+- Hidden `--files`, `--path`, and `--paths` aliases for `--file`, so all path inputs (including `--include`) merge cleanly; commas still split within a single flag.
+- CLI path-merging helper now has unit coverage for alias ordering and comma splitting.
+- New `--copy-markdown` flag (alias `--copy`) assembles the markdown bundle and copies it to the clipboard, printing a one-line summary; combine with `--render-markdown` to both print and copy. Clipboard handling now uses `clipboardy` for macOS/Windows/Linux/Wayland/Termux/WSL with graceful failure messaging.
 
 ## 1.1.0 — 2025-11-17
 

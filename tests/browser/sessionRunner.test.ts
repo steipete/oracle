@@ -3,17 +3,15 @@ import type { RunOracleOptions } from '../../src/oracle.js';
 import type { BrowserSessionConfig } from '../../src/sessionStore.js';
 import { runBrowserSessionExecution } from '../../src/browser/sessionRunner.js';
 import { BrowserAutomationError } from '../../src/oracle/errors.js';
-import { getCliVersion } from '../../src/version.js';
 
 const baseRunOptions: RunOracleOptions = {
   prompt: 'Hello world',
-  model: 'gpt-5-pro',
+  model: 'gpt-5.1-pro',
   file: [],
   silent: false,
 };
 
 const baseConfig: BrowserSessionConfig = {};
-const cliVersion = getCliVersion();
 
 describe('runBrowserSessionExecution', () => {
   test('logs stats and returns usage/runtime', async () => {
@@ -24,7 +22,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -49,6 +46,37 @@ describe('runBrowserSessionExecution', () => {
     expect(log).toHaveBeenCalled();
   });
 
+  test('suppresses automation noise when not verbose', async () => {
+    const log = vi.fn();
+    const noisyLogger = vi.fn();
+    await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false },
+        browserConfig: baseConfig,
+        cwd: '/repo',
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: 'prompt',
+          composerText: 'prompt',
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+        }),
+        executeBrowser: async ({ log: automationLog }) => {
+          automationLog?.('Prompt textarea ready');
+          noisyLogger();
+          return { answerText: 'text', answerMarkdown: 'markdown', tookMs: 1, answerTokens: 1, answerChars: 4 };
+        },
+      },
+    );
+    expect(log.mock.calls.some((call) => /Launching browser mode/.test(String(call[0])))).toBe(true);
+    expect(log.mock.calls.some((call) => /Prompt textarea ready/.test(String(call[0])))).toBe(false);
+    expect(noisyLogger).toHaveBeenCalled(); // ensure executeBrowser ran
+  });
+
   test('respects verbose logging', async () => {
     const log = vi.fn();
     await runBrowserSessionExecution(
@@ -57,7 +85,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: { keepBrowser: true },
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -88,7 +115,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -122,7 +148,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -164,7 +189,6 @@ describe('runBrowserSessionExecution', () => {
         browserConfig: baseConfig,
         cwd: '/repo',
         log,
-        cliVersion,
       },
       {
         assemblePrompt: async () => ({
@@ -192,7 +216,6 @@ describe('runBrowserSessionExecution', () => {
           browserConfig: baseConfig,
           cwd: '/repo',
           log,
-          cliVersion,
         },
         {
           assemblePrompt: async () => ({ markdown: 'prompt', composerText: 'prompt', estimatedInputTokens: 1, attachments: [], inlineFileCount: 0, tokenEstimateIncludesInlineFiles: false }),

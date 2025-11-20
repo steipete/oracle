@@ -4,6 +4,7 @@ import {
   APIUserAbortError,
 } from 'openai';
 import type { OracleResponse, OracleResponseMetadata, TransportFailureReason } from './types.js';
+import { formatElapsed } from './format.js';
 
 export type OracleUserErrorCategory = 'file-validation' | 'browser-automation' | 'prompt-validation';
 
@@ -124,10 +125,12 @@ export function toTransportError(error: unknown): OracleTransportError {
   );
 }
 
-export function describeTransportError(error: OracleTransportError): string {
+export function describeTransportError(error: OracleTransportError, deadlineMs?: number): string {
   switch (error.reason) {
     case 'client-timeout':
-      return 'Client-side timeout: OpenAI streaming call exceeded the 60m deadline.';
+      return deadlineMs
+        ? `Client-side timeout: OpenAI streaming call exceeded the ${formatElapsed(deadlineMs)} deadline.`
+        : 'Client-side timeout: OpenAI streaming call exceeded the configured deadline.';
     case 'connection-lost':
       return 'Connection to OpenAI ended unexpectedly before the response completed.';
     case 'client-abort':

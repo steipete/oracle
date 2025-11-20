@@ -1,6 +1,6 @@
 export const CHATGPT_URL = 'https://chatgpt.com/';
 export const DEFAULT_MODEL_TARGET = 'ChatGPT 5.1';
-export const COOKIE_URLS = ['https://chatgpt.com', 'https://chat.openai.com'];
+export const COOKIE_URLS = ['https://chatgpt.com', 'https://chat.openai.com', 'https://atlas.openai.com'];
 
 export const INPUT_SELECTORS = [
   'textarea[data-id="prompt-textarea"]',
@@ -42,3 +42,6 @@ export const STOP_BUTTON_SELECTOR = '[data-testid="stop-button"]';
 export const SEND_BUTTON_SELECTOR = '[data-testid="send-button"]';
 export const MODEL_BUTTON_SELECTOR = '[data-testid="model-switcher-dropdown-button"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
+// Action buttons that only appear once a turn has finished rendering.
+export const FINISHED_ACTIONS_SELECTOR =
+  'button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';

@@ -14,6 +14,7 @@ import { syncCookies } from './cookies.js';
 import {
   navigateToChatGPT,
   ensureNotBlocked,
+  ensureLoggedIn,
   ensurePromptReady,
   ensureModelSelection,
   submitPrompt,
@@ -26,10 +27,11 @@ import {
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
 import { estimateTokenCount, withRetries } from './utils.js';
 import { formatElapsed } from '../oracle/format.js';
+import { CHATGPT_URL } from './constants.js';
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from './types.js';
 export { CHATGPT_URL, DEFAULT_MODEL_TARGET } from './constants.js';
-export { parseDuration, delay } from './utils.js';
+export { parseDuration, delay, normalizeChatgptUrl } from './utils.js';
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
@@ -88,13 +90,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let runStatus: 'attempted' | 'complete' = 'attempted';
   let connectionClosedUnexpectedly = false;
   let stopThinkingMonitor: (() => void) | null = null;
+  let appliedCookies = 0;
 
   try {
     client = await connectToChrome(chrome.port, logger);
-    const markConnectionLost = () => {
-      connectionClosedUnexpectedly = true;
-    };
-    client.on('disconnect', markConnectionLost);
+    const disconnectPromise = new Promise<never>((_, reject) => {
+      client?.on('disconnect', () => {
+        connectionClosedUnexpectedly = true;
+        logger('Chrome window closed; attempting to abort run.');
+        reject(new Error('Chrome window closed before oracle finished. Please keep it open until completion.'));
+      });
+    });
+    const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
+      Promise.race([promise, disconnectPromise]);
     const { Network, Page, Runtime, Input, DOM } = client;
 
     if (!config.headless && config.hideWindow) {
@@ -111,7 +119,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     if (config.cookieSync) {
       if (!config.inlineCookies) {
         logger(
-          'Heads-up: macOS may prompt for your Keychain password to read Chrome cookies; approve it to stay signed in or rerun with --browser-no-cookie-sync / --browser-allow-cookie-errors / --browser-inline-cookies[(-file)]. Inline cookies skip Chrome + Keychain entirely.',
+          'Heads-up: macOS may prompt for your Keychain password to read Chrome cookies; use --copy or --render for manual flow.',
         );
       } else {
         logger('Applying inline cookies (skipping Chrome profile read and Keychain prompt)');
@@ -122,6 +130,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         inlineCookies: config.inlineCookies ?? undefined,
         cookiePath: config.chromeCookiePath ?? undefined,
       });
+      appliedCookies = cookieCount;
+      if (config.inlineCookies && cookieCount === 0) {
+        throw new Error('No inline cookies were applied; aborting before navigation.');
+      }
       logger(
         cookieCount > 0
           ? config.inlineCookies
@@ -135,24 +147,44 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       logger('Skipping Chrome cookie sync (--browser-no-cookie-sync)');
     }
 
-    await navigateToChatGPT(Page, Runtime, config.url, logger);
-    await ensureNotBlocked(Runtime, config.headless, logger);
-    await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+    const baseUrl = CHATGPT_URL;
+    // First load the base ChatGPT homepage to satisfy potential interstitials,
+    // then hop to the requested URL if it differs.
+    await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
+    await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+    await raceWithDisconnect(ensureLoggedIn(Runtime, logger, { appliedCookies }));
+
+    if (config.url !== baseUrl) {
+      await raceWithDisconnect(navigateToChatGPT(Page, Runtime, config.url, logger));
+      await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+    }
+    await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
     logger(`Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`);
     if (config.desiredModel) {
-      await withRetries(
-        () => ensureModelSelection(Runtime, config.desiredModel as string, logger),
-        {
-          retries: 2,
-          delayMs: 300,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(`[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`);
-            }
+      await raceWithDisconnect(
+        withRetries(
+          () => ensureModelSelection(Runtime, config.desiredModel as string, logger),
+          {
+            retries: 2,
+            delayMs: 300,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
           },
-        },
-      );
-      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+        ),
+      ).catch((error) => {
+        const base = error instanceof Error ? error.message : String(error);
+        const hint =
+          appliedCookies === 0
+            ? ' No cookies were applied; log in to ChatGPT in Chrome or provide inline cookies (--browser-inline-cookies[(-file)] or ORACLE_BROWSER_COOKIES_JSON).'
+            : '';
+        throw new Error(`${base}${hint}`);
+      });
+      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
     if (attachments.length > 0) {
@@ -164,33 +196,35 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         await uploadAttachmentFile({ runtime: Runtime, dom: DOM }, attachment, logger);
       }
       const waitBudget = Math.max(config.inputTimeoutMs ?? 30_000, 30_000);
-      await waitForAttachmentCompletion(Runtime, waitBudget, logger);
+      await raceWithDisconnect(waitForAttachmentCompletion(Runtime, waitBudget, logger));
       logger('All attachments uploaded');
     }
-    await submitPrompt({ runtime: Runtime, input: Input }, promptText, logger);
+    await raceWithDisconnect(submitPrompt({ runtime: Runtime, input: Input }, promptText, logger));
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
-    const answer = await waitForAssistantResponse(Runtime, config.timeoutMs, logger);
+    const answer = await raceWithDisconnect(waitForAssistantResponse(Runtime, config.timeoutMs, logger));
     answerText = answer.text;
     answerHtml = answer.html ?? '';
-    const copiedMarkdown = await withRetries(
-      async () => {
-        const attempt = await captureAssistantMarkdown(Runtime, answer.meta, logger);
-        if (!attempt) {
-          throw new Error('copy-missing');
-        }
-        return attempt;
-      },
-      {
-        retries: 2,
-        delayMs: 350,
-        onRetry: (attempt, error) => {
-          if (options.verbose) {
-            logger(
-              `[retry] Markdown capture attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-            );
+    const copiedMarkdown = await raceWithDisconnect(
+      withRetries(
+        async () => {
+          const attempt = await captureAssistantMarkdown(Runtime, answer.meta, logger);
+          if (!attempt) {
+            throw new Error('copy-missing');
           }
+          return attempt;
         },
-      },
+        {
+          retries: 2,
+          delayMs: 350,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Markdown capture attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
+        },
+      ),
     ).catch(() => null);
     answerMarkdown = copiedMarkdown ?? answerText;
     stopThinkingMonitor?.();
@@ -297,6 +331,7 @@ async function runRemoteBrowserMode(
 
     await navigateToChatGPT(Page, Runtime, config.url, logger);
     await ensureNotBlocked(Runtime, config.headless, logger);
+    await ensureLoggedIn(Runtime, logger, { remoteSession: true });
     await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
     logger(`Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`);
 

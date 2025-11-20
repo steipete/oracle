@@ -1,30 +1,24 @@
 import { describe, expect, test, vi } from 'vitest';
 import { applyHiddenAliases, type HiddenAliasOptions } from '../../src/cli/hiddenAliases.js';
 
-describe('hidden CLI aliases', () => {
-  test('maps --message to prompt when prompt is absent', () => {
-    const opts: HiddenAliasOptions = { message: 'alias prompt' };
-    applyHiddenAliases(opts);
-    expect(opts.prompt).toBe('alias prompt');
-  });
-
-  test('does not override explicit prompt with message alias', () => {
-    const opts: HiddenAliasOptions = { prompt: 'primary', message: 'secondary' };
-    applyHiddenAliases(opts);
-    expect(opts.prompt).toBe('primary');
-  });
-
-  test('appends include paths to existing file list', () => {
-    const opts: HiddenAliasOptions = { file: ['a'], include: ['b', 'c'] };
-    applyHiddenAliases(opts);
-    expect(opts.file).toEqual(['a', 'b', 'c']);
-  });
-
-  test('sets commander values when setter is provided', () => {
+describe('applyHiddenAliases', () => {
+  test('maps --mode to engine when engine not set', () => {
     const setOptionValue = vi.fn();
-    const opts: HiddenAliasOptions = { include: ['x', 'y'] };
+    const opts: HiddenAliasOptions = { mode: 'browser' };
+
     applyHiddenAliases(opts, setOptionValue);
-    expect(opts.file).toEqual(['x', 'y']);
-    expect(setOptionValue).toHaveBeenCalledWith('file', ['x', 'y']);
+
+    expect(opts.engine).toBe('browser');
+    expect(setOptionValue).toHaveBeenCalledWith('engine', 'browser');
+  });
+
+  test('does not override explicit engine', () => {
+    const setOptionValue = vi.fn();
+    const opts: HiddenAliasOptions = { mode: 'browser', engine: 'api' };
+
+    applyHiddenAliases(opts, setOptionValue);
+
+    expect(opts.engine).toBe('api');
+    expect(setOptionValue).not.toHaveBeenCalledWith('engine', expect.anything());
   });
 });

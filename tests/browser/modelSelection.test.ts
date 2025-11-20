@@ -16,10 +16,17 @@ describe('browser model selection matchers', () => {
     expect(testIdTokens.some((t) => t.includes('gpt-5.1') || t.includes('gpt-5-1') || t.includes('gpt51'))).toBe(true);
   });
 
-  it('includes pro/research tokens for gpt-5-pro', () => {
-    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest('gpt-5-pro');
+  it('includes pro/research tokens for gpt-5.1-pro', () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest('gpt-5.1-pro');
     expect(labelTokens.some((t) => t.includes('pro') || t.includes('research'))).toBe(true);
-    expectContains(testIdTokens, 'gpt-5-pro');
-    expect(testIdTokens.some((t) => t.includes('model-switcher-gpt-5-pro'))).toBe(true);
+    expectContains(testIdTokens, 'gpt-5.1-pro');
+    expect(testIdTokens.some((t) => t.includes('model-switcher-gpt-5.1-pro'))).toBe(true);
+  });
+
+  it('includes pro + 5.1 tokens for gpt-5.1-pro', () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest('gpt-5.1-pro');
+    expect(labelTokens.some((t) => t.includes('pro'))).toBe(true);
+    expect(labelTokens.some((t) => t.includes('5.1') || t.includes('5-1'))).toBe(true);
+    expect(testIdTokens.some((t) => t.includes('gpt-5.1-pro') || t.includes('gpt-5-1-pro'))).toBe(true);
   });
 });

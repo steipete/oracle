@@ -99,7 +99,7 @@ export async function connectToRemoteChrome(
   return client;
 }
 
-function buildChromeFlags(headless: boolean): string[] {
+function buildChromeFlags(_headless: boolean): string[] {
   const flags = [
     '--disable-background-networking',
     '--disable-background-timer-throttling',
@@ -121,9 +121,7 @@ function buildChromeFlags(headless: boolean): string[] {
     '--use-mock-keychain',
   ];
 
-  if (headless) {
-    flags.push('--headless=new');
-  }
+  // Headless/new is blocked by Cloudflare; always run headful.
 
   return flags;
 }

@@ -8,7 +8,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
 {
   // Default engine when neither CLI flag nor env decide
   engine: "api",           // or "browser"
-  model: "gpt-5-pro",
+  model: "gpt-5.1-pro",
   search: "on",            // "on" | "off"
 
   notify: {
@@ -21,7 +21,8 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     chromeProfile: "Default",
     chromePath: null,
     chromeCookiePath: null,
-    url: null,
+    chatgptUrl: "https://chatgpt.com/", // root is fine; folder URLs also work
+    url: null, // alias for chatgptUrl (kept for back-compat)
     timeoutMs: 1200000,
     inputTimeoutMs: 30000,
     headless: false,
@@ -46,6 +47,7 @@ CLI flags → `config.json` → environment → built-in defaults.
 - `OPENAI_API_KEY` only influences engine selection when neither the CLI nor `config.json` specify an engine (API when present, otherwise browser).
 - `ORACLE_NOTIFY*` env vars still layer on top of the config’s `notify` block.
 - `sessionRetentionHours` controls the default value for `--retain-hours`. When unset, `ORACLE_RETAIN_HOURS` (if present) becomes the fallback, and the CLI flag still wins over both.
+- `browser.chatgptUrl` accepts either the root ChatGPT URL (`https://chatgpt.com/`) or a folder/workspace URL (e.g., `https://chatgpt.com/g/.../project`); `browser.url` remains as a legacy alias.
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
 
@@ -60,3 +62,9 @@ Each invocation can optionally prune cached sessions before starting new work:
 - Set `ORACLE_RETAIN_HOURS` in the environment to override the config on shared machines without editing the JSON file.
 
 Under the hood, pruning removes entire session directories (metadata + logs). The command-line cleanup command (`oracle session --clear`) still exists when you need to wipe everything manually.
+
+## API timeouts
+
+- `--timeout <seconds|auto>` controls the overall API deadline for a run.
+- Defaults: `auto` = 60 m for `gpt-5.1-pro`; non-pro API models use `120s` if you don’t set a value.
+- Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.

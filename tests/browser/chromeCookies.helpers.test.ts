@@ -2,32 +2,26 @@ import { describe, expect, test } from 'vitest';
 import { __test__ } from '../../src/browser/chromeCookies.js';
 
 describe('chromeCookies helpers', () => {
-  test('buildHostFilters returns suffixes for multi-part hosts', () => {
-    expect(__test__.buildHostFilters('sub.example.co.uk')).toEqual([
-      'sub.example.co.uk',
-      'example.co.uk',
-      'co.uk',
-      'uk',
-    ]);
+  test('cleanValue strips leading control chars', () => {
+    expect(__test__.cleanValue('\u0001\u0002hello')).toBe('hello');
+    expect(__test__.cleanValue('hello')).toBe('hello');
   });
 
-  test('domain matching treats leading dots as wildcards', () => {
-    expect(__test__.domainMatches('chat.openai.com', '.openai.com')).toBe(true);
-    expect(__test__.domainMatches('openai.com', '.openai.com')).toBe(true);
-    expect(__test__.domainMatches('example.com', '.openai.com')).toBe(false);
+  test('normalizeExpiration handles Chromium timestamps', () => {
+    expect(__test__.normalizeExpiration(undefined)).toBeUndefined();
+    expect(__test__.normalizeExpiration(0)).toBeUndefined();
+    expect(__test__.normalizeExpiration(1_700_000_000)).toBe(1_700_000);
+    expect(__test__.normalizeExpiration(1_700_000_000_000)).toBe(1_700_000 - 11644473600);
   });
 
-  test('path matching honors RFC 6265 semantics', () => {
-    expect(__test__.pathMatches('/foo/bar', '/foo')).toBe(true);
-    expect(__test__.pathMatches('/foo/bar', '/foo/bar')).toBe(true);
-    expect(__test__.pathMatches('/foo', '/foo/bar')).toBe(false);
-    expect(__test__.pathMatches('/foobar', '/foo')).toBe(false);
+  test('looksLikePath detects absolute-like inputs', () => {
+    expect(__test__.looksLikePath('/Users/me/Cookies')).toBe(true);
+    expect(__test__.looksLikePath('Profile 1')).toBe(false);
   });
 
-  test('determineKeychainLabel detects Edge/Chromium paths', () => {
-    const edge = __test__.determineKeychainLabel('/Users/me/Library/Application Support/Microsoft Edge/Profile 1/Cookies');
-    expect(edge.service).toBe('Microsoft Edge Safe Storage');
-    const chromium = __test__.determineKeychainLabel('/Users/me/Library/Application Support/Chromium/Default/Cookies');
-    expect(chromium.service).toBe('Chromium Safe Storage');
+  test('defaultProfileRoot returns something platform-specific', async () => {
+    const root = await __test__.defaultProfileRoot();
+    expect(typeof root).toBe('string');
+    expect(root.length).toBeGreaterThan(1);
   });
 });

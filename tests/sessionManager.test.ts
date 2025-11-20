@@ -51,6 +51,11 @@ describe('session identifiers', () => {
     expect(id).toBe('launch-plan-qa-sync-ready');
     expect(() => sessionModule.createSessionId('ignored', 'only two')).toThrow(/Custom slug/i);
   });
+
+  test('createSessionId truncates overly long words to keep slugs readable', () => {
+    const id = sessionModule.createSessionId('abcdefghijklm nopqrstuvwxyz shorty');
+    expect(id).toBe('abcdefghij-nopqrstuvw-shorty');
+  });
 });
 
 describe('session lifecycle', () => {
@@ -60,7 +65,7 @@ describe('session lifecycle', () => {
     const metadata = await sessionModule.initializeSession(
       {
         prompt: 'Inspect code',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         file: ['notes.md'],
         maxInput: 123,
         system: 'SYS',
@@ -75,9 +80,9 @@ describe('session lifecycle', () => {
     const storedMeta = JSON.parse(await readFile(path.join(baseDir, 'meta.json'), 'utf8'));
     expect(storedMeta.options.file).toEqual(['notes.md']);
     await expect(readFile(path.join(baseDir, 'request.json'), 'utf8')).rejects.toThrow();
-    const modelMeta = JSON.parse(await readFile(path.join(baseDir, 'models', 'gpt-5-pro.json'), 'utf8'));
+    const modelMeta = JSON.parse(await readFile(path.join(baseDir, 'models', 'gpt-5.1-pro.json'), 'utf8'));
     expect(modelMeta.status).toBe('pending');
-    const perModelLog = await readFile(path.join(baseDir, 'models', 'gpt-5-pro.log'), 'utf8');
+    const perModelLog = await readFile(path.join(baseDir, 'models', 'gpt-5.1-pro.log'), 'utf8');
     expect(perModelLog).toBe('');
     const logContent = await readFile(path.join(baseDir, 'output.log'), 'utf8');
     expect(logContent).toBe('');
@@ -86,7 +91,7 @@ describe('session lifecycle', () => {
   test('readSessionMetadata returns null for missing sessions and updateSessionMetadata persists changes', async () => {
     expect(await sessionModule.readSessionMetadata('missing')).toBeNull();
     const meta = await sessionModule.initializeSession(
-      { prompt: 'Update me', model: 'gpt-5-pro' },
+      { prompt: 'Update me', model: 'gpt-5.1-pro' },
       '/tmp/cwd',
     );
     await sessionModule.updateSessionMetadata(meta.id, { status: 'complete', promptPreview: 'value' });
@@ -97,7 +102,7 @@ describe('session lifecycle', () => {
 
   test('createSessionLogWriter appends logs and supports chunk writes', async () => {
     const meta = await sessionModule.initializeSession(
-      { prompt: 'Log history', model: 'gpt-5-pro' },
+      { prompt: 'Log history', model: 'gpt-5.1-pro' },
       '/tmp/cwd',
     );
     const writer = sessionModule.createSessionLogWriter(meta.id);
@@ -116,11 +121,11 @@ describe('session lifecycle', () => {
 
   test('initializeSession appends numeric suffix when slug already exists', async () => {
     const first = await sessionModule.initializeSession(
-      { prompt: 'Duplicate slug please', model: 'gpt-5-pro', slug: 'alpha beta gamma' },
+      { prompt: 'Duplicate slug please', model: 'gpt-5.1-pro', slug: 'alpha beta gamma' },
       '/tmp/cwd',
     );
     const second = await sessionModule.initializeSession(
-      { prompt: 'Duplicate slug please again', model: 'gpt-5-pro', slug: 'alpha beta gamma' },
+      { prompt: 'Duplicate slug please again', model: 'gpt-5.1-pro', slug: 'alpha beta gamma' },
       '/tmp/cwd',
     );
     expect(first.id).toBe('alpha-beta-gamma');
@@ -128,7 +133,7 @@ describe('session lifecycle', () => {
   });
 
   test('marks stale running sessions as zombies after 60 minutes', async () => {
-    const meta = await sessionModule.initializeSession({ prompt: 'Zombie', model: 'gpt-5-pro' }, '/tmp/cwd');
+    const meta = await sessionModule.initializeSession({ prompt: 'Zombie', model: 'gpt-5.1-pro' }, '/tmp/cwd');
     const staleStarted = new Date(Date.now() - sessionModule.ZOMBIE_MAX_AGE_MS - 60_000).toISOString();
     await sessionModule.updateSessionMetadata(meta.id, { status: 'running', startedAt: staleStarted });
     const listed = await sessionModule.listSessionsMetadata();
@@ -144,10 +149,10 @@ describe('session listing and filtering', () => {
   test('listSessionsMetadata sorts newest first and filterSessionsByRange enforces limits', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-    await sessionModule.initializeSession({ prompt: 'Old session', model: 'gpt-5-pro' }, '/tmp/a');
+    await sessionModule.initializeSession({ prompt: 'Old session', model: 'gpt-5.1-pro' }, '/tmp/a');
     vi.setSystemTime(new Date('2025-01-02T12:00:00Z'));
     const recent = await sessionModule.initializeSession(
-      { prompt: 'Recent session', model: 'gpt-5-pro' },
+      { prompt: 'Recent session', model: 'gpt-5.1-pro' },
       '/tmp/b',
     );
     vi.setSystemTime(new Date('2025-01-03T00:00:00Z'));
@@ -167,9 +172,9 @@ describe('session listing and filtering', () => {
   test('deleteSessionsOlderThan removes only sessions past the cutoff', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-    const oldMeta = await sessionModule.initializeSession({ prompt: 'Old', model: 'gpt-5-pro' }, '/tmp/a');
+    const oldMeta = await sessionModule.initializeSession({ prompt: 'Old', model: 'gpt-5.1-pro' }, '/tmp/a');
     vi.setSystemTime(new Date('2025-01-03T00:00:00Z'));
-    const freshMeta = await sessionModule.initializeSession({ prompt: 'Fresh', model: 'gpt-5-pro' }, '/tmp/b');
+    const freshMeta = await sessionModule.initializeSession({ prompt: 'Fresh', model: 'gpt-5.1-pro' }, '/tmp/b');
     vi.setSystemTime(new Date('2025-01-03T12:00:00Z'));
 
     const result = await sessionModule.deleteSessionsOlderThan({ hours: 24 });
@@ -180,7 +185,7 @@ describe('session listing and filtering', () => {
   });
 
   test('deleteSessionsOlderThan clears everything when includeAll is true', async () => {
-    const meta = await sessionModule.initializeSession({ prompt: 'Only', model: 'gpt-5-pro' }, '/tmp/c');
+    const meta = await sessionModule.initializeSession({ prompt: 'Only', model: 'gpt-5.1-pro' }, '/tmp/c');
     const result = await sessionModule.deleteSessionsOlderThan({ includeAll: true });
     expect(result).toEqual({ deleted: 1, remaining: 0 });
     expect(await sessionModule.readSessionMetadata(meta.id)).toBeNull();

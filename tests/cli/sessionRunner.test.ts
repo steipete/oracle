@@ -59,7 +59,7 @@ const baseSessionMeta: SessionMetadata = {
 
 const baseRunOptions = {
   prompt: 'Hello',
-  model: 'gpt-5-pro' as const,
+  model: 'gpt-5.1-pro' as const,
 };
 
 const log = vi.fn();
@@ -122,6 +122,16 @@ describe('performSessionRun', () => {
       usage: { totalTokens: 30 },
       response: expect.objectContaining({ responseId: expect.any(String) }),
     });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'running' }),
+    );
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'completed' }),
+    );
     expect(vi.mocked(sendSessionNotification)).toHaveBeenCalled();
   });
 
@@ -151,6 +161,16 @@ describe('performSessionRun', () => {
       status: 'completed',
       browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePid: 123 }) }),
     });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'running' }),
+    );
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'completed' }),
+    );
   });
 
   test('records metadata when browser automation fails', async () => {
@@ -176,6 +196,11 @@ describe('performSessionRun', () => {
       errorMessage: 'automation failed',
       browser: expect.objectContaining({ config: expect.any(Object) }),
     });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'error' }),
+    );
   });
 
   test('records response metadata when runOracle throws OracleResponseError', async () => {
@@ -199,6 +224,16 @@ describe('performSessionRun', () => {
       status: 'error',
       response: expect.objectContaining({ responseId: 'resp-error' }),
     });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'running' }),
+    );
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'error' }),
+    );
   });
 
   test('captures transport failures when OracleTransportError thrown', async () => {
@@ -221,6 +256,11 @@ describe('performSessionRun', () => {
       status: 'error',
       transport: { reason: 'client-timeout' },
     });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'error' }),
+    );
     expect(log).toHaveBeenCalledWith(expect.stringContaining('Transport'));
   });
 
@@ -244,6 +284,11 @@ describe('performSessionRun', () => {
       status: 'error',
       error: expect.objectContaining({ category: 'file-validation', message: 'too large' }),
     });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.1-pro',
+      expect.objectContaining({ status: 'error' }),
+    );
     expect(log).toHaveBeenCalledWith(expect.stringContaining('User error (file-validation)'));
   });
 

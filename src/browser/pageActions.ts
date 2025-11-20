@@ -1,4 +1,4 @@
-export { navigateToChatGPT, ensureNotBlocked, ensurePromptReady } from './actions/navigation.js';
+export { navigateToChatGPT, ensureNotBlocked, ensureLoggedIn, ensurePromptReady } from './actions/navigation.js';
 export { ensureModelSelection } from './actions/modelSelection.js';
 export { submitPrompt } from './actions/promptComposer.js';
 export { uploadAttachmentFile, waitForAttachmentCompletion } from './actions/attachments.js';
@@ -9,4 +9,3 @@ export {
   buildAssistantExtractorForTest,
   buildConversationDebugExpressionForTest,
 } from './actions/assistantResponse.js';
-

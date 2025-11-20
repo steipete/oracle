@@ -5,6 +5,8 @@ export interface HiddenAliasOptions extends OptionValues {
   message?: string;
   file?: string[];
   include?: string[];
+  engine?: string;
+  mode?: string;
 }
 
 type OptionSetter = (key: string, value: unknown) => void;
@@ -14,6 +16,7 @@ type OptionSetter = (key: string, value: unknown) => void;
  *
  * - `--message` maps to `--prompt` when no prompt is provided.
  * - `--include` extends the `--file` list.
+ * - `--mode` maps to `--engine` for backward compatibility with older docs/UX.
  */
 export function applyHiddenAliases(options: HiddenAliasOptions, setOptionValue?: OptionSetter): void {
   if (options.include && options.include.length > 0) {
@@ -24,5 +27,9 @@ export function applyHiddenAliases(options: HiddenAliasOptions, setOptionValue?:
   if (!options.prompt && options.message) {
     options.prompt = options.message;
     setOptionValue?.('prompt', options.message);
+  }
+  if (!options.engine && options.mode) {
+    options.engine = options.mode as string;
+    setOptionValue?.('engine', options.mode);
   }
 }

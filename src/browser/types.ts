@@ -40,6 +40,7 @@ export interface BrowserAutomationConfig {
   chromePath?: string | null;
   chromeCookiePath?: string | null;
   url?: string;
+  chatgptUrl?: string | null;
   timeoutMs?: number;
   inputTimeoutMs?: number;
   cookieSync?: boolean;

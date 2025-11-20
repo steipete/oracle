@@ -4,6 +4,7 @@ import {
   ASSISTANT_ROLE_SELECTOR,
   CONVERSATION_TURN_SELECTOR,
   COPY_BUTTON_SELECTOR,
+  FINISHED_ACTIONS_SELECTOR,
   STOP_BUTTON_SELECTOR,
 } from '../constants.js';
 import { delay } from '../utils.js';
@@ -203,8 +204,11 @@ async function pollAssistantCompletion(
       } else {
         stableCycles += 1;
       }
-      const stopVisible = await isStopButtonVisible(Runtime);
-      if (!stopVisible && stableCycles >= requiredStableCycles) {
+      const [stopVisible, completionVisible] = await Promise.all([
+        isStopButtonVisible(Runtime),
+        isCompletionVisible(Runtime),
+      ]);
+      if (completionVisible || (!stopVisible && stableCycles >= requiredStableCycles)) {
         return normalized;
       }
     } else {
@@ -220,6 +224,23 @@ async function isStopButtonVisible(Runtime: ChromeClient['Runtime']): Promise<bo
   try {
     const { result } = await Runtime.evaluate({
       expression: `Boolean(document.querySelector('${STOP_BUTTON_SELECTOR}'))`,
+      returnByValue: true,
+    });
+    return Boolean(result?.value);
+  } catch {
+    return false;
+  }
+}
+
+async function isCompletionVisible(Runtime: ChromeClient['Runtime']): Promise<boolean> {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: `(() => {
+        if (document.querySelector('${FINISHED_ACTIONS_SELECTOR}')) {
+          return true;
+        }
+        return Array.from(document.querySelectorAll('.markdown')).some((n) => (n.textContent || '').trim() === 'Done');
+      })()`,
       returnByValue: true,
     });
     return Boolean(result?.value);
@@ -270,6 +291,7 @@ function buildResponseObserverExpression(timeoutMs: number): string {
   return `(() => {
     const SELECTORS = ${selectorsLiteral};
     const STOP_SELECTOR = '${STOP_BUTTON_SELECTOR}';
+    const FINISHED_SELECTOR = '${FINISHED_ACTIONS_SELECTOR}';
     const settleDelayMs = 800;
     ${buildAssistantExtractor('extractFromTurns')}
 
@@ -328,7 +350,11 @@ function buildResponseObserverExpression(timeoutMs: number): string {
           lastLength = refreshed.text?.length ?? lastLength;
         }
         const stopVisible = Boolean(document.querySelector(STOP_SELECTOR));
-        if (!stopVisible) {
+        const finishedVisible =
+          Boolean(document.querySelector(FINISHED_SELECTOR)) ||
+          Array.from(document.querySelectorAll('.markdown')).some((n) => (n.textContent || '').trim() === 'Done');
+
+        if (!stopVisible || finishedVisible) {
           break;
         }
       }

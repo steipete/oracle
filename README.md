@@ -11,13 +11,14 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Oracle gives your agents a simple, reliable way to **bundle a prompt plus the right files and hand them to another AI**. It currently speaks GPT-5.1, GPT-5.1 Codex (API-only), and GPT-5 Pro; Pro and Codex Max runs can take up to an hour and often return remarkably strong answers.
+Oracle gives your agents a simple, reliable way to **bundle a prompt plus the right files and hand them to another AI**. It currently speaks GPT-5.1 Pro (new default), GPT-5.1 Codex (API-only), and GPT-5.1; Pro and Codex Max runs can take up to an hour and often return remarkably strong answers.
 
 ## Two engines, one CLI
 
 - **API engine** — Calls the OpenAI Responses API. Needs `OPENAI_API_KEY`.
 - **Browser engine** — Automates ChatGPT in Chrome so you can use your Pro account directly. Toggle with `--engine browser`; no API key required.
   - Duration flags such as `--browser-timeout` / `--browser-input-timeout` accept `ms`, `s`, `m`, or `h` (and you can chain them: `1h2m10s`). Defaults are 20 m / 30 s.
+  - Point browser runs at either the root ChatGPT homepage (`https://chatgpt.com/`) or a specific workspace/folder with `--chatgpt-url https://chatgpt.com/g/.../project` (config: `browser.chatgptUrl`).
 - **GPT-5.1 Codex** — `gpt-5.1-codex` (high reasoning) is available today via API. Codex Max isn’t exposed via API yet; once OpenAI flips the switch we’ll wire it up here. Codex models require `--engine api`.
 
 If you omit `--engine`, Oracle prefers the API engine when `OPENAI_API_KEY` is present; otherwise it falls back to browser mode. Switch explicitly with `-e, --engine {api|browser}` when you want to override the auto choice. Everything else (prompt assembly, file handling, session logging) stays the same.
@@ -83,7 +84,7 @@ oracle session <id>                 # replay a run locally
 
 - **Bundle once, reuse anywhere** — Prompt + files become a markdown package the model can cite.
 - **Flexible file selection** — Glob patterns and `!` excludes let you scoop up or skip files without scripting.
-- **Pro-friendly** — GPT-5 Pro background runs stay alive for ~10 minutes with reconnection + token/cost tracking.
+- **Pro-friendly** — GPT-5.1 Pro background runs stay alive for ~10 minutes with reconnection + token/cost tracking.
 - **Two paths, one UX** — API or browser, same flags and session logs.
 - **Search on by default** — The model can ground answers with fresh citations.
 - **File safety** — Per-file token accounting and size guards; `--files-report` shows exactly what you’re sending.
@@ -100,8 +101,9 @@ Put per-user defaults in `~/.oracle/config.json` (parsed as JSON5, so comments/t
 | `-p, --prompt <text>` | Required prompt. |
 | `-f, --file <paths...>` | Attach files/dirs (supports globs and `!` excludes). |
 | `-e, --engine <api\|browser>` | Choose API or browser automation. Omitted: API when `OPENAI_API_KEY` is set, otherwise browser. |
-| `-m, --model <name>` | `gpt-5-pro` (default), `gpt-5.1`, or `gpt-5.1-codex` (API-only). |
+| `-m, --model <name>` | `gpt-5.1-pro` (default), `gpt-5.1`, `gpt-5.1-codex` (API-only), `claude-4.5-sonnet` (API id `claude-sonnet-4-5`), `claude-4.1-opus` (API id `claude-opus-4-1`) (API-only). |
 | `--base-url <url>` | Point the API engine at any OpenAI-compatible endpoint (LiteLLM, Azure, etc.). |
+| `--chatgpt-url <url>` | Point the browser engine at the ChatGPT root or a workspace/folder URL. |
 | `--azure-endpoint <url>` | Use Azure OpenAI (switches client automatically). |
 | `--files-report` | Print per-file token usage. |
 | `--write-output <path>` | Write only the completed answer to `<path>`; multi-model runs append `.<model>` before the extension. |
@@ -117,7 +119,9 @@ Need a ready-made file? Add `--write-output path/to/file.md` to save just the fi
 
 **Recommendation:** Prefer the API engine when you have an API key (`--engine api` or just set `OPENAI_API_KEY`). The API delivers more reliable results and supports longer, uninterrupted runs than the browser engine in most cases.
 
-**Wait vs no-wait:** gpt-5-pro API runs default to detaching (shows a reattach hint); add `--wait` to stay attached. gpt-5.1, gpt-5.1-codex, and browser runs block by default. You can reattach anytime via `oracle session <id>`.
+**Wait vs no-wait:** gpt-5.1-pro API runs default to detaching (shows a reattach hint); add `--wait` to stay attached. gpt-5.1, gpt-5.1-codex, and browser runs block by default. You can reattach anytime via `oracle session <id>`.
+
+**Duplicate prompt guard:** If a session with the exact same prompt is already running, new runs are blocked with a reminder to reattach. Use `--force` only when you truly want a second run of the same prompt (e.g., to compare settings).
 
 ## Testing
 

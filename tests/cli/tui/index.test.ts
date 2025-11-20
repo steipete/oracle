@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { UserConfig } from '../../../src/config.js';
+import { DEFAULT_MODEL } from '../../../src/oracle/config.js';
 import type { RunOracleOptions } from '../../../src/oracle.js';
 
 const promptMock = vi.fn();
@@ -69,7 +70,7 @@ describe('askOracleFlow', () => {
       id: 'sess-123',
       createdAt: new Date().toISOString(),
       status: 'pending',
-      options: { prompt: 'hello', model: 'gpt-5-pro' },
+      options: { prompt: 'hello', model: DEFAULT_MODEL },
     });
   });
 
@@ -77,7 +78,7 @@ describe('askOracleFlow', () => {
     promptMock.mockResolvedValue({
       promptInput: '',
       mode: 'api',
-      model: 'gpt-5-pro',
+      model: DEFAULT_MODEL,
       files: [],
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -93,7 +94,7 @@ describe('askOracleFlow', () => {
     promptMock.mockResolvedValue({
       promptInput: 'Hello world',
       mode: 'api',
-      model: 'gpt-5-pro',
+      model: DEFAULT_MODEL,
       files: [],
       models: [],
     });
@@ -115,7 +116,7 @@ describe('askOracleFlow', () => {
     promptMock.mockResolvedValue({
       promptInput: 'Multi',
       mode: 'api',
-      model: 'gpt-5-pro',
+      model: DEFAULT_MODEL,
       models: ['gemini-3-pro'],
       files: [],
     });
@@ -124,7 +125,7 @@ describe('askOracleFlow', () => {
     await tui.askOracleFlow('1.3.0', config);
 
     const creationArgs = initializeSessionMock.mock.calls[0]?.[0] as RunOracleOptions & { models?: string[] };
-    expect(creationArgs.models).toEqual(['gpt-5-pro', 'gemini-3-pro']);
+    expect(creationArgs.models).toEqual([DEFAULT_MODEL, 'gemini-3-pro']);
   });
 });
 
@@ -140,7 +141,7 @@ describe('resolveCost basics', () => {
       createdAt: new Date().toISOString(),
       status: 'completed',
       usage: { inputTokens: 1000, outputTokens: 2000, reasoningTokens: 0, totalTokens: 3000 },
-      model: 'gpt-5-pro',
+      model: DEFAULT_MODEL,
       mode: 'api' as const,
       options: {},
     };

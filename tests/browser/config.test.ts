@@ -22,7 +22,7 @@ describe('resolveBrowserConfig', () => {
       chromePath: '/Applications/Chrome',
       debug: true,
     });
-    expect(resolved.url).toBe('https://example.com');
+    expect(resolved.url).toBe('https://example.com/');
     expect(resolved.timeoutMs).toBe(123);
     expect(resolved.inputTimeoutMs).toBe(456);
     expect(resolved.cookieSync).toBe(false);

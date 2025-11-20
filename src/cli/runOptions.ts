@@ -1,4 +1,5 @@
 import type { RunOracleOptions, ModelName } from '../oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS } from '../oracle.js';
 import type { UserConfig } from '../config.js';
 import type { EngineMode } from './engine.js';
 import { resolveEngine } from './engine.js';
@@ -18,6 +19,7 @@ export interface ResolveRunOptionsInput {
 export interface ResolvedRunOptions {
   runOptions: RunOracleOptions;
   resolvedEngine: EngineMode;
+  engineCoercedToApi?: boolean;
 }
 
 export function resolveRunOptionsFromConfig({
@@ -34,23 +36,19 @@ export function resolveRunOptionsFromConfig({
   const requestedModelList = Array.isArray(models) ? models : [];
   const normalizedRequestedModels = requestedModelList.map((entry) => normalizeModelOption(entry)).filter(Boolean);
 
-  const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || 'gpt-5-pro';
+  const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || DEFAULT_MODEL;
   const resolvedModel =
     resolvedEngine === 'browser' && normalizedRequestedModels.length === 0
       ? inferModelFromLabel(cliModelArg)
       : resolveApiModel(cliModelArg);
   const isGemini = resolvedModel.startsWith('gemini');
   const isCodex = resolvedModel.startsWith('gpt-5.1-codex');
-  // Keep the resolved model id alongside the canonical model name so we can log
-  // and dispatch the exact identifier (useful for Gemini preview aliases).
-  const effectiveModelId = isGemini ? resolveGeminiModelId(resolvedModel) : resolvedModel;
+  const isClaude = resolvedModel.startsWith('claude');
 
-  if ((isGemini || isCodex) && browserRequested) {
-    throw new Error('Gemini and GPT-5.1 Codex models are API-only. Use --engine api.');
-  }
-  // When Gemini or Codex is selected, always force API engine (overrides config/env auto browser).
+  const engineCoercedToApi = (isGemini || isCodex || isClaude) && browserRequested;
+  // When Gemini, Claude, or Codex is selected, always force API engine (overrides config/env auto browser).
   const fixedEngine: EngineMode =
-    isGemini || isCodex || normalizedRequestedModels.length > 0 ? 'api' : resolvedEngine;
+    isGemini || isCodex || isClaude || normalizedRequestedModels.length > 0 ? 'api' : resolvedEngine;
 
   const promptWithSuffix =
     userConfig?.promptSuffix && userConfig.promptSuffix.trim().length > 0
@@ -62,19 +60,24 @@ export function resolveRunOptionsFromConfig({
   const heartbeatIntervalMs =
     userConfig?.heartbeatSeconds !== undefined ? userConfig.heartbeatSeconds * 1000 : 30_000;
 
-  const baseUrl = normalizeBaseUrl(userConfig?.apiBaseUrl ?? env.OPENAI_BASE_URL);
+  const baseUrl = normalizeBaseUrl(
+    userConfig?.apiBaseUrl ?? (isClaude ? env.ANTHROPIC_BASE_URL : env.OPENAI_BASE_URL),
+  );
   const uniqueMultiModels: ModelName[] =
     normalizedRequestedModels.length > 0
       ? Array.from(new Set(normalizedRequestedModels.map((entry) => resolveApiModel(entry))))
       : [];
   const includesCodexMultiModel = uniqueMultiModels.some((entry) => entry.startsWith('gpt-5.1-codex'));
   if (includesCodexMultiModel && browserRequested) {
-    throw new Error('GPT-5.1 Codex multi-model runs require --engine api.');
+    // Silent coerce; multi-model still forces API.
   }
+
+  const chosenModel: ModelName = uniqueMultiModels[0] ?? resolvedModel;
+  const effectiveModelId = resolveEffectiveModelId(chosenModel);
 
   const runOptions: RunOracleOptions = {
     prompt: promptWithSuffix,
-    model: uniqueMultiModels[0] ?? resolvedModel,
+    model: chosenModel,
     models: uniqueMultiModels.length > 0 ? uniqueMultiModels : undefined,
     file: files ?? [],
     search,
@@ -85,7 +88,7 @@ export function resolveRunOptionsFromConfig({
     effectiveModelId,
   };
 
-  return { runOptions, resolvedEngine: fixedEngine };
+  return { runOptions, resolvedEngine: fixedEngine, engineCoercedToApi };
 }
 
 function resolveEngineWithConfig({
@@ -100,4 +103,12 @@ function resolveEngineWithConfig({
   if (engine) return engine;
   if (configEngine) return configEngine;
   return resolveEngine({ engine: undefined, env });
+}
+
+function resolveEffectiveModelId(model: ModelName): string {
+  if (model.startsWith('gemini')) {
+    return resolveGeminiModelId(model);
+  }
+  const config = MODEL_CONFIGS[model];
+  return config?.apiModel ?? model;
 }

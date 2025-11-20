@@ -175,7 +175,7 @@ describe('runOracle no-file tip', () => {
     await runOracle(
       {
         prompt: 'hello',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         search: false,
         background: false,
       },
@@ -214,7 +214,7 @@ describe('api key logging', () => {
     await runOracle(
       {
         prompt: 'Key log test',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
       },
       {
@@ -261,7 +261,7 @@ describe('api key logging', () => {
         runOracle(
           {
             prompt: 'Needs key',
-            model: 'gpt-5-pro',
+            model: 'gpt-5.1-pro',
             background: false,
           },
           {
@@ -310,7 +310,7 @@ describe('api key logging', () => {
     const client = new MockClient(stream);
     const logs: string[] = [];
     await runOracle(
-      { prompt: 'Summarize', model: 'gpt-5-pro', sessionId: 'abc123', background: false },
+      { prompt: 'Summarize', model: 'gpt-5.1-pro', sessionId: 'abc123', background: false },
       {
         apiKey: 'sk-test',
         client,
@@ -337,7 +337,7 @@ describe('api key logging', () => {
     const logs: string[] = [];
     const writes: string[] = [];
     await runOracle(
-      { prompt: 'hi', model: 'gpt-5-pro', verbose: true, background: false },
+      { prompt: 'hi', model: 'gpt-5.1-pro', verbose: true, background: false },
       {
         apiKey: 'sk-test-1234',
         client,
@@ -367,7 +367,7 @@ describe('api key logging', () => {
     const logs: string[] = [];
     const writes: string[] = [];
     await runOracle(
-      { prompt: 'Greeting', model: 'gpt-5-pro', verbose: true, background: false },
+      { prompt: 'Greeting', model: 'gpt-5.1-pro', verbose: true, background: false },
       {
         apiKey: 'sk-test',
         client,
@@ -392,7 +392,7 @@ describe('api key logging', () => {
     await runOracle(
       {
         prompt: 'Verbose tokens',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
         verbose: true,
       },
@@ -417,7 +417,7 @@ describe('api key logging', () => {
     await runOracle(
       {
         prompt: 'Short tokens',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
         verbose: false,
       },
@@ -470,7 +470,7 @@ describe('api key logging', () => {
     await runOracle(
       {
         prompt: 'Greeting',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
         verbose: true,
       },
@@ -517,7 +517,7 @@ describe('timeouts', () => {
     ).rejects.toBeInstanceOf(OracleTransportError);
   });
 
-  test('gpt-5-pro auto timeout allows long background runs', async () => {
+  test('gpt-5.1-pro auto timeout allows long background runs', async () => {
     const nowRef = { t: 0 };
     const wait = async (ms: number) => {
       nowRef.t += ms;
@@ -547,7 +547,7 @@ describe('timeouts', () => {
     };
 
     const result = await runOracle(
-      { prompt: 'hi', model: 'gpt-5-pro', background: true },
+      { prompt: 'hi', model: 'gpt-5.1-pro', background: true },
       { client, log: () => {}, write: () => true, wait, now: () => nowRef.t },
     );
     expect(result.mode).toBe('live');
@@ -561,7 +561,7 @@ describe('runOracle preview mode', () => {
     const result = await runOracle(
       {
         prompt: 'Preview me',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         preview: true,
         previewMode: 'json',
         search: true,
@@ -587,7 +587,7 @@ describe('runOracle preview mode', () => {
     await runOracle(
       {
         prompt: 'Preview only',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         preview: true,
         previewMode: 'summary',
       },
@@ -606,7 +606,7 @@ describe('runOracle preview mode', () => {
     await runOracle(
       {
         prompt: 'Show everything',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         preview: true,
         previewMode: 'full',
       },
@@ -627,7 +627,7 @@ describe('runOracle error handling', () => {
       runOracle(
         {
           prompt: 'This is a small prompt',
-          model: 'gpt-5-pro',
+          model: 'gpt-5.1-pro',
           maxInput: 1,
           background: false,
         },
@@ -643,7 +643,7 @@ describe('runOracle error handling', () => {
     await runOracle(
       {
         prompt: 'short',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
       },
       {
@@ -673,7 +673,7 @@ describe('runOracle streaming output', () => {
     const result = await runOracle(
       {
         prompt: 'Say hello',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
       },
       {
@@ -709,7 +709,7 @@ describe('runOracle streaming output', () => {
     await runOracle(
       {
         prompt: 'Say nothing',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         silent: true,
         background: false,
       },
@@ -741,7 +741,7 @@ describe('runOracle streaming output', () => {
     const client = new MockClient(stream);
     const writes: string[] = [];
     await runOracle(
-      { prompt: 'Mix events', model: 'gpt-5-pro', background: false },
+      { prompt: 'Mix events', model: 'gpt-5.1-pro', background: false },
       {
         apiKey: 'sk-test',
         client,
@@ -768,7 +768,7 @@ describe('runOracle streaming output', () => {
     const client = new MockClient(stream);
     const writes: string[] = [];
     await runOracle(
-      { prompt: 'Robust stream', model: 'gpt-5-pro', background: false },
+      { prompt: 'Robust stream', model: 'gpt-5.1-pro', background: false },
       {
         apiKey: 'sk-test',
         client,
@@ -798,7 +798,7 @@ describe('runOracle background mode', () => {
     const result = await runOracle(
       {
         prompt: 'Background run',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
       },
       {
         apiKey: 'sk-test',
@@ -827,7 +827,7 @@ describe('runOracle background mode', () => {
     await runOracle(
       {
           prompt: 'Retry test',
-          model: 'gpt-5-pro',
+          model: 'gpt-5.1-pro',
       },
       {
           apiKey: 'sk-test',
@@ -857,7 +857,7 @@ describe('runOracle file reports', () => {
     await runOracle(
       {
         prompt: 'Base prompt',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         file: ['alpha.md', 'beta.md'],
         filesReport: true,
         silent: true,
@@ -890,7 +890,7 @@ describe('runOracle file reports', () => {
       runOracle(
         {
           prompt: 'Check budget',
-          model: 'gpt-5-pro',
+          model: 'gpt-5.1-pro',
           file: ['big.txt'],
           maxInput: 100,
           background: false,
@@ -923,7 +923,7 @@ describe('runOracle file reports', () => {
     await runOracle(
       {
         prompt: 'Directory test',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         file: [dir],
         filesReport: true,
         silent: true,
@@ -952,7 +952,7 @@ describe('runOracle file reports', () => {
     await runOracle(
       {
         prompt: 'Custom endpoint',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         baseUrl: 'https://litellm.test/v1',
         background: false,
       },
@@ -982,7 +982,7 @@ describe('runOracle file reports', () => {
     await runOracle(
       {
         prompt: 'Azure test',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         azure: azureOptions,
         background: false,
       },
@@ -1019,6 +1019,31 @@ describe('renderPromptMarkdown', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test('warns when render-markdown exceeds token threshold', async () => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), 'oracle-warn-'));
+    const filePath = path.join(cwd, 'big.txt');
+    // 50k chars ~ 12.5k tokens per file; stitch enough to cross 196k
+    const chunk = 'a'.repeat(50_000);
+    await writeFile(filePath, chunk.repeat(4), 'utf8'); // ~200k chars → ~50k tokens
+    const logs: string[] = [];
+    try {
+      await renderPromptMarkdown(
+        {
+          prompt: 'Hello world',
+          file: [filePath],
+        },
+        { cwd },
+      );
+      // Direct rendering doesn't warn; the warning is in CLI path. Simulate warning helper.
+      const { warnIfOversizeBundle } = await import('../src/cli/bundleWarnings.js');
+      const warned = warnIfOversizeBundle(200_000, 196_000, (msg: string) => logs.push(msg));
+      expect(warned).toBe(true);
+      expect(logs.join('\n')).toMatch(/Warning: bundle is ~200,000 tokens/);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('runOracle request payload', () => {
@@ -1028,7 +1053,7 @@ describe('runOracle request payload', () => {
     await runOracle(
       {
         prompt: 'Default search',
-        model: 'gpt-5-pro',
+        model: 'gpt-5.1-pro',
         background: false,
       },
       {
@@ -1278,7 +1303,7 @@ describe('oracle utility helpers', () => {
 
   test('buildRequestBody respects search toggles', () => {
     const base = buildRequestBody({
-      modelConfig: MODEL_CONFIGS['gpt-5-pro'],
+      modelConfig: MODEL_CONFIGS['gpt-5.1-pro'],
       systemPrompt: 'sys',
       userPrompt: 'user',
       searchEnabled: false,

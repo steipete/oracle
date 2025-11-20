@@ -51,17 +51,45 @@ describe('oracle CLI integration', () => {
     expect(metadata.status).toBe('completed');
     expect(metadata.response?.requestId).toBe('mock-req');
     expect(metadata.usage?.totalTokens).toBe(20);
+    expect(metadata.options?.effectiveModelId).toBe('gpt-5.1');
 
     await rm(oracleHome, { recursive: true, force: true });
   }, 15000);
+
+  test('rejects mixing --model and --models regardless of source', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-multi-conflict-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+    };
+
+    await expect(
+      execFileAsync(
+        process.execPath,
+        [TSX_BIN, CLI_ENTRY, '--prompt', 'conflict', '--model', 'gpt-5.1', '--models', 'gpt-5.1-pro'],
+        { env },
+      ),
+    ).rejects.toThrow(/--models cannot be combined with --model/i);
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, 10000);
 
   test('runs gpt-5.1-codex via API-only path', async () => {
     const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-codex-'));
     const env = {
       ...process.env,
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       ORACLE_NO_DETACH: '1',
     };
 
@@ -87,8 +115,11 @@ describe('oracle CLI integration', () => {
     const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-codex-max-'));
     const env = {
       ...process.env,
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: environment variable name
       ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
     };
 
@@ -102,4 +133,44 @@ describe('oracle CLI integration', () => {
 
     await rm(oracleHome, { recursive: true, force: true });
   }, 10000);
+
+  test('runs multi-model across OpenAI, Gemini, and Claude with custom factory', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-multi-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      GEMINI_API_KEY: 'gk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ANTHROPIC_API_KEY: 'ak-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: path.join(process.cwd(), 'tests', 'fixtures', 'mockPolyClient.cjs'),
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_NO_DETACH: '1',
+    };
+
+    await execFileAsync(
+      process.execPath,
+      [TSX_BIN, CLI_ENTRY, '--prompt', 'Multi run test prompt long enough', '--models', 'gpt-5.1,gemini-3-pro,claude-4.5-sonnet'],
+      { env },
+    );
+
+    const sessionsDir = path.join(oracleHome, 'sessions');
+    const sessionIds = await readdir(sessionsDir);
+    expect(sessionIds.length).toBe(1);
+    const sessionDir = path.join(sessionsDir, sessionIds[0]);
+    const metadata = JSON.parse(await readFile(path.join(sessionDir, 'meta.json'), 'utf8'));
+    const selectedModels = (metadata.models as Array<{ model: string }> | undefined)?.map(
+      (m: { model: string }) => m.model,
+    );
+    expect(selectedModels).toEqual(
+      expect.arrayContaining(['gpt-5.1', 'gemini-3-pro', 'claude-4.5-sonnet']),
+    );
+    expect(metadata.status).toBe('completed');
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, 15000);
 });

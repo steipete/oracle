@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { BrowserSessionConfig } from '../sessionStore.js';
 import type { ModelName } from '../oracle.js';
-import { DEFAULT_MODEL_TARGET, parseDuration } from '../browserMode.js';
+import { CHATGPT_URL, DEFAULT_MODEL_TARGET, normalizeChatgptUrl, parseDuration } from '../browserMode.js';
 import type { CookieParam } from '../browser/types.js';
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 1_200_000;
@@ -12,6 +12,7 @@ const DEFAULT_CHROME_PROFILE = 'Default';
 
 const BROWSER_MODEL_LABELS: Partial<Record<ModelName, string>> = {
   'gpt-5-pro': 'GPT-5 Pro',
+  'gpt-5.1-pro': 'GPT-5.1 Pro',
   'gpt-5.1': 'GPT-5.1',
   'gemini-3-pro': 'Gemini 3 Pro',
 };
@@ -20,6 +21,7 @@ export interface BrowserFlagOptions {
   browserChromeProfile?: string;
   browserChromePath?: string;
   browserCookiePath?: string;
+  chatgptUrl?: string;
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
@@ -55,12 +57,14 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
   if (options.remoteChrome) {
     remoteChrome = parseRemoteChromeTarget(options.remoteChrome);
   }
+  const rawUrl = options.chatgptUrl ?? options.browserUrl;
+  const url = rawUrl ? normalizeChatgptUrl(rawUrl, CHATGPT_URL) : undefined;
 
   return {
     chromeProfile: options.browserChromeProfile ?? DEFAULT_CHROME_PROFILE,
     chromePath: options.browserChromePath ?? null,
     chromeCookiePath: options.browserCookiePath ?? null,
-    url: options.browserUrl,
+    url,
     timeoutMs: options.browserTimeout ? parseDuration(options.browserTimeout, DEFAULT_BROWSER_TIMEOUT_MS) : undefined,
     inputTimeoutMs: options.browserInputTimeout
       ? parseDuration(options.browserInputTimeout, DEFAULT_BROWSER_INPUT_TIMEOUT_MS)
@@ -69,12 +73,13 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     cookieNames,
     inlineCookies: inline?.cookies,
     inlineCookiesSource: inline?.source ?? null,
-    headless: options.browserHeadless ? true : undefined,
+    headless: undefined, // disable headless; Cloudflare blocks it
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel: shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model),
     debug: options.verbose ? true : undefined,
-    allowCookieErrors: options.browserAllowCookieErrors ? true : undefined,
+    // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
+    allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
   };
 }

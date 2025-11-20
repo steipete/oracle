@@ -11,3 +11,4 @@ tsconfig.tsbuildinfo
 vendor/oracle-notifier/OracleNotifier.app
 vendor/oracle-notifier/OracleIcon.icns
 vendor/oracle-notifier/OracleIcon.iconset
+/.claude

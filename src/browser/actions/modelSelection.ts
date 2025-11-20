@@ -261,12 +261,34 @@ function buildModelMatchersLiteral(targetModel: string): { labelTokens: string[]
     testIdTokens.add('gpt5-1');
     testIdTokens.add('gpt51');
   }
+  // Numeric variations (5.0 ↔ 50 ↔ gpt-5-0)
+  if (base.includes('5.0') || base.includes('5-0') || base.includes('50')) {
+    push('5.0', labelTokens);
+    push('gpt-5.0', labelTokens);
+    push('gpt5.0', labelTokens);
+    push('gpt-5-0', labelTokens);
+    push('gpt5-0', labelTokens);
+    push('gpt50', labelTokens);
+    push('chatgpt 5.0', labelTokens);
+    testIdTokens.add('gpt-5-0');
+    testIdTokens.add('gpt5-0');
+    testIdTokens.add('gpt50');
+  }
   // Pro / research variants
   if (base.includes('pro')) {
     push('proresearch', labelTokens);
     push('research grade', labelTokens);
     push('advanced reasoning', labelTokens);
-    testIdTokens.add('gpt-5-pro');
+    if (base.includes('5.1') || base.includes('5-1') || base.includes('51')) {
+      testIdTokens.add('gpt-5.1-pro');
+      testIdTokens.add('gpt-5-1-pro');
+      testIdTokens.add('gpt51pro');
+    }
+    if (base.includes('5.0') || base.includes('5-0') || base.includes('50')) {
+      testIdTokens.add('gpt-5.0-pro');
+      testIdTokens.add('gpt-5-0-pro');
+      testIdTokens.add('gpt50pro');
+    }
     testIdTokens.add('pro');
     testIdTokens.add('proresearch');
   }
@@ -282,7 +304,7 @@ function buildModelMatchersLiteral(targetModel: string): { labelTokens: string[]
   push(hyphenated, testIdTokens);
   push(collapsed, testIdTokens);
   push(dotless, testIdTokens);
-  // data-testid values observed in the ChatGPT picker (e.g., model-switcher-gpt-5-pro)
+  // data-testid values observed in the ChatGPT picker (e.g., model-switcher-gpt-5.1-pro)
   push(`model-switcher-${hyphenated}`, testIdTokens);
   push(`model-switcher-${collapsed}`, testIdTokens);
   push(`model-switcher-${dotless}`, testIdTokens);

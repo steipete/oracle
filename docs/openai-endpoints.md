@@ -43,6 +43,10 @@ Or via `config.json`:
 }
 ```
 
+### Browser engine vs API base URLs
+
+`--base-url` / `apiBaseUrl` only affect API runs. For browser automation, use `--chatgpt-url` (or `browser.chatgptUrl` in config) to point Chrome at a specific ChatGPT workspace/folder such as `https://chatgpt.com/g/.../project`.
+
 ### Example: LiteLLM
 
 [LiteLLM](https://docs.litellm.ai/) allows you to use Azure, Anthropic, VertexAI, and more using the OpenAI format.

@@ -7,7 +7,7 @@ import type { RunOracleOptions } from '../../src/oracle.js';
 function buildOptions(overrides: Partial<RunOracleOptions> = {}): RunOracleOptions {
   return {
     prompt: overrides.prompt ?? 'Explain the bug',
-    model: overrides.model ?? 'gpt-5-pro',
+    model: overrides.model ?? 'gpt-5.1-pro',
     file: overrides.file ?? ['a.txt'],
     system: overrides.system,
     browserInlineFiles: overrides.browserInlineFiles,

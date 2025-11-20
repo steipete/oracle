@@ -11,7 +11,7 @@ import {
   asOracleUserError,
   extractTextOutput,
   } from '../oracle.js';
-import { runBrowserSessionExecution } from '../browser/sessionRunner.js';
+import { runBrowserSessionExecution, type BrowserSessionRunnerDeps } from '../browser/sessionRunner.js';
 import { formatResponseMetadata, formatTransportMetadata } from './sessionDisplay.js';
 import { markErrorLogged } from './errorUtils.js';
 import {
@@ -35,6 +35,7 @@ export interface SessionRunParams {
   write: (chunk: string) => boolean;
   version: string;
   notifications?: NotificationSettings;
+  browserDeps?: BrowserSessionRunnerDeps;
 }
 
 export async function performSessionRun({
@@ -47,6 +48,7 @@ export async function performSessionRun({
   write,
   version,
   notifications,
+  browserDeps,
 }: SessionRunParams): Promise<void> {
   await sessionStore.updateSession(sessionMeta.id, {
     status: 'running',
@@ -55,12 +57,13 @@ export async function performSessionRun({
     ...(browserConfig ? { browser: { config: browserConfig } } : {}),
   });
   const notificationSettings = notifications ?? deriveNotificationSettingsFromMetadata(sessionMeta, process.env);
+  const modelForStatus = runOptions.model ?? sessionMeta.model;
   try {
     if (mode === 'browser') {
       if (runOptions.model.startsWith('gemini')) {
         throw new Error('Gemini models are not available in browser mode. Re-run with --engine api.');
       }
-      if (process.platform !== 'darwin') {
+      if (!browserDeps?.executeBrowser && process.platform !== 'darwin') {
         throw new Error(
           'Browser engine is only supported on macOS today. Use --engine api instead, or run on macOS.',
         );
@@ -68,10 +71,20 @@ export async function performSessionRun({
       if (!browserConfig) {
         throw new Error('Missing browser configuration for session.');
       }
-      const result = await runBrowserSessionExecution(
-        { runOptions, browserConfig, cwd, log, cliVersion: version },
-        {},
-      );
+      if (modelForStatus) {
+        await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+          status: 'running',
+          startedAt: new Date().toISOString(),
+        });
+      }
+      const result = await runBrowserSessionExecution({ runOptions, browserConfig, cwd, log }, browserDeps);
+      if (modelForStatus) {
+        await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          usage: result.usage,
+        });
+      }
       await sessionStore.updateSession(sessionMeta.id, {
         status: 'completed',
         completedAt: new Date().toISOString(),
@@ -167,6 +180,12 @@ export async function performSessionRun({
     const apiRunOptions: RunOracleOptions = singleModelOverride
       ? { ...runOptions, model: singleModelOverride, models: undefined }
       : runOptions;
+    if (modelForStatus && singleModelOverride == null) {
+      await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+        status: 'running',
+        startedAt: new Date().toISOString(),
+      });
+    }
     const result = await runOracle(apiRunOptions, {
       cwd,
       log,
@@ -184,6 +203,13 @@ export async function performSessionRun({
       transport: undefined,
       error: undefined,
     });
+    if (modelForStatus && singleModelOverride == null) {
+      await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        usage: result.usage,
+      });
+    }
     const answerText = extractTextOutput(result.response);
     await writeAssistantOutput(runOptions.writeOutputPath, answerText, log);
     await sendSessionNotification(
@@ -234,9 +260,19 @@ export async function performSessionRun({
         : undefined,
     });
     if (mode === 'browser') {
-      log(dim('Browser fallback:')); // guides users when automation breaks
-      log(dim('- Use --engine api to run the same prompt without Chrome.'));
-      log(dim('- Add --browser-bundle-files to bundle attachments into a single text file you can drag into ChatGPT.'));
+      log(dim('Next steps (browser fallback):')); // guides users when automation breaks
+      log(dim('- Rerun with --engine api to bypass Chrome entirely.'));
+      log(
+        dim(
+          '- Or rerun with --engine api --render-markdown [--file …] to generate a single markdown bundle you can paste into ChatGPT manually (add --browser-bundle-files if you still want attachments).',
+        ),
+      );
+    }
+    if (modelForStatus) {
+      await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+        status: 'error',
+        completedAt: new Date().toISOString(),
+      });
     }
     throw error;
   }

@@ -8,12 +8,12 @@ describe('mapConsultToRunOptions', () => {
     const { runOptions } = mapConsultToRunOptions({
       prompt: 'multi',
       files: [],
-      model: 'gpt-5-pro',
+      model: 'gpt-5.1-pro',
       models: ['gemini-3-pro'],
       userConfig: undefined,
       env,
     });
-    expect(runOptions.model).toBe('gpt-5-pro');
-    expect(runOptions.models).toEqual(['gpt-5-pro', 'gemini-3-pro']);
+    expect(runOptions.model).toBe('gpt-5.1-pro');
+    expect(runOptions.models).toEqual(['gpt-5.1-pro', 'gemini-3-pro']);
   });
 });

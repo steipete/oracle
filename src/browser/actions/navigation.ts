@@ -28,13 +28,40 @@ export async function ensureNotBlocked(Runtime: ChromeClient['Runtime'], headles
   }
 }
 
+const LOGIN_CHECK_TIMEOUT_MS = 5_000;
+
+export async function ensureLoggedIn(
+  Runtime: ChromeClient['Runtime'],
+  logger: BrowserLogger,
+  options: { appliedCookies?: number | null; remoteSession?: boolean } = {},
+) {
+  const outcome = await Runtime.evaluate({
+    expression: buildLoginProbeExpression(LOGIN_CHECK_TIMEOUT_MS),
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  const probe = normalizeLoginProbe(outcome.result?.value);
+  if (probe.ok && !probe.domLoginCta && !probe.onAuthPage) {
+    logger('Login check passed (no login button detected on page)');
+    return;
+  }
+
+  const domLabel = probe.domLoginCta ? ' Login button detected on page.' : '';
+  const cookieHint = options.remoteSession
+    ? 'The remote Chrome session is not signed into ChatGPT. Sign in there, then rerun.'
+    : (options.appliedCookies ?? 0) === 0
+      ? 'No ChatGPT cookies were applied; sign in to chatgpt.com in Chrome or pass inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).'
+      : 'ChatGPT login appears missing; open chatgpt.com in Chrome to refresh the session or provide inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).';
+
+  throw new Error(`ChatGPT session not detected.${domLabel} ${cookieHint}`);
+}
+
 export async function ensurePromptReady(Runtime: ChromeClient['Runtime'], timeoutMs: number, logger: BrowserLogger) {
   const ready = await waitForPrompt(Runtime, timeoutMs);
   if (!ready) {
     await logDomFailure(Runtime, logger, 'prompt-textarea');
     throw new Error('Prompt textarea did not appear before timeout');
   }
-  logger('Prompt textarea ready');
 }
 
 async function waitForDocumentReady(Runtime: ChromeClient['Runtime'], timeoutMs: number) {
@@ -91,3 +118,98 @@ async function isCloudflareInterstitial(Runtime: ChromeClient['Runtime']): Promi
   return Boolean(result.value);
 }
 
+type LoginProbeResult = {
+  ok: boolean;
+  status: number;
+  url?: string | null;
+  redirected?: boolean;
+  error?: string | null;
+  pageUrl?: string | null;
+  domLoginCta?: boolean;
+  onAuthPage?: boolean;
+};
+
+function buildLoginProbeExpression(timeoutMs: number): string {
+  return `(() => {
+    const timer = setTimeout(() => {}, ${timeoutMs});
+    const pageUrl = typeof location === 'object' && location?.href ? location.href : null;
+    const onAuthPage =
+      typeof location === 'object' &&
+      typeof location.pathname === 'string' &&
+      /^\\/(auth|login|signin)/i.test(location.pathname);
+
+    const hasLoginCta = () => {
+      const candidates = Array.from(
+        document.querySelectorAll(
+          [
+            'a[href*="/auth/login"]',
+            'a[href*="/auth/signin"]',
+            'button[type="submit"]',
+            'button[data-testid*="login"]',
+            'button[data-testid*="log-in"]',
+            'button[data-testid*="sign-in"]',
+            'button[data-testid*="signin"]',
+            'button',
+            'a',
+          ].join(','),
+        ),
+      );
+      const textMatches = (text) => {
+        if (!text) return false;
+        const normalized = text.toLowerCase().trim();
+        return ['log in', 'login', 'sign in', 'signin', 'continue with'].some((needle) =>
+          normalized.startsWith(needle),
+        );
+      };
+      for (const node of candidates) {
+        if (!(node instanceof HTMLElement)) continue;
+        const label =
+          node.textContent?.trim() ||
+          node.getAttribute('aria-label') ||
+          node.getAttribute('title') ||
+          '';
+        if (textMatches(label)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const domLoginCta = hasLoginCta();
+    clearTimeout(timer);
+    return {
+      ok: !domLoginCta && !onAuthPage,
+      status: 0,
+      redirected: false,
+      url: pageUrl,
+      pageUrl,
+      domLoginCta,
+      onAuthPage,
+    };
+  })()`;
+}
+
+function normalizeLoginProbe(raw: unknown): LoginProbeResult {
+  if (!raw || typeof raw !== 'object') {
+    return { ok: false, status: 0 };
+  }
+  const value = raw as Record<string, unknown>;
+  const statusRaw = value.status;
+  const status =
+    typeof statusRaw === 'number'
+      ? statusRaw
+      : typeof statusRaw === 'string' && !Number.isNaN(Number(statusRaw))
+        ? Number(statusRaw)
+        : 0;
+
+  return {
+    ok: Boolean(value.ok),
+    status: Number.isFinite(status) ? (status as number) : 0,
+    url: typeof value.url === 'string' ? value.url : null,
+    redirected: Boolean(value.redirected),
+    error: typeof value.error === 'string' ? value.error : null,
+    pageUrl: typeof value.pageUrl === 'string' ? value.pageUrl : null,
+    domLoginCta: Boolean(value.domLoginCta),
+    onAuthPage: Boolean(value.onAuthPage),
+  };
+}

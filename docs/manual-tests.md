@@ -22,10 +22,10 @@ and run the live API suite before shipping major transport changes.
 Run this whenever you touch the session store, CLI session views, or TUI wiring for multi-model runs.
 
 1. Kick off an API multi-run:  
-   `pnpm run oracle -- --models "gpt-5-pro,gemini-3-pro" --prompt "Compare the moon & sun."`
-   - Expect stdout to print sequential sections, one per model (`[gpt-5-pro] …` followed by `[gemini-3-pro] …`). No interleaved tokens.
-2. Capture the session ID from the summary line. Run `oracle session --status --model gpt-5-pro`.  
-   - Table should collapse to sessions that include GPT-5 Pro and show status icons (✓/⌛/✖) per model.
+   `pnpm run oracle -- --models "gpt-5.1-pro,gemini-3-pro" --prompt "Compare the moon & sun."`
+   - Expect stdout to print sequential sections, one per model (`[gpt-5.1-pro] …` followed by `[gemini-3-pro] …`). No interleaved tokens.
+2. Capture the session ID from the summary line. Run `oracle session --status --model gpt-5.1-pro`.  
+   - Table should collapse to sessions that include GPT-5.1 Pro and show status icons (✓/⌛/✖) per model.
 3. Inspect detailed logs: `oracle session <id>`
    - The metadata header now includes a `Models:` block with one line per model plus token counts.
    - When prompted, pick `View gemini-3-pro log` and confirm only that model’s stream renders. Refresh should keep completed models intact even if others still run.
@@ -106,11 +106,11 @@ Document results (pass/fail, session IDs) in PR descriptions so reviewers can au
 ## Recent Smoke Runs
 
 - 2025-11-18 — API gpt-5.1 (`api-smoke-give-two-words`): returned “blue sky” in 2.5s.
-- 2025-11-18 — API gpt-5-pro (`api-smoke-pro-three-words`): completed in 3m08s with “Fast API verification”.
+- 2025-11-18 — API gpt-5.1-pro (`api-smoke-pro-three-words`): completed in 3m08s with “Fast API verification”.
 - 2025-11-18 — Browser gpt-5.1 Instant (`browser-smoke-instant-two-words`): completed in ~10s; replied with a clarification prompt.
-- 2025-11-18 — Browser gpt-5-pro (`browser-smoke-pro-three-words`): completed in ~1m33s; response noted “Search tool used.”.
+- 2025-11-18 — Browser gpt-5.1-pro (`browser-smoke-pro-three-words`): completed in ~1m33s; response noted “Search tool used.”.
 - 2025-11-18 (rerun) — API gpt-5.1 (`api-smoke-give-two-words`): reconfirmed OK; same answer + cost bracket.
-- 2025-11-18 (rerun) — Browser gpt-5-pro (`browser-smoke-pro-three-words`): reconfirmed OK; included heartbeat progress and search tool note.
+- 2025-11-18 (rerun) — Browser gpt-5.1-pro (`browser-smoke-pro-three-words`): reconfirmed OK; included heartbeat progress and search tool note.
 
 ## Browser Regression Checklist (manual)
 
@@ -120,8 +120,8 @@ Run these four smoke tests whenever we touch browser automation:
    `pnpm run oracle -- --engine browser --model "5.1 Instant" --prompt "Give me two short markdown bullet points about tables"`  
    Expect two markdown bullets, no files/search referenced. Note the session ID (e.g., `give-me-two-short-markdown`).
 
-2. **GPT-5 Pro simple prompt**  
-   `pnpm run oracle -- --engine browser --model gpt-5-pro --prompt "List two reasons Markdown is handy"`  
+2. **GPT-5.1 Pro simple prompt**  
+   `pnpm run oracle -- --engine browser --model gpt-5.1-pro --prompt "List two reasons Markdown is handy"`  
    Confirm the answer arrives (and only once) even if it takes ~2–3 minutes; heartbeat lines should show up while waiting.
 
 3. **GPT-5.1 + attachment**  
@@ -129,9 +129,9 @@ Run these four smoke tests whenever we touch browser automation:
    `pnpm run oracle -- --engine browser --model "5.1 Instant" --prompt "Summarize the key idea from the attached note" --file /tmp/browser-md.txt`  
    Ensure upload logs show “Attachment queued” and the answer references the file contents explicitly.
 
-4. **GPT-5 Pro + attachment**  
+4. **GPT-5.1 Pro + attachment**  
    Prepare `/tmp/browser-report.txt` with faux metrics, then run  
-   `pnpm run oracle -- --engine browser --model gpt-5-pro --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`  
+   `pnpm run oracle -- --engine browser --model gpt-5.1-pro --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`  
    Verify verbose logs show attachment upload and the final answer matches the file data.
 
 Record session IDs and outcomes in the PR description (pass/fail, notable delays). This ensures reviewers can audit real runs.
@@ -226,7 +226,7 @@ These Vitest cases hit the real OpenAI API to exercise both transports:
    export ORACLE_LIVE_TEST=1
    pnpm vitest run tests/live/openai-live.test.ts
    ```
-2. The first test sends a GPT-5 Pro prompt and expects the CLI to stay in
+2. The first test sends a GPT-5.1 Pro prompt and expects the CLI to stay in
    background mode until OpenAI finishes (up to 30 minutes). The second test
    targets the standard GPT-5 (gpt-5.1) path with foreground streaming.
 3. Watch the console for `Reconnected to OpenAI background response...` if

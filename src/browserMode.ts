@@ -9,4 +9,5 @@ export {
   CHATGPT_URL,
   DEFAULT_MODEL_TARGET,
   parseDuration,
+  normalizeChatgptUrl,
 } from './browser/index.js';

@@ -1,17 +1,15 @@
-import {
-  GoogleGenerativeAI,
-  HarmCategory,
-  HarmBlockThreshold,
-  type Tool,
-  type GenerateContentResponse,
-} from '@google/generative-ai';
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, type Tool, type GenerateContentResponse,
+  type GenerateContentResponseUsageMetadata } from '@google/genai';
 import type { ClientLike, ModelName, OracleRequestBody, OracleResponse, ResponseStreamLike, ResponseOutputItem } from './types.js';
 
 const MODEL_ID_MAP: Record<ModelName, string> = {
   'gemini-3-pro': 'gemini-3-pro-preview',
-  'gpt-5-pro': 'gpt-5-pro', // unused, normalize TS map
+  'gpt-5.1-pro': 'gpt-5.1-pro', // unused, normalize TS map
+  'gpt-5-pro': 'gpt-5-pro',
   'gpt-5.1': 'gpt-5.1',
   'gpt-5.1-codex': 'gpt-5.1-codex',
+  'claude-4.5-sonnet': 'claude-4.5-sonnet',
+  'claude-4.1-opus': 'claude-4.1-opus',
 };
 
 export function resolveGeminiModelId(modelName: ModelName): string {
@@ -24,10 +22,8 @@ export function createGeminiClient(
   modelName: ModelName = 'gemini-3-pro',
   resolvedModelId?: string,
 ): ClientLike {
-  const genAI = new GoogleGenerativeAI(apiKey);
-
   const modelId = resolvedModelId ?? resolveGeminiModelId(modelName);
-  const model = genAI.getGenerativeModel({ model: modelId });
+  const genAI = new GoogleGenAI({ apiKey });
 
   const adaptBodyToGemini = (body: OracleRequestBody) => {
     const contents = body.input.map((inputItem) => ({
@@ -53,10 +49,6 @@ export function createGeminiClient(
       })
       .filter((t) => Object.keys(t).length > 0) as Tool[] | undefined;
 
-    const generationConfig = {
-      maxOutputTokens: body.max_output_tokens,
-    };
-
     const safetySettings = [
       {
         category: HarmCategory.HARM_CATEGORY_HARASSMENT,
@@ -76,9 +68,20 @@ export function createGeminiClient(
       },
     ];
 
-    const systemInstruction = body.instructions || undefined;
+    const systemInstruction = body.instructions
+      ? { role: 'system', parts: [{ text: body.instructions }] }
+      : undefined;
 
-    return { systemInstruction, contents, tools, generationConfig, safetySettings };
+    return {
+      model: modelId,
+      contents,
+      config: {
+        maxOutputTokens: body.max_output_tokens,
+        safetySettings,
+        tools,
+        systemInstruction,
+      },
+    };
   };
 
   const adaptGeminiResponseToOracle = (geminiResponse: GenerateContentResponse): OracleResponse => {
@@ -100,10 +103,30 @@ export function createGeminiClient(
     };
 
     return {
-      id: `gemini-${Date.now()}`, // Gemini doesn't always provide a stable ID in the response object
+      id: geminiResponse.responseId ?? `gemini-${Date.now()}`,
       status: 'completed',
       output_text: outputText,
       output,
+      usage,
+    };
+  };
+
+  const adaptAggregatedTextToOracle = (
+    text: string,
+    usageMetadata?: GenerateContentResponseUsageMetadata,
+    responseId?: string,
+  ): OracleResponse => {
+    const usage = {
+      input_tokens: usageMetadata?.promptTokenCount ?? 0,
+      output_tokens: usageMetadata?.candidatesTokenCount ?? 0,
+      total_tokens: (usageMetadata?.promptTokenCount ?? 0) + (usageMetadata?.candidatesTokenCount ?? 0),
+    };
+
+    return {
+      id: responseId ?? `gemini-${Date.now()}`,
+      status: 'completed',
+      output_text: [text],
+      output: [{ type: 'text', text }],
       usage,
     };
   };
@@ -123,31 +146,32 @@ export function createGeminiClient(
       stream: (body: OracleRequestBody): ResponseStreamLike => {
         const geminiBody = adaptBodyToGemini(body);
         let finalResponsePromise: Promise<OracleResponse> | null = null;
-        const collectChunkText = (chunk: GenerateContentResponse): string => {
-          const parts: string[] = [];
-          chunk.candidates?.forEach((candidate) => {
-            candidate.content?.parts?.forEach((part) => {
-              if (part.text) {
-                parts.push(part.text);
-              }
-            });
-          });
-          return parts.join('');
-        };
+        let aggregatedText = '';
+        let lastUsage: GenerateContentResponseUsageMetadata | undefined;
+        let responseId: string | undefined;
         async function* iterator() {
-          let streamingResp: Awaited<ReturnType<typeof model.generateContentStream>>;
+          let streamingResp: Awaited<ReturnType<typeof genAI.models.generateContentStream>>;
           try {
-            streamingResp = await model.generateContentStream(geminiBody);
+            streamingResp = await genAI.models.generateContentStream(geminiBody);
           } catch (error) {
             throw enrichGeminiError(error);
           }
-          for await (const chunk of streamingResp.stream) {
-            const text = collectChunkText(chunk);
+          for await (const chunk of streamingResp) {
+            const text = chunk.text;
             if (text) {
+              aggregatedText += text;
               yield { type: 'chunk', delta: text };
             }
+            if (chunk.usageMetadata) {
+              lastUsage = chunk.usageMetadata;
+            }
+            if (chunk.responseId) {
+              responseId = chunk.responseId;
+            }
           }
-          finalResponsePromise = streamingResp.response.then(adaptGeminiResponseToOracle);
+          finalResponsePromise = Promise.resolve(
+            adaptAggregatedTextToOracle(aggregatedText, lastUsage, responseId),
+          );
         }
 
         const generator = iterator();
@@ -170,13 +194,13 @@ export function createGeminiClient(
       },
       create: async (body: OracleRequestBody): Promise<OracleResponse> => {
         const geminiBody = adaptBodyToGemini(body);
-        let result: Awaited<ReturnType<typeof model.generateContent>>;
+        let result: Awaited<ReturnType<typeof genAI.models.generateContent>>;
         try {
-          result = await model.generateContent(geminiBody);
+          result = await genAI.models.generateContent(geminiBody);
         } catch (error) {
           throw enrichGeminiError(error);
         }
-        return adaptGeminiResponseToOracle(result.response);
+        return adaptGeminiResponseToOracle(result);
       },
       retrieve: async (id: string): Promise<OracleResponse> => {
         return {

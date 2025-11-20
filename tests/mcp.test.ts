@@ -3,9 +3,9 @@ import { mapConsultToRunOptions } from '../src/mcp/utils.js';
 
 describe('mcp utils', () => {
   it('maps api defaults', () => {
-    const { runOptions, resolvedEngine } = mapConsultToRunOptions({ prompt: 'hi', files: [], model: 'gpt-5-pro', engine: 'api' });
+    const { runOptions, resolvedEngine } = mapConsultToRunOptions({ prompt: 'hi', files: [], model: 'gpt-5.1-pro', engine: 'api' });
     expect(resolvedEngine).toBe('api');
-    expect(runOptions.model).toBe('gpt-5-pro');
+    expect(runOptions.model).toBe('gpt-5.1-pro');
   });
 
   it('infers browser labels', () => {

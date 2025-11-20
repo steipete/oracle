@@ -16,7 +16,7 @@ import type {
   RunOracleResult,
   ModelName,
 } from './types.js';
-import { DEFAULT_SYSTEM_PROMPT, MODEL_CONFIGS, TOKENIZER_OPTIONS } from './config.js';
+import { DEFAULT_SYSTEM_PROMPT, MODEL_CONFIGS, PRO_MODELS, TOKENIZER_OPTIONS } from './config.js';
 import { readFiles } from './files.js';
 import { buildPrompt, buildRequestBody } from './request.js';
 import { estimateRequestTokens } from './tokenEstimate.js';
@@ -36,6 +36,7 @@ import { startOscProgress } from './oscProgress.js';
 import { getCliVersion } from '../version.js';
 import { createFsAdapter } from './fsAdapter.js';
 import { resolveGeminiModelId } from './gemini.js';
+import { resolveClaudeModelId } from './claude.js';
 
 const isTty = process.stdout.isTTY && chalk.level > 0;
 const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
@@ -43,7 +44,8 @@ const BACKGROUND_MAX_WAIT_MS = 30 * 60 * 1000;
 const BACKGROUND_POLL_INTERVAL_MS = 5000;
 const BACKGROUND_RETRY_BASE_MS = 3000;
 const BACKGROUND_RETRY_MAX_MS = 15000;
-const DEFAULT_TIMEOUT_NON_PRO_MS = 30_000;
+// Default timeout for non-pro API runs (fast models) — give them up to 120s.
+const DEFAULT_TIMEOUT_NON_PRO_MS = 120_000;
 const DEFAULT_TIMEOUT_PRO_MS = 60 * 60 * 1000;
 
 const defaultWait = (ms: number): Promise<void> =>
@@ -81,10 +83,17 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     if (model.startsWith('gemini')) {
       return optionsApiKey ?? process.env.GEMINI_API_KEY;
     }
+    if (model.startsWith('claude')) {
+      return optionsApiKey ?? process.env.ANTHROPIC_API_KEY;
+    }
     return undefined;
   };
 
-  const envVar = options.model.startsWith('gpt') ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY';
+  const envVar = options.model.startsWith('gpt')
+    ? 'OPENAI_API_KEY'
+    : options.model.startsWith('gemini')
+      ? 'GEMINI_API_KEY'
+      : 'ANTHROPIC_API_KEY';
   const apiKey = getApiKeyForModel(options.model);
   if (!apiKey) {
     throw new PromptValidationError(`Missing ${envVar}. Set it via the environment or a .env file.`, {
@@ -94,7 +103,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
 
   const minPromptLength = Number.parseInt(process.env.ORACLE_MIN_PROMPT_CHARS ?? '20', 10);
   const promptLength = options.prompt?.trim().length ?? 0;
-  if (!Number.isNaN(minPromptLength) && promptLength < minPromptLength) {
+  // Enforce the short-prompt guardrail on pro-tier models because they're costly; cheaper models can run short prompts without blocking.
+  const isProTierModel = PRO_MODELS.has(options.model as Parameters<typeof PRO_MODELS.has>[0]);
+  if (isProTierModel && !Number.isNaN(minPromptLength) && promptLength < minPromptLength) {
     throw new PromptValidationError(
       `Prompt is too short (<${minPromptLength} chars). This was likely accidental; please provide more detail.`,
       { minPromptLength, promptLength },
@@ -108,7 +119,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
       { model: options.model },
     );
   }
-  const isLongRunningModel = options.model === 'gpt-5-pro';
+  const isLongRunningModel = isProTierModel;
   const useBackground = options.background ?? isLongRunningModel;
 
   const inputTokenBudget = options.maxInput ?? modelConfig.inputLimit;
@@ -160,7 +171,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   // Track the concrete model id we dispatch to (especially for Gemini preview aliases)
   const effectiveModelId =
     options.effectiveModelId ??
-    (options.model.startsWith('gemini') ? resolveGeminiModelId(options.model) : modelConfig.model);
+    (options.model.startsWith('gemini')
+      ? resolveGeminiModelId(options.model)
+      : modelConfig.apiModel ?? modelConfig.model);
   const headerModelLabel = richTty ? chalk.cyan(modelConfig.model) : modelConfig.model;
   const requestBody = buildRequestBody({
     modelConfig,
@@ -183,7 +196,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     const maskedKey = maskApiKey(apiKey);
     if (maskedKey) {
       const resolvedSuffix =
-        options.model.startsWith('gemini') && effectiveModelId !== modelConfig.model ? ` (resolved: ${effectiveModelId})` : '';
+        effectiveModelId !== modelConfig.model ? ` (resolved: ${effectiveModelId})` : '';
       log(dim(`Using ${envVar}=${maskedKey} for model ${modelConfig.model}${resolvedSuffix}`));
     }
     if (baseUrl) {
@@ -235,14 +248,22 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     };
   }
 
-  const apiEndpoint = modelConfig.model.startsWith('gemini') ? undefined : baseUrl;
+  const apiEndpoint = modelConfig.model.startsWith('gemini')
+    ? undefined
+    : modelConfig.model.startsWith('claude')
+      ? process.env.ANTHROPIC_BASE_URL ?? baseUrl
+      : baseUrl;
   const clientInstance: ClientLike =
     client ??
     clientFactory(apiKey, {
       baseUrl: apiEndpoint,
       azure: options.azure,
       model: options.model,
-      resolvedModelId: effectiveModelId,
+      resolvedModelId: modelConfig.model.startsWith('claude')
+        ? resolveClaudeModelId(effectiveModelId)
+        : modelConfig.model.startsWith('gemini')
+          ? resolveGeminiModelId(effectiveModelId as ModelName)
+          : effectiveModelId,
     });
   logVerbose('Dispatching request to API...');
   if (options.verbose) {
@@ -309,8 +330,12 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
             isActive: () => heartbeatActive,
             makeMessage: (elapsedMs) => {
               const elapsedText = formatElapsed(elapsedMs);
-              const timeoutLabel = Math.round(timeoutMs / 60000);
-              return `API connection active — ${elapsedText} elapsed. Timeout in ~${timeoutLabel} min if no response.`;
+              const remainingMs = Math.max(timeoutMs - elapsedMs, 0);
+              const remainingLabel =
+                remainingMs >= 60_000
+                  ? `${Math.ceil(remainingMs / 60_000)} min`
+                  : `${Math.max(1, Math.ceil(remainingMs / 1000))}s`;
+              return `API connection active — ${elapsedText} elapsed. Timeout in ~${remainingLabel} if no response.`;
             },
           });
         }
@@ -334,7 +359,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
         // stream.abort() is not available on the interface
         stopHeartbeatNow();
         const transportError = toTransportError(streamError);
-        log(chalk.yellow(describeTransportError(transportError)));
+        log(chalk.yellow(describeTransportError(transportError, timeoutMs)));
         throw transportError;
       }
       response = await stream.finalResponse();
@@ -645,7 +670,7 @@ async function retrieveBackgroundResponseWithRetry(
       }
       retries += 1;
       const delay = Math.min(BACKGROUND_RETRY_BASE_MS * 2 ** (retries - 1), BACKGROUND_RETRY_MAX_MS);
-      log(chalk.yellow(`${describeTransportError(transportError)} Retrying in ${formatElapsed(delay)}...`));
+      log(chalk.yellow(`${describeTransportError(transportError, maxWaitMs)} Retrying in ${formatElapsed(delay)}...`));
       await wait(delay);
       if (now() - startMark >= maxWaitMs) {
         throw new OracleTransportError('client-timeout', 'Timed out waiting for API background response to finish.');

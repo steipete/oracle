@@ -125,11 +125,14 @@ function startModelExecution({
       startedAt: new Date().toISOString(),
     });
     perModelLog(`🧿 oracle (${version}) summons ${model}`);
-    const result = await runOracleImpl(perModelOptions, {
-      cwd,
-      log: perModelLog,
-      write: perModelWrite,
-    });
+    const result = await runOracleImpl(
+      { ...perModelOptions, effectiveModelId: model },
+      {
+        cwd,
+        log: perModelLog,
+        write: perModelWrite,
+      },
+    );
     if (result.mode !== 'live') {
       throw new Error('Unexpected preview result while running a session.');
     }

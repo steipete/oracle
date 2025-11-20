@@ -11,6 +11,7 @@ export function estimateRequestTokens(
   modelConfig: ModelConfig,
   bufferTokens = 200,
 ): number {
+  const SEARCH_RESULT_BUFFER_TOKENS = 4000;
   const parts: string[] = [];
 
   if (requestBody.instructions) {
@@ -42,5 +43,9 @@ export function estimateRequestTokens(
 
   const concatenated = parts.join('\n');
   const baseEstimate = modelConfig.tokenizer(concatenated, TOKENIZER_OPTIONS);
-  return baseEstimate + bufferTokens;
+
+  const hasWebSearch = requestBody.tools?.some((tool) => tool?.type === 'web_search_preview');
+  const searchBuffer = hasWebSearch ? SEARCH_RESULT_BUFFER_TOKENS : 0;
+
+  return baseEstimate + bufferTokens + searchBuffer;
 }

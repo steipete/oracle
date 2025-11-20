@@ -1,6 +1,6 @@
 import { InvalidArgumentError, type Command } from 'commander';
 import type { ModelName, PreviewMode } from '../oracle.js';
-import { MODEL_CONFIGS } from '../oracle.js';
+import { DEFAULT_MODEL, MODEL_CONFIGS } from '../oracle.js';
 
 export function collectPaths(value: string | string[] | undefined, previous: string[] = []): string[] {
   if (!value) {
@@ -8,6 +8,23 @@ export function collectPaths(value: string | string[] | undefined, previous: str
   }
   const nextValues = Array.isArray(value) ? value : [value];
   return previous.concat(nextValues.flatMap((entry) => entry.split(',')).map((entry) => entry.trim()).filter(Boolean));
+}
+
+/**
+ * Merge all path-like CLI inputs (file/include aliases) into a single list, preserving order.
+ */
+export function mergePathLikeOptions(
+  file?: string[],
+  include?: string[],
+  filesAlias?: string[],
+  pathAlias?: string[],
+  pathsAlias?: string[],
+): string[] {
+  const withFile = collectPaths(file, []);
+  const withInclude = collectPaths(include, withFile);
+  const withFilesAlias = collectPaths(filesAlias, withInclude);
+  const withPathAlias = collectPaths(pathAlias, withFilesAlias);
+  return collectPaths(pathsAlias, withPathAlias);
 }
 
 export function collectModelList(value: string, previous: string[] = []): string[] {
@@ -117,6 +134,21 @@ export function resolveApiModel(modelValue: string): ModelName {
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
   }
+  if (normalized.includes('claude') && normalized.includes('sonnet')) {
+    return 'claude-4.5-sonnet';
+  }
+  if (normalized.includes('claude') && normalized.includes('opus')) {
+    return 'claude-4.1-opus';
+  }
+  if (normalized.includes('5.0') || normalized === 'gpt-5-pro' || normalized === 'gpt-5') {
+    return 'gpt-5-pro';
+  }
+  if (normalized.includes('5-pro') && !normalized.includes('5.1')) {
+    return 'gpt-5-pro';
+  }
+  if (normalized.includes('5.1') && normalized.includes('pro')) {
+    return 'gpt-5.1-pro';
+  }
   if (normalized.includes('codex')) {
     if (normalized.includes('max')) {
       throw new InvalidArgumentError('gpt-5.1-codex-max is not available yet. OpenAI has not released the API.');
@@ -134,10 +166,22 @@ export function resolveApiModel(modelValue: string): ModelName {
 export function inferModelFromLabel(modelValue: string): ModelName {
   const normalized = normalizeModelOption(modelValue).toLowerCase();
   if (!normalized) {
-    return 'gpt-5-pro';
+    return DEFAULT_MODEL;
   }
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
+  }
+  if (normalized.includes('claude') && normalized.includes('sonnet')) {
+    return 'claude-4.5-sonnet';
+  }
+  if (normalized.includes('claude') && normalized.includes('opus')) {
+    return 'claude-4.1-opus';
+  }
+  if (normalized.includes('5.0') || normalized.includes('5-pro')) {
+    return 'gpt-5-pro';
+  }
+  if (normalized.includes('gpt-5') && normalized.includes('pro') && !normalized.includes('5.1')) {
+    return 'gpt-5-pro';
   }
   if (normalized.includes('codex')) {
     return 'gpt-5.1-codex';
@@ -145,8 +189,14 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (normalized.includes('gemini')) {
     return 'gemini-3-pro';
   }
+  if (normalized.includes('classic')) {
+    return 'gpt-5.1-pro';
+  }
+  if ((normalized.includes('5.1') || normalized.includes('5_1')) && normalized.includes('pro')) {
+    return 'gpt-5.1-pro';
+  }
   if (normalized.includes('pro')) {
-    return 'gpt-5-pro';
+    return 'gpt-5.1-pro';
   }
   if (normalized.includes('5.1') || normalized.includes('5_1')) {
     return 'gpt-5.1';

@@ -60,7 +60,7 @@ export function applyHelpStyling(program: Command, version: string, isTty: boole
 }
 
 function renderHelpBanner(version: string, colors: HelpColors): string {
-  const subtitle = 'GPT-5 Pro/GPT-5.1 for tough questions with code/file context.';
+  const subtitle = 'GPT-5.1 Pro/GPT-5.1 for tough questions with code/file context.';
   return `${colors.banner(`Oracle CLI v${version}`)} ${colors.subtitle(`— ${subtitle}`)}\n`;
 }
 
@@ -74,10 +74,12 @@ function renderHelpFooter(program: Command, colors: HelpColors): string {
     `${colors.bullet('•')} Best results: 6–30 sentences plus key source files; very short prompts often yield generic answers.`,
     `${colors.bullet('•')} Oracle is one-shot: it does not remember prior runs, so start fresh each time with full context.`,
     `${colors.bullet('•')} Run ${colors.accent('--files-report')} to inspect token spend before hitting the API.`,
-    `${colors.bullet('•')} Non-preview runs spawn detached sessions (especially gpt-5-pro API). If the CLI times out, do not re-run — reattach with ${colors.accent('oracle session <slug>')} to resume/inspect the existing run.`,
+    `${colors.bullet('•')} Non-preview runs spawn detached sessions (especially gpt-5.1-pro API). If the CLI times out, do not re-run — reattach with ${colors.accent('oracle session <slug>')} to resume/inspect the existing run.`,
     `${colors.bullet('•')} Set a memorable 3–5 word slug via ${colors.accent('--slug "<words>"')} to keep session IDs tidy.`,
     `${colors.bullet('•')} Finished sessions auto-hide preamble logs when reattached; raw timestamps remain in the saved log file.`,
     `${colors.bullet('•')} Need hidden flags? Run ${colors.accent(`${program.name()} --help --verbose`)} to list search/token/browser overrides.`,
+    `${colors.bullet('•')} If any Oracle session is already running, do not start new API runs. Attach to the existing browser session instead; only trigger API calls when you explicitly mean to.`,
+    `${colors.bullet('•')} Duplicate prompt guard: if the same prompt is already running, new runs are blocked unless you pass ${colors.accent('--force')}—prefer reattaching instead of spawning duplicates.`,
   ].join('\n');
 
   const formatExample = (command: string, description: string): string =>

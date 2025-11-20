@@ -10,6 +10,7 @@ import {
   inferModelFromLabel,
   normalizeModelOption,
   parseHeartbeatOption,
+  mergePathLikeOptions,
 } from '../../src/cli/options.ts';
 
 describe('collectPaths', () => {
@@ -20,6 +21,46 @@ describe('collectPaths', () => {
 
   test('returns previous list when value is undefined', () => {
     expect(collectPaths(undefined, ['keep'])).toEqual(['keep']);
+  });
+});
+
+describe('mergePathLikeOptions', () => {
+  test('merges aliases in the documented order and splits commas', () => {
+    const result = mergePathLikeOptions(
+      ['a', 'b,c'],
+      ['d'],
+      ['e,f'],
+      ['g'],
+      ['h,i'],
+    );
+    expect(result).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']);
+  });
+
+  test('returns empty array when everything is undefined', () => {
+    expect(mergePathLikeOptions(undefined, undefined, undefined, undefined, undefined)).toEqual([]);
+  });
+
+  test('trims entries and preserves exclusions/ordering across aliases', () => {
+    const result = mergePathLikeOptions(
+      ['  src/**/*.ts , !src/**/*.test.ts  '],
+      [' docs/guide.md '],
+      [' assets/**/* '],
+      ['  README.md  ,  !dist/** '],
+      undefined,
+    );
+    expect(result).toEqual([
+      'src/**/*.ts',
+      '!src/**/*.test.ts',
+      'docs/guide.md',
+      'assets/**/*',
+      'README.md',
+      '!dist/**',
+    ]);
+  });
+
+  test('ignores empty strings inside alias arrays', () => {
+    const result = mergePathLikeOptions(['', 'src'], [''], [''], ['lib,'], [' ,tests']);
+    expect(result).toEqual(['src', 'lib', 'tests']);
   });
 });
 
@@ -92,16 +133,20 @@ describe('parseSearchOption', () => {
 
 describe('normalizeModelOption', () => {
   test('trims whitespace safely', () => {
-    expect(normalizeModelOption('  gpt-5-pro  ')).toBe('gpt-5-pro');
+    expect(normalizeModelOption('  gpt-5.1-pro  ')).toBe('gpt-5.1-pro');
     expect(normalizeModelOption(undefined)).toBe('');
   });
 });
 
 describe('resolveApiModel', () => {
   test('accepts canonical names regardless of case', () => {
+    expect(resolveApiModel('gpt-5.1-pro')).toBe('gpt-5.1-pro');
+    expect(resolveApiModel('GPT-5.0-PRO')).toBe('gpt-5-pro');
     expect(resolveApiModel('gpt-5-pro')).toBe('gpt-5-pro');
     expect(resolveApiModel('GPT-5.1')).toBe('gpt-5.1');
     expect(resolveApiModel('GPT-5.1-CODEX')).toBe('gpt-5.1-codex');
+    expect(resolveApiModel('claude-4.5-sonnet')).toBe('claude-4.5-sonnet');
+    expect(resolveApiModel('Claude Opus 4.1')).toBe('claude-4.1-opus');
   });
 
   test('rejects codex max until API is available', () => {
@@ -115,6 +160,7 @@ describe('resolveApiModel', () => {
 
 describe('inferModelFromLabel', () => {
   test('returns canonical names when label already matches', () => {
+    expect(inferModelFromLabel('gpt-5.1-pro')).toBe('gpt-5.1-pro');
     expect(inferModelFromLabel('gpt-5-pro')).toBe('gpt-5-pro');
     expect(inferModelFromLabel('gpt-5.1')).toBe('gpt-5.1');
     expect(inferModelFromLabel('gpt-5.1-codex')).toBe('gpt-5.1-codex');
@@ -132,12 +178,18 @@ describe('inferModelFromLabel', () => {
   });
 
   test('falls back to pro when the label references pro', () => {
-    expect(inferModelFromLabel('ChatGPT Pro')).toBe('gpt-5-pro');
+    expect(inferModelFromLabel('ChatGPT Pro')).toBe('gpt-5.1-pro');
+    expect(inferModelFromLabel('GPT-5.1 Pro')).toBe('gpt-5.1-pro');
     expect(inferModelFromLabel('GPT-5 Pro (Classic)')).toBe('gpt-5-pro');
   });
 
-  test('falls back to gpt-5-pro when label empty and to gpt-5.1 for other ambiguous strings', () => {
-    expect(inferModelFromLabel('')).toBe('gpt-5-pro');
+  test('infers Claude family labels', () => {
+    expect(inferModelFromLabel('Claude Sonnet 4.5')).toBe('claude-4.5-sonnet');
+    expect(inferModelFromLabel('Claude Opus 4.1')).toBe('claude-4.1-opus');
+  });
+
+  test('falls back to gpt-5.1-pro when label empty and to gpt-5.1 for other ambiguous strings', () => {
+    expect(inferModelFromLabel('')).toBe('gpt-5.1-pro');
     expect(inferModelFromLabel('something else')).toBe('gpt-5.1');
   });
 });

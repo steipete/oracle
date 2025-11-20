@@ -43,6 +43,6 @@ The integration uses an **Adapter Pattern** to fit the Google Generative AI SDK 
 ## Development Notes
 
 *   **Types**: We strictly use types from `@google/generative-ai` (e.g., `GenerateContentResponse`, `Tool`) to ensure type safety within the adapter.
-*   **Tokenizer**: Currently, the project reuses the `gpt-5-pro` tokenizer for estimation. While not exact for Gemini, it provides a safe upper bound for token budgeting.
+*   **Tokenizer**: Currently, the project reuses the `gpt-5.1-pro` tokenizer for estimation. While not exact for Gemini, it provides a safe upper bound for token budgeting.
 *   **Search**: The integration supports Gemini's native Google Search tool.
 *   **Retrieval**: The `retrieve` method (fetching a past response by ID) is not supported by the Gemini API in the same way as OpenAI, so it currently returns a placeholder error.

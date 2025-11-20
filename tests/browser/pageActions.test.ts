@@ -7,6 +7,7 @@ import {
   navigateToChatGPT,
   ensurePromptReady,
   ensureNotBlocked,
+  ensureLoggedIn,
 } from '../../src/browser/pageActions.js';
 import type { ChromeClient } from '../../src/browser/types.js';
 
@@ -70,7 +71,7 @@ describe('ensurePromptReady', () => {
       evaluate: vi.fn().mockResolvedValue({ result: { value: true } }),
     } as unknown as ChromeClient['Runtime'];
     await expect(ensurePromptReady(runtime, 1000, logger)).resolves.toBeUndefined();
-    expect(logger).toHaveBeenCalledWith('Prompt textarea ready');
+    expect(logger).not.toHaveBeenCalled();
   });
 
   test('throws when timeout reached', async () => {
@@ -98,6 +99,32 @@ describe('ensureNotBlocked', () => {
         .mockResolvedValueOnce({ result: { value: false } }),
     } as unknown as ChromeClient['Runtime'];
     await expect(ensureNotBlocked(runtime, false, logger)).resolves.toBeUndefined();
+  });
+});
+
+describe('ensureLoggedIn', () => {
+  test('logs success when session is present', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { ok: true, status: 200, url: '/backend-api/me' } } }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensureLoggedIn(runtime, logger, { appliedCookies: 2 })).resolves.toBeUndefined();
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining('Login check passed'));
+  });
+
+  test('throws with cookie guidance when cookies missing', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: { value: { ok: false, status: 401, url: '/backend-api/me', domLoginCta: true, onAuthPage: true } },
+      }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensureLoggedIn(runtime, logger, { appliedCookies: 0 })).rejects.toThrow(/inline cookies/i);
+  });
+
+  test('uses remote hint for remote sessions', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { ok: false, status: 401, url: '/backend-api/me' } } }),
+    } as unknown as ChromeClient['Runtime'];
+    await expect(ensureLoggedIn(runtime, logger, { remoteSession: true })).rejects.toThrow(/remote Chrome session/i);
   });
 });
 
@@ -129,6 +156,7 @@ describe('waitForAssistantResponse', () => {
     } as unknown as ChromeClient['Runtime'];
     await expect(waitForAssistantResponse(runtime, 100, logger)).rejects.toThrow('stop');
     expect(capturedExpression).toContain('characterData: true');
+    expect(capturedExpression).toContain('copy-turn-action-button');
   });
 
   test('falls back to snapshot when observer fails', async () => {
