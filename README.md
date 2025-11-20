@@ -104,7 +104,7 @@ Put per-user defaults in `~/.oracle/config.json` (parsed as JSON5, so comments/t
 | `--base-url <url>` | Point the API engine at any OpenAI-compatible endpoint (LiteLLM, Azure, etc.). |
 | `--azure-endpoint <url>` | Use Azure OpenAI (switches client automatically). |
 | `--files-report` | Print per-file token usage. |
-| `--write-output <path>` | Save only the final assistant message to a file (no CLI logs). |
+| `--write-output <path>` | Save only the final assistant message to a file (multi-model: one file per model, suffixed with the model name). |
 | `--dry-run [summary\|json\|full]` | Inspect the request without sending (alias: `--preview`). |
 
 See [docs/openai-endpoints.md](docs/openai-endpoints.md) for advanced Azure/LiteLLM configuration.
@@ -113,7 +113,7 @@ See [docs/openai-endpoints.md](docs/openai-endpoints.md) for advanced Azure/Lite
 
 Every non-preview run writes to `~/.oracle/sessions/<slug>` with usage, cost hints, and logs. Use `oracle status` to list sessions, `oracle session <id>` to replay, and `oracle status --clear --hours 168` to prune. Set `ORACLE_HOME_DIR` to relocate storage.
 Add `--render` (alias `--render-markdown`) when attaching to pretty-print the stored markdown if your terminal supports color; falls back to raw text otherwise.
-Need a ready-made file? Add `--write-output path/to/file.md` to save just the final assistant message (single-model runs only; overwrites the target).
+Need a ready-made file? Add `--write-output path/to/file.md` to save just the final assistant message (multi-model runs save one file per model using `<stem>.<model><ext>`; overwrites targets).
 
 **Recommendation:** Prefer the API engine when you have an API key (`--engine api` or just set `OPENAI_API_KEY`). The API delivers more reliable results and supports longer, uninterrupted runs than the browser engine in most cases.
 

@@ -102,9 +102,6 @@ export async function performSessionRun({
       return;
     }
     const multiModels = Array.isArray(runOptions.models) ? runOptions.models.filter(Boolean) : [];
-    if (runOptions.writeOutputPath && multiModels.length > 1) {
-      throw new Error('--write-output is not supported when running multiple models. Run one model at a time.');
-    }
     if (multiModels.length > 1) {
       const summary = await runMultiModelApiSession({
         sessionMeta,
@@ -125,6 +122,8 @@ export async function performSessionRun({
         if (!body.endsWith('\n')) {
           log('');
         }
+        const modelOutputPath = deriveModelOutputPath(runOptions.writeOutputPath, result.model);
+        await writeAssistantOutput(modelOutputPath, result.answerText, log);
       }
       const aggregateUsage = summary.fulfilled.reduce<UsageSummary>(
         (acc, entry) => ({
@@ -249,6 +248,15 @@ async function writeAssistantOutput(targetPath: string | undefined, content: str
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, payload, 'utf8');
   log(dim(`Saved assistant output to ${targetPath}`));
+}
+
+function deriveModelOutputPath(basePath: string | undefined, model: string): string | undefined {
+  if (!basePath) return undefined;
+  const ext = path.extname(basePath);
+  const stem = path.basename(basePath, ext);
+  const dir = path.dirname(basePath);
+  const suffix = ext.length > 0 ? `${stem}.${model}${ext}` : `${stem}.${model}`;
+  return path.join(dir, suffix);
 }
 
 function formatError(error: unknown): string {

@@ -17,6 +17,10 @@ vi.mock('../../src/cli/notifier.ts', () => ({
   deriveNotificationSettingsFromMetadata: vi.fn(() => ({ enabled: true, sound: false })),
 }));
 
+vi.mock('../../src/oracle/multiModelRunner.ts', () => ({
+  runMultiModelApiSession: vi.fn(),
+}));
+
 const sessionStoreMock = vi.hoisted(() => ({
   updateSession: vi.fn(),
   createLogWriter: vi.fn(),
@@ -43,6 +47,8 @@ import type { OracleResponse, RunOracleResult } from '../../src/oracle.ts';
 import { runBrowserSessionExecution } from '../../src/browser/sessionRunner.ts';
 import { sendSessionNotification } from '../../src/cli/notifier.ts';
 import { getCliVersion } from '../../src/version.ts';
+import { runMultiModelApiSession } from '../../src/oracle/multiModelRunner.ts';
+import fs from 'node:fs/promises';
 
 const baseSessionMeta: SessionMetadata = {
   id: 'sess-1',
@@ -71,6 +77,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   Object.values(sessionStoreMock).forEach((fn) => {
     if (typeof fn === 'function' && 'mockReset' in fn) {
@@ -82,6 +89,9 @@ beforeEach(() => {
     writeChunk: vi.fn(),
     stream: { end: vi.fn() },
   });
+  sessionStoreMock.readModelLog.mockResolvedValue('model log body');
+  vi.spyOn(fs, 'mkdir').mockResolvedValue();
+  vi.spyOn(fs, 'writeFile').mockResolvedValue();
 });
 
 describe('performSessionRun', () => {
@@ -235,5 +245,40 @@ describe('performSessionRun', () => {
       error: expect.objectContaining({ category: 'file-validation', message: 'too large' }),
     });
     expect(log).toHaveBeenCalledWith(expect.stringContaining('User error (file-validation)'));
+  });
+
+  test('saves per-model outputs when multi-model run and writeOutputPath provided', async () => {
+    vi.mocked(runMultiModelApiSession).mockResolvedValue({
+      fulfilled: [
+        {
+          model: 'gpt-5-pro',
+          usage: { inputTokens: 1, outputTokens: 2, reasoningTokens: 0, totalTokens: 3 },
+          answerText: 'pro answer',
+          logPath: 'models/gpt-5-pro.log',
+        },
+        {
+          model: 'gemini-3-pro',
+          usage: { inputTokens: 1, outputTokens: 2, reasoningTokens: 0, totalTokens: 3 },
+          answerText: 'gemini answer',
+          logPath: 'models/gemini-3-pro.log',
+        },
+      ],
+      rejected: [],
+      elapsedMs: 1000,
+    });
+
+    await performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: { ...baseRunOptions, models: ['gpt-5-pro', 'gemini-3-pro'], writeOutputPath: '/tmp/out.md' },
+      mode: 'api',
+      cwd: '/tmp',
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    const writeCalls = (fs.writeFile as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(writeCalls).toContainEqual(['/tmp/out.gpt-5-pro.md', expect.stringContaining('pro answer\n'), 'utf8']);
+    expect(writeCalls).toContainEqual(['/tmp/out.gemini-3-pro.md', expect.stringContaining('gemini answer\n'), 'utf8']);
   });
 });
