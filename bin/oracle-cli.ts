@@ -782,7 +782,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       if (result.success) {
         const filesPart = bundle.files.length > 0 ? `; ${bundle.files.length} files` : '';
         const summary = `Copied markdown to clipboard (~${formatCompactNumber(estimatedTokens)} tokens${filesPart}).`;
-        console.log(chalk.dim(summary));
+        console.log(chalk.green(summary));
       } else {
         const reason = result.error instanceof Error ? result.error.message : String(result.error ?? 'unknown error');
         console.log(
