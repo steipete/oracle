@@ -266,7 +266,15 @@ function formatReachableAddresses(bindAddress: string, port: number): string[] {
       for (const entry of entries) {
         const iface = entry as { family?: string | number; address: string; internal?: boolean } | undefined;
         if (!iface || iface.internal) continue;
-        const family = typeof iface.family === 'string' ? iface.family : '';
+        const f = iface.family;
+        const family =
+          typeof f === 'string'
+            ? f
+            : f === 4
+              ? 'IPv4'
+              : f === 6
+                ? 'IPv6'
+                : '';
         if (family === 'IPv4') {
           addresses.push(`${iface.address}:${port}`);
         } else if (family === 'IPv6') {
