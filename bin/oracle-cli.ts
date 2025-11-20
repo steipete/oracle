@@ -142,7 +142,7 @@ const program = new Command();
 let introPrinted = false;
 program.hook('preAction', () => {
   if (introPrinted) return;
-  console.log(formatIntroLine(VERSION, { env: process.env }));
+  console.log(formatIntroLine(VERSION, { env: process.env, richTty: isTty }));
   introPrinted = true;
 });
 applyHelpStyling(program, VERSION, isTty);

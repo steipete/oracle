@@ -1,3 +1,5 @@
+import chalk from 'chalk';
+
 const TAGLINES = [
   'Whispering your tokens to the silicon sage.',
   'Bundling your code lore for the models that care.',
@@ -14,6 +16,7 @@ const TAGLINES = [
 export interface TaglineOptions {
   env?: NodeJS.ProcessEnv;
   random?: () => number;
+  richTty?: boolean;
 }
 
 export function pickTagline(options: TaglineOptions = {}): string {
@@ -32,7 +35,11 @@ export function pickTagline(options: TaglineOptions = {}): string {
 
 export function formatIntroLine(version: string, options: TaglineOptions = {}): string {
   const tagline = pickTagline(options);
-  return `🧿 oracle v${version} — ${tagline}`;
+  const rich = options.richTty ?? true;
+  if (rich && chalk.level > 0) {
+    return `${chalk.bold('🧿 oracle')} ${version} ${chalk.dim(`— ${tagline}`)}`;
+  }
+  return `🧿 oracle ${version} — ${tagline}`;
 }
 
 export { TAGLINES };
