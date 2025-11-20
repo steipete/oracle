@@ -60,3 +60,9 @@ Each invocation can optionally prune cached sessions before starting new work:
 - Set `ORACLE_RETAIN_HOURS` in the environment to override the config on shared machines without editing the JSON file.
 
 Under the hood, pruning removes entire session directories (metadata + logs). The command-line cleanup command (`oracle session --clear`) still exists when you need to wipe everything manually.
+
+## API timeouts
+
+- `--timeout <seconds|auto>` controls the overall API deadline for a run.
+- Defaults: `auto` = 60 m for `gpt-5.1-pro`; non-pro API models use `120s` if you don’t set a value.
+- Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.

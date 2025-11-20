@@ -231,7 +231,7 @@ program
   .addOption(
     new Option(
       '--timeout <seconds|auto>',
-      'Overall timeout before aborting the API call (auto = 60m for gpt-5.1-pro, 30s otherwise).',
+      'Overall timeout before aborting the API call (auto = 60m for gpt-5.1-pro, 120s otherwise).',
     )
       .argParser(parseTimeoutOption)
       .default('auto'),
