@@ -7,7 +7,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       all: true,
-      include: ['src/**/*.js'],
+      // Measure the real TypeScript sources (the repo doesn’t ship .js in src).
+      include: ['src/**/*.ts'],
     },
   },
 });
