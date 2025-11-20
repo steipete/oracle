@@ -238,7 +238,7 @@ function triggerLocalLoginPrompt(logger: (message: string) => void): void {
         : 'xdg-open';
   try {
     // Fire and forget; user completes login in the opened browser window.
-    import('node:child_process').then(({ spawn }) => {
+    void import('node:child_process').then(({ spawn }) => {
       spawn(opener, [url], { stdio: 'ignore', detached: true }).unref();
     });
     logger(`Opened ${url} locally. Please sign in; subsequent runs will reuse the session.`);

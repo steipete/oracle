@@ -27,6 +27,7 @@ describe('runMultiModelApiSession', () => {
 
     const seenBackground: Record<ModelName, boolean | undefined> = {
       'gpt-5.1-pro': undefined,
+      'gpt-5-pro': undefined,
       'gpt-5.1': undefined,
       'gpt-5.1-codex': undefined,
       'gemini-3-pro': undefined,
