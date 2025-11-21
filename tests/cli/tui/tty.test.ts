@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { once } from 'node:events';
 import { describe, expect, it } from 'vitest';
 
 // Optional PTY dependency (same approach as streaming.pty.test.ts)
@@ -20,6 +19,7 @@ try {
 }
 
 const NODE_BIN = process.execPath;
+// biome-ignore lint/nursery/noUnnecessaryConditions: PTY may be unavailable on some runners.
 const ptyDescribe = ptyAvailable ? describe : describe.skip;
 
 ptyDescribe('TUI (interactive, PTY)', () => {
@@ -29,9 +29,13 @@ ptyDescribe('TUI (interactive, PTY)', () => {
       const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), 'oracle-tui-'));
       const env = {
         ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env keys stay uppercase
         ORACLE_FORCE_TUI: '1',
+        // biome-ignore lint/style/useNamingConvention: env keys stay uppercase
         ORACLE_HOME_DIR: tmpHome,
+        // biome-ignore lint/style/useNamingConvention: env keys stay uppercase
         FORCE_COLOR: '1',
+        // biome-ignore lint/style/useNamingConvention: env keys stay uppercase
         CI: '', // make sure notifications default like local runs
       } satisfies Record<string, string | undefined>;
 
@@ -47,7 +51,6 @@ ptyDescribe('TUI (interactive, PTY)', () => {
       });
 
       let output = '';
-      let exited = false;
       let wrote = false;
       ps.onData((d: string) => {
         output += d;
@@ -65,7 +68,6 @@ ptyDescribe('TUI (interactive, PTY)', () => {
       const { exitCode } = await new Promise<{ exitCode: number | null; signal: number | null }>((resolve) => {
         ps.onExit((evt: { exitCode: number | null; signal: number | null }) => resolve(evt));
       });
-      exited = true;
       await fs.rm(tmpHome, { recursive: true, force: true }).catch(() => {});
 
       expect(exitCode).toBe(0);
