@@ -11,10 +11,6 @@ Oracle-specific notes:
 - If browser smokes echo the prompt (Instant), rerun with `--browser-keep-browser --verbose` in tmux, then inspect DOM with `pnpm tsx scripts/browser-tools.ts eval ...` to confirm assistant turns exist; we fixed a case by refreshing assistant snapshots post-send.
 - Browser smokes should preserve Markdown (lists, fences); if output looks flattened or echoed, inspect the captured assistant turn via `browser-tools.ts eval` before shipping.
 
-Windows notes
-- `runner`/`scripts/committer` (bash) aren’t reliable on Windows; run commands directly and use plain git add/commit here.
-- Prefer PowerShell/pnpm directly; expect CRLF/line-ending quirks with bash scripts.
-
 Browser-mode debug notes (ChatGPT URL override)
 - When a ChatGPT folder/workspace URL is set, Cloudflare can block automation even after cookie sync. Use `--browser-keep-browser` to leave Chrome open, solve the interstitial manually, then rerun.
 - If a run stalls/looks finished but CLI didn’t stream output, check the latest session (`oracle status`) and open it (`oracle session <id> --render`) to confirm completion.
