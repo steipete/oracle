@@ -55,6 +55,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
   - Oracle bundles a prompt plus the right files so another AI (GPT 5 Pro + more) can answer. Use when stuck/bugs/reviewing.
   - Run `npx -y @steipete/oracle --help` once per session before first use.
   ```
+- Tip: set `chatgptUrl` in config (or `--chatgpt-url`) to a dedicated ChatGPT project folder so work runs don’t clutter your main history.
 
 **MCP**
 - Run the stdio server via `oracle-mcp`.
