@@ -5,7 +5,13 @@ import path from 'node:path';
 import os from 'node:os';
 
 import { runMultiModelApiSession } from '../../src/oracle/multiModelRunner.js';
-import { OracleResponseError, type ModelName, type RunOracleOptions, type RunOracleResult } from '../../src/oracle.js';
+import {
+  OracleResponseError,
+  type ModelName,
+  type RunOracleOptions,
+  type RunOracleResult,
+  type RunOracleDeps,
+} from '../../src/oracle.js';
 import type { SessionStore } from '../../src/sessionStore.js';
 import type { SessionMetadata, SessionModelRun } from '../../src/sessionManager.js';
 
@@ -254,8 +260,8 @@ describe('runMultiModelApiSession', () => {
     const originalTty = (process.stdout as { isTTY?: boolean }).isTTY;
     (process.stdout as { isTTY?: boolean }).isTTY = true;
 
-    const runOracleImpl = vi.fn(async (options: RunOracleOptions, deps: { write?: (chunk: string) => boolean }) => {
-      deps.write?.(oscSequence);
+    const runOracleImpl = vi.fn(async (options: RunOracleOptions, deps?: RunOracleDeps) => {
+      deps?.write?.(oscSequence);
       return successResult(options.model as ModelName);
     });
 
@@ -336,8 +342,8 @@ describe('runMultiModelApiSession', () => {
     const originalTty = (process.stdout as { isTTY?: boolean }).isTTY;
     (process.stdout as { isTTY?: boolean }).isTTY = false;
 
-    const runOracleImpl = vi.fn(async (options: RunOracleOptions, deps: { write?: (chunk: string) => boolean }) => {
-      deps.write?.(oscSequence);
+    const runOracleImpl = vi.fn(async (options: RunOracleOptions, deps?: RunOracleDeps) => {
+      deps?.write?.(oscSequence);
       return successResult(options.model as ModelName);
     });
 

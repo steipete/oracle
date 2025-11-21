@@ -264,7 +264,7 @@ async function hasRosetta(): Promise<boolean> {
   });
 }
 
-async function sendOsascriptAlert(title: string, message: string, log: (msg: string) => void): Promise<void> {
+async function sendOsascriptAlert(title: string, message: string, _log: (msg: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn('osascript', ['-e', `display notification "${escapeAppleScript(message)}" with title "${escapeAppleScript(title)}"`], {
       stdio: 'ignore',

@@ -7,7 +7,7 @@ import sqlite3 from 'sqlite3';
 import type { CookieParam } from './types.js';
 import { createRequire } from 'node:module';
 
-type UnprotectFn = (data: Buffer, entropy?: any, scope?: 'CurrentUser' | 'LocalMachine') => Buffer;
+type UnprotectFn = (data: Buffer, entropy?: Buffer | undefined, scope?: 'CurrentUser' | 'LocalMachine') => Buffer;
 let cachedUnprotect: UnprotectFn | null = null;
 
 function getUnprotectData(): UnprotectFn {
@@ -17,7 +17,8 @@ function getUnprotectData(): UnprotectFn {
   try {
     // win-dpapi is CommonJS; require it explicitly and support both named/default shapes.
     const dpapiModule = createRequire(import.meta.url)('win-dpapi') as {
-      Dpapi?: { unprotectData: UnprotectFn };
+      // biome-ignore lint/style/useNamingConvention: mirrors upstream CommonJS export name
+      "Dpapi"?: { unprotectData: UnprotectFn };
       default?: { unprotectData: UnprotectFn };
     };
     const unprotect =
@@ -87,7 +88,7 @@ function decryptCookie(value: Buffer, aesKey: Buffer): string {
     return decrypted.toString('utf8');
   }
   const unprotectData = getUnprotectData();
-  const unprotected: Buffer = unprotectData(value, null, 'CurrentUser');
+  const unprotected: Buffer = unprotectData(value, undefined, 'CurrentUser');
   return Buffer.from(unprotected).toString('utf8');
 }
 
@@ -108,7 +109,7 @@ async function extractWindowsAesKey(localStatePath: string): Promise<Buffer> {
   const encKey = Buffer.from(encKeyB64, 'base64');
   const dpapiBlob = encKey.slice(5); // strip "DPAPI"
   const unprotectData = getUnprotectData();
-  const unprotected: Buffer = unprotectData(dpapiBlob, null, 'CurrentUser');
+  const unprotected: Buffer = unprotectData(dpapiBlob, undefined, 'CurrentUser');
   return Buffer.from(unprotected);
 }
 
