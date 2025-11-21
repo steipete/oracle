@@ -6,6 +6,7 @@ import chromeCookies from 'chrome-cookies-secure';
 import { COOKIE_URLS } from './constants.js';
 import type { CookieParam } from './types.js';
 import './keytarShim.js';
+import { loadWindowsCookies, materializeCookieFile } from './windowsCookies.js';
 
 type KeychainLabel = { service: string; account: string };
 type KeytarLike = { getPassword: (service: string, account: string) => Promise<string | null> };
@@ -31,16 +32,21 @@ export async function loadChromeCookies({
   const merged = new Map<string, CookieParam>();
   const cookieFile = await resolveCookieFilePath({ explicitPath: explicitCookiePath, profile });
   const cookiesPath = await materializeCookieFile(cookieFile);
+  if (process.env.ORACLE_DEBUG_COOKIES === '1') {
+    // eslint-disable-next-line no-console
+    console.log(`[cookies] resolved cookie path: ${cookiesPath}`);
+  }
 
   await ensureMacKeychainReadable();
 
   for (const url of urlsToCheck) {
     let raw: unknown;
     try {
+      const pathForSecure = await adaptPathForChromeCookies(cookiesPath);
       raw = await settleWithTimeout(
-        chromeCookies.getCookiesPromised(url, 'puppeteer', cookiesPath),
+        chromeCookies.getCookiesPromised(url, 'puppeteer', pathForSecure),
         COOKIE_READ_TIMEOUT_MS,
-        `Timed out reading Chrome cookies from ${cookiesPath} (after ${COOKIE_READ_TIMEOUT_MS} ms)`,
+        `Timed out reading Chrome cookies from ${pathForSecure} (after ${COOKIE_READ_TIMEOUT_MS} ms)`,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -181,6 +187,15 @@ async function resolveCookieFilePath({
   const profileName = profile && profile.trim().length > 0 ? profile : 'Default';
   const baseDir = await defaultProfileRoot();
   return ensureCookieFile(path.join(baseDir, profileName));
+}
+
+async function adaptPathForChromeCookies(resolved: string): Promise<string> {
+  const stat = await fs.stat(resolved).catch(() => null);
+  if (stat?.isFile()) {
+    // chrome-cookies-secure appends "Cookies" if given a directory; give it the parent dir when we already have the file.
+    return path.dirname(resolved);
+  }
+  return resolved;
 }
 
 async function ensureCookieFile(inputPath: string): Promise<string> {

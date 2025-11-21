@@ -76,6 +76,10 @@ export async function loadWindowsCookies(dbPath: string, filterNames?: Set<strin
       httpOnly: Boolean(row.is_httponly),
     });
   }
+  if (process.env.ORACLE_DEBUG_COOKIES === '1') {
+    // eslint-disable-next-line no-console
+    console.log(`[cookies] windows decrypt decoded ${cookies.length} cookies from ${cookiesCopy}`);
+  }
   return cookies.filter((c) => c.value);
 }
 
@@ -162,6 +166,10 @@ try {
   if (result.status !== 0) {
     // Fallback: best-effort normal copy
     await fs.copyFile(sourcePath, tempPath);
+  }
+  if (process.env.ORACLE_DEBUG_COOKIES === '1') {
+    // eslint-disable-next-line no-console
+    console.log(`[cookies] copied locked file ${sourcePath} -> ${tempPath}`);
   }
   return tempPath;
 }
