@@ -47,7 +47,7 @@ async function assertBuiltArtifacts(): Promise<void> {
         ],
         { env: process.env, timeout: 120_000 },
       );
-      expect(stdout.toLowerCase()).toContain('say hello');
+      expect(stdout.toLowerCase()).toContain('hello from mcporter live');
     },
     150_000,
   );
