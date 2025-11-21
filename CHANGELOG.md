@@ -2,15 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.4.2 — Unreleased
+## 0.4.2 — 2025-11-21
 
 ### Fixed
 - MCP: `npx @steipete/oracle oracle-mcp` now routes directly to the MCP server (even when npx defaults to the CLI binary) and keeps stdout JSON-only for Cursor/other MCP hosts.
+- Added the missing `@anthropic-ai/tokenizer` runtime dependency so `npx @steipete/oracle oracle-mcp` starts cleanly.
 
 ## 0.4.1 — 2025-11-21
 
 ### Fixed
-- Added the missing `@anthropic-ai/tokenizer` runtime dependency so `npx @steipete/oracle oracle-mcp` starts cleanly.
+- Removed duplicate MCP release note entry; no code changes (meta cleanup only).
 
 ## 0.4.0 — 2025-11-21
 

@@ -85,6 +85,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.3.5
         version: 2.3.5
+      '@homebridge/node-pty-prebuilt-multiarch':
+        specifier: ^0.13.1
+        version: 0.13.1
       '@types/chrome-remote-interface':
         specifier: ^0.31.14
         version: 0.31.14
@@ -373,6 +376,10 @@ packages:
   '@google/generative-ai@0.24.1':
     resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
     engines: {node: '>=18.0.0'}
+
+  '@homebridge/node-pty-prebuilt-multiarch@0.13.1':
+    resolution: {integrity: sha512-ccQ60nMcbEGrQh0U9E6x0ajW9qJNeazpcM/9CH6J8leyNtJgb+gu24WTBAfBUVeO486ZhscnaxLEITI2HXwhow==}
+    engines: {node: '>=18.0.0 <25.0.0'}
 
   '@inquirer/external-editor@1.0.3':
     resolution: {integrity: sha512-RWbSrDiYmO4LbejWY7ttpxczuwQyZLBUyygsA9Nsv95hpzUWwnNTVQmAq3xuh7vNwCp07UTmE5i11XAEExx4RA==}
@@ -2763,6 +2770,11 @@ snapshots:
       - utf-8-validate
 
   '@google/generative-ai@0.24.1': {}
+
+  '@homebridge/node-pty-prebuilt-multiarch@0.13.1':
+    dependencies:
+      node-addon-api: 7.1.1
+      prebuild-install: 7.1.3
 
   '@inquirer/external-editor@1.0.3(@types/node@24.10.1)':
     dependencies:
