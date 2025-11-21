@@ -11,19 +11,19 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Oracle bundles your prompt and files so another AI can answer with real context. It speaks GPT-5.1 Pro (default), GPT-5.1 Codex (API-only), GPT-5.1, Gemini 3 Pro, Claude Sonnet 4.5, Claude Opus 4.1, and more—and it can ask one or multiple models in a single run. Browser automation exists but is **experimental**; prefer API or `--render --copy` and paste into ChatGPT yourself.
+Oracle bundles your prompt and files so another AI can answer with real context. It speaks GPT-5.1 Pro (default), GPT-5.1 Codex (API-only), GPT-5.1, Gemini 3 Pro, Claude Sonnet 4.5, Claude Opus 4.1, and more—and it can ask one or multiple models in a single run. Browser automation exists but is **experimental**; prefer API or `--copy` and paste into ChatGPT yourself.
 
 ## Quick start
 
 ```bash
+# Copy the bundle and paste into ChatGPT (pnpm runner, no dry run)
+pnpm oracle --render --copy -p "Review the TS data layer for schema drift" --file "src/**/*.ts,*/*.test.ts"
+
 # Minimal API run (expects OPENAI_API_KEY in your env)
-oracle -p "Summarize the risk register" --file docs/risk-register.md
+oracle -p "Write a concise architecture note for the storage adapters" --file src/storage/README.md
 
 # Multi-model API run
-oracle -p "Cross-check the risk register" --models gpt-5.1-pro,gemini-3-pro --file docs/risk-register.md
-
-# Render + copy bundle (manual paste into ChatGPT)
-oracle --render --copy -p "Summarize the risk register" --file docs/risk-register.md
+oracle -p "Cross-check the data layer assumptions" --models gpt-5.1-pro,gemini-3-pro --file "src/**/*.ts"
 
 # Sessions (list and replay)
 oracle status --hours 72
@@ -33,25 +33,28 @@ oracle session <id> --render
 oracle
 ```
 
+Other good prompts to copy/paste:
+- Map the async data flow and where we validate inputs.
+- Find flaky tests that hit the network and suggest fixes.
+- Compare API contracts vs UI usage and flag mismatches.
+
 ### Clipboard bundle (semi-manual)
 - Build the markdown bundle, print it, and copy it to your clipboard in one go:
   ```bash
-  oracle --render --copy -p "Summarize the risk register" --file docs/risk-register.md docs/risk-matrix.md
+  oracle --render --copy -p "Trace the telemetry pipeline and risks" --file docs/telemetry.md docs/risk-matrix.md
   ```
-
-### Agent notes
-```
-- Run `npx -y @steipete/oracle --help` once per session before first use.
-- Oracle gives your agents a simple, reliable way to bundle a prompt plus the right files and hand them to another AI (GPT 5 Pro + more). Use when stuck/bugs/reviewing code.
-```
 
 ## Integration
 
 - API mode expects `OPENAI_API_KEY` in your environment (set it once in your shell profile).
-- Prefer API mode or `--render --copy` + manual paste; browser automation is experimental.
+- Prefer API mode or `--copy` + manual paste; browser automation is experimental.
 - MCP server: `pnpm mcp` (or `oracle-mcp`) after building; see [docs/mcp.md](docs/mcp.md).
 - Remote browser service: `oracle serve` on a signed-in host; clients use `--remote-host/--remote-token`.
-- Agent notes: see above (run the help once; use Oracle when stuck/bugs/reviewing).
+- Agent notes:
+  ```
+  - Run `npx -y @steipete/oracle --help` once per session before first use.
+  - Oracle bundles a prompt plus the right files so another AI (GPT 5 Pro + more) can answer. Use when stuck/bugs/reviewing.
+  ```
 
 ## Highlights
 
@@ -97,3 +100,6 @@ See `docs/configuration.md` for precedence and full schema.
 - OpenAI/Azure endpoints: [docs/openai-endpoints.md](docs/openai-endpoints.md)
 - Manual smokes: [docs/manual-tests.md](docs/manual-tests.md)
 - Releasing: [docs/RELEASING.md](docs/RELEASING.md)
+
+If you’re looking for an even more powerful context-management tool, check out https://repoprompt.com  
+Name inspired by: https://ampcode.com/news/oracle

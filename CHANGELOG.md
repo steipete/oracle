@@ -2,25 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## 1.3.1 — Unreleased
+## 0.4.0 — Unreleased
 
 ### Added
-- Remote Chrome + remote browser service: `oracle serve` now launches Chrome with host/token defaults for cross-machine runs, keeps the host-only cookie flow documented, and requires the host profile to be signed in. You can also reuse an existing Chrome via `--remote-chrome <host:port>` (IPv6 with `[host]:port`), including remote attachment uploads and clearer validation errors.
+- Remote Chrome + remote browser service: `oracle serve` now launches Chrome with host/token defaults for cross-machine runs and requires the host profile to be signed in. You can also reuse an existing Chrome via `--remote-chrome <host:port>` (IPv6 with `[host]:port`), including remote attachment uploads and clearer validation errors.
 - Linux browser support: Chrome/Chromium/Edge runs now work on Linux (including snap-installed Chromium) with cookie sync picking up the snap profile paths. See [docs/linux.md](docs/linux.md) for paths and display guidance.
-- Browser engine can now target Chromium/Edge by pairing `--browser-chrome-path` with the new `--browser-cookie-path` (also configurable via `browser.chromePath` / `browser.chromeCookiePath`). See the new [docs/chromium-forks.md](docs/chromium-forks.md) for OS-specific paths and setup steps.
+- Browser engine can target Chromium/Edge by pairing `--browser-chrome-path` with the new `--browser-cookie-path` (also configurable via `browser.chromePath` / `browser.chromeCookiePath`). See [docs/chromium-forks.md](docs/chromium-forks.md) for OS-specific paths and setup steps.
 - Markdown bundles render better in the CLI and ChatGPT: each attached file now appears as `### File: <path>` followed by a fenced code block (language inferred from the extension, fences auto-lengthen when the file already contains backticks). Works for API bundles, browser bundles (including inline mode), and render/dry-run output; ANSI highlighting still applies on rich TTYs.
 - `--render-plain` flag forces plain markdown output (no ANSI/highlighting) even in a rich TTY; takes precedence when combined with `--render` / `--render-markdown`.
 - `--write-output <path>` saves just the final assistant message to disk (adds `.<model>` per file for multi-model runs), with safe path guards and non-fatal write failures.
 - Browser engine: `--chatgpt-url` (alias `--browser-url`) and `browser.chatgptUrl` config let you target specific ChatGPT workspace/folder URLs while keeping API `--base-url` separate.
-- Multi-model API runner: orchestrates multiple API models in one command and aggregates usage/cost; browser engine stays single-model.
-- GPT-5.1 Codex (API-only) now works end-to-end with high reasoning; `--model gpt-5.1-codex` forces the API engine automatically so browser runs keep targeting ChatGPT Instant.
-- GPT-5.1 Codex Max isn’t available via API yet. As soon as OpenAI opens the endpoint we’ll add it to `MODEL_CONFIGS`, but for now the CLI rejects that model name.
-- GPT-5.1 Pro API support; it’s the new default model.
-- Added `gpt-5-pro` (aliases: `gpt-5`, `gpt-5.0-pro`) alongside GPT-5.1 Pro for accounts that are still on the earlier Pro rollout.
+- Multi-model API runner orchestrates multiple API models in one command and aggregates usage/cost; browser engine stays single-model.
+- GPT-5.1 Codex (API-only) now works end-to-end with high reasoning; `--model gpt-5.1-codex` forces the API engine automatically so browser runs keep targeting ChatGPT Instant. GPT-5.1 Codex Max isn’t available via API yet; CLI rejects that model until OpenAI opens the endpoint.
+- GPT-5.1 Pro API support; it’s the new default model. Added `gpt-5-pro` (aliases: `gpt-5`, `gpt-5.0-pro`) alongside GPT-5.1 Pro for accounts still on the earlier Pro rollout.
 - Duplicate prompt guard remains active: Oracle blocks a second run when the exact prompt is already running (we briefly removed this note during unreleased edits, but the behavior never left production).
 
 ### Changed
-- Cookie sync covers Chrome, Chromium, Edge, Brave, and Vivaldi profiles; targets chatgpt.com, chat.openai.com, and atlas.openai.com.
+- Cookie sync covers Chrome, Chromium, Edge, Brave, and Vivaldi profiles; targets chatgpt.com, chat.openai.com, and atlas.openai.com. Windows browser automation is still partial—prefer API or clipboard fallback there.
 - Reject prompts shorter than 20 characters with a friendly hint for pro-tier models (`gpt-5.1-pro`) only (prevents accidental costly runs while leaving cheaper models unblocked). Override via ORACLE_MIN_PROMPT_CHARS for automated environments.
 - Browser engine default timeout bumped from 15m (900s) to 20m (1200s) so long GPT-5.x Pro responses don’t get cut off; CLI docs/help text now reflect the new ceiling.
 - Duration flags such as `--browser-timeout`/`--browser-input-timeout` now accept chained units (`1h2m10s`, `3m10s`, etc.) plus `h`, `m`, `s`, or `ms` suffixes, matching the formats we already log.
@@ -33,7 +31,6 @@ All notable changes to this project will be documented in this file.
 - CLI guardrail: if a session with the same prompt is already running, new runs abort with guidance to reattach unless `--force` is provided (prevents unintended duplicate API/browser runs).
 
 ### Fixed
-- macOS notifier quarantine repair now ignores missing `xattr` and surfaces only actionable errors, stabilizing desktop notifications.
 - Browser assistant capture is more resilient: markdown cleanup no longer drops real answers and prompt-echo recovery keeps the assistant text intact.
 - Browser cookie sync on Windows now copies the profile DB into a named temp directory with the expected `Cookies` filename so `chrome-cookies-secure` can read it reliably during browser fallbacks.
 - Streaming runs in `--render-plain` mode now send chunks directly to stdout and keep the log sink newline-aligned, preventing missing or double-printed output in TTY and background runs.
@@ -44,7 +41,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Native Azure OpenAI support! Set `AZURE_OPENAI_ENDPOINT` (plus `AZURE_OPENAI_API_KEY` and optionally `AZURE_OPENAI_DEPLOYMENT`/`AZURE_OPENAI_API_VERSION`) or use the new CLI flags (`--azure-endpoint`, `--azure-deployment`, etc.) to switch automatically to the Azure client.
 - **Gemini 3 Pro Support**: Use Google's latest model via `oracle --model gemini`. Requires `GEMINI_API_KEY`.
-- Configurable API timeout: `--timeout <seconds|auto>` (auto = 20m for most models, 60m for pro models such as gpt-5.1-pro as of 1.3.1). Enforced for streaming and background runs.
+- Configurable API timeout: `--timeout <seconds|auto>` (auto = 20m for most models, 60m for pro models such as gpt-5.1-pro as of 0.4.0). Enforced for streaming and background runs.
 - OpenAI-compatible base URL override: `--base-url` (or `apiBaseUrl` in config / `OPENAI_BASE_URL`) lets you target LiteLLM proxies, Azure gateways, and other compatible hosts.
 - Help text tip: best results come from 6–30 sentences plus key source files; very short prompts tend to be generic.
 - Browser inline cookies: `--browser-inline-cookies[(-file)]` (or env) accepts JSON/base64 payloads, auto-loads `~/.oracle/cookies.{json,base64}`, adds a cookie allowlist (`--browser-cookie-names`), and dry-run now reports whether cookies come from Chrome or inline sources.

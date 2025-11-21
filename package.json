@@ -1,6 +1,6 @@
 {
   "name": "@steipete/oracle",
-  "version": "1.3.0",
+  "version": "0.4.0",
   "description": "CLI wrapper around OpenAI Responses API with GPT-5.1 Pro, GPT-5.1, and GPT-5.1 Codex high reasoning modes.",
   "type": "module",
   "main": "dist/bin/oracle-cli.js",
@@ -14,6 +14,7 @@
     "build:vendor": "mkdir -p dist/vendor && cp -R vendor/oracle-notifier dist/vendor/oracle-notifier || true",
     "start": "pnpm run build && node ./dist/scripts/run-cli.js",
     "oracle": "pnpm start",
+    "check": "pnpm run typecheck",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm run typecheck && biome lint .",
     "test": "vitest run",

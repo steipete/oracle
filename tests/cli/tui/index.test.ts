@@ -84,7 +84,7 @@ describe('askOracleFlow', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     const config: UserConfig = {};
-    await tui.askOracleFlow('1.3.0', config);
+    await tui.askOracleFlow('0.4.0', config);
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Cancelled'));
     expect(performSessionRunMock).not.toHaveBeenCalled();
@@ -100,7 +100,7 @@ describe('askOracleFlow', () => {
     });
 
     const config: UserConfig = {};
-    await tui.askOracleFlow('1.3.0', config);
+    await tui.askOracleFlow('0.4.0', config);
 
     expect(ensureSessionStorageMock).toHaveBeenCalled();
     expect(initializeSessionMock).toHaveBeenCalledWith(
@@ -122,7 +122,7 @@ describe('askOracleFlow', () => {
     });
 
     const config: UserConfig = {};
-    await tui.askOracleFlow('1.3.0', config);
+    await tui.askOracleFlow('0.4.0', config);
 
     const creationArgs = initializeSessionMock.mock.calls[0]?.[0] as RunOracleOptions & { models?: string[] };
     expect(creationArgs.models).toEqual([DEFAULT_MODEL, 'gemini-3-pro']);

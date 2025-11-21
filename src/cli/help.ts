@@ -87,12 +87,12 @@ function renderHelpFooter(program: Command, colors: HelpColors): string {
 
   const examples = [
     formatExample(
-      `${program.name()} --prompt "Summarize risks" --file docs/risk.md --files-report --preview`,
-      'Inspect tokens + files without calling the API.',
+      `${program.name()} --render --copy --prompt "Review the TS data layer for schema drift" --file "src/**/*.ts,*/*.test.ts"`,
+      'Build the bundle, print it, and copy it for manual paste into ChatGPT.',
     ),
     formatExample(
-      `${program.name()} --prompt "Explain bug" --file src/,docs/crash.log --files-report`,
-      'Attach src/ plus docs/crash.log, launch a background session, and capture the Session ID.',
+      `${program.name()} --prompt "Cross-check the data layer assumptions" --models gpt-5.1-pro,gemini-3-pro --file "src/**/*.ts"`,
+      'Run multiple API models in one go and aggregate cost/usage.',
     ),
     formatExample(
       `${program.name()} status --hours 72 --limit 50`,

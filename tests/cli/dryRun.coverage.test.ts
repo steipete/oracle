@@ -15,11 +15,11 @@ describe('runDryRunSummary', () => {
     const readFilesImpl = vi.fn().mockResolvedValue([]);
 
     await runDryRunSummary(
-      { engine: 'api', runOptions: baseRunOptions, cwd: '/repo', version: '1.3.0', log },
+      { engine: 'api', runOptions: baseRunOptions, cwd: '/repo', version: '0.4.0', log },
       { readFilesImpl },
     );
 
-    expect(log).toHaveBeenCalledWith(expect.stringContaining('[dry-run] Oracle (1.3.0) would call gpt-5.1-pro'));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('[dry-run] Oracle (0.4.0) would call gpt-5.1-pro'));
     expect(log).toHaveBeenCalledWith(expect.stringContaining('No files matched'));
   });
 
@@ -40,7 +40,7 @@ describe('runDryRunSummary', () => {
         engine: 'browser',
         runOptions: { ...baseRunOptions, browserBundleFiles: true },
         cwd: '/repo',
-        version: '1.3.0',
+        version: '0.4.0',
         log,
         browserConfig: {
           inlineCookies: [{ name: 'a', value: 'b', domain: 'chatgpt.com' }],
@@ -74,7 +74,7 @@ describe('runDryRunSummary', () => {
         engine: 'browser',
         runOptions: baseRunOptions,
         cwd: '/repo',
-        version: '1.3.0',
+        version: '0.4.0',
         log,
         browserConfig: { cookieSync: false },
       },
@@ -103,7 +103,7 @@ describe('runDryRunSummary', () => {
         engine: 'browser',
         runOptions: baseRunOptions,
         cwd: '/repo',
-        version: '1.3.0',
+        version: '0.4.0',
         log,
         browserConfig: {},
       },
@@ -131,7 +131,7 @@ describe('runDryRunSummary', () => {
       {
         runOptions: baseRunOptions,
         cwd: '/repo',
-        version: '1.3.0',
+        version: '0.4.0',
         previewMode: 'json',
         log,
       },
@@ -146,7 +146,7 @@ describe('runDryRunSummary', () => {
       {
         runOptions: baseRunOptions,
         cwd: '/repo',
-        version: '1.3.0',
+        version: '0.4.0',
         previewMode: 'full',
         log,
       },
