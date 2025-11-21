@@ -79,6 +79,7 @@ npx -y @steipete/oracle oracle-mcp
 - Bundle once, reuse anywhere (API or experimental browser).
 - Multi-model API runs with aggregated cost/usage.
 - Render/copy bundles for manual paste into ChatGPT when automation is blocked.
+- GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
 - File safety: globs/excludes, size guards, `--files-report`.
 - Sessions you can replay (`oracle status`, `oracle session <id> --render`).
 
@@ -94,6 +95,7 @@ npx -y @steipete/oracle oracle-mcp
 | `--base-url <url>` | Point API runs at LiteLLM/Azure/etc. |
 | `--chatgpt-url <url>` | Target a ChatGPT workspace/folder (browser). |
 | `--render`, `--copy` | Print and/or copy the assembled markdown bundle. |
+| `--wait` | Block for background API runs (e.g., GPT‑5.1 Pro) instead of detaching. |
 | `--write-output <path>` | Save only the final answer (multi-model adds `.<model>`). |
 | `--files-report` | Print per-file token usage. |
 | `--dry-run [summary\|json\|full]` | Preview without sending. |
