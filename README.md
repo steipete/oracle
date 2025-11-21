@@ -39,9 +39,9 @@ oracle
   oracle --render --copy -p "Summarize the risk register" --file docs/risk-register.md docs/risk-matrix.md
   ```
 
-### Agent notes (from ../agent-scripts/AGENTS.MD)
+### Agent notes
 ```
-- Oracle hygiene: run `npx -y @steipete/oracle --help` once per session before first use.
+- Run `npx -y @steipete/oracle --help` once per session before first use.
 - Oracle gives your agents a simple, reliable way to bundle a prompt plus the right files and hand them to another AI (GPT 5 Pro + more). Use when stuck/bugs/reviewing code.
 ```
 
@@ -51,6 +51,7 @@ oracle
 - Prefer API mode or `--render --copy` + manual paste; browser automation is experimental.
 - MCP server: `pnpm mcp` (or `oracle-mcp`) after building; see [docs/mcp.md](docs/mcp.md).
 - Remote browser service: `oracle serve` on a signed-in host; clients use `--remote-host/--remote-token`.
+- Agent notes: see above (run the help once; use Oracle when stuck/bugs/reviewing).
 
 ## Highlights
 
@@ -85,8 +86,7 @@ Put defaults in `~/.oracle/config.json` (JSON5). Example:
 {
   model: "gpt-5.1-pro",
   engine: "api",
-  filesReport: true,
-  remote: { host: "192.168.64.2:9473", token: "c4e5f9..." }
+  filesReport: true
 }
 ```
 See `docs/configuration.md` for precedence and full schema.
