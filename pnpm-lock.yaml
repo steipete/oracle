@@ -12,6 +12,9 @@ importers:
 
   .:
     dependencies:
+      '@anthropic-ai/tokenizer':
+        specifier: ^0.0.4
+        version: 0.0.4
       '@google/genai':
         specifier: ^1.30.0
         version: 1.30.0(@modelcontextprotocol/sdk@1.22.0)
@@ -79,9 +82,6 @@ importers:
         specifier: 3.24.1
         version: 3.24.1
     devDependencies:
-      '@anthropic-ai/tokenizer':
-        specifier: ^0.0.4
-        version: 0.0.4
       '@biomejs/biome':
         specifier: ^2.3.5
         version: 2.3.5

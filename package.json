@@ -46,6 +46,7 @@
   },
   "homepage": "https://github.com/steipete/oracle#readme",
   "dependencies": {
+    "@anthropic-ai/tokenizer": "^0.0.4",
     "@google/genai": "^1.30.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.22.0",
