@@ -53,6 +53,9 @@ npx -y @steipete/oracle
 **MCP**
 - `pnpm mcp` (or `oracle-mcp`) after building to run the stdio server.
 - Configure clients via `config/mcporter.json` or `.mcp.json`; see [docs/mcp.md](docs/mcp.md) for connection examples and scope options.
+```bash
+npx -y @steipete/oracle oracle-mcp
+```
 
 ## Highlights
 
