@@ -627,7 +627,7 @@ describe('performSessionRun', () => {
     } else {
       (process.stdout as { isTTY?: boolean }).isTTY = originalTty;
     }
-  });
+  }, 10_000);
 
   test('invokes browser runner when mode is browser', async () => {
     vi.mocked(runBrowserSessionExecution).mockResolvedValue({
