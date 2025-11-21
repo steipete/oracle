@@ -49,6 +49,7 @@ import { resolveGeminiModelId } from '../src/oracle/gemini.js';
 import { handleSessionCommand, type StatusOptions, formatSessionCleanupMessage } from '../src/cli/sessionCommand.js';
 import { isErrorLogged } from '../src/cli/errorUtils.js';
 import { handleSessionAlias, handleStatusFlag } from '../src/cli/rootAlias.js';
+import { resolveOutputPath } from '../src/cli/writeOutputPath.js';
 import { getCliVersion } from '../src/version.js';
 import { runDryRunSummary, runBrowserPreview } from '../src/cli/dryRun.js';
 import { launchTui } from '../src/cli/tui/index.js';
@@ -126,12 +127,15 @@ interface CliOptions extends OptionValues {
   azureApiVersion?: string;
   showModelId?: boolean;
   retainHours?: number;
+  writeOutput?: string;
+  writeOutputPath?: string;
 }
 
 type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
   model: ModelName;
   models?: ModelName[];
   effectiveModelId?: string;
+  writeOutputPath?: string;
 };
 
 const VERSION = getCliVersion();
@@ -279,6 +283,10 @@ program
   .option('--render-markdown', 'Emit the assembled markdown bundle for prompt + files and exit.', false)
   .option('--render', 'Alias for --render-markdown.', false)
   .option('--render-plain', 'Render markdown without ANSI/highlighting (use plain text even in a TTY).', false)
+  .option(
+    '--write-output <path>',
+    'Write only the final assistant message to this file (overwrites; multi-model appends .<model> before the extension).',
+  )
   .option('--verbose-render', 'Show render/TTY diagnostics when replaying sessions.', false)
   .addOption(
     new Option('--search <mode>', 'Set server-side search behavior (on/off).')
@@ -492,6 +500,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
     background: overrides.background ?? undefined,
     renderPlain: overrides.renderPlain ?? options.renderPlain ?? false,
+    writeOutputPath: overrides.writeOutputPath ?? options.writeOutputPath,
   };
 }
 
@@ -540,6 +549,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserBundleFiles: stored.browserBundleFiles,
     background: stored.background,
     renderPlain: stored.renderPlain,
+    writeOutputPath: stored.writeOutputPath,
   };
 }
 
@@ -735,6 +745,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   resolvedOptions.baseUrl = resolvedBaseUrl;
   resolvedOptions.effectiveModelId = effectiveModelId;
+  resolvedOptions.writeOutputPath = resolveOutputPath(options.writeOutput, process.cwd());
 
   // Decide whether to block until completion:
   // - explicit --wait / --no-wait wins
