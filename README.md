@@ -27,6 +27,9 @@ npx -y @steipete/oracle -p "Write a concise architecture note for the storage ad
 # Multi-model API run
 npx -y @steipete/oracle -p "Cross-check the data layer assumptions" --models gpt-5.1-pro,gemini-3-pro --file "src/**/*.ts"
 
+# Preview without spending tokens
+npx -y @steipete/oracle --dry-run summary -p "Check release notes" --file docs/release-notes.md
+
 # Experimental browser run (no API key, will open ChatGPT)
 npx -y @steipete/oracle --engine browser -p "Walk through the UI smoke test" --file "src/**/*.ts"
 
