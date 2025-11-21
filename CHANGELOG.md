@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - MCP: stdout is now muted during MCP runs, preventing non-JSON logs from breaking hosts like Cursor.
+- Added the missing `@anthropic-ai/tokenizer` runtime dependency so `npx @steipete/oracle oracle-mcp` starts cleanly.
 
 ## 0.4.0 — 2025-11-21
 
@@ -39,6 +40,7 @@ All notable changes to this project will be documented in this file.
 - Browser cookie sync on Windows now copies the profile DB into a named temp directory with the expected `Cookies` filename so `chrome-cookies-secure` can read it reliably during browser fallbacks.
 - Streaming runs in `--render-plain` mode now send chunks directly to stdout and keep the log sink newline-aligned, preventing missing or double-printed output in TTY and background runs.
 - CLI output is consistent again: final answers always print to stdout (even when a log sink is active) and inline runs once more echo the assistant text to stdout.
+- MCP: stdout is now muted during MCP runs, preventing non-JSON logs from breaking hosts like Cursor.
 - MCP: stdout is now muted during MCP runs, preventing non-JSON logs from breaking hosts like Cursor.
 
 ## 0.3.0 — 2025-11-19
