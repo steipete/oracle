@@ -117,7 +117,6 @@ See [docs/configuration.md](docs/configuration.md) for precedence and full schem
 - MCP: [docs/mcp.md](docs/mcp.md)
 - OpenAI/Azure endpoints: [docs/openai-endpoints.md](docs/openai-endpoints.md)
 - Manual smokes: [docs/manual-tests.md](docs/manual-tests.md)
-- Releasing: [docs/RELEASING.md](docs/RELEASING.md)
 
 If you’re looking for an even more powerful context-management tool, check out https://repoprompt.com  
 Name inspired by: https://ampcode.com/news/oracle
