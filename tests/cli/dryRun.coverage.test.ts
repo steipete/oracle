@@ -42,7 +42,11 @@ describe('runDryRunSummary', () => {
         cwd: '/repo',
         version: '1.3.0',
         log,
-        browserConfig: { inlineCookies: ['a=b'], inlineCookiesSource: 'test', cookieNames: [] },
+        browserConfig: {
+          inlineCookies: [{ name: 'a', value: 'b', domain: 'chatgpt.com' }],
+          inlineCookiesSource: 'test',
+          cookieNames: [],
+        },
       },
       { assembleBrowserPromptImpl },
     );
@@ -82,4 +86,3 @@ describe('runDryRunSummary', () => {
     expect(joined).toContain('cookie-sync');
   });
 });
-
