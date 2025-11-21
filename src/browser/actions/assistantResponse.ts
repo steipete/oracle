@@ -160,12 +160,12 @@ async function parseAssistantEvaluationResult(
         ? ((result.value as { messageId?: string }).messageId ?? undefined)
         : undefined;
     return {
-      text: String((result.value as { text: unknown }).text ?? ''),
+      text: cleanAssistantText(String((result.value as { text: unknown }).text ?? '')),
       html,
       meta: { turnId, messageId },
     };
   }
-  const fallbackText = typeof result.value === 'string' ? (result.value as string) : '';
+  const fallbackText = typeof result.value === 'string' ? cleanAssistantText(result.value as string) : '';
   if (!fallbackText) {
     const recovered = await recoverAssistantResponse(Runtime, Math.min(timeoutMs, 10_000), logger);
     if (recovered) {
@@ -186,7 +186,7 @@ async function refreshAssistantSnapshot(
   if (!latest) {
     return null;
   }
-  const currentLength = current.text.trim().length;
+  const currentLength = cleanAssistantText(current.text).trim().length;
   const latestLength = latest.text.length;
   const hasBetterId = !current.meta?.messageId && Boolean(latest.meta.messageId);
   const isLonger = latestLength > currentLength;
@@ -276,8 +276,8 @@ async function isCompletionVisible(Runtime: ChromeClient['Runtime']): Promise<bo
 function normalizeAssistantSnapshot(
   snapshot: AssistantSnapshot | null,
 ): { text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } } | null {
-  const text = snapshot?.text?.trim();
-  if (!text) {
+  const text = snapshot?.text ? cleanAssistantText(snapshot.text) : '';
+  if (!text.trim()) {
     return null;
   }
   return {
@@ -576,4 +576,18 @@ interface AssistantSnapshot {
   html?: string;
   messageId?: string | null;
   turnId?: string | null;
+}
+
+function cleanAssistantText(text: string): string {
+  const normalized = text.replace(/\u00a0/g, ' ');
+  const lines = normalized.split(/\r?\n/);
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim().toLowerCase();
+    if (trimmed === 'copy code') return false;
+    if (trimmed === 'markdown') return false;
+    if (trimmed === 'bash' || trimmed === 'javascript' || trimmed === 'yaml' || trimmed === 'json') return false;
+    if (/^[a-z][a-z0-9.+#-]{0,11}$/.test(trimmed)) return false;
+    return true;
+  });
+  return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
