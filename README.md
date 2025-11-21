@@ -20,7 +20,7 @@ Oracle gives your agents a simple, reliable way to **bundle a prompt plus the ri
   - Duration flags such as `--browser-timeout` / `--browser-input-timeout` accept `ms`, `s`, `m`, or `h` (and you can chain them: `1h2m10s`). Defaults are 20 m / 30 s.
   - Point browser runs at either the root ChatGPT homepage (`https://chatgpt.com/`) or a specific workspace/folder with `--chatgpt-url https://chatgpt.com/g/.../project` (config: `browser.chatgptUrl`).
   - Remote service: run `oracle serve` on a Mac that’s already signed into ChatGPT; it will exit and open chatgpt.com if the host profile isn’t logged in. Remote clients (`--remote-host/--remote-token`, or `remote.host` / `remote.token` in config) reuse the host session; cookies never transfer from the client.
-- **GPT-5.1 Codex** — `gpt-5.1-codex` (high reasoning) is available today via API. Codex Max isn’t exposed via API yet; once OpenAI flips the switch we’ll wire it up here. Codex models require `--engine api`.
+  - **GPT-5.1 Codex** — `gpt-5.1-codex` (high reasoning) is available today via API. Codex Max isn’t exposed via API yet; once OpenAI flips the switch we’ll wire it up here. Codex models require `--engine api`.
 
 If you omit `--engine`, Oracle prefers the API engine when `OPENAI_API_KEY` is present; otherwise it falls back to browser mode. Switch explicitly with `-e, --engine {api|browser}` when you want to override the auto choice. Everything else (prompt assembly, file handling, session logging) stays the same.
 
@@ -66,6 +66,24 @@ npx -y @steipete/oracle session <id>
 # TUI (interactive, for humans only)
 npx -y @steipete/oracle
 ```
+
+## Remote browser service (`oracle serve`)
+
+Keep Chrome running on a signed-in host and drive it from another machine without shipping cookies:
+
+1. On the host Mac, run `oracle serve` (or `oracle serve --port 9473 --token abc...`). It launches Chrome, prints `Listening at <host>:<port>` plus an access token, and exits if ChatGPT isn’t logged in so you can sign in and restart.
+2. On the client, run `oracle --engine browser --remote-host <host:port> --remote-token <token> -p "..." --file <paths>`.
+3. To skip flags, set defaults in `~/.oracle/config.json`:
+   ```json5
+   {
+     remote: { host: "192.168.64.2:9473", token: "c4e5f9..." }
+   }
+   ```
+   Env vars (`ORACLE_REMOTE_HOST`, `ORACLE_REMOTE_TOKEN`) still override the config.
+
+Notes:
+- Cookies never cross the wire; the host Chrome profile must stay signed in. If not, `oracle serve` opens chatgpt.com and exits.
+- Remote mode requires `--engine browser` (or an auto-selected browser engine). Background/detached runs are disabled so logs can stream.
 
 ## How do I integrate this?
 **Recommendation:** Prefer API (default) or manual bundle/copy flows. Full browser automation is experimental (macOS + Chrome only today) and may be blocked by login/Cloudflare challenges. (for humans) - preview first.
