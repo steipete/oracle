@@ -104,6 +104,7 @@ npx -y @steipete/oracle oracle-mcp
 | `--dry-run [summary\|json\|full]` | Preview without sending. |
 | `--remote-host`, `--remote-token` | Use a remote `oracle serve` host (browser). |
 | `--remote-chrome <host:port>` | Attach to an existing remote Chrome session (browser). |
+| `--azure-endpoint`, `--azure-deployment`, `--azure-api-version` | Target Azure OpenAI endpoints (picks Azure client automatically). |
 
 ## Configuration
 
