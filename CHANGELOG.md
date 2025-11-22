@@ -2,7 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.4.6 — unreleased
+## 0.5.0 — unreleased
+
+### Added
+- `pnpm test:browser` runs a Chrome DevTools connectivity check plus headless browser smokes across GPT-5.1 / GPT-5.1-Pro / 5.1 Instant.
 
 ### Changed
 - Default system prompt no longer asks models to announce when the search tool was used.
