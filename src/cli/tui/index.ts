@@ -16,11 +16,6 @@ import { loadUserConfig, type UserConfig } from '../../config.js';
 
 const isTty = (): boolean => Boolean(process.stdout.isTTY && chalk.level > 0);
 const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
-const disabledChoice = (label: string): SessionChoice & { disabled: true } => ({
-  name: label,
-  value: '__disabled__',
-  disabled: true as const,
-});
 
 const RECENT_WINDOW_HOURS = 24;
 const PAGE_SIZE = 10;
@@ -32,24 +27,31 @@ const CHARS_PAD = 5;
 const COST_PAD = 7;
 
 type SessionChoice = { name: string; value: string };
+type Choice =
+  | SessionChoice
+  | inquirer.Separator
+  | (SessionChoice & { disabled?: boolean });
 
 export interface LaunchTuiOptions {
   version: string;
+  printIntro?: boolean;
 }
 
-export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
+export async function launchTui({ version, printIntro = true }: LaunchTuiOptions): Promise<void> {
   const userConfig = (await loadUserConfig()).config;
   const rich = isTty();
-  if (rich) {
-    console.log(chalk.bold('🧿 oracle'), `${version}`, dim('— Whispering your tokens to the silicon sage'));
-  } else {
-    console.log(`🧿 oracle ${version} — Whispering your tokens to the silicon sage`);
+  if (printIntro) {
+    if (rich) {
+      console.log(chalk.bold('🧿 oracle'), `${version}`, dim('— Whispering your tokens to the silicon sage'));
+    } else {
+      console.log(`🧿 oracle ${version} — Whispering your tokens to the silicon sage`);
+    }
   }
   console.log('');
   let showingOlder = false;
   for (;;) {
     const { recent, older, olderTotal } = await fetchSessionBuckets();
-    const choices: Array<SessionChoice & { disabled?: boolean }> = [];
+    const choices: Choice[] = [];
 
     const headerLabel = dim(
       `${'Status'.padEnd(STATUS_PAD)} ${'Model'.padEnd(MODEL_PAD)} ${'Mode'.padEnd(MODE_PAD)} ${'Timestamp'.padEnd(
@@ -59,24 +61,23 @@ export async function launchTui({ version }: LaunchTuiOptions): Promise<void> {
 
     // Start with a selectable row so focus never lands on a separator
     choices.push({ name: chalk.bold.green('ask oracle'), value: '__ask__' });
-    choices.push(disabledChoice(''));
 
     if (!showingOlder) {
       if (recent.length > 0) {
-        choices.push(disabledChoice(headerLabel));
+        choices.push(new inquirer.Separator(headerLabel));
         choices.push(...recent.map(toSessionChoice));
       } else if (older.length > 0) {
         // No recent entries; show first page of older.
-        choices.push(disabledChoice(headerLabel));
+        choices.push(new inquirer.Separator(headerLabel));
         choices.push(...older.slice(0, PAGE_SIZE).map(toSessionChoice));
       }
     } else if (older.length > 0) {
-      choices.push(disabledChoice(headerLabel));
+      choices.push(new inquirer.Separator(headerLabel));
       choices.push(...older.map(toSessionChoice));
     }
 
-    choices.push(disabledChoice(''));
-    choices.push(disabledChoice('Actions'));
+    choices.push(new inquirer.Separator(' '));
+    choices.push(new inquirer.Separator('Actions'));
     choices.push({ name: chalk.bold.green('ask oracle'), value: '__ask__' });
 
     if (!showingOlder && olderTotal > 0) {

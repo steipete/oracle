@@ -577,7 +577,7 @@ function getBrowserConfigFromMetadata(metadata: SessionMetadata): BrowserSession
 async function runRootCommand(options: CliOptions): Promise<void> {
   if (process.env.ORACLE_FORCE_TUI === '1') {
     await sessionStore.ensureStorage();
-    await launchTui({ version: VERSION });
+    await launchTui({ version: VERSION, printIntro: false });
     return;
   }
   const userConfig = (await loadUserConfig()).config;
@@ -642,7 +642,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   if (userCliArgs.length === 0) {
     if (tuiEnabled()) {
-      await launchTui({ version: VERSION });
+      await launchTui({ version: VERSION, printIntro: false });
       return;
     }
     console.log(chalk.yellow('No prompt or subcommand supplied. See `oracle --help` for usage.'));
