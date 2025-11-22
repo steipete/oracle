@@ -1,5 +1,7 @@
 # Release Checklist (npm)
 
+> Use the runner unless noted: `export MCP_RUNNER="$PWD/runner"` then prefix commands with `$MCP_RUNNER`. For a guarded, phased flow, run `./scripts/release.sh <phase>` (gates | artifacts | publish | smoke | tag | all); it stops on the first error so you can resume after fixing issues.
+
 1. **Version & metadata**
    - [ ] Update `package.json` version (e.g., `1.0.0`).
    - [ ] Update any mirrored version strings (CLI banner/help, docs metadata) to match.
