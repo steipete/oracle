@@ -192,7 +192,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // then hop to the requested URL if it differs.
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
     await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
-    await raceWithDisconnect(waitForLogin({ Runtime, logger, appliedCookies, manualLogin, timeoutMs: config.timeoutMs }));
+    await raceWithDisconnect(
+      waitForLogin({ runtime: Runtime, logger, appliedCookies, manualLogin, timeoutMs: config.timeoutMs }),
+    );
 
     if (config.url !== baseUrl) {
       await raceWithDisconnect(navigateToChatGPT(Page, Runtime, config.url, logger));
@@ -371,27 +373,27 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 }
 
 async function waitForLogin({
-  Runtime,
+  runtime,
   logger,
   appliedCookies,
   manualLogin,
   timeoutMs,
 }: {
-  Runtime: ChromeClient['Runtime'];
+  runtime: ChromeClient['Runtime'];
   logger: BrowserLogger;
   appliedCookies: number;
   manualLogin: boolean;
   timeoutMs: number;
 }): Promise<void> {
   if (!manualLogin) {
-    await ensureLoggedIn(Runtime, logger, { appliedCookies });
+    await ensureLoggedIn(runtime, logger, { appliedCookies });
     return;
   }
   const deadline = Date.now() + Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
   let lastNotice = 0;
   while (Date.now() < deadline) {
     try {
-      await ensureLoggedIn(Runtime, logger, { appliedCookies });
+      await ensureLoggedIn(runtime, logger, { appliedCookies });
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -460,7 +462,6 @@ async function readDevToolsPort(userDataDir: string): Promise<number | null> {
         return port;
       }
     } catch {
-      continue;
     }
   }
   return null;
