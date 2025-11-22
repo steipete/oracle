@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.5 — 2025-11-22
+
+### Fixed
+- MCP/API responses now report 404/405 from `/v1/responses` as “unsupported-endpoint” with guidance to fix base URLs/gateways or use browser engine; avoids silent failures when proxies lack the Responses API.
+
 ## 0.4.4 — 2025-11-22
 
 ### Fixed
