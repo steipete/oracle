@@ -155,6 +155,7 @@ oracle status --clear --hours 168
 - MCP: [docs/mcp.md](docs/mcp.md)
 - OpenAI/Azure endpoints: [docs/openai-endpoints.md](docs/openai-endpoints.md)
 - Manual smokes: [docs/manual-tests.md](docs/manual-tests.md)
+- Testing: [docs/testing.md](docs/testing.md)
 
 If you’re looking for an even more powerful context-management tool, check out https://repoprompt.com  
 Name inspired by: https://ampcode.com/news/oracle
