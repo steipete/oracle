@@ -11,8 +11,8 @@ export OPENROUTER_REFERER="https://your-app.example"
 export OPENROUTER_TITLE="Oracle CLI"
 ```
 
-- If you set `OPENROUTER_API_KEY` and don’t provide another provider key, Oracle automatically routes API runs to `https://openrouter.ai/api/v1/responses`.
-- You can still point explicitly with `--base-url https://openrouter.ai/api/v1/responses`.
+- If you set `OPENROUTER_API_KEY` and don’t provide another provider key, Oracle automatically routes API runs to `https://openrouter.ai/api/v1`.
+- You can still point explicitly with `--base-url https://openrouter.ai/api/v1` (Oracle will trim a trailing `/responses` if you include it).
 - First‑party keys win: if `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `XAI_API_KEY` is present, Oracle will prefer those providers unless you set an OpenRouter base URL.
 
 ## Models

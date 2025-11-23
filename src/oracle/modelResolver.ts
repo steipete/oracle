@@ -2,7 +2,7 @@ import type { ModelConfig, ModelName, KnownModelName, TokenizerFn } from './type
 import { MODEL_CONFIGS, PRO_MODELS } from './config.js';
 import { countTokens as countTokensGpt5Pro } from 'gpt-tokenizer/model/gpt-5-pro';
 
-const OPENROUTER_DEFAULT_BASE = 'https://openrouter.ai/api/v1/responses';
+const OPENROUTER_DEFAULT_BASE = 'https://openrouter.ai/api/v1';
 const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models';
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -23,6 +23,19 @@ export function isOpenRouterBaseUrl(baseUrl: string | undefined): boolean {
 
 export function defaultOpenRouterBaseUrl(): string {
   return OPENROUTER_DEFAULT_BASE;
+}
+
+export function normalizeOpenRouterBaseUrl(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    // If user passed the responses endpoint, trim it so the client does not double-append.
+    if (url.pathname.endsWith('/responses')) {
+      url.pathname = url.pathname.replace(/\/responses\/?$/, '');
+    }
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return baseUrl;
+  }
 }
 
 export function safeModelSlug(model: string): string {

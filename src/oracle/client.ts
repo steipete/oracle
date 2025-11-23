@@ -65,15 +65,15 @@ export function createDefaultClientFactory(): ClientFactory {
 
 function buildOpenRouterHeaders(): Record<string, string> | undefined {
   const headers: Record<string, string> = {};
-  const referer = process.env.OPENROUTER_REFERER ?? process.env.OPENROUTER_HTTP_REFERER;
-  const title = process.env.OPENROUTER_TITLE;
+  const referer = process.env.OPENROUTER_REFERER ?? process.env.OPENROUTER_HTTP_REFERER ?? 'https://github.com/steipete/oracle';
+  const title = process.env.OPENROUTER_TITLE ?? 'Oracle CLI';
   if (referer) {
     headers['HTTP-Referer'] = referer;
   }
   if (title) {
     headers['X-Title'] = title;
   }
-  return Object.keys(headers).length > 0 ? headers : undefined;
+  return headers;
 }
 
 function loadCustomClientFactory(): ClientFactory | null {
