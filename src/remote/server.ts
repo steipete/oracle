@@ -72,7 +72,6 @@ export async function createRemoteServer(
       res.end(JSON.stringify({ error: 'unauthorized' }));
       return;
     }
-    // biome-ignore lint/nursery/noUnnecessaryConditions: busy guard protects single-run host
     if (busy) {
       if (verbose) {
         logger(`[serve] Busy: rejecting new run from ${formatSocket(req)} while another run is active`);

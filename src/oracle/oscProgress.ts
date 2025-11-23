@@ -79,7 +79,7 @@ export function startOscProgress(options: OscProgressOptions = {}): () => void {
 
   let stopped = false;
   return () => {
-    // biome-ignore lint/nursery/noUnnecessaryConditions: multiple callers may try to stop
+    // multiple callers may try to stop
     if (stopped) {
       return;
     }

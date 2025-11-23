@@ -433,7 +433,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     throw new Error('API did not return a response.');
   }
 
-  // biome-ignore lint/nursery/noUnnecessaryConditions: we only add spacing when any streamed text was printed
+  // We only add spacing when streamed text was printed.
   if (sawTextDelta && !options.silent) {
     const fullStreamedText = streamedChunks.join('');
     const shouldRenderAfterStream = isTty && !renderPlain && fullStreamedText.length > 0;
@@ -485,7 +485,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
 
   const answerText = extractTextOutput(response);
   if (!options.silent) {
-    // biome-ignore lint/nursery/noUnnecessaryConditions: flips true when streaming events arrive
+    // Flag flips to true when streaming events arrive.
     if (sawTextDelta) {
       // Already handled above (rendered or streamed); avoid double-printing.
     } else {

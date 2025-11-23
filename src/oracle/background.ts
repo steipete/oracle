@@ -100,7 +100,7 @@ async function pollBackgroundResponse(params: BackgroundPollParams): Promise<Ora
   // biome-ignore lint/nursery/noUnnecessaryConditions: intentional polling loop.
   while (true) {
     const status = response.status ?? 'completed';
-    // biome-ignore lint/nursery/noUnnecessaryConditions: firstCycle toggles immediately; keep for clarity in logs.
+    // firstCycle toggles immediately; keep for clarity in logs.
     if (firstCycle) {
       firstCycle = false;
       log(chalk.dim(`API background response status=${status}. We'll keep retrying automatically.`));

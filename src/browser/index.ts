@@ -670,7 +670,7 @@ function startThinkingStatusMonitor(
   let lastMessage: string | null = null;
   const startedAt = Date.now();
   const interval = setInterval(async () => {
-    // biome-ignore lint/nursery/noUnnecessaryConditions: stop flag flips asynchronously
+    // stop flag flips asynchronously
     if (stopped || pending) {
       return;
     }
@@ -698,7 +698,7 @@ function startThinkingStatusMonitor(
   }, 1500);
   interval.unref?.();
   return () => {
-    // biome-ignore lint/nursery/noUnnecessaryConditions: multiple callers may race to stop
+    // multiple callers may race to stop
     if (stopped) {
       return;
     }
