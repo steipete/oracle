@@ -196,6 +196,7 @@ export async function createRemoteServer(
   const also = extras.length ? `, also [${extras.join(', ')}]` : '';
   logger(color(chalk.cyanBright.bold, `Listening at ${primary}${also}`));
   logger(color(chalk.yellowBright, `Access token: ${authToken}`));
+  logger('Leave this terminal running; press Ctrl+C to stop oracle serve.');
 
   return {
     port: address.port,
