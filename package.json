@@ -11,7 +11,7 @@
   "scripts": {
     "docs:list": "tsx scripts/docs-list.ts",
     "build": "tsc -p tsconfig.build.json && pnpm run build:vendor",
-    "build:vendor": "mkdir -p dist/vendor && cp -R vendor/oracle-notifier dist/vendor/oracle-notifier || true",
+    "build:vendor": "node -e \"const fs=require('fs'); const path=require('path'); const src=path.join('vendor','oracle-notifier'); const dest=path.join('dist','vendor','oracle-notifier'); fs.mkdirSync(dest,{recursive:true}); if(fs.existsSync(src)){ fs.cpSync(src,dest,{recursive:true,force:true}); }\"",
     "start": "pnpm run build && node ./dist/scripts/run-cli.js",
     "oracle": "pnpm start",
     "check": "pnpm run typecheck",
