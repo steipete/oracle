@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import chalk from 'chalk';
 import type { BrowserAttachment, BrowserLogger, CookieParam } from '../browser/types.js';
@@ -236,7 +237,13 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
       console.log(
         `Cookie extraction is unavailable on this platform. Using manual-login Chrome profile at ${manualProfileDir}. Remote runs will reuse this profile; sign in once when the browser opens.`,
       );
-      void launchManualLoginChrome(manualProfileDir, CHATGPT_URL, console.log);
+      const devtoolsPortFile = path.join(manualProfileDir, 'DevToolsActivePort');
+      const alreadyRunning = existsSync(devtoolsPortFile);
+      if (alreadyRunning) {
+        console.log('Detected an existing automation Chrome session; will reuse it for manual login.');
+      } else {
+        void launchManualLoginChrome(manualProfileDir, CHATGPT_URL, console.log);
+      }
     } else if (opened) {
       console.log('Opened chatgpt.com for login. Sign in, then restart `oracle serve` to continue.');
       return;
