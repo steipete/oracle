@@ -9,6 +9,12 @@ const LIVE = process.env.ORACLE_LIVE_TEST === '1';
 const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
 const baseUrl = process.env.OPENAI_BASE_URL ?? '';
 const isOpenRouterBase = baseUrl.includes('openrouter');
+const OPENAI_ENV = {
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  OPENAI_BASE_URL: 'https://api.openai.com/v1',
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  OPENROUTER_API_KEY: '',
+};
 const MCP_CONFIG = path.join(process.cwd(), 'config', 'mcporter.json');
 const ORACLE_MCP_BIN = path.join(process.cwd(), 'dist', 'bin', 'oracle-mcp.js');
 
@@ -21,10 +27,14 @@ async function assertBuiltArtifacts(): Promise<void> {
     'lists oracle-local schema',
     async () => {
       await assertBuiltArtifacts();
-      const { stdout } = await execFileAsync('pnpm', ['exec', 'mcporter', 'list', 'oracle-local', '--schema', '--config', MCP_CONFIG], {
-        env: process.env,
-        timeout: 60_000,
-      });
+      const { stdout } = await execFileAsync(
+        'pnpm',
+        ['exec', 'mcporter', 'list', 'oracle-local', '--schema', '--config', MCP_CONFIG],
+        {
+          env: { ...process.env, ...OPENAI_ENV },
+          timeout: 60_000,
+        },
+      );
       expect(stdout).toContain('oracle-local');
     },
     90_000,
@@ -47,7 +57,7 @@ async function assertBuiltArtifacts(): Promise<void> {
           '--config',
           MCP_CONFIG,
         ],
-        { env: process.env, timeout: 120_000 },
+        { env: { ...process.env, ...OPENAI_ENV }, timeout: 120_000 },
       );
       expect(stdout.toLowerCase()).toContain('hello from mcporter live');
     },

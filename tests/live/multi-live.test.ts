@@ -16,6 +16,12 @@ const hasKeys =
   Boolean(process.env.GEMINI_API_KEY) &&
   Boolean(process.env.ANTHROPIC_API_KEY) &&
   !isOpenRouterBase;
+const OPENAI_ENV = {
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  OPENAI_BASE_URL: 'https://api.openai.com/v1',
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  OPENROUTER_API_KEY: '',
+};
 const execFileAsync = promisify(execFile);
 const TSX_BIN = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const CLI_ENTRY = path.join(process.cwd(), 'bin', 'oracle-cli.ts');
@@ -95,7 +101,7 @@ const CLI_ENTRY = path.join(process.cwd(), 'bin', 'oracle-cli.ts');
             'gpt-5.1,gemini,haiku',
             '--wait',
           ],
-          { env },
+          { env: { ...env, ...OPENAI_ENV } },
         );
       } catch (_error) {
         const message =

@@ -9,6 +9,12 @@ const LIVE = process.env.ORACLE_LIVE_TEST === '1';
 const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
 const baseUrl = process.env.OPENAI_BASE_URL ?? '';
 const isOpenRouterBase = baseUrl.includes('openrouter');
+const OPENAI_ENV = {
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  OPENAI_BASE_URL: 'https://api.openai.com/v1',
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  OPENROUTER_API_KEY: '',
+};
 const MCP_CONFIG = path.join(process.cwd(), 'config', 'mcporter.json');
 const ORACLE_MCP_BIN = path.join(process.cwd(), 'dist', 'bin', 'oracle-mcp.js');
 
@@ -21,7 +27,7 @@ type McporterOutput = { result?: unknown; error?: unknown; sessionId?: string; t
 async function runMcporter(args: string[]): Promise<McporterOutput> {
   try {
     const { stdout } = await execFileAsync('pnpm', ['exec', 'mcporter', ...args], {
-      env: process.env,
+      env: { ...process.env, ...OPENAI_ENV },
       timeout: 180_000,
     });
     try {
