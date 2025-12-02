@@ -356,18 +356,18 @@ program
   .addOption(
     new Option('--browser-inline-cookies-file <path>', 'Load inline cookies from file (JSON or base64 JSON).').hideHelp(),
   )
-  .addOption(new Option('--browser-no-cookie-sync', 'Skip copying cookies from Chrome.').hideHelp())
+  .addOption(new Option('--browser-fresh-profile', 'Start with a fresh automation profile (skip syncing your Chrome profile).').hideHelp())
   .addOption(
     new Option(
       '--browser-manual-login',
-      'Skip cookie copy; reuse a persistent automation profile and wait for manual ChatGPT login.',
+      'Reuse a persistent automation profile and wait for manual ChatGPT login (skips profile sync).',
     ).hideHelp(),
   )
   .addOption(new Option('--browser-headless', 'Launch Chrome in headless mode.').hideHelp())
   .addOption(new Option('--browser-hide-window', 'Hide the Chrome window after launch (macOS headful only).').hideHelp())
   .addOption(new Option('--browser-keep-browser', 'Keep Chrome running after completion.').hideHelp())
   .addOption(
-    new Option('--browser-allow-cookie-errors', 'Continue even if Chrome cookies cannot be copied.').hideHelp(),
+    new Option('--browser-allow-cookie-errors', 'Continue even if inline cookies cannot be applied.').hideHelp(),
   )
   .addOption(
     new Option(
@@ -1194,8 +1194,8 @@ function printDebugHelp(cliName: string): void {
     ['--browser-url <url>', 'Alias for --chatgpt-url.'],
     ['--browser-timeout <ms|s|m>', 'Cap total wait time for the assistant response.'],
     ['--browser-input-timeout <ms|s|m>', 'Cap how long we wait for the composer textarea.'],
-    ['--browser-no-cookie-sync', 'Skip copying cookies from your main profile.'],
-    ['--browser-manual-login', 'Skip cookie copy; reuse a persistent automation profile and log in manually.'],
+    ['--browser-fresh-profile', 'Start with a fresh automation profile (skip syncing your main profile).'],
+    ['--browser-manual-login', 'Reuse a persistent automation profile and log in manually.'],
     ['--browser-headless', 'Launch Chrome in headless mode.'],
     ['--browser-hide-window', 'Hide the Chrome window (macOS headful only).'],
     ['--browser-keep-browser', 'Leave Chrome running after completion.'],

@@ -50,12 +50,12 @@ describe('buildCookiePlan', () => {
   test('disabled cookie sync plan', () => {
     const plan = buildCookiePlan({ cookieSync: false });
     expect(plan.type).toBe('disabled');
-    expect(plan.description).toContain('sync disabled');
+    expect(plan.description).toContain('Profile sync: disabled');
   });
 
   test('copy from Chrome default allowlist', () => {
     const plan = buildCookiePlan({});
-    expect(plan.type).toBe('copy');
-    expect(plan.description).toContain('all from Chrome profile');
+    expect(plan.type).toBe('profile');
+    expect(plan.description).toContain('Profile sync: copy Chrome profile (Default)');
   });
 });

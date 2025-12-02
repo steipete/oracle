@@ -9,12 +9,16 @@
  */
 import { Command } from 'commander';
 import { execSync, spawn } from 'node:child_process';
+import { mkdir, rm } from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import puppeteer from 'puppeteer-core';
+import puppeteerCore from 'puppeteer-core';
+import { addExtra } from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { syncChromeProfile } from '../src/browser/profileSync.js';
 
 /** Utility type so TypeScript knows the async function constructor */
 type AsyncFunctionCtor = new (...args: string[]) => (...fnArgs: unknown[]) => Promise<unknown>;
@@ -22,6 +26,9 @@ type AsyncFunctionCtor = new (...args: string[]) => (...fnArgs: unknown[]) => Pr
 const DEFAULT_PORT = 9222;
 const DEFAULT_PROFILE_DIR = path.join(os.homedir(), '.cache', 'scraping');
 const DEFAULT_CHROME_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+const puppeteer = addExtra(puppeteerCore);
+puppeteer.use(StealthPlugin());
 
 function browserURL(port: number): string {
   return `http://localhost:${port}`;
@@ -53,30 +60,61 @@ program
   .command('start')
   .description('Launch Chrome with remote debugging enabled.')
   .option('-p, --port <number>', 'Remote debugging port (default: 9222)', (value) => Number.parseInt(value, 10), DEFAULT_PORT)
-  .option('--profile', 'Copy your default Chrome profile before launch.', false)
   .option('--profile-dir <path>', 'Directory for the temporary Chrome profile.', DEFAULT_PROFILE_DIR)
   .option('--chrome-path <path>', 'Path to the Chrome binary.', DEFAULT_CHROME_BIN)
+  .option('--fresh-profile', 'Start with a fresh profile (skip syncing your main Chrome profile).', false)
+  .option('--profile-name <name>', 'Chrome profile directory name to sync (default: Default).', 'Default')
   .action(async (options) => {
-    const { port, profile, profileDir, chromePath } = options as {
+    const { port, freshProfile, profileDir, chromePath, profileName } = options as {
       port: number;
-      profile: boolean;
+      freshProfile: boolean;
       profileDir: string;
       chromePath: string;
+      profileName: string;
     };
 
+    // If a browser is already listening on the port, reuse it.
     try {
-      execSync("killall 'Google Chrome'", { stdio: 'ignore' });
+      const browser = await connectBrowser(port);
+      await browser.disconnect();
+      console.log(`✓ Chrome already running on :${port}`);
+      return;
     } catch {
-      // ignore missing processes
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    execSync(`mkdir -p "${profileDir}"`);
-    if (profile) {
-      const source = `${path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome')}/`;
-      execSync(`rsync -a --delete "${source}" "${profileDir}/"`, { stdio: 'ignore' });
+      // proceed to start a new one
     }
 
-    spawn(chromePath, [`--remote-debugging-port=${port}`, `--user-data-dir=${profileDir}`, '--no-first-run', '--disable-popup-blocking'], {
+    if (freshProfile) {
+      await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+      await mkdir(profileDir, { recursive: true });
+      console.log('Starting with a fresh automation profile (profile sync disabled).');
+    } else {
+      try {
+        const result = await syncChromeProfile({
+          profile: profileName,
+          targetDir: profileDir,
+          logger: (msg) => console.error(msg),
+        });
+        console.log(`✓ Synced Chrome profile ${result.profileName} -> ${profileDir} (${result.method})`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`⚠️  Failed to sync Chrome profile: ${message}`);
+        console.error('Falling back to a fresh profile; rerun with --fresh-profile to skip syncing next time.');
+        await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+        await mkdir(profileDir, { recursive: true });
+      }
+    }
+
+    const chromeArgs = [
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${profileDir}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-popup-blocking',
+      '--disable-features=TranslateUI,AutomationControlled,SignInProfileCreation,ChromeLabs',
+      '--disable-sync',
+    ];
+
+    spawn(chromePath, chromeArgs, {
       detached: true,
       stdio: 'ignore',
     }).unref();
@@ -97,7 +135,7 @@ program
       console.error(`✗ Failed to start Chrome on port ${port}`);
       process.exit(1);
     }
-    console.log(`✓ Chrome listening on http://localhost:${port}${profile ? ' (profile copied)' : ''}`);
+    console.log(`✓ Chrome listening on http://localhost:${port}${freshProfile ? '' : ' (profile synced)'}`);
   });
 
 program
@@ -136,7 +174,7 @@ program
     const port = options.port as number;
     const { browser, page } = await getActivePage(port);
     try {
-      const result = await page.evaluate((body) => {
+      const result = await page.evaluate((body: string) => {
         const ASYNC_FN = Object.getPrototypeOf(async () => {}).constructor as AsyncFunctionCtor;
         return new ASYNC_FN(`return (${body})`)();
       }, snippet);
@@ -298,7 +336,7 @@ program
           });
       });
 
-      const result = await page.evaluate((msg) => {
+      const result = await page.evaluate((msg: string) => {
         const pickFn = (window as Window & { pick?: (message: string) => Promise<unknown> }).pick;
         if (!pickFn) {
           return null;

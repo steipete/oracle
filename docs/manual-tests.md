@@ -2,7 +2,7 @@
 
 These checks validate the real Chrome automation path and the optional live
 Responses API smoke suite. Run the browser steps whenever you touch Chrome
-automation (lifecycle, cookie sync, prompt injection, Markdown capture, etc.),
+automation (lifecycle, profile sync, prompt injection, Markdown capture, etc.),
 and run the live API suite before shipping major transport changes.
 
 ## Prerequisites
@@ -55,8 +55,8 @@ Before running any agent-driven debugging, you can rely on the TypeScript CLI in
 # Show help / available commands
 pnpm tsx scripts/browser-tools.ts --help
 
-# Launch Chrome with your normal profile so you stay logged in
-pnpm tsx scripts/browser-tools.ts start --profile
+# Launch Chrome with your normal profile so you stay logged in (profile sync is on by default)
+pnpm tsx scripts/browser-tools.ts start
 
 # Drive the active tab
 pnpm tsx scripts/browser-tools.ts nav https://example.com
@@ -70,14 +70,16 @@ pnpm tsx scripts/browser-tools.ts kill --all --force   # tear down straggler Dev
 
 This mirrors Mario Zechner’s “What if you don’t need MCP?” technique and is handy when you just need a few quick interactions without spinning up additional tooling.
 
-1. **Cookie Sync Blocks Missing Bindings**
-   - Temporarily move `node_modules/.pnpm/sqlite3@*/node_modules/sqlite3` out of the way.
+1. **Profile Sync Path + Fresh Profile Opt-out**
    - Run  
      ```bash
-     pnpm run oracle -- --engine browser --model "5.1 Instant" --prompt "Smoke test cookie sync."
+     pnpm run oracle -- --engine browser --model "5.1 Instant" --prompt "Smoke test profile sync."
      ```
-   - Expect an early failure: `Unable to derive Chrome cookie key` (or a sqlite binding hint) because the cookie reader can’t load sqlite.  
-   - Restore `sqlite3` and rebuild; rerun to confirm cookies copy successfully (`Copied N cookies from Chrome profile Default`).
+   - Expect the log to show `Synced Chrome profile` before navigation and the run to stay logged in without Keychain prompts.
+   - Then rerun with a fresh profile to confirm the opt-out path still works (you may need to sign in manually):  
+     ```bash
+     pnpm run oracle -- --engine browser --browser-fresh-profile --model "5.1 Instant" --prompt "Smoke test fresh profile."
+     ```
 
 2. **Prompt Submission & Model Switching**
    - With sqlite bindings healthy, run  

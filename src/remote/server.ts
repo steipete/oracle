@@ -3,15 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import chalk from 'chalk';
-import type { BrowserAttachment, BrowserLogger, CookieParam } from '../browser/types.js';
+import type { BrowserAttachment, BrowserLogger } from '../browser/types.js';
 import { runBrowserMode } from '../browserMode.js';
 import type { BrowserRunResult } from '../browserMode.js';
 import type { RemoteRunPayload, RemoteRunEvent } from './types.js';
-import { loadChromeCookies } from '../browser/chromeCookies.js';
+import { defaultProfileRoot } from '../browser/chromeCookies.js';
 import { CHATGPT_URL } from '../browser/constants.js';
 import { normalizeChatgptUrl } from '../browser/utils.js';
 
@@ -229,9 +228,7 @@ export async function createRemoteServer(
 
 export async function serveRemote(options: RemoteServerOptions = {}): Promise<void> {
   const manualProfileDir = options.manualLoginProfileDir ?? path.join(os.homedir(), '.oracle', 'browser-profile');
-  const preferManualLogin = options.manualLoginDefault || process.platform === 'win32' || isWsl();
-  let cookies: CookieParam[] | null = null;
-  let opened = false;
+  const preferManualLogin = options.manualLoginDefault ?? false;
 
   if (isWsl() && process.env.ORACLE_ALLOW_WSL_SERVE !== '1') {
     console.log('WSL detected. For reliable browser automation, run `oracle serve` from Windows PowerShell/Command Prompt so we can use your Windows Chrome profile.');
@@ -240,37 +237,28 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
     return;
   }
 
-  if (!preferManualLogin) {
-    // Warm-up: ensure this host has a ChatGPT login before accepting runs.
-    const result = await loadLocalChatgptCookies(console.log, CHATGPT_URL);
-    cookies = result.cookies;
-    opened = result.opened;
-  }
-
-  if (!cookies || cookies.length === 0) {
-    console.log('No ChatGPT cookies detected on this host.');
-    if (preferManualLogin) {
-      await mkdir(manualProfileDir, { recursive: true });
-      console.log(
-        `Cookie extraction is unavailable on this platform. Using manual-login Chrome profile at ${manualProfileDir}. Remote runs will reuse this profile; sign in once when the browser opens.`,
-      );
-      const devtoolsPortFile = path.join(manualProfileDir, 'DevToolsActivePort');
-      const alreadyRunning = existsSync(devtoolsPortFile);
-      if (alreadyRunning) {
-        console.log('Detected an existing automation Chrome session; will reuse it for manual login.');
-      } else {
-        void launchManualLoginChrome(manualProfileDir, CHATGPT_URL, console.log);
-      }
-    } else if (opened) {
-      console.log('Opened chatgpt.com for login. Sign in, then restart `oracle serve` to continue.');
-      return;
+  if (preferManualLogin) {
+    await mkdir(manualProfileDir, { recursive: true });
+    console.log(
+      `Manual-login mode enabled. Remote runs will reuse ${manualProfileDir}; sign in once when the browser opens.`,
+    );
+    const devtoolsPortFile = path.join(manualProfileDir, 'DevToolsActivePort');
+    const alreadyRunning = existsSync(devtoolsPortFile);
+    if (alreadyRunning) {
+      console.log('Detected an existing automation Chrome session; will reuse it for manual login.');
     } else {
-      console.log('Please open https://chatgpt.com/ in this host\'s browser and sign in; then rerun.');
-      console.log('Tip: install xdg-utils (xdg-open) to enable automatic browser opening on Linux/WSL.');
-      return;
+      void launchManualLoginChrome(manualProfileDir, CHATGPT_URL, console.log);
     }
   } else {
-    console.log(`Detected ${cookies.length} ChatGPT cookies on this host; runs will reuse this session.`);
+    try {
+      const base = await defaultProfileRoot();
+      const defaultProfile = path.join(base, 'Default');
+      console.log(
+        `Remote runs will sync your Chrome profile from ${defaultProfile}. Make sure you are signed into ChatGPT there.`,
+      );
+    } catch {
+      console.log('Remote runs will try to sync your default Chrome profile. Ensure ChatGPT is signed in, or rerun with --manual-login.');
+    }
   }
 
   const server = await createRemoteServer({
@@ -361,115 +349,9 @@ function formatReachableAddresses(bindAddress: string, port: number): string[] {
   return Array.from(new Set([...ipv4, ...ipv6]));
 }
 
-async function loadLocalChatgptCookies(logger: (message: string) => void, targetUrl: string): Promise<{ cookies: CookieParam[] | null; opened: boolean }> {
-  try {
-    logger('Loading ChatGPT cookies from this host\'s Chrome profile...');
-    const cookies = await Promise.resolve(
-      loadChromeCookies({
-        targetUrl,
-        profile: 'Default',
-      }),
-    ).catch((error) => {
-      logger(`Unable to load local ChatGPT cookies on this host: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    });
-    if (!cookies || cookies.length === 0) {
-      logger('No local ChatGPT cookies found on this host. Please log in once; opening ChatGPT...');
-      const opened = triggerLocalLoginPrompt(logger, targetUrl);
-      return { cookies: null, opened };
-    }
-    logger(`Loaded ${cookies.length} local ChatGPT cookies on this host.`);
-    return { cookies, opened: false };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const missingDbMatch = message.match(/Unable to locate Chrome cookie DB at (.+)/);
-    if (missingDbMatch) {
-      const lookedPath = missingDbMatch[1];
-      logger(`Chrome cookies not found at ${lookedPath}. Set --browser-cookie-path to your Chrome profile or log in manually.`);
-    } else {
-      logger(`Unable to load local ChatGPT cookies on this host: ${message}`);
-    }
-    if (process.platform === 'linux' && isWsl()) {
-      logger(
-        'WSL hint: Chrome lives under /mnt/c/Users/<you>/AppData/Local/Google/Chrome/User Data/Default; pass --browser-cookie-path to that directory if auto-detect fails.',
-      );
-    }
-    const opened = triggerLocalLoginPrompt(logger, targetUrl);
-    return { cookies: null, opened };
-  }
-}
-
-function triggerLocalLoginPrompt(logger: (message: string) => void, url: string): boolean {
-  const verbose = process.argv.includes('--verbose') || process.env.ORACLE_SERVE_VERBOSE === '1';
-  const openers: Array<{ cmd: string; args?: string[] }> = [];
-
-  if (process.platform === 'darwin') {
-    openers.push({ cmd: 'open' });
-  } else if (process.platform === 'win32') {
-    openers.push({ cmd: 'start' });
-  } else {
-    if (isWsl()) {
-      // Prefer wslview when available, then fall back to Windows start.exe to open in the host browser.
-      openers.push({ cmd: 'wslview' });
-      openers.push({ cmd: 'cmd.exe', args: ['/c', 'start', '', url] });
-    }
-    openers.push({ cmd: 'xdg-open' });
-  }
-
-  // Add a cross-platform, low-friction fallback when nothing above is available.
-  openers.push({ cmd: 'sensible-browser' });
-
-  try {
-    // Fire and forget; user completes login in the opened browser window.
-    if (verbose) {
-      logger(`[serve] Login opener candidates: ${openers.map((o) => o.cmd).join(', ')}`);
-    }
-    const candidate = openers.find((opener) => canSpawn(opener.cmd));
-    if (candidate) {
-      const child = spawn(candidate.cmd, candidate.args ?? [url], { stdio: 'ignore', detached: true });
-      child.unref();
-      child.once('error', (error) => {
-        if (verbose) {
-          logger(`[serve] Opener ${candidate.cmd} failed: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        logger(`Please open ${url} in this host's browser and sign in; then rerun.`);
-      });
-      logger(`Opened ${url} locally via ${candidate.cmd}. Please sign in; subsequent runs will reuse the session.`);
-      if (verbose && candidate.args) {
-        logger(`[serve] Opener args: ${candidate.args.join(' ')}`);
-      }
-      return true;
-    }
-    if (verbose) {
-      logger('[serve] No available opener found; prompting manual login.');
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 function isWsl(): boolean {
   if (process.platform !== 'linux') return false;
   return Boolean(process.env.WSL_DISTRO_NAME || os.release().toLowerCase().includes('microsoft'));
-}
-
-function canSpawn(cmd: string): boolean {
-  if (!cmd) return false;
-  try {
-    if (process.platform === 'win32') {
-      // `where` returns non-zero when the command is not found.
-      const result = spawnSync('where', [cmd], { stdio: 'ignore' });
-      return result.status === 0;
-    }
-    // `command -v` is a shell builtin; run through sh. Fallback to `which`.
-    const shResult = spawnSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore' });
-    if (shResult.status === 0) return true;
-    const whichResult = spawnSync('which', [cmd], { stdio: 'ignore' });
-    return whichResult.status === 0;
-  } catch {
-    return false;
-  }
 }
 
 async function launchManualLoginChrome(profileDir: string, url: string, logger: (msg: string) => void): Promise<void> {

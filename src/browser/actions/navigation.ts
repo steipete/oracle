@@ -33,7 +33,7 @@ const LOGIN_CHECK_TIMEOUT_MS = 5_000;
 export async function ensureLoggedIn(
   Runtime: ChromeClient['Runtime'],
   logger: BrowserLogger,
-  options: { appliedCookies?: number | null; remoteSession?: boolean } = {},
+  options: { appliedCookies?: number | null; remoteSession?: boolean; profileSync?: boolean } = {},
 ) {
   const outcome = await Runtime.evaluate({
     expression: buildLoginProbeExpression(LOGIN_CHECK_TIMEOUT_MS),
@@ -49,9 +49,11 @@ export async function ensureLoggedIn(
   const domLabel = probe.domLoginCta ? ' Login button detected on page.' : '';
   const cookieHint = options.remoteSession
     ? 'The remote Chrome session is not signed into ChatGPT. Sign in there, then rerun.'
-    : (options.appliedCookies ?? 0) === 0
-      ? 'No ChatGPT cookies were applied; sign in to chatgpt.com in Chrome or pass inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).'
-      : 'ChatGPT login appears missing; open chatgpt.com in Chrome to refresh the session or provide inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).';
+    : options.profileSync
+      ? 'The synced Chrome profile appears logged out. Open chatgpt.com in your main Chrome profile to refresh the session or rerun with --browser-fresh-profile for a fresh profile.'
+      : (options.appliedCookies ?? 0) === 0
+        ? 'No ChatGPT cookies were applied; sign in to chatgpt.com in Chrome or pass inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).'
+        : 'ChatGPT login appears missing; open chatgpt.com in Chrome to refresh the session or provide inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).';
 
   throw new Error(`ChatGPT session not detected.${domLabel} ${cookieHint}`);
 }

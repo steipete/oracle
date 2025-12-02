@@ -30,7 +30,7 @@ describe('buildBrowserConfig', () => {
       browserUrl: 'https://chat.example.com',
       browserTimeout: '120s',
       browserInputTimeout: '5s',
-      browserNoCookieSync: true,
+      browserFreshProfile: true,
       browserHeadless: true,
       browserHideWindow: true,
       browserKeepBrowser: true,

@@ -58,7 +58,7 @@ export function buildAttachmentPlan(
 export type CookiePlan =
   | { type: 'inline'; description: string }
   | { type: 'disabled'; description: string }
-  | { type: 'copy'; description: string };
+  | { type: 'profile'; description: string };
 
 export function buildCookiePlan(config?: BrowserSessionConfig): CookiePlan {
   if (config?.inlineCookies && config.inlineCookies.length > 0) {
@@ -66,12 +66,8 @@ export function buildCookiePlan(config?: BrowserSessionConfig): CookiePlan {
     return { type: 'inline', description: `Cookies: inline payload (${config.inlineCookies.length}) via ${source}.` };
   }
   if (config?.cookieSync === false) {
-    return { type: 'disabled', description: 'Cookies: sync disabled (--browser-no-cookie-sync).' };
+    return { type: 'disabled', description: 'Profile sync: disabled (--browser-fresh-profile); starting fresh.' };
   }
-  const allowlist =
-    config?.cookieNames && config.cookieNames.length > 0
-      ? config.cookieNames.join(', ')
-      : 'all from Chrome profile';
-  return { type: 'copy', description: `Cookies: copy from Chrome (${allowlist}).` };
+  const profileLabel = config?.chromeProfile ?? 'Default';
+  return { type: 'profile', description: `Profile sync: copy Chrome profile (${profileLabel}).` };
 }
-

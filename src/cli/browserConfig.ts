@@ -25,7 +25,7 @@ export interface BrowserFlagOptions {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
-  browserNoCookieSync?: boolean;
+  browserFreshProfile?: boolean;
   browserInlineCookiesFile?: string;
   browserCookieNames?: string;
   browserInlineCookies?: string;
@@ -73,7 +73,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     inputTimeoutMs: options.browserInputTimeout
       ? parseDuration(options.browserInputTimeout, DEFAULT_BROWSER_INPUT_TIMEOUT_MS)
       : undefined,
-    cookieSync: options.browserNoCookieSync ? false : undefined,
+    cookieSync: options.browserFreshProfile ? false : undefined,
     cookieNames,
     inlineCookies: inline?.cookies,
     inlineCookiesSource: inline?.source ?? null,
@@ -83,7 +83,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel: shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model),
     debug: options.verbose ? true : undefined,
-    // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
+    // Allow inline cookie failures by default so runs can continue even if the payload is partial.
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
   };

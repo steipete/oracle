@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.6.0 — 2025-12-02
+
+### Changed
+- Browser mode now syncs your signed-in Chrome profile by default (rsync/robocopy with lock/cache excludes) instead of decrypting cookies; use `--browser-fresh-profile` for a clean start or `--browser-manual-login` for a persistent automation profile. Inline cookies still layer on top when provided. Windows no longer forces manual-login.
+- Remote service and `scripts/browser-tools.ts start` use the same profile-sync helper; browser-tools defaults to profile sync, adds Windows hardening flags, and now runs through `puppeteer-extra` with the stealth plugin.
+
 ## 0.5.0 — 2025-11-25
 
 ### Added
@@ -142,7 +148,7 @@ All notable changes to this project will be documented in this file.
 - `sessions` tool now returns a summary row for `id` lookups by default; pass `detail: true` to fetch full metadata/log/request to avoid large accidental payloads.
 - Directory/glob expansions now honor `.gitignore` files and skip dotfiles by default; explicitly matching patterns (e.g., `--file "src/**/.keep"`) still opt in.
 - Default ignores when crawling project roots now drop common build/cache folders (`node_modules`, `dist`, `coverage`, `.git`, `.turbo`, `.next`, `build`, `tmp`) unless the path is passed explicitly. Oracle logs each skipped path for transparency.
-- Browser engine now logs a one-line warning before cookie sync, noting macOS may prompt for a Keychain password and how to bypass via `--browser-no-cookie-sync` or `--browser-allow-cookie-errors`.
+- Browser engine now logs a one-line warning before cookie sync, noting macOS may prompt for a Keychain password and how to bypass via `--browser-fresh-profile` or `--browser-allow-cookie-errors`.
 - gpt-5.1-pro API runs default to non-blocking; add `--wait` to block. `gpt-5.1` and browser runs still block by default. CLI now polls once for `in_progress` responses before failing.
 - macOS notifier helper now ships signed/notarized with the Oracle icon and auto-repairs execute bits for the fallback terminal-notifier.
 - Session summaries and cost displays are clearer, with zombie-session detection to avoid stale runs.

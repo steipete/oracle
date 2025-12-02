@@ -171,8 +171,9 @@ function buildChromeFlags(headless: boolean, debugBindAddress?: string | null): 
     '--disable-translate',
     '--metrics-recording-only',
     '--no-first-run',
+    '--no-default-browser-check',
     '--safebrowsing-disable-auto-update',
-    '--disable-features=TranslateUI,AutomationControlled',
+    '--disable-features=TranslateUI,AutomationControlled,SignInProfileCreation,ChromeLabs',
     '--mute-audio',
     '--window-size=1280,720',
   ];

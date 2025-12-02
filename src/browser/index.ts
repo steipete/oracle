@@ -31,6 +31,7 @@ import { formatElapsed } from '../oracle/format.js';
 import { CHATGPT_URL } from './constants.js';
 import type { LaunchedChrome } from 'chrome-launcher';
 import { BrowserAutomationError } from '../oracle/errors.js';
+import { syncChromeProfile } from './profileSync.js';
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from './types.js';
 export { CHATGPT_URL, DEFAULT_MODEL_TARGET } from './constants.js';
@@ -111,6 +112,29 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
 
+  const profileSyncEnabled = config.cookieSync !== false && !manualLogin;
+  if (profileSyncEnabled) {
+    try {
+      const result = await syncChromeProfile({
+        profile: config.chromeProfile ?? null,
+        explicitPath: config.chromeCookiePath ?? null,
+        targetDir: userDataDir,
+        logger,
+      });
+      logger(
+        `Synced Chrome profile ${result.profileName} -> ${userDataDir} (${result.method})`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BrowserAutomationError(
+        `Failed to sync Chrome profile: ${message}\n` +
+        'Rerun with --browser-fresh-profile for a fresh profile or --browser-manual-login to sign in once.',
+      );
+    }
+  } else if (!manualLogin) {
+    logger('Profile sync disabled; starting with a fresh automation profile.');
+  }
+
   const effectiveKeepBrowser = config.keepBrowser || manualLogin;
   const reusedChrome = manualLogin ? await maybeReuseRunningChrome(userDataDir, logger) : null;
   const chrome =
@@ -171,44 +195,25 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       domainEnablers.push(DOM.enable());
     }
     await Promise.all(domainEnablers);
-    if (!manualLogin) {
+    const inlineCookies = config.inlineCookies && config.inlineCookies.length > 0 ? config.inlineCookies : null;
+    if (!manualLogin && !profileSyncEnabled) {
       await Network.clearBrowserCookies();
     }
 
-    const cookieSyncEnabled = config.cookieSync && !manualLogin;
-    if (cookieSyncEnabled) {
-      if (!config.inlineCookies) {
-        logger(
-          'Heads-up: macOS may prompt for your Keychain password to read Chrome cookies; use --copy or --render for manual flow.',
-        );
-      } else {
-        logger('Applying inline cookies (skipping Chrome profile read and Keychain prompt)');
-      }
-      const cookieCount = await syncCookies(Network, config.url, config.chromeProfile, logger, {
+    if (inlineCookies) {
+      const cookieCount = await syncCookies(Network, config.url, null, logger, {
         allowErrors: config.allowCookieErrors ?? false,
-        filterNames: config.cookieNames ?? undefined,
-        inlineCookies: config.inlineCookies ?? undefined,
-        cookiePath: config.chromeCookiePath ?? undefined,
+        inlineCookies,
       });
       appliedCookies = cookieCount;
-      if (config.inlineCookies && cookieCount === 0) {
+      if (cookieCount === 0) {
         throw new Error('No inline cookies were applied; aborting before navigation.');
       }
-      logger(
-        cookieCount > 0
-          ? config.inlineCookies
-            ? `Applied ${cookieCount} inline cookies`
-            : `Copied ${cookieCount} cookies from Chrome profile ${config.chromeProfile ?? 'Default'}`
-          : config.inlineCookies
-            ? 'No inline cookies applied; continuing without session reuse'
-            : 'No Chrome cookies found; continuing without session reuse',
-      );
-    } else {
-      logger(
-        manualLogin
-          ? 'Skipping Chrome cookie sync (--browser-manual-login enabled); reuse the opened profile after signing in.'
-          : 'Skipping Chrome cookie sync (--browser-no-cookie-sync)',
-      );
+      logger(`Applied ${cookieCount} inline cookies${profileSyncEnabled ? ' on top of synced profile' : ''}`);
+    } else if (manualLogin) {
+      logger('Skipping cookie injection (--browser-manual-login); reuse the opened profile after signing in.');
+    } else if (!profileSyncEnabled) {
+      logger('No inline cookies provided; continuing with a fresh profile (--browser-fresh-profile set; login may be required).');
     }
 
     const baseUrl = CHATGPT_URL;
@@ -217,7 +222,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
     await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
     await raceWithDisconnect(
-      waitForLogin({ runtime: Runtime, logger, appliedCookies, manualLogin, timeoutMs: config.timeoutMs }),
+      waitForLogin({
+        runtime: Runtime,
+        logger,
+        appliedCookies,
+        manualLogin,
+        timeoutMs: config.timeoutMs,
+        profileSyncEnabled,
+      }),
     );
 
     if (config.url !== baseUrl) {
@@ -451,22 +463,24 @@ async function waitForLogin({
   appliedCookies,
   manualLogin,
   timeoutMs,
+  profileSyncEnabled,
 }: {
   runtime: ChromeClient['Runtime'];
   logger: BrowserLogger;
   appliedCookies: number;
   manualLogin: boolean;
   timeoutMs: number;
+  profileSyncEnabled: boolean;
 }): Promise<void> {
   if (!manualLogin) {
-    await ensureLoggedIn(runtime, logger, { appliedCookies });
+    await ensureLoggedIn(runtime, logger, { appliedCookies, profileSync: profileSyncEnabled });
     return;
   }
   const deadline = Date.now() + Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
   let lastNotice = 0;
   while (Date.now() < deadline) {
     try {
-      await ensureLoggedIn(runtime, logger, { appliedCookies });
+      await ensureLoggedIn(runtime, logger, { appliedCookies, profileSync: profileSyncEnabled });
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -59,7 +59,7 @@ Shared prereqs
      engine:"browser" \
      --config config/mcporter.json
    ```
-   Uses a built-in browserConfig (ChatGPT URL + cookie sync) and the provided model label for the picker (heads-up: if the ChatGPT UI renames the model label, this may need an update).
+   Uses a built-in browserConfig (ChatGPT URL + profile sync) and the provided model label for the picker (heads-up: if the ChatGPT UI renames the model label, this may need an update).
 
 ## Claude Code smoke (tmux + cli)
 
