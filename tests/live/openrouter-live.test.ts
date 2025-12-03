@@ -215,17 +215,10 @@ async function loadCatalog(): Promise<Set<string>> {
 
 (shouldRunMixed ? describe : describe.skip)('Mixed OpenRouter + GPT + Grok multi-model', () => {
   test(
-    'gpt-5.1 + grok-4.1 mixed run',
+    'gpt-5.1 + grok-4.1 (fast) mixed run',
     async () => {
-      const catalog = await loadCatalog();
-      const required = ['grok-4.1'];
-      const missing = required.filter((m) => !catalog.has(m));
-      if (missing.length > 0) {
-        console.warn(`Skipping mixed router test; missing: ${missing.join(', ')}`);
-        return;
-      }
       const prompt = 'Reply with exactly "mixed router ok"';
-      const models = ['gpt-5.1', 'grok-4.1'] as const;
+      const models = ['gpt-5.1', 'grok-4.1'] as const; // grok-4.1 maps to the fast reasoning variant
       await sessionStore.ensureStorage();
       const sessionMeta = await sessionStore.createSession(
         { prompt, model: models[0], models: models as unknown as string[], mode: 'api' },
@@ -238,10 +231,7 @@ async function loadCatalog(): Promise<Set<string>> {
         cwd: process.cwd(),
         version: 'openrouter-live-mixed',
       });
-      if (summary.rejected.length > 0) {
-        console.warn(`Skipping mixed router test; rejected: ${summary.rejected.map((r) => r.model).join(', ')}`);
-        return;
-      }
+      expect(summary.rejected.length).toBe(0);
       summary.fulfilled.forEach((entry) => {
         expect(entry.answerText.toLowerCase()).toContain('mixed router ok');
       });
