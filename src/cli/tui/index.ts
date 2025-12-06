@@ -96,6 +96,11 @@ export async function launchTui({ version, printIntro = true }: LaunchTuiOptions
         .catch((error) => {
           pagingFailures += 1;
           const message = error instanceof Error ? error.message : String(error);
+          if (message.includes('SIGINT') || message.includes('force closed the prompt')) {
+            console.log(chalk.green('🧿 Closing the book. See you next prompt.'));
+            resolve('__exit__');
+            return;
+          }
           console.error(
             chalk.red('Paging failed; returning to recent list.'),
             message,
@@ -216,6 +221,10 @@ async function showSessionDetail(sessionId: string): Promise<void> {
       ]));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('SIGINT') || message.includes('force closed the prompt')) {
+        console.log(chalk.green('🧿 Closing the book. See you next prompt.'));
+        return;
+      }
       console.error(chalk.red('Paging failed; returning to session list.'), message);
       return;
     }
