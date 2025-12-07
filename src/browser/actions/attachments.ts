@@ -105,12 +105,38 @@ export async function waitForAttachmentVisible(
   const deadline = Date.now() + Math.min(timeoutMs, 2_000);
   const expression = `(() => {
     const expected = ${JSON.stringify(expectedName)};
+    const normalized = expected.toLowerCase();
+    const matchText = (node) => (node?.textContent || '').toLowerCase().includes(normalized);
+
     const turns = Array.from(document.querySelectorAll('article[data-testid^="conversation-turn"]'));
     const userTurns = turns.filter((node) => node.querySelector('[data-message-author-role="user"]'));
     const lastUser = userTurns[userTurns.length - 1];
-    if (!lastUser) return { found: false, userTurns: userTurns.length };
-    const chips = Array.from(lastUser.querySelectorAll('a, div')).some((el) => (el.textContent || '').includes(expected));
-    return { found: chips, userTurns: userTurns.length };
+    let chips = false;
+    if (lastUser) {
+      chips = Array.from(lastUser.querySelectorAll('a, div, span')).some(matchText);
+    }
+
+    if (chips) {
+      return { found: true, userTurns: userTurns.length, source: 'turn' };
+    }
+
+    const composerSelectors = [
+      '[data-testid*="composer"]',
+      'form textarea',
+      'form [data-testid*="attachment"]',
+      '[data-testid*="upload"]',
+      '[data-testid*="chip"]',
+      'form',
+    ];
+    const composerMatch = composerSelectors.some((selector) =>
+      Array.from(document.querySelectorAll(selector)).some(matchText),
+    );
+    if (composerMatch) {
+      return { found: true, userTurns: userTurns.length, source: 'composer' };
+    }
+
+    const bodyMatch = (document.body?.innerText || '').toLowerCase().includes(normalized);
+    return { found: bodyMatch, userTurns: userTurns.length, source: bodyMatch ? 'body' : undefined };
   })()`;
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression, returnByValue: true });
