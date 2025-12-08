@@ -6,6 +6,7 @@ import {
   COPY_BUTTON_SELECTOR,
   FINISHED_ACTIONS_SELECTOR,
   STOP_BUTTON_SELECTOR,
+  SEND_BUTTON_SELECTOR,
 } from '../constants.js';
 import { delay } from '../utils.js';
 import { logDomFailure, logConversationSnapshot, buildConversationDebugExpression } from '../domDebug.js';
@@ -17,9 +18,10 @@ export async function waitForAssistantResponse(
   Runtime: ChromeClient['Runtime'],
   timeoutMs: number,
   logger: BrowserLogger,
+  options?: { agentMode?: boolean },
 ): Promise<{ text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } }> {
   logger('Waiting for ChatGPT response');
-  const expression = buildResponseObserverExpression(timeoutMs);
+  const expression = buildResponseObserverExpression(timeoutMs, options?.agentMode);
   const evaluationPromise = Runtime.evaluate({ expression, awaitPromise: true, returnByValue: true });
   const raceReadyEvaluation = evaluationPromise.then(
     (value) => ({ kind: 'evaluation' as const, value }),
@@ -27,7 +29,7 @@ export async function waitForAssistantResponse(
       throw { source: 'evaluation' as const, error };
     },
   );
-  const pollerPromise = pollAssistantCompletion(Runtime, timeoutMs).then(
+  const pollerPromise = pollAssistantCompletion(Runtime, timeoutMs, options?.agentMode).then(
     (value) => {
       if (!value) {
         throw { source: 'poll' as const, error: new Error(ASSISTANT_POLL_TIMEOUT_ERROR) };
@@ -213,11 +215,13 @@ async function terminateRuntimeExecution(Runtime: ChromeClient['Runtime']): Prom
 async function pollAssistantCompletion(
   Runtime: ChromeClient['Runtime'],
   timeoutMs: number,
+  agentMode?: boolean,
 ): Promise<{ text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } } | null> {
   const watchdogDeadline = Date.now() + timeoutMs;
   let previousLength = 0;
   let stableCycles = 0;
-  const requiredStableCycles = 6;
+  // Agent mode needs more stable cycles since agents pause between actions
+  const requiredStableCycles = agentMode ? 15 : 6;
   while (Date.now() < watchdogDeadline) {
     const snapshot = await readAssistantSnapshot(Runtime);
     const normalized = normalizeAssistantSnapshot(snapshot);
@@ -229,12 +233,27 @@ async function pollAssistantCompletion(
       } else {
         stableCycles += 1;
       }
-      const [stopVisible, completionVisible] = await Promise.all([
+      const [stopVisible, sendVisible, completionVisible] = await Promise.all([
         isStopButtonVisible(Runtime),
+        isSendButtonVisible(Runtime),
         isCompletionVisible(Runtime),
       ]);
-      if (completionVisible || (!stopVisible && stableCycles >= requiredStableCycles)) {
-        return normalized;
+
+      if (agentMode) {
+        // In agent mode: require send button visible (meaning agent is done)
+        // and stop button gone, with stable content
+        if (sendVisible && !stopVisible && stableCycles >= requiredStableCycles) {
+          return normalized;
+        }
+        // Also accept if completion actions are visible
+        if (completionVisible && !stopVisible && sendVisible) {
+          return normalized;
+        }
+      } else {
+        // Standard mode: return when stop button is gone and response is stable
+        if (completionVisible || (!stopVisible && stableCycles >= requiredStableCycles)) {
+          return normalized;
+        }
       }
     } else {
       previousLength = 0;
@@ -249,6 +268,18 @@ async function isStopButtonVisible(Runtime: ChromeClient['Runtime']): Promise<bo
   try {
     const { result } = await Runtime.evaluate({
       expression: `Boolean(document.querySelector('${STOP_BUTTON_SELECTOR}'))`,
+      returnByValue: true,
+    });
+    return Boolean(result?.value);
+  } catch {
+    return false;
+  }
+}
+
+async function isSendButtonVisible(Runtime: ChromeClient['Runtime']): Promise<boolean> {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: `Boolean(document.querySelector('${SEND_BUTTON_SELECTOR}'))`,
       returnByValue: true,
     });
     return Boolean(result?.value);
@@ -311,13 +342,15 @@ function buildAssistantSnapshotExpression(): string {
   })()`;
 }
 
-function buildResponseObserverExpression(timeoutMs: number): string {
+function buildResponseObserverExpression(timeoutMs: number, agentMode?: boolean): string {
   const selectorsLiteral = JSON.stringify(ANSWER_SELECTORS);
   return `(() => {
     ${buildClickDispatcher()}
     const SELECTORS = ${selectorsLiteral};
     const STOP_SELECTOR = '${STOP_BUTTON_SELECTOR}';
+    const SEND_SELECTOR = '${SEND_BUTTON_SELECTOR}';
     const FINISHED_SELECTOR = '${FINISHED_ACTIONS_SELECTOR}';
+    const AGENT_MODE = ${agentMode ? 'true' : 'false'};
     const settleDelayMs = 800;
     ${buildAssistantExtractor('extractFromTurns')}
 
@@ -364,25 +397,39 @@ function buildResponseObserverExpression(timeoutMs: number): string {
       });
 
     const waitForSettle = async (snapshot) => {
-      const settleWindowMs = 5000;
+      const settleWindowMs = AGENT_MODE ? 30000 : 5000;
       const settleIntervalMs = 400;
       const deadline = Date.now() + settleWindowMs;
       let latest = snapshot;
       let lastLength = snapshot?.text?.length ?? 0;
+      let stableCycles = 0;
+      const requiredStableCycles = AGENT_MODE ? 15 : 3;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, settleIntervalMs));
         const refreshed = extractFromTurns();
-        if (refreshed && (refreshed.text?.length ?? 0) >= lastLength) {
+        if (refreshed && (refreshed.text?.length ?? 0) > lastLength) {
           latest = refreshed;
           lastLength = refreshed.text?.length ?? lastLength;
+          stableCycles = 0;
+        } else {
+          stableCycles++;
         }
         const stopVisible = Boolean(document.querySelector(STOP_SELECTOR));
+        const sendVisible = Boolean(document.querySelector(SEND_SELECTOR));
         const finishedVisible =
           Boolean(document.querySelector(FINISHED_SELECTOR)) ||
           Array.from(document.querySelectorAll('.markdown')).some((n) => (n.textContent || '').trim() === 'Done');
 
-        if (!stopVisible || finishedVisible) {
-          break;
+        if (AGENT_MODE) {
+          // In agent mode: wait for send button to appear (agent is done)
+          if (sendVisible && !stopVisible && stableCycles >= requiredStableCycles) {
+            break;
+          }
+        } else {
+          // Standard mode
+          if (!stopVisible || finishedVisible) {
+            break;
+          }
         }
       }
       return latest ?? snapshot;

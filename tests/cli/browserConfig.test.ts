@@ -144,6 +144,27 @@ describe('buildBrowserConfig', () => {
       }),
     ).rejects.toThrow(/between 1 and 65535/i);
   });
+
+  test('passes agent flag as agentMode', async () => {
+    const config = await buildBrowserConfig({
+      model: 'gpt-5.1-pro',
+      agent: true,
+    });
+    expect(config.agentMode).toBe(true);
+  });
+
+  test('omits agentMode when agent flag is false or undefined', async () => {
+    const configFalse = await buildBrowserConfig({
+      model: 'gpt-5.1-pro',
+      agent: false,
+    });
+    expect(configFalse.agentMode).toBeUndefined();
+
+    const configUndefined = await buildBrowserConfig({
+      model: 'gpt-5.1-pro',
+    });
+    expect(configUndefined.agentMode).toBeUndefined();
+  });
 });
 
 describe('resolveBrowserModelLabel', () => {

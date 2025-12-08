@@ -121,6 +121,7 @@ interface CliOptions extends OptionValues {
   remoteChrome?: string;
   browserPort?: number;
   browserDebugPort?: number;
+  agent?: boolean;
   remoteHost?: string;
   remoteToken?: string;
   copyMarkdown?: boolean;
@@ -380,6 +381,7 @@ program
     new Option('--browser-inline-files', 'Paste files directly into the ChatGPT composer instead of uploading attachments.').default(false),
   )
   .addOption(new Option('--browser-bundle-files', 'Bundle all attachments into a single archive before uploading.').default(false))
+  .option('--agent', 'Enable ChatGPT Agent mode for agentic tasks (web browsing, code execution). Browser engine only.', false)
   .option(
     '--retain-hours <hours>',
     'Prune stored sessions older than this many hours before running (set 0 to disable).',
