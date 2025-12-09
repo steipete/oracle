@@ -134,7 +134,7 @@ export function toTransportError(error: unknown, model?: string): OracleTranspor
     ) {
       return new OracleTransportError(
         'model-unavailable',
-        'gpt-5.1-pro is not yet available on this API base. Use gpt-5-pro for now until OpenAI enables it. // TODO: Remove once gpt-5.1-pro is available',
+        'gpt-5.1-pro is not yet available on this API base. Using gpt-5-pro until OpenAI enables it. // TODO: Remove once gpt-5.1-pro is available',
         apiError,
       );
     }

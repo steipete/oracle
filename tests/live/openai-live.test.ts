@@ -41,7 +41,7 @@ if (!ENABLE_LIVE || !LIVE_API_KEY) {
     );
 
     test(
-      'gpt-5.0-pro background flow eventually completes',
+      'gpt-5-pro background flow eventually completes',
       async () => {
         const result = await runOracle(
           {

@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
 import type { ChromeClient, BrowserAttachment, BrowserLogger } from '../types.js';
 import { FILE_INPUT_SELECTORS, SEND_BUTTON_SELECTORS, UPLOAD_STATUS_SELECTORS } from '../constants.js';
 import { delay } from '../utils.js';
@@ -15,22 +14,40 @@ export async function uploadAttachmentFile(
     throw new Error('DOM domain unavailable while uploading attachments.');
   }
 
-  const acceptIsImageOnly = (accept: string | undefined | null): boolean => {
-    if (!accept) return false;
-    const parts = accept
-      .split(',')
-      .map((p) => p.trim().toLowerCase())
-      .filter(Boolean);
-    return parts.length > 0 && parts.every((p) => p.startsWith('image/'));
-  };
+  const isAttachmentPresent = async (name: string) => {
+    const check = await runtime.evaluate({
+      expression: `(() => {
+        const expected = ${JSON.stringify(name.toLowerCase())};
+        const selectors = [
+          '[data-testid*="attachment"]',
+          '[data-testid*="chip"]',
+          '[data-testid*="upload"]'
+        ];
+        const chips = selectors.some((selector) =>
+          Array.from(document.querySelectorAll(selector)).some((node) =>
+            (node?.textContent || '').toLowerCase().includes(expected),
+          ),
+        );
+        if (chips) return true;
+        const cardTexts = Array.from(document.querySelectorAll('[aria-label="Remove file"]')).map((btn) =>
+          btn?.parentElement?.parentElement?.innerText?.toLowerCase?.() ?? '',
+        );
+        if (cardTexts.some((text) => text.includes(expected))) return true;
 
-  const pickAccept = (attributes: string[]): string | undefined => {
-    for (let i = 0; i < attributes.length - 1; i += 2) {
-      if (attributes[i] === 'accept') {
-        return attributes[i + 1];
-      }
-    }
-    return undefined;
+        const filesPill = Array.from(document.querySelectorAll('button,div')).some((node) => {
+          const text = (node?.textContent || '').toLowerCase();
+          return /\bfiles\b/.test(text) && text.includes('file');
+        });
+        if (filesPill) return true;
+
+        const inputs = Array.from(document.querySelectorAll('input[type="file"]')).some((el) =>
+          Array.from(el.files || []).some((f) => f?.name?.toLowerCase?.().includes(expected)),
+        );
+        return inputs;
+      })()`,
+      returnByValue: true,
+    });
+    return Boolean(check?.result?.value);
   };
 
   // New ChatGPT UI hides the real file input behind a composer "+" menu; click it pre-emptively.
@@ -58,108 +75,70 @@ export async function uploadAttachmentFile(
     }),
   ).catch(() => undefined);
 
-  // Give the menu a brief moment to mount its inputs/options.
-  await delay(200);
+  await delay(250);
 
-  const documentNode = await dom.getDocument();
-  const selectors = FILE_INPUT_SELECTORS;
-  const candidateNodeIds: number[] = [];
-  const waitForInputs = async (attempts: number) => {
-    for (let i = 0; i < attempts; i++) {
-      await findInput(false);
-      if (candidateNodeIds.length > 0) return;
-      await delay(150);
-    }
-  };
-
-  const findInput = async (allowImageOnly: boolean) => {
-    for (const selector of selectors) {
-      const result = await dom.querySelector({ nodeId: documentNode.root.nodeId, selector });
-      if (!result.nodeId) continue;
-      let accept: string | undefined;
-      try {
-        const attrs = await dom.getAttributes({ nodeId: result.nodeId });
-        const list = Array.isArray(attrs) ? attrs : attrs?.attributes ?? [];
-        accept = pickAccept(list);
-      } catch {
-        accept = undefined;
-      }
-      if (!allowImageOnly && acceptIsImageOnly(accept)) {
-        continue; // skip image-only pickers; they reject text attachments
-      }
-      if (!candidateNodeIds.includes(result.nodeId)) {
-        candidateNodeIds.push(result.nodeId);
-      }
-    }
-  };
-
-  await waitForInputs(6);
-
-  if (candidateNodeIds.length === 0) {
-    // The generic attachment input often mounts only after clicking the menu item; try to force it.
-    await Promise.resolve(
-      runtime.evaluate({
-        expression: `(() => {
-          const menuItems = Array.from(document.querySelectorAll('[data-testid*="upload"],[data-testid*="attachment"], [role="menuitem"], [data-radix-collection-item]'));
-          for (const el of menuItems) {
-            const text = (el.textContent || '').toLowerCase();
-            const tid = el.getAttribute?.('data-testid')?.toLowerCase?.() || '';
-            if (tid.includes('upload') || tid.includes('attachment') || text.includes('upload') || text.includes('file')) {
-              if (el instanceof HTMLElement) {
-                el.click();
-                return true;
-              }
-            }
+  // Helper to click the upload menu item (if present) to reveal the real attachment input.
+  await Promise.resolve(
+    runtime.evaluate({
+      expression: `(() => {
+        const menuItems = Array.from(document.querySelectorAll('[data-testid*="upload"],[data-testid*="attachment"], [role="menuitem"], [data-radix-collection-item]'));
+        for (const el of menuItems) {
+          const text = (el.textContent || '').toLowerCase();
+          const tid = el.getAttribute?.('data-testid')?.toLowerCase?.() || '';
+          if (tid.includes('upload') || tid.includes('attachment') || text.includes('upload') || text.includes('file')) {
+            if (el instanceof HTMLElement) { el.click(); return true; }
           }
-          return false;
-        })()`,
-        returnByValue: true,
-      }),
-    ).catch(() => undefined);
+        }
+        return false;
+      })()`,
+      returnByValue: true,
+    }),
+  ).catch(() => undefined);
 
-    await delay(250);
-    await waitForInputs(6);
-  }
+  const expectedName = path.basename(attachment.path);
 
-  // Final fallback: accept image-only inputs if that's all we have.
-  if (candidateNodeIds.length === 0) {
-    await findInput(true);
-  }
-
-  if (candidateNodeIds.length === 0) {
-    await logDomFailure(runtime, logger, 'file-input');
-    throw new Error('Unable to locate ChatGPT file attachment input.');
-  }
-
-  logger(`Attachment inputs found: ${candidateNodeIds.length}`);
-  for (const nodeId of candidateNodeIds) {
-    logger(` - input node ${nodeId}`);
-  }
-
-  // Skip re-uploads if the file is already attached.
-  const alreadyAttached = await runtime.evaluate({
-    expression: `(() => {
-      const expected = ${JSON.stringify(path.basename(attachment.path).toLowerCase())};
-      const inputs = Array.from(document.querySelectorAll('input[type="file"]')).some((el) =>
-        Array.from(el.files || []).some((f) => f?.name?.toLowerCase?.() === expected),
-      );
-      const chips = Array.from(document.querySelectorAll('[data-testid*="chip"],[data-testid*="attachment"],a,div,span')).some((n) =>
-        (n?.textContent || '').toLowerCase().includes(expected),
-      );
-      return inputs || chips;
-    })()`,
-    returnByValue: true,
-  });
-  if (alreadyAttached?.result?.value === true) {
+  if (await isAttachmentPresent(expectedName)) {
     logger(`Attachment already present: ${path.basename(attachment.path)}`);
     return;
   }
 
-  for (const nodeId of candidateNodeIds) {
-    await dom.setFileInputFiles({ nodeId, files: [attachment.path] });
+  // Find a real input; prefer non-image accept fields and tag it for DOM.setFileInputFiles.
+  const markResult = await runtime.evaluate({
+    expression: `(() => {
+      const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+      const acceptIsImageOnly = (accept) => {
+        if (!accept) return false;
+        const parts = String(accept)
+          .split(',')
+          .map((p) => p.trim().toLowerCase())
+          .filter(Boolean);
+        return parts.length > 0 && parts.every((p) => p.startsWith('image/'));
+      };
+      const nonImage = inputs.filter((el) => !acceptIsImageOnly(el.getAttribute('accept')));
+      const target = (nonImage.length ? nonImage[nonImage.length - 1] : inputs[inputs.length - 1]) ?? null;
+      if (target) {
+        target.setAttribute('data-oracle-upload-target', 'true');
+        return true;
+      }
+      return false;
+    })()`,
+    returnByValue: true,
+  });
+  const marked = Boolean(markResult?.result?.value);
+  if (!marked) {
+    await logDomFailure(runtime, logger, 'file-input-missing');
+    throw new Error('Unable to locate ChatGPT file attachment input.');
   }
-  // Some ChatGPT composers expect an explicit change/input event after programmatic file selection.
-  const dispatchEvents = selectors
+
+  const documentNode = await dom.getDocument();
+  const resultNode = await dom.querySelector({ nodeId: documentNode.root.nodeId, selector: 'input[type="file"][data-oracle-upload-target="true"]' });
+  if (!resultNode?.nodeId) {
+    await logDomFailure(runtime, logger, 'file-input-missing');
+    throw new Error('Unable to locate ChatGPT file attachment input.');
+  }
+  const resolvedNodeId = resultNode.nodeId;
+
+  const dispatchEvents = FILE_INPUT_SELECTORS
     .map((selector) => `
       (() => {
         const el = document.querySelector(${JSON.stringify(selector)});
@@ -169,92 +148,23 @@ export async function uploadAttachmentFile(
         }
       })();
     `)
-    .join('\n');
-  await runtime.evaluate({ expression: `(function(){${dispatchEvents} return true;})()`, returnByValue: true });
-  const expectedName = path.basename(attachment.path);
-  const ready = await waitForAttachmentSelection(runtime, expectedName, 10_000);
-  if (!ready) {
-    logger('Attachment not detected after primary upload; trying injection fallback.');
-    // Fallback: inject via DataTransfer/File for UIs that ignore setFileInputFiles on hidden inputs.
-    const fileBuffer = await readFile(attachment.path);
-    const base64 = fileBuffer.toString('base64');
-    const injectResult = await runtime.evaluate({
-      expression: `(() => {
-        const selectors = ${JSON.stringify(selectors)};
-        const binary = atob(${JSON.stringify(base64)});
-        const len = binary.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
-        const file = new File([bytes], ${JSON.stringify(expectedName)}, { type: 'application/octet-stream' });
-        let attached = false;
+    .join('\\n');
 
-        // If no suitable input exists, add a hidden one to the form/body so we can set files reliably.
-        if (selectors.length > 0 && !document.querySelector(selectors.join(','))) {
-          const host = document.querySelector('form') || document.body;
-          if (host) {
-            const proxy = document.createElement('input');
-            proxy.type = 'file';
-            proxy.id = 'oracle-upload-proxy';
-            proxy.style.position = 'fixed';
-            proxy.style.left = '-9999px';
-            host.appendChild(proxy);
-          }
-        }
+  const tryFileInput = async () => {
+    await dom.setFileInputFiles({ nodeId: resolvedNodeId, files: [attachment.path] });
+    await runtime.evaluate({ expression: `(function(){${dispatchEvents} return true;})()`, returnByValue: true });
+  };
 
-        for (const selector of selectors) {
-          const el = document.querySelector(selector);
-          if (el instanceof HTMLInputElement) {
-            const dt = new DataTransfer();
-            dt.items.add(file);
-            el.files = dt.files;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            if (el.files?.length) {
-              attached = true;
-              break;
-            }
-          }
-        }
+  await tryFileInput();
 
-        if (!attached) {
-          const dropTargets = [
-            '[data-testid*="composer"]',
-            '.ProseMirror',
-            'form',
-            'textarea',
-            'main',
-            'body'
-          ];
-          const dt = new DataTransfer();
-          dt.items.add(file);
-          const events = ['dragenter', 'dragover', 'drop'];
-          for (const selector of dropTargets) {
-            const node = document.querySelector(selector);
-            if (!(node instanceof HTMLElement)) continue;
-            for (const type of events) {
-              const evt = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
-              node.dispatchEvent(evt);
-            }
-            // If drop listeners stopped propagation, assume it worked.
-            if (dt.files?.length || node.querySelector('[data-testid*="chip"],[data-testid*="attachment"]')) {
-              attached = true;
-              break;
-            }
-          }
-        }
-
-        return attached;
-      })()`,
-      returnByValue: true,
-    });
-    const injected = Boolean(injectResult?.result?.value);
-    if (!injected) {
-      await logDomFailure(runtime, logger, 'file-upload');
-      throw new Error('Attachment did not register with the ChatGPT composer in time.');
-    }
+  if (await waitForAttachmentAnchored(runtime, expectedName, 20_000)) {
+    await waitForAttachmentVisible(runtime, expectedName, 20_000, logger);
+    logger('Attachment queued (file input)');
+    return;
   }
-  await waitForAttachmentVisible(runtime, expectedName, 10_000, logger);
-  logger('Attachment queued');
+
+  await logDomFailure(runtime, logger, 'file-upload-missing');
+  throw new Error('Attachment did not register with the ChatGPT composer in time.');
 }
 
 export async function waitForAttachmentCompletion(
@@ -290,25 +200,28 @@ export async function waitForAttachmentCompletion(
         return text.includes('upload') || text.includes('processing') || text.includes('uploading');
       });
     });
-    const fileSelectors = ${JSON.stringify(FILE_INPUT_SELECTORS)};
+    const attachmentSelectors = ['[data-testid*="chip"]', '[data-testid*="attachment"]', '[data-testid*="upload"]'];
     const attachedNames = [];
-    for (const selector of fileSelectors) {
-      for (const node of Array.from(document.querySelectorAll(selector))) {
-        const el = node instanceof HTMLInputElement ? node : null;
-        if (el?.files?.length) {
-          for (const file of Array.from(el.files)) {
-            if (file?.name) attachedNames.push(file.name.toLowerCase());
-          }
-        }
-      }
-    }
-    const chipSelectors = ['[data-testid*="chip"]', '[data-testid*="attachment"]', '[data-testid*="upload"]'];
-    for (const selector of chipSelectors) {
+    for (const selector of attachmentSelectors) {
       for (const node of Array.from(document.querySelectorAll(selector))) {
         const text = node?.textContent?.toLowerCase?.();
         if (text) attachedNames.push(text);
       }
     }
+    for (const input of Array.from(document.querySelectorAll('input[type="file"]'))) {
+      if (!(input instanceof HTMLInputElement) || !input.files?.length) continue;
+      for (const file of Array.from(input.files)) {
+        if (file?.name) attachedNames.push(file.name.toLowerCase());
+      }
+    }
+    const cardTexts = Array.from(document.querySelectorAll('[aria-label="Remove file"]')).map((btn) =>
+      btn?.parentElement?.parentElement?.innerText?.toLowerCase?.() ?? '',
+    );
+    attachedNames.push(...cardTexts.filter(Boolean));
+    const filesPills = Array.from(document.querySelectorAll('button,div'))
+      .map((node) => (node?.textContent || '').toLowerCase())
+      .filter((text) => /\bfiles\b/.test(text));
+    attachedNames.push(...filesPills);
     const filesAttached = attachedNames.length > 0;
     return { state: button ? (disabled ? 'disabled' : 'ready') : 'missing', uploading, filesAttached, attachedNames };
   })()`;
@@ -377,8 +290,7 @@ export async function waitForAttachmentVisible(
       '[data-testid*="chip"]',
       'form',
       'button',
-      'label',
-      'input[type="file"]',
+      'label'
     ];
     const composerMatch = composerSelectors.some((selector) =>
       Array.from(document.querySelectorAll(selector)).some(matchNode),
@@ -387,22 +299,42 @@ export async function waitForAttachmentVisible(
       return { found: true, userTurns: userTurns.length, source: 'composer' };
     }
 
+    const attachmentSelectors = ['[data-testid*="attachment"]','[data-testid*="chip"]','[data-testid*="upload"]'];
+    const attachmentMatch = attachmentSelectors.some((selector) =>
+      Array.from(document.querySelectorAll(selector)).some(matchNode),
+    );
+    if (attachmentMatch) {
+      return { found: true, userTurns: userTurns.length, source: 'attachments' };
+    }
+
+    const cardTexts = Array.from(document.querySelectorAll('[aria-label="Remove file"]')).map((btn) =>
+      btn?.parentElement?.parentElement?.innerText?.toLowerCase?.() ?? '',
+    );
+    if (cardTexts.some((text) => text.includes(normalized))) {
+      return { found: true, userTurns: userTurns.length, source: 'attachment-cards' };
+    }
+
+    const filesPills = Array.from(document.querySelectorAll('button,div')).map((node) =>
+      (node?.textContent || '').toLowerCase(),
+    );
+    if (filesPills.some((text) => /\bfiles\b/.test(text))) {
+      return { found: true, userTurns: userTurns.length, source: 'files-pill' };
+    }
+
     const attrMatch = Array.from(document.querySelectorAll('[aria-label], [title], [data-testid]')).some(matchNode);
     if (attrMatch) {
       return { found: true, userTurns: userTurns.length, source: 'attrs' };
     }
 
-    const fileInputs = Array.from(document.querySelectorAll('input[type="file"]')).some((node) => {
-      const el = node instanceof HTMLInputElement ? node : null;
-      if (!el?.files?.length) return false;
-      return Array.from(el.files).some((file) => file?.name?.toLowerCase?.().includes(normalized));
-    });
-    if (fileInputs) {
-      return { found: true, userTurns: userTurns.length, source: 'input' };
+    const bodyMatch = (document.body?.innerText || '').toLowerCase().includes(normalized);
+    if (bodyMatch) {
+      return { found: true, userTurns: userTurns.length, source: 'body' };
     }
 
-    const bodyMatch = (document.body?.innerText || '').toLowerCase().includes(normalized);
-    return { found: bodyMatch, userTurns: userTurns.length, source: bodyMatch ? 'body' : undefined };
+    const inputHit = Array.from(document.querySelectorAll('input[type="file"]')).some((el) =>
+      Array.from(el.files || []).some((file) => file?.name?.toLowerCase?.().includes(normalized)),
+    );
+    return { found: inputHit, userTurns: userTurns.length, source: inputHit ? 'input' : undefined };
   })()`;
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression, returnByValue: true });
@@ -417,35 +349,53 @@ export async function waitForAttachmentVisible(
   throw new Error('Attachment did not appear in ChatGPT composer.');
 }
 
-async function waitForAttachmentSelection(
+async function waitForAttachmentAnchored(
   Runtime: ChromeClient['Runtime'],
   expectedName: string,
   timeoutMs: number,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   const expression = `(() => {
-    const selectors = ${JSON.stringify(FILE_INPUT_SELECTORS)};
+    const normalized = ${JSON.stringify(expectedName.toLowerCase())};
+    const selectors = ['[data-testid*="attachment"]','[data-testid*="chip"]','[data-testid*="upload"]'];
     for (const selector of selectors) {
-      const inputs = Array.from(document.querySelectorAll(selector));
-      for (const input of inputs) {
-        if (!(input instanceof HTMLInputElement) || !input.files) {
-          continue;
-        }
-        const names = Array.from(input.files ?? []).map((file) => file?.name ?? '');
-        if (names.some((name) => name === ${JSON.stringify(expectedName)})) {
-          return { matched: true, names };
+      for (const node of Array.from(document.querySelectorAll(selector))) {
+        const text = (node?.textContent || '').toLowerCase();
+        if (text.includes(normalized)) {
+          return { found: true, text };
         }
       }
     }
-    return { matched: false, names: [] };
+    const cards = Array.from(document.querySelectorAll('[aria-label="Remove file"]')).map((btn) =>
+      btn?.parentElement?.parentElement?.innerText?.toLowerCase?.() ?? '',
+    );
+    if (cards.some((text) => text.includes(normalized))) {
+      return { found: true, text: cards.find((t) => t.includes(normalized)) };
+    }
+
+    const filesPills = Array.from(document.querySelectorAll('button,div')).map((node) =>
+      (node?.textContent || '').toLowerCase(),
+    );
+    if (filesPills.some((text) => /\bfiles\b/.test(text))) {
+      return { found: true, text: filesPills.find((t) => /\bfiles\b/.test(t)) };
+    }
+
+    // As a last resort, treat file inputs that hold the target name as anchored. Some UIs delay chip rendering.
+    const inputHit = Array.from(document.querySelectorAll('input[type="file"]')).some((el) =>
+      Array.from(el.files || []).some((file) => file?.name?.toLowerCase?.().includes(normalized)),
+    );
+    if (inputHit) {
+      return { found: true, text: 'input-only' };
+    }
+    return { found: false };
   })()`;
+
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression, returnByValue: true });
-    const matched = Boolean(result?.value?.matched);
-    if (matched) {
+    if (result?.value?.found) {
       return true;
     }
-    await delay(150);
+    await delay(200);
   }
   return false;
 }

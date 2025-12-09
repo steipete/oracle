@@ -1,6 +1,6 @@
 {
   "name": "@steipete/oracle",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "CLI wrapper around OpenAI Responses API with GPT-5.1 Pro, GPT-5.1, and GPT-5.1 Codex high reasoning modes.",
   "type": "module",
   "main": "dist/bin/oracle-cli.js",

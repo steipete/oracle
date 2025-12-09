@@ -1,18 +1,19 @@
 # Changelog
 
-## 0.5.4 — Unreleased
+## 0.5.4 — 2025-12-08
 
 ### Added
 - Browser mode: `--agent` flag enables ChatGPT Agent mode for agentic tasks (web browsing, code execution). Response capture waits for the send button to reappear, ensuring full agent output is captured after all actions complete.
 
 ### Changed
 - Docs: README now explicitly warns against `pnpx @steipete/oracle` (pnpx cache breaks sqlite bindings); use `npx -y @steipete/oracle` instead. Thanks Xuanwo for flagging this.
+- Browser uploads: stick to the single reliable file-input path (no drag/drop fallbacks), wait for the composer to render the new “N files” pill/remove-card UI before sending, and prefer non-image inputs. Thanks Peter for the repros and screenshots that caught the regressions.
 
 ### Fixed
+- API fallback: gpt-5.1-pro API runs now automatically downgrade to gpt-5.0-pro with a one-line notice (5.1 Pro is not yet available via API).
 - Browser uploads: detect ChatGPT’s composer attachment chip (not echoed in the last user turn) to avoid false “Attachment did not appear” failures. Thanks Mariano Belinky (@mbelinky) for the fix.
 - Browser interruption: if the user/agent sends SIGINT/SIGTERM/SIGQUIT while the assistant response is still pending, Oracle leaves Chrome running, writes runtime hints, and logs how to reattach with `oracle session <slug>` instead of killing the browser mid-run.
-- API runs: requests for `gpt-5.1-pro` automatically downgrade to `gpt-5-pro` with a one-line notice because 5.1 Pro isn’t available via API yet.
-- Browser uploads (ChatGPT UI 2025-12): wait for DOM ready, avoid duplicate uploads, and block Send until the attachment chip/file name is visible so files aren’t sent empty or multiple times.
+- Browser uploads (ChatGPT UI 2025-12): wait for DOM ready, avoid duplicate uploads, and block Send until the attachment chip/file name (or “N files” pill) is visible so files aren’t sent empty or multiple times.
 - Browser i18n: stop-button detection now uses data-testid instead of English `aria-label`; send/input/+ selectors favor data-testid/structural cues to work across localized UIs.
 
 ## 0.5.3 — 2025-12-06
