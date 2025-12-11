@@ -53,6 +53,7 @@ export interface BrowserAutomationConfig {
   keepBrowser?: boolean;
   hideWindow?: boolean;
   desiredModel?: string | null;
+  agentMode?: boolean;
   debug?: boolean;
   allowCookieErrors?: boolean;
   remoteChrome?: { host: string; port: number } | null;
@@ -88,12 +89,13 @@ export interface BrowserRunResult {
 }
 
 export type ResolvedBrowserConfig = Required<
-  Omit<BrowserAutomationConfig, 'chromeProfile' | 'chromePath' | 'chromeCookiePath' | 'desiredModel' | 'remoteChrome'>
+  Omit<BrowserAutomationConfig, 'chromeProfile' | 'chromePath' | 'chromeCookiePath' | 'desiredModel' | 'remoteChrome' | 'agentMode'>
 > & {
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
   desiredModel?: string | null;
+  agentMode?: boolean;
   debugPort?: number | null;
   inlineCookiesSource?: string | null;
   remoteChrome?: { host: string; port: number } | null;

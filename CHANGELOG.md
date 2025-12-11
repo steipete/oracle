@@ -11,6 +11,9 @@
 
 ## 0.5.4 — 2025-12-08
 
+### Added
+- Browser mode: `--agent` flag enables ChatGPT Agent mode for agentic tasks (web browsing, code execution). Response capture waits for the send button to reappear, ensuring full agent output is captured after all actions complete.
+
 ### Changed
 - Docs: README now explicitly warns against `pnpx @steipete/oracle` (pnpx cache breaks sqlite bindings); use `npx -y @steipete/oracle` instead. Thanks Xuanwo for flagging this.
 - Browser uploads: stick to the single reliable file-input path (no drag/drop fallbacks), wait for the composer to render the new “N files” pill/remove-card UI before sending, and prefer non-image inputs. Thanks Peter for the repros and screenshots that caught the regressions.

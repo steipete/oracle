@@ -9,3 +9,4 @@ export {
   buildAssistantExtractorForTest,
   buildConversationDebugExpressionForTest,
 } from './actions/assistantResponse.js';
+export { enableAgentMode } from './actions/agentMode.js';

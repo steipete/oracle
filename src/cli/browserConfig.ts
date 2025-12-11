@@ -38,6 +38,7 @@ export interface BrowserFlagOptions {
   remoteChrome?: string;
   browserPort?: number;
   browserDebugPort?: number;
+  agent?: boolean;
   model: ModelName;
   verbose?: boolean;
 }
@@ -82,6 +83,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     manualLogin: options.browserManualLogin ? true : undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel: shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model),
+    agentMode: options.agent ? true : undefined,
     debug: options.verbose ? true : undefined,
     // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
     allowCookieErrors: options.browserAllowCookieErrors ?? true,

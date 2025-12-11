@@ -27,6 +27,7 @@ export interface BrowserSessionConfig {
   keepBrowser?: boolean;
   hideWindow?: boolean;
   desiredModel?: string | null;
+  agentMode?: boolean;
   debug?: boolean;
   allowCookieErrors?: boolean;
   remoteChrome?: { host: string; port: number } | null;

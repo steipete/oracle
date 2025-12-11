@@ -25,6 +25,7 @@ import {
   uploadAttachmentFile,
   waitForAttachmentCompletion,
   readAssistantSnapshot,
+  enableAgentMode,
 } from './pageActions.js';
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
 import { estimateTokenCount, withRetries, delay } from './utils.js';
@@ -313,6 +314,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
+    // Enable agent mode if requested
+    if (config.agentMode) {
+      const agentResult = await raceWithDisconnect(enableAgentMode(Runtime, logger));
+      if (agentResult.status !== 'enabled' && agentResult.status !== 'already-enabled') {
+        throw new Error(`Failed to enable agent mode: ${agentResult.status}`);
+      }
+    }
     const attachmentNames = attachments.map((a) => path.basename(a.path));
     if (attachments.length > 0) {
       if (!DOM) {
@@ -328,7 +336,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     await raceWithDisconnect(submitPrompt({ runtime: Runtime, input: Input, attachmentNames }, promptText, logger));
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
-    const answer = await raceWithDisconnect(waitForAssistantResponse(Runtime, config.timeoutMs, logger));
+    const answer = await raceWithDisconnect(waitForAssistantResponse(Runtime, config.timeoutMs, logger, { agentMode: config.agentMode }));
     answerText = answer.text;
     answerHtml = answer.html ?? '';
     const copiedMarkdown = await raceWithDisconnect(
@@ -733,6 +741,13 @@ async function runRemoteBrowserMode(
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
+    // Enable agent mode if requested
+    if (config.agentMode) {
+      const agentResult = await enableAgentMode(Runtime, logger);
+      if (agentResult.status !== 'enabled' && agentResult.status !== 'already-enabled') {
+        throw new Error(`Failed to enable agent mode: ${agentResult.status}`);
+      }
+    }
 
     const attachmentNames = attachments.map((a) => path.basename(a.path));
     if (attachments.length > 0) {
@@ -750,7 +765,7 @@ async function runRemoteBrowserMode(
     }
     await submitPrompt({ runtime: Runtime, input: Input, attachmentNames }, promptText, logger);
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
-    const answer = await waitForAssistantResponse(Runtime, config.timeoutMs, logger);
+    const answer = await waitForAssistantResponse(Runtime, config.timeoutMs, logger, { agentMode: config.agentMode });
     answerText = answer.text;
     answerHtml = answer.html ?? '';
 
