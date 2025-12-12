@@ -117,6 +117,7 @@ interface CliOptions extends OptionValues {
   browserManualLogin?: boolean;
   browserExtendedThinking?: boolean;
   browserAllowCookieErrors?: boolean;
+  noFallbackHint?: boolean;
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
   remoteChrome?: string;
@@ -367,6 +368,7 @@ program
   .addOption(new Option('--browser-hide-window', 'Hide the Chrome window after launch (macOS headful only).').hideHelp())
   .addOption(new Option('--browser-keep-browser', 'Keep Chrome running after completion.').hideHelp())
   .addOption(new Option('--browser-extended-thinking', 'Select Extended thinking time for GPT-5.2 Thinking model.').hideHelp())
+  .addOption(new Option('--no-fallback-hint', 'Suppress the API fallback suggestion when browser mode fails.').hideHelp())
   .addOption(
     new Option('--browser-allow-cookie-errors', 'Continue even if Chrome cookies cannot be copied.').hideHelp(),
   )
@@ -1060,6 +1062,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       userConfig,
       true,
       browserDeps,
+      options.noFallbackHint,
     );
     return;
   }
@@ -1079,6 +1082,7 @@ async function runInteractiveSession(
   userConfig?: UserConfig,
   suppressSummary = false,
   browserDeps?: BrowserSessionRunnerDeps,
+  noFallbackHint = false,
 ): Promise<void> {
   const { logLine, writeChunk, stream } = sessionStore.createLogWriter(sessionMeta.id);
   let headerAugmented = false;
@@ -1114,6 +1118,7 @@ async function runInteractiveSession(
       notifications:
         notifications ?? deriveNotificationSettingsFromMetadata(sessionMeta, process.env, userConfig?.notify),
       browserDeps,
+      noFallbackHint,
     });
     const latest = await sessionStore.readSession(sessionMeta.id);
     if (!suppressSummary) {

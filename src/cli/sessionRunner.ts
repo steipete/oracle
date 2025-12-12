@@ -55,6 +55,7 @@ export interface SessionRunParams {
   notifications?: NotificationSettings;
   browserDeps?: BrowserSessionRunnerDeps;
   muteStdout?: boolean;
+  noFallbackHint?: boolean;
 }
 
 export async function performSessionRun({
@@ -69,6 +70,7 @@ export async function performSessionRun({
   notifications,
   browserDeps,
   muteStdout = false,
+  noFallbackHint = false,
 }: SessionRunParams): Promise<void> {
   const writeInline = (chunk: string): boolean => {
     // Keep session logs intact while still echoing inline output to the user.
@@ -445,7 +447,7 @@ export async function performSessionRun({
           }
         : undefined,
     });
-    if (mode === 'browser') {
+    if (mode === 'browser' && !noFallbackHint) {
       log(dim('Next steps (browser fallback):')); // guides users when automation breaks
       log(dim('- Rerun with --engine api to bypass Chrome entirely.'));
       log(
