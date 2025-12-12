@@ -32,6 +32,7 @@ export interface BrowserSessionConfig {
   remoteChrome?: { host: string; port: number } | null;
   manualLogin?: boolean;
   manualLoginProfileDir?: string | null;
+  extendedThinking?: boolean;
 }
 
 export interface BrowserRuntimeMetadata {

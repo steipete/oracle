@@ -27,6 +27,7 @@ import {
   readAssistantSnapshot,
 } from './pageActions.js';
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
+import { ensureExtendedThinking } from './actions/thinkingTime.js';
 import { estimateTokenCount, withRetries, delay } from './utils.js';
 import { formatElapsed } from '../oracle/format.js';
 import { CHATGPT_URL } from './constants.js';
@@ -312,6 +313,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       });
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
+    }
+    if (config.extendedThinking) {
+      await raceWithDisconnect(
+        withRetries(() => ensureExtendedThinking(Runtime, logger), {
+          retries: 2,
+          delayMs: 300,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(`[retry] Extended thinking attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`);
+            }
+          },
+        }),
+      );
     }
     const attachmentNames = attachments.map((a) => path.basename(a.path));
     if (attachments.length > 0) {
@@ -732,6 +746,17 @@ async function runRemoteBrowserMode(
       );
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
+    }
+    if (config.extendedThinking) {
+      await withRetries(() => ensureExtendedThinking(Runtime, logger), {
+        retries: 2,
+        delayMs: 300,
+        onRetry: (attempt, error) => {
+          if (options.verbose) {
+            logger(`[retry] Extended thinking attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`);
+          }
+        },
+      });
     }
 
     const attachmentNames = attachments.map((a) => path.basename(a.path));

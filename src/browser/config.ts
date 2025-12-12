@@ -26,6 +26,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   remoteChrome: null,
   manualLogin: false,
   manualLoginProfileDir: null,
+  extendedThinking: false,
 };
 
 export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined): ResolvedBrowserConfig {

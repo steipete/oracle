@@ -115,6 +115,7 @@ interface CliOptions extends OptionValues {
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
+  browserExtendedThinking?: boolean;
   browserAllowCookieErrors?: boolean;
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
@@ -235,7 +236,7 @@ program
   .option('-s, --slug <words>', 'Custom session slug (3-5 words).')
   .option(
     '-m, --model <model>',
-    'Model to target (gpt-5.1-pro default; also gpt-5-pro, gpt-5.1, gpt-5.1-codex API-only, gemini-3-pro, claude-4.5-sonnet, claude-4.1-opus, or ChatGPT labels like "5.1 Instant" for browser runs).',
+    'Model to target (gpt-5.1-pro default; also gpt-5-pro, gpt-5.1, gpt-5.1-codex API-only, gpt-5.2, gpt-5.2-instant, gpt-5.2-pro, gemini-3-pro, claude-4.5-sonnet, claude-4.1-opus, or ChatGPT labels like "5.2 Thinking" for browser runs).',
     normalizeModelOption,
   )
   .addOption(
@@ -365,6 +366,7 @@ program
   .addOption(new Option('--browser-headless', 'Launch Chrome in headless mode.').hideHelp())
   .addOption(new Option('--browser-hide-window', 'Hide the Chrome window after launch (macOS headful only).').hideHelp())
   .addOption(new Option('--browser-keep-browser', 'Keep Chrome running after completion.').hideHelp())
+  .addOption(new Option('--browser-extended-thinking', 'Select Extended thinking time for GPT-5.2 Thinking model.').hideHelp())
   .addOption(
     new Option('--browser-allow-cookie-errors', 'Continue even if Chrome cookies cannot be copied.').hideHelp(),
   )

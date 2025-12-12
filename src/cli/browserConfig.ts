@@ -14,6 +14,9 @@ const BROWSER_MODEL_LABELS: Partial<Record<ModelName, string>> = {
   'gpt-5-pro': 'GPT-5 Pro',
   'gpt-5.1-pro': 'GPT-5.1 Pro',
   'gpt-5.1': 'GPT-5.1',
+  'gpt-5.2': 'GPT-5.2 Thinking',
+  'gpt-5.2-instant': 'GPT-5.2 Instant',
+  'gpt-5.2-pro': 'GPT-5.2 Pro',
   'gemini-3-pro': 'Gemini 3 Pro',
 };
 
@@ -33,6 +36,7 @@ export interface BrowserFlagOptions {
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
+  browserExtendedThinking?: boolean;
   browserModelLabel?: string;
   browserAllowCookieErrors?: boolean;
   remoteChrome?: string;
@@ -86,6 +90,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
+    extendedThinking: options.browserExtendedThinking ? true : undefined,
   };
 }
 
