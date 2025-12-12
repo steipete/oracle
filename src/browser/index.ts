@@ -19,6 +19,7 @@ import {
   ensureLoggedIn,
   ensurePromptReady,
   ensureModelSelection,
+  ensureExtendedThinkingIfAvailable,
   submitPrompt,
   waitForAssistantResponse,
   captureAssistantMarkdown,
@@ -313,6 +314,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
+
+    await raceWithDisconnect(ensureExtendedThinkingIfAvailable(Runtime, logger));
+    await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+
     const attachmentNames = attachments.map((a) => path.basename(a.path));
     if (attachments.length > 0) {
       if (!DOM) {
@@ -733,6 +738,9 @@ async function runRemoteBrowserMode(
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
+
+    await ensureExtendedThinkingIfAvailable(Runtime, logger);
+    await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
 
     const attachmentNames = attachments.map((a) => path.basename(a.path));
     if (attachments.length > 0) {
