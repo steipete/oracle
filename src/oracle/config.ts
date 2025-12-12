@@ -73,8 +73,8 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
     tokenizer: countTokensGpt5 as TokenizerFn,
     inputLimit: 196000,
     pricing: {
-      inputPerToken: 0.5 / 1_000_000,
-      outputPerToken: 2 / 1_000_000,
+      inputPerToken: 1.75 / 1_000_000,
+      outputPerToken: 14 / 1_000_000,
     },
     reasoning: null,
   },
@@ -84,8 +84,8 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
     tokenizer: countTokensGpt5Pro as TokenizerFn,
     inputLimit: 196000,
     pricing: {
-      inputPerToken: 15 / 1_000_000,
-      outputPerToken: 120 / 1_000_000,
+      inputPerToken: 21 / 1_000_000,
+      outputPerToken: 168 / 1_000_000,
     },
     reasoning: { effort: 'xhigh' },
   },
