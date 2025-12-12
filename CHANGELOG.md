@@ -5,6 +5,9 @@
 ### Added
 - GPT-5.2 model support (`gpt-5.2` Thinking, `gpt-5.2-instant`, `gpt-5.2-pro`) plus browser `--browser-extended-thinking` automation. Original PR #37 by Nico Bailon (@nicobailon) — thank you!
 
+### Changed
+- Browser: “Thinking time → Extended” selection now reuses centralized menu selectors, normalizes text matching, and ships a best-effort helper for future “auto” mode. Original PR #36 by Victor Vannara (@voctory) — thank you!
+
 ## 0.5.6 — 2025-12-09 (re-release of 0.5.5)
 
 ### Changed
