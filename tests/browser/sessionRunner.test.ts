@@ -2,7 +2,6 @@ import { describe, expect, test, vi } from 'vitest';
 import type { RunOracleOptions } from '../../src/oracle.js';
 import type { BrowserSessionConfig } from '../../src/sessionStore.js';
 import { runBrowserSessionExecution } from '../../src/browser/sessionRunner.js';
-import { BrowserAutomationError } from '../../src/oracle/errors.js';
 
 const baseRunOptions: RunOracleOptions = {
   prompt: 'Hello world',
@@ -316,32 +315,38 @@ describe('runBrowserSessionExecution', () => {
     );
   });
 
-  test('throws when attempting to use Gemini in browser mode', async () => {
+  test('allows Gemini in browser mode with custom executor', async () => {
     const log = vi.fn();
-    await expect(
-      runBrowserSessionExecution(
-        {
-          runOptions: { ...baseRunOptions, model: 'gemini-3-pro' },
-          browserConfig: baseConfig,
-          cwd: '/repo',
-          log,
-        },
-        {
-          assemblePrompt: async () => ({
-            markdown: 'prompt',
-            composerText: 'prompt',
-            estimatedInputTokens: 1,
-            attachments: [],
-            inlineFileCount: 0,
-            tokenEstimateIncludesInlineFiles: false,
-            attachmentsPolicy: 'auto',
-            attachmentMode: 'inline',
-            fallback: null,
-          }),
-          executeBrowser: async () => ({ answerText: 'text', answerMarkdown: 'markdown', tookMs: 1, answerTokens: 1, answerChars: 1 }),
-        },
-      ),
-    ).rejects.toBeInstanceOf(BrowserAutomationError);
-    expect(log).not.toHaveBeenCalled();
+    const executeBrowser = vi.fn().mockResolvedValue({
+      answerText: 'gemini response',
+      answerMarkdown: 'gemini response',
+      tookMs: 100,
+      answerTokens: 5,
+      answerChars: 15,
+    });
+    const result = await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, model: 'gemini-3-pro' },
+        browserConfig: baseConfig,
+        cwd: '/repo',
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: 'prompt',
+          composerText: 'prompt',
+          estimatedInputTokens: 1,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: 'auto',
+          attachmentMode: 'inline',
+          fallback: null,
+        }),
+        executeBrowser,
+      },
+    );
+    expect(result.answerText).toBe('gemini response');
+    expect(executeBrowser).toHaveBeenCalled();
   });
 });

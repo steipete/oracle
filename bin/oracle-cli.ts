@@ -21,6 +21,7 @@ import { isKnownModel } from '../src/oracle/modelResolver.js';
 import type { ModelName, PreviewMode, RunOracleOptions } from '../src/oracle.js';
 import { CHATGPT_URL, normalizeChatgptUrl } from '../src/browserMode.js';
 import { createRemoteBrowserExecutor } from '../src/remote/client.js';
+import { createGeminiWebExecutor } from '../src/gemini-web/index.js';
 import { applyHelpStyling } from '../src/cli/help.js';
 import {
   collectPaths,
@@ -45,6 +46,7 @@ import { applyHiddenAliases } from '../src/cli/hiddenAliases.js';
 import { buildBrowserConfig, resolveBrowserModelLabel } from '../src/cli/browserConfig.js';
 import { performSessionRun } from '../src/cli/sessionRunner.js';
 import type { BrowserSessionRunnerDeps } from '../src/browser/sessionRunner.js';
+import { isMediaFile } from '../src/browser/prompt.js';
 import { attachSession, showStatus, formatCompletionSummary } from '../src/cli/sessionDisplay.js';
 import type { ShowStatusOptions } from '../src/cli/sessionDisplay.js';
 import { formatCompactNumber } from '../src/cli/format.js';
@@ -391,6 +393,12 @@ program
     new Option('--browser-inline-files', 'Alias for --browser-attachments never (force pasting file contents inline).').default(false),
   )
   .addOption(new Option('--browser-bundle-files', 'Bundle all attachments into a single archive before uploading.').default(false))
+  .addOption(new Option('--youtube <url>', 'YouTube video URL to analyze (Gemini browser mode only).'))
+  .addOption(new Option('--generate-image <file>', 'Generate image and save to file (Gemini browser mode only).'))
+  .addOption(new Option('--edit-image <file>', 'Edit existing image (use with --output, Gemini browser mode only).'))
+  .addOption(new Option('--output <file>', 'Output file path for image operations (Gemini browser mode only).'))
+  .addOption(new Option('--aspect <ratio>', 'Aspect ratio for image generation: 16:9, 1:1, 4:3, 3:4 (Gemini browser mode only).'))
+  .addOption(new Option('--gemini-show-thoughts', 'Display Gemini thinking process (Gemini browser mode only).').default(false))
   .option(
     '--retain-hours <hours>',
     'Prune stored sessions older than this many hours before running (set 0 to disable).',
@@ -759,21 +767,16 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const isCodex = primaryModelCandidate.startsWith('gpt-5.1-codex');
   const isClaude = primaryModelCandidate.startsWith('claude');
   const userForcedBrowser = options.browser || options.engine === 'browser';
-  const hasNonGptBrowserTarget =
+  const isBrowserCompatible = (model: string) => model.startsWith('gpt-') || model.startsWith('gemini');
+  const hasNonBrowserCompatibleTarget =
     (engine === 'browser' || userForcedBrowser) &&
     (normalizedMultiModels.length > 0
-      ? normalizedMultiModels.some((model) => !model.startsWith('gpt-'))
-      : !resolvedModelCandidate.startsWith('gpt-'));
-  if (hasNonGptBrowserTarget) {
+      ? normalizedMultiModels.some((model) => !isBrowserCompatible(model))
+      : !isBrowserCompatible(resolvedModelCandidate));
+  if (hasNonBrowserCompatibleTarget) {
     throw new Error(
-      'Browser engine only supports GPT-series ChatGPT models. Re-run with --engine api for Grok, Claude, Gemini, or other non-GPT models.'
+      'Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.'
     );
-  }
-  if (isGemini && userForcedBrowser) {
-    throw new Error('Gemini is only supported via API. Use --engine api.');
-  }
-  if (isGemini && engine === 'browser') {
-    engine = 'api';
   }
   if (isClaude && engine === 'browser') {
     console.log(chalk.dim('Browser engine is not supported for Claude models; switching to API.'));
@@ -950,7 +953,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   if (options.file && options.file.length > 0) {
-    await readFiles(options.file, { cwd: process.cwd() });
+    const isGeminiBrowserMode = isGemini && (engine === 'browser' || userForcedBrowser);
+    const filesToValidate = isGeminiBrowserMode
+      ? options.file.filter((f: string) => !isMediaFile(f))
+      : options.file;
+    if (filesToValidate.length > 0) {
+      await readFiles(filesToValidate, { cwd: process.cwd() });
+    }
   }
 
   const getSource = (key: keyof CliOptions) => program.getOptionValueSource?.(key as string) ?? undefined;
@@ -981,6 +990,18 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
+  } else if (browserConfig && resolvedModel.startsWith('gemini')) {
+    browserDeps = {
+      executeBrowser: createGeminiWebExecutor({
+        youtube: options.youtube,
+        generateImage: options.generateImage,
+        editImage: options.editImage,
+        outputPath: options.output,
+        aspectRatio: options.aspect,
+        showThoughts: options.geminiShowThoughts,
+      }),
+    };
+    console.log(chalk.dim('Using Gemini WebAPI for browser automation'));
   }
   const remoteExecutionActive = Boolean(browserDeps);
 

@@ -49,6 +49,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 
 **CLI**
 - API mode expects API keys in your environment: `OPENAI_API_KEY` (GPT-5.x), `GEMINI_API_KEY` (Gemini 3 Pro), `ANTHROPIC_API_KEY` (Claude Sonnet 4.5 / Opus 4.1).
+- Gemini browser mode uses Chrome cookies instead of an API key—just be logged into `gemini.google.com` in Chrome. Requires Python 3.8+.
 - Prefer API mode or `--copy` + manual paste; browser automation is experimental.
 - Browser support: stable on macOS; works on Linux (add `--browser-chrome-path/--browser-cookie-path` when needed) and Windows (manual-login or inline cookies recommended when app-bound cookies block decryption).
 - Remote browser service: `oracle serve` on a signed-in host; clients use `--remote-host/--remote-token`.
@@ -109,6 +110,9 @@ npx -y @steipete/oracle oracle-mcp
 | `--dry-run [summary\|json\|full]` | Preview without sending. |
 | `--remote-host`, `--remote-token` | Use a remote `oracle serve` host (browser). |
 | `--remote-chrome <host:port>` | Attach to an existing remote Chrome session (browser). |
+| `--youtube <url>` | YouTube video URL to analyze (Gemini browser mode). |
+| `--generate-image <file>` | Generate image and save to file (Gemini browser mode). |
+| `--edit-image <file>` | Edit existing image with `--output` (Gemini browser mode). |
 | `--azure-endpoint`, `--azure-deployment`, `--azure-api-version` | Target Azure OpenAI endpoints (picks Azure client automatically). |
 
 ## Configuration

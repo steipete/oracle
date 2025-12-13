@@ -84,9 +84,6 @@ export async function performSessionRun({
   const modelForStatus = runOptions.model ?? sessionMeta.model;
   try {
     if (mode === 'browser') {
-      if (runOptions.model.startsWith('gemini')) {
-        throw new Error('Gemini models are not available in browser mode. Re-run with --engine api.');
-      }
       if (!browserConfig) {
         throw new Error('Missing browser configuration for session.');
       }

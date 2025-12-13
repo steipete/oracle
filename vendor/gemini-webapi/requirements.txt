@@ -1,0 +1,2 @@
+gemini-webapi>=1.0.0
+browser-cookie3>=0.20.0
