@@ -38,11 +38,6 @@ export async function runBrowserSessionExecution(
   { runOptions, browserConfig, cwd, log }: RunBrowserSessionArgs,
   deps: BrowserSessionRunnerDeps = {},
 ): Promise<BrowserExecutionResult> {
-  if (runOptions.model.startsWith('gemini')) {
-    throw new BrowserAutomationError('Gemini models are not available in browser mode. Re-run with --engine api.', {
-      stage: 'preflight',
-    });
-  }
   const assemblePrompt = deps.assemblePrompt ?? assembleBrowserPrompt;
   const executeBrowser = deps.executeBrowser ?? runBrowserMode;
   const promptArtifacts = await assemblePrompt(runOptions, { cwd });
