@@ -16,7 +16,10 @@ function resolveInvocationPath(value: string | undefined): string | undefined {
   return path.isAbsolute(trimmed) ? trimmed : path.resolve(process.cwd(), trimmed);
 }
 
-function resolveGeminiWebModel(desiredModel: string | null | undefined, log?: BrowserLogger): GeminiWebModelId {
+function resolveGeminiWebModel(
+  desiredModel: string | null | undefined,
+  log?: BrowserLogger,
+): GeminiWebModelId {
   const desired = typeof desiredModel === 'string' ? desiredModel.trim() : '';
   if (!desired) return 'gemini-3-pro';
 
@@ -30,7 +33,9 @@ function resolveGeminiWebModel(desiredModel: string | null | undefined, log?: Br
       return 'gemini-2.5-flash';
     default:
       if (desired.startsWith('gemini-')) {
-        log?.(`[gemini-web] Unsupported Gemini web model "${desired}". Falling back to gemini-3-pro.`);
+        log?.(
+          `[gemini-web] Unsupported Gemini web model "${desired}". Falling back to gemini-3-pro.`,
+        );
       }
       return 'gemini-3-pro';
   }
@@ -42,13 +47,21 @@ async function loadGeminiCookiesFromChrome(
 ): Promise<Record<string, string>> {
   try {
     const mod = (await import('chrome-cookies-secure')) as unknown;
-    const chromeCookies = (mod as { default?: ChromeCookiesSecureModule }).default ?? (mod as ChromeCookiesSecureModule);
+    const chromeCookies =
+      (mod as { default?: ChromeCookiesSecureModule }).default ??
+      (mod as ChromeCookiesSecureModule);
 
-    const profile = typeof browserConfig?.chromeProfile === 'string' && browserConfig.chromeProfile.trim().length > 0
-      ? browserConfig.chromeProfile.trim()
-      : undefined;
+    const profile =
+      typeof browserConfig?.chromeProfile === 'string' &&
+      browserConfig.chromeProfile.trim().length > 0
+        ? browserConfig.chromeProfile.trim()
+        : undefined;
 
-    const sources = ['https://gemini.google.com', 'https://accounts.google.com', 'https://www.google.com'];
+    const sources = [
+      'https://gemini.google.com',
+      'https://accounts.google.com',
+      'https://www.google.com',
+    ];
     const wantNames = [
       '__Secure-1PSID',
       '__Secure-1PSIDTS',
@@ -72,12 +85,18 @@ async function loadGeminiCookiesFromChrome(
 
     const cookieMap: Record<string, string> = {};
     for (const url of sources) {
-      const cookies = (await chromeCookies.getCookiesPromised(url, 'puppeteer', profile)) as PuppeteerCookie[];
+      const cookies = (await chromeCookies.getCookiesPromised(
+        url,
+        'puppeteer',
+        profile,
+      )) as PuppeteerCookie[];
       for (const name of wantNames) {
         if (cookieMap[name]) continue;
         const matches = cookies.filter((cookie) => cookie.name === name);
         if (matches.length === 0) continue;
-        const preferredDomain = matches.find((cookie) => cookie.domain === '.google.com' && (cookie.path ?? '/') === '/');
+        const preferredDomain = matches.find(
+          (cookie) => cookie.domain === '.google.com' && (cookie.path ?? '/') === '/',
+        );
         const googleDomain = matches.find((cookie) => (cookie.domain ?? '').endsWith('google.com'));
         const value = (preferredDomain ?? googleDomain ?? matches[0])?.value;
         if (value) cookieMap[name] = value;
@@ -88,7 +107,9 @@ async function loadGeminiCookiesFromChrome(
       return {};
     }
 
-    log?.(`[gemini-web] Loaded Gemini cookies from Chrome (node): ${Object.keys(cookieMap).length} cookie(s).`);
+    log?.(
+      `[gemini-web] Loaded Gemini cookies from Chrome (node): ${Object.keys(cookieMap).length} cookie(s).`,
+    );
     return cookieMap;
   } catch (error) {
     log?.(
@@ -109,7 +130,9 @@ export function createGeminiWebExecutor(
 
     const cookieMap = await loadGeminiCookiesFromChrome(runOptions.config, log);
     if (!cookieMap['__Secure-1PSID'] || !cookieMap['__Secure-1PSIDTS']) {
-      throw new Error('Gemini browser mode requires Chrome cookies for google.com (missing __Secure-1PSID/__Secure-1PSIDTS).');
+      throw new Error(
+        'Gemini browser mode requires Chrome cookies for google.com (missing __Secure-1PSID/__Secure-1PSIDTS).',
+      );
     }
 
     const generateImagePath = resolveInvocationPath(geminiOptions.generateImage);

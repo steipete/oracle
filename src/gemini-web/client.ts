@@ -82,7 +82,9 @@ export async function fetchGeminiAccessToken(cookieMap: Record<string, string>):
     const match = html.match(new RegExp(`"${key}":"(.*?)"`));
     if (match?.[1]) return match[1];
   }
-  throw new Error('Unable to locate Gemini access token on gemini.google.com/app (missing SNlM0e/thykhd).');
+  throw new Error(
+    'Unable to locate Gemini access token on gemini.google.com/app (missing SNlM0e/thykhd).',
+  );
 }
 
 function trimGeminiJsonEnvelope(text: string): string {
@@ -136,7 +138,11 @@ async function fetchWithCookiePreservingRedirects(
   throw new Error(`Too many redirects while downloading image (>${maxRedirects}).`);
 }
 
-async function downloadGeminiImage(url: string, cookieMap: Record<string, string>, outputPath: string): Promise<void> {
+async function downloadGeminiImage(
+  url: string,
+  cookieMap: Record<string, string>,
+  outputPath: string,
+): Promise<void> {
   const cookieHeader = buildCookieHeader(cookieMap);
   const res = await fetchWithCookiePreservingRedirects(ensureFullSizeImageUrl(url), {
     headers: {
@@ -176,24 +182,27 @@ async function uploadGeminiFile(filePath: string): Promise<{ id: string; name: s
   return { id: text, name: fileName };
 }
 
-function buildGeminiFReqPayload(prompt: string, uploaded: Array<{ id: string; name: string }>, chatMetadata: unknown): string {
+function buildGeminiFReqPayload(
+  prompt: string,
+  uploaded: Array<{ id: string; name: string }>,
+  chatMetadata: unknown,
+): string {
   const promptPayload =
     uploaded.length > 0
-      ? [
-          prompt,
-          0,
-          null,
-          uploaded.map((file) => [[[file.id], file.name]]),
-        ]
+      ? [prompt, 0, null, uploaded.map((file) => [[[file.id], file.name]])]
       : [prompt];
 
   const innerList: unknown[] = [promptPayload, null, chatMetadata ?? null];
   return JSON.stringify([null, JSON.stringify(innerList)]);
 }
 
-export function parseGeminiStreamGenerateResponse(
-  rawText: string,
-): { metadata: unknown; text: string; thoughts: string | null; images: GeminiWebCandidateImage[]; errorCode?: number } {
+export function parseGeminiStreamGenerateResponse(rawText: string): {
+  metadata: unknown;
+  text: string;
+  thoughts: string | null;
+  images: GeminiWebCandidateImage[];
+  errorCode?: number;
+} {
   const responseJson = JSON.parse(trimGeminiJsonEnvelope(rawText)) as unknown;
   const errorCode = extractErrorCode(responseJson);
 
@@ -220,7 +229,9 @@ export function parseGeminiStreamGenerateResponse(
   const firstCandidate = candidateList[0];
   const textRaw = getNestedValue<string>(firstCandidate, [1, 0], '');
   const cardContent = /^http:\/\/googleusercontent\.com\/card_content\/\d+/.test(textRaw);
-  const text = cardContent ? (getNestedValue<string | null>(firstCandidate, [22, 0], null) ?? textRaw) : textRaw;
+  const text = cardContent
+    ? (getNestedValue<string | null>(firstCandidate, [22, 0], null) ?? textRaw)
+    : textRaw;
   const thoughts = getNestedValue<string | null>(firstCandidate, [37, 0, 0], null);
   const metadata = getNestedValue<unknown>(body, [1], []);
 

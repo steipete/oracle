@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { parseGeminiStreamGenerateResponse, isGeminiModelUnavailable } from '../../src/gemini-web/client.js';
+import {
+  parseGeminiStreamGenerateResponse,
+  isGeminiModelUnavailable,
+} from '../../src/gemini-web/client.js';
 
 function makeRawResponseWithBody(body: unknown): string {
   const responseJson = [[null, null, JSON.stringify(body)]];
@@ -31,10 +34,13 @@ describe('gemini-web parseGeminiStreamGenerateResponse', () => {
     ((responseJson[0] as unknown[])[5] as unknown[])[2] = [];
     (((responseJson[0] as unknown[])[5] as unknown[])[2] as unknown[])[0] = [];
     ((((responseJson[0] as unknown[])[5] as unknown[])[2] as unknown[])[0] as unknown[])[1] = [];
-    (((((responseJson[0] as unknown[])[5] as unknown[])[2] as unknown[])[0] as unknown[])[1] as unknown[])[0] = 1052;
+    (
+      (
+        (((responseJson[0] as unknown[])[5] as unknown[])[2] as unknown[])[0] as unknown[]
+      )[1] as unknown[]
+    )[0] = 1052;
 
     const raw = `)]}'\n\n${JSON.stringify(responseJson)}`;
     expect(isGeminiModelUnavailable(parseGeminiStreamGenerateResponse(raw).errorCode)).toBe(true);
   });
 });
-

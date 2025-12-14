@@ -25,67 +25,65 @@ async function assertHasGeminiChromeCookies(): Promise<void> {
 }
 
 function looksLikeJpeg(bytes: Uint8Array): boolean {
-  return bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9;
+  return (
+    bytes.length > 4 &&
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[bytes.length - 2] === 0xff &&
+    bytes[bytes.length - 1] === 0xd9
+  );
 }
 
 (live ? describe : describe.skip)('Gemini web (cookie) live smoke', () => {
-  it(
-    'generate-image writes an output file',
-    async () => {
-      await assertHasGeminiChromeCookies();
+  it('generate-image writes an output file', async () => {
+    await assertHasGeminiChromeCookies();
 
-      const tempDir = await mkdtemp(path.join(os.tmpdir(), 'oracle-gemini-web-live-'));
-      const outputPath = path.join(tempDir, 'generated.jpg');
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'oracle-gemini-web-live-'));
+    const outputPath = path.join(tempDir, 'generated.jpg');
 
-      const exec = createGeminiWebExecutor({
-        generateImage: outputPath,
-        aspectRatio: '1:1',
-      });
+    const exec = createGeminiWebExecutor({
+      generateImage: outputPath,
+      aspectRatio: '1:1',
+    });
 
-      await exec({
-        prompt: 'a cute robot holding a banana',
-        config: { chromeProfile: 'Default', desiredModel: 'Gemini 3 Pro' },
-        log: () => {},
-      });
+    await exec({
+      prompt: 'a cute robot holding a banana',
+      config: { chromeProfile: 'Default', desiredModel: 'Gemini 3 Pro' },
+      log: () => {},
+    });
 
-      const bytes = new Uint8Array(await readFile(outputPath));
-      expect(bytes.length).toBeGreaterThan(10_000);
-      expect(looksLikeJpeg(bytes)).toBe(true);
-    },
-    180_000,
-  );
+    const bytes = new Uint8Array(await readFile(outputPath));
+    expect(bytes.length).toBeGreaterThan(10_000);
+    expect(looksLikeJpeg(bytes)).toBe(true);
+  }, 180_000);
 
-  it(
-    'edit-image writes an output file',
-    async () => {
-      await assertHasGeminiChromeCookies();
+  it('edit-image writes an output file', async () => {
+    await assertHasGeminiChromeCookies();
 
-      const tempDir = await mkdtemp(path.join(os.tmpdir(), 'oracle-gemini-web-live-'));
-      const inputPath = path.join(tempDir, 'input.png');
-      const outputPath = path.join(tempDir, 'edited.jpg');
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'oracle-gemini-web-live-'));
+    const inputPath = path.join(tempDir, 'input.png');
+    const outputPath = path.join(tempDir, 'edited.jpg');
 
-      // 1x1 transparent PNG
-      const png = Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/Pm2zXwAAAABJRU5ErkJggg==',
-        'base64',
-      );
-      await writeFile(inputPath, png);
+    // 1x1 transparent PNG
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/Pm2zXwAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    await writeFile(inputPath, png);
 
-      const exec = createGeminiWebExecutor({
-        editImage: inputPath,
-        outputPath,
-      });
+    const exec = createGeminiWebExecutor({
+      editImage: inputPath,
+      outputPath,
+    });
 
-      await exec({
-        prompt: 'add sunglasses',
-        config: { chromeProfile: 'Default', desiredModel: 'Gemini 3 Pro' },
-        log: () => {},
-      });
+    await exec({
+      prompt: 'add sunglasses',
+      config: { chromeProfile: 'Default', desiredModel: 'Gemini 3 Pro' },
+      log: () => {},
+    });
 
-      const bytes = new Uint8Array(await readFile(outputPath));
-      expect(bytes.length).toBeGreaterThan(10_000);
-      expect(looksLikeJpeg(bytes)).toBe(true);
-    },
-    240_000,
-  );
+    const bytes = new Uint8Array(await readFile(outputPath));
+    expect(bytes.length).toBeGreaterThan(10_000);
+    expect(looksLikeJpeg(bytes)).toBe(true);
+  }, 240_000);
 });

@@ -20,7 +20,9 @@ describe('gemini-web image download', () => {
       if (calls.length === 1) {
         return new Response(null, {
           status: 302,
-          headers: { location: 'https://work.fife.usercontent.google.com/rd-gg-dl/somewhere=s2048' },
+          headers: {
+            location: 'https://work.fife.usercontent.google.com/rd-gg-dl/somewhere=s2048',
+          },
         });
       }
 
@@ -55,4 +57,3 @@ describe('gemini-web image download', () => {
     expect(new Uint8Array(await readFile(outputPath))).toEqual(new Uint8Array([1, 2, 3]));
   });
 });
-
