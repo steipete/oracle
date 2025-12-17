@@ -8,6 +8,9 @@
 - API: clarify `gpt-5.1-pro` as a stable alias that targets `gpt-5.2-pro`.
 - Dependencies: refresh (notably `zod` 4.2.1 and `devtools-protocol` 0.0.1559729).
 
+### Fixed
+- Browser: prompt commit verification handles markdown code fences better; prompt-echo recovery is more robust (including remote browser mode); multi-file uploads are less flaky (dynamic timeouts + better filename matching). Original PR #41 by Muly Oved (@mulyoved) — thank you!
+
 ## 0.7.0 — 2025-12-14
 
 ### Added
