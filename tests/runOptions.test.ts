@@ -34,6 +34,7 @@ describe('resolveRunOptionsFromConfig', () => {
   it('uses config model when caller does not provide one', () => {
     const { runOptions } = resolveRunOptionsFromConfig({
       prompt: basePrompt,
+      engine: 'api',
       userConfig: { model: 'gpt-5.1' },
     });
     expect(runOptions.model).toBe('gpt-5.1');
@@ -119,6 +120,16 @@ describe('resolveRunOptionsFromConfig', () => {
     });
     expect(resolvedEngine).toBe('browser');
     expect(runOptions.model).toBe('gemini-3-pro');
+  });
+
+  it('pins browser engine GPT models to gpt-5.2-pro', () => {
+    const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      model: 'gpt-5.1',
+      engine: 'browser',
+    });
+    expect(resolvedEngine).toBe('browser');
+    expect(runOptions.model).toBe('gpt-5.2-pro');
   });
 
   it('forces api engine for gpt-5.1-codex when engine is auto-detected', () => {

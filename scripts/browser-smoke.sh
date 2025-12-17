@@ -13,8 +13,8 @@ echo "[browser-smoke] pro upload attachment (non-inline)"
 echo "[browser-smoke] pro simple"
 "${CMD[@]}" --model gpt-5.2-pro --prompt "Return exactly one markdown bullet: '- pro-ok'." --slug browser-smoke-pro --force
 
-echo "[browser-smoke] instant with attachment preview (inline)"
-"${CMD[@]}" --model gpt-5.2-instant --browser-inline-files --prompt "Read the attached file and return exactly one markdown bullet '- file: <content>' where <content> is the file text." --file "$tmpfile" --slug browser-smoke-file --preview --force
+echo "[browser-smoke] pro with attachment preview (inline)"
+"${CMD[@]}" --model gpt-5.2-pro --browser-inline-files --prompt "Read the attached file and return exactly one markdown bullet '- file: <content>' where <content> is the file text." --file "$tmpfile" --slug browser-smoke-file --preview --force
 
 echo "[browser-smoke] standard markdown check"
 "${CMD[@]}" --model gpt-5.2-pro --prompt "Return two markdown bullets and a fenced code block labeled js that logs 'thinking-ok'." --slug browser-smoke-thinking --force

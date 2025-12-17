@@ -11,6 +11,6 @@ describe('mcp utils', () => {
   it('infers browser labels', () => {
     const { runOptions, resolvedEngine } = mapConsultToRunOptions({ prompt: 'hi', files: [], model: '5.1 instant', engine: 'browser' });
     expect(resolvedEngine).toBe('browser');
-    expect(runOptions.model).toBe('gpt-5.1');
+    expect(runOptions.model).toBe('gpt-5.2-pro');
   });
 });

@@ -11,12 +11,12 @@ const DEFAULT_BROWSER_INPUT_TIMEOUT_MS = 30_000;
 const DEFAULT_CHROME_PROFILE = 'Default';
 
 const BROWSER_MODEL_LABELS: Partial<Record<ModelName, string>> = {
-  'gpt-5-pro': 'GPT-5 Pro',
-  // Keep `gpt-5.1-pro` as a stable "Pro" alias, but prefer the latest Pro picker in browser mode.
+  // Browser engine is pinned to GPT-5.2 Pro for ChatGPT automation.
+  'gpt-5-pro': 'GPT-5.2 Pro',
   'gpt-5.1-pro': 'GPT-5.2 Pro',
-  'gpt-5.1': 'GPT-5.1',
-  'gpt-5.2': 'GPT-5.2 Thinking',
-  'gpt-5.2-instant': 'GPT-5.2 Instant',
+  'gpt-5.1': 'GPT-5.2 Pro',
+  'gpt-5.2': 'GPT-5.2 Pro',
+  'gpt-5.2-instant': 'GPT-5.2 Pro',
   'gpt-5.2-pro': 'GPT-5.2 Pro',
   'gemini-3-pro': 'Gemini 3 Pro',
 };
@@ -51,7 +51,8 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
   const desiredModelOverride = options.browserModelLabel?.trim();
   const normalizedOverride = desiredModelOverride?.toLowerCase() ?? '';
   const baseModel = options.model.toLowerCase();
-  const shouldUseOverride = normalizedOverride.length > 0 && normalizedOverride !== baseModel;
+  const isPinnedChatGptModel = baseModel.startsWith('gpt-') && !baseModel.includes('codex');
+  const shouldUseOverride = !isPinnedChatGptModel && normalizedOverride.length > 0 && normalizedOverride !== baseModel;
   const cookieNames = parseCookieNames(options.browserCookieNames ?? process.env.ORACLE_BROWSER_COOKIE_NAMES);
   const inline = await resolveInlineCookies({
     inlineArg: options.browserInlineCookies,
@@ -86,7 +87,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     manualLogin: options.browserManualLogin ? true : undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
-    desiredModel: shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model),
+    desiredModel: isPinnedChatGptModel ? mapModelToBrowserLabel('gpt-5.2-pro') : (shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model)),
     debug: options.verbose ? true : undefined,
     // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
     allowCookieErrors: options.browserAllowCookieErrors ?? true,

@@ -324,7 +324,11 @@ export async function waitForAttachmentVisible(
     };
 
     const turns = Array.from(document.querySelectorAll('article[data-testid^="conversation-turn"]'));
-    const userTurns = turns.filter((node) => node.querySelector('[data-message-author-role="user"]'));
+    const userTurns = turns.filter((node) => {
+      const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      if (turnAttr === 'user') return true;
+      return Boolean(node.querySelector('[data-message-author-role="user"]'));
+    });
     const lastUser = userTurns[userTurns.length - 1];
     if (lastUser) {
       const turnMatch = Array.from(lastUser.querySelectorAll('*')).some(matchNode);

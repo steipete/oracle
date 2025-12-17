@@ -21,10 +21,10 @@ beforeEach(() => {
 describe('ensureModelSelection', () => {
   test('logs when model already selected', async () => {
     const runtime = {
-      evaluate: vi.fn().mockResolvedValue({ result: { value: { status: 'already-selected', label: 'ChatGPT 5.1' } } }),
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { status: 'already-selected', label: 'GPT-5.2 Pro' } } }),
     } as unknown as ChromeClient['Runtime'];
-    await expect(ensureModelSelection(runtime, 'ChatGPT 5.1', logger)).resolves.toBeUndefined();
-    expect(logger).toHaveBeenCalledWith('Model picker: ChatGPT 5.1');
+    await expect(ensureModelSelection(runtime, 'GPT-5.2 Pro', logger)).resolves.toBeUndefined();
+    expect(logger).toHaveBeenCalledWith('Model picker: GPT-5.2 Pro');
   });
 
   test('throws when option missing', async () => {

@@ -146,7 +146,10 @@ export function registerConsultTool(server: McpServer): void {
       let browserConfig: BrowserSessionConfig | undefined;
       if (resolvedEngine === 'browser') {
         const preferredLabel = (browserModelLabel ?? model)?.trim();
-        const desiredModelLabel = resolveBrowserModelLabel(preferredLabel, runOptions.model);
+        const isPinnedChatGptModel = runOptions.model.startsWith('gpt-') && !runOptions.model.includes('codex');
+        const desiredModelLabel = isPinnedChatGptModel
+          ? mapModelToBrowserLabel('gpt-5.2-pro')
+          : resolveBrowserModelLabel(preferredLabel, runOptions.model);
         // Keep the browser path minimal; only forward a desired model label for the ChatGPT picker.
         browserConfig = {
           url: CHATGPT_URL,

@@ -22,7 +22,7 @@ Outcome:
 - After wiring fix, logs showed “Routing browser automation to remote host …” but requests failed with:
   - `ECONNREFUSED 192.168.64.2:49810` when no service listening.
   - `busy` when a previous service process was still bound.
-  - Later run reached remote path but failed model switch: `Unable to find model option matching "GPT-5.1 Pro"` (remote Chrome not logged into ChatGPT / model picker mismatch).
+- Later run reached remote path but failed model switch: `Unable to find model option matching "GPT-5.2 Pro"` (remote Chrome not logged into ChatGPT / model picker mismatch).
 - After disabling cookie shipping and requiring host login, remote runs now fail earlier: service logs “Loading ChatGPT cookies from host Chrome profile…” then reports `Unhandled promise rejection ... Unknown error` when `loadChromeCookies` runs on the VM. Remote client sees `socket hang up` because the server doesn’t deliver a result.
 
 ### 2) Remote service on VM
@@ -44,7 +44,7 @@ Actions taken on VM (tmux `vmssh`):
 ### Observed blockers
 - Environment PATH: bun not on PATH for non-interactive shells caused `./runner` to fail; need to `export PATH="$HOME/.bun/bin:$PATH"` before starting service.
 - Port collisions: prior listeners on 49810 caused ECONNREFUSED/busy.
-- Remote model switch failed: remote Chrome likely not signed into ChatGPT; model picker couldn’t find “GPT-5.1 Pro”.
+- Remote model switch failed: remote Chrome likely not signed into ChatGPT; model picker couldn’t find “GPT-5.2 Pro”.
 - Keychain/cookie read now failing on VM: `loadChromeCookies` throws “Unknown error” when invoked from the server process (Node 25, SSH shell). When `oracle serve` runs from GUI Terminal it starts fine; under nohup/SSH it logs the rejection and remote runs hang.
 - New behavior (post-fix): `oracle serve` exits early if it cannot load host ChatGPT cookies after opening chatgpt.com for login; sign in on the host and restart the service.
 

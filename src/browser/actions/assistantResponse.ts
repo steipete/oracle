@@ -268,6 +268,8 @@ async function isCompletionVisible(Runtime: ChromeClient['Runtime']): Promise<bo
         const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
         const isAssistantTurn = (node) => {
           if (!(node instanceof HTMLElement)) return false;
+          const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+          if (turnAttr === 'assistant') return true;
           const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
           if (role === 'assistant') return true;
           const testId = (node.getAttribute('data-testid') || '').toLowerCase();
@@ -307,6 +309,12 @@ function normalizeAssistantSnapshot(
 ): { text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } } | null {
   const text = snapshot?.text ? cleanAssistantText(snapshot.text) : '';
   if (!text.trim()) {
+    return null;
+  }
+  const normalized = text.toLowerCase();
+  // "Pro thinking" often renders a placeholder turn containing an "Answer now" gate.
+  // Treat it as incomplete so browser mode keeps waiting (and can click the gate).
+  if (normalized.includes('answer now') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'))) {
     return null;
   }
   return {
@@ -351,10 +359,13 @@ function buildResponseObserverExpression(timeoutMs: number): string {
     const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const settleDelayMs = 800;
+    const ANSWER_NOW_LABEL = 'answer now';
 
     // Helper to detect assistant turns - matches buildAssistantExtractor logic
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
+      const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      if (turnAttr === 'assistant') return true;
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
@@ -386,6 +397,11 @@ function buildResponseObserverExpression(timeoutMs: number): string {
         });
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
         stopInterval = setInterval(() => {
+          // Pro thinking can gate the response behind an "Answer now" button. Keep clicking it while present.
+          const answerNow = Array.from(document.querySelectorAll('button,span')).find((el) => (el?.textContent || '').trim().toLowerCase() === ANSWER_NOW_LABEL);
+          if (answerNow) {
+            dispatchClickSequence(answerNow.closest('button') ?? answerNow);
+          }
           const stop = document.querySelector(STOP_SELECTOR);
           if (!stop) {
             return;
@@ -438,9 +454,10 @@ function buildResponseObserverExpression(timeoutMs: number): string {
           lastLength = refreshed.text?.length ?? lastLength;
         }
         const stopVisible = Boolean(document.querySelector(STOP_SELECTOR));
+        const answerNowVisible = Boolean(Array.from(document.querySelectorAll('button,span')).find((el) => (el?.textContent || '').trim().toLowerCase() === ANSWER_NOW_LABEL));
         const finishedVisible = isLastAssistantTurnFinished();
 
-        if (!stopVisible || finishedVisible) {
+        if ((!stopVisible && !answerNowVisible) || finishedVisible) {
           break;
         }
       }
@@ -464,6 +481,10 @@ function buildAssistantExtractor(functionName: string): string {
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
+      const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      if (turnAttr === 'assistant') {
+        return true;
+      }
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') {
         return true;
@@ -500,11 +521,13 @@ function buildAssistantExtractor(functionName: string): string {
       }
       const messageRoot = turn.querySelector(ASSISTANT_SELECTOR) ?? turn;
       expandCollapsibles(messageRoot);
-      const preferred =
-        messageRoot.querySelector('.markdown') ||
-        messageRoot.querySelector('[data-message-content]') ||
-        messageRoot;
-      const text = preferred?.innerText ?? '';
+      const preferred = messageRoot.querySelector('.markdown') || messageRoot.querySelector('[data-message-content]');
+      if (!preferred) {
+        continue;
+      }
+      const innerText = preferred?.innerText ?? '';
+      const textContent = preferred?.textContent ?? '';
+      const text = innerText.trim().length > 0 ? innerText : textContent;
       const html = preferred?.innerHTML ?? '';
       const messageId = messageRoot.getAttribute('data-message-id');
       const turnId = messageRoot.getAttribute('data-testid');
@@ -520,7 +543,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
   return `(() => {
     ${buildClickDispatcher()}
     const BUTTON_SELECTOR = '${COPY_BUTTON_SELECTOR}';
-    const TIMEOUT_MS = 5000;
+    const TIMEOUT_MS = 10000;
 
     const locateButton = () => {
       const hint = ${JSON.stringify(meta ?? {})};
@@ -584,53 +607,62 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
     };
 
     return new Promise((resolve) => {
-      const button = locateButton();
-      if (!button) {
-        resolve({ success: false, status: 'missing-button' });
-        return;
-      }
-      const interception = interceptClipboard();
-      let settled = false;
-      let pollId = null;
-      let timeoutId = null;
-      const finish = (payload) => {
-        if (settled) {
+      const deadline = Date.now() + TIMEOUT_MS;
+      const waitForButton = () => {
+        const button = locateButton();
+        if (button) {
+          const interception = interceptClipboard();
+          let settled = false;
+          let pollId = null;
+          let timeoutId = null;
+          const finish = (payload) => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            if (pollId) {
+              clearInterval(pollId);
+            }
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+            button.removeEventListener('copy', handleCopy, true);
+            interception.restore?.();
+            resolve(payload);
+          };
+
+          const readIntercepted = () => {
+            const markdown = interception.state.text ?? '';
+            return { success: Boolean(markdown.trim()), markdown };
+          };
+
+          const handleCopy = () => {
+            finish(readIntercepted());
+          };
+
+          button.addEventListener('copy', handleCopy, true);
+          button.scrollIntoView({ block: 'center', behavior: 'instant' });
+          dispatchClickSequence(button);
+          pollId = setInterval(() => {
+            const payload = readIntercepted();
+            if (payload.success) {
+              finish(payload);
+            }
+          }, 100);
+          timeoutId = setTimeout(() => {
+            button.removeEventListener('copy', handleCopy, true);
+            finish({ success: false, status: 'timeout' });
+          }, TIMEOUT_MS);
           return;
         }
-        settled = true;
-        if (pollId) {
-          clearInterval(pollId);
+        if (Date.now() > deadline) {
+          resolve({ success: false, status: 'missing-button' });
+          return;
         }
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        button.removeEventListener('copy', handleCopy, true);
-        interception.restore?.();
-        resolve(payload);
+        setTimeout(waitForButton, 120);
       };
 
-      const readIntercepted = () => {
-        const markdown = interception.state.text ?? '';
-        return { success: Boolean(markdown.trim()), markdown };
-      };
-
-      const handleCopy = () => {
-        finish(readIntercepted());
-      };
-
-      button.addEventListener('copy', handleCopy, true);
-      button.scrollIntoView({ block: 'center', behavior: 'instant' });
-      dispatchClickSequence(button);
-      pollId = setInterval(() => {
-        const payload = readIntercepted();
-        if (payload.success) {
-          finish(payload);
-        }
-      }, 100);
-      timeoutId = setTimeout(() => {
-        button.removeEventListener('copy', handleCopy, true);
-        finish({ success: false, status: 'timeout' });
-      }, TIMEOUT_MS);
+      waitForButton();
     });
   })()`;
 }

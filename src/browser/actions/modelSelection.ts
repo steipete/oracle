@@ -156,9 +156,25 @@ function buildModelSelectionExpression(targetModel: string): string {
       const normalizedTestId = (testid ?? '').toLowerCase();
       if (normalizedTestId) {
         if (desiredVersion) {
-          const has52 = normalizedTestId.includes('5-2') || normalizedTestId.includes('gpt52');
-          const has51 = normalizedTestId.includes('5-1') || normalizedTestId.includes('gpt51');
-          const has50 = normalizedTestId.includes('5-0') || normalizedTestId.includes('gpt50');
+          // data-testid strings have been observed with both dotted and dashed versions (e.g. gpt-5.2-pro vs gpt-5-2-pro).
+          const has52 =
+            normalizedTestId.includes('5-2') ||
+            normalizedTestId.includes('5.2') ||
+            normalizedTestId.includes('gpt-5-2') ||
+            normalizedTestId.includes('gpt-5.2') ||
+            normalizedTestId.includes('gpt52');
+          const has51 =
+            normalizedTestId.includes('5-1') ||
+            normalizedTestId.includes('5.1') ||
+            normalizedTestId.includes('gpt-5-1') ||
+            normalizedTestId.includes('gpt-5.1') ||
+            normalizedTestId.includes('gpt51');
+          const has50 =
+            normalizedTestId.includes('5-0') ||
+            normalizedTestId.includes('5.0') ||
+            normalizedTestId.includes('gpt-5-0') ||
+            normalizedTestId.includes('gpt-5.0') ||
+            normalizedTestId.includes('gpt50');
           const candidateVersion = has52 ? '5-2' : has51 ? '5-1' : has50 ? '5-0' : null;
           // If a candidate advertises a different version, ignore it entirely.
           if (candidateVersion && candidateVersion !== desiredVersion) {

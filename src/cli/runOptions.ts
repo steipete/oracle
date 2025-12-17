@@ -39,10 +39,16 @@ export function resolveRunOptionsFromConfig({
   const normalizedRequestedModels = requestedModelList.map((entry) => normalizeModelOption(entry)).filter(Boolean);
 
   const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || DEFAULT_MODEL;
-  const resolvedModel =
+  const inferredModel =
     resolvedEngine === 'browser' && normalizedRequestedModels.length === 0
       ? inferModelFromLabel(cliModelArg)
       : resolveApiModel(cliModelArg);
+  // Browser engine (ChatGPT automation) is intentionally pinned to the latest Pro model.
+  // We keep the API surface flexible, but the browser path only supports GPT-5.2 Pro for GPT models.
+  const resolvedModel =
+    resolvedEngine === 'browser' && inferredModel.startsWith('gpt-') && !inferredModel.includes('codex')
+      ? 'gpt-5.2-pro'
+      : inferredModel;
   const isCodex = resolvedModel.startsWith('gpt-5.1-codex');
   const isClaude = resolvedModel.startsWith('claude');
   const isGrok = resolvedModel.startsWith('grok');

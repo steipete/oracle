@@ -1,5 +1,5 @@
 export const CHATGPT_URL = 'https://chatgpt.com/';
-export const DEFAULT_MODEL_TARGET = 'ChatGPT 5.2';
+export const DEFAULT_MODEL_TARGET = 'GPT-5.2 Pro';
 export const COOKIE_URLS = ['https://chatgpt.com', 'https://chat.openai.com', 'https://atlas.openai.com'];
 
 export const INPUT_SELECTORS = [
@@ -15,14 +15,18 @@ export const INPUT_SELECTORS = [
 
 export const ANSWER_SELECTORS = [
   'article[data-testid^="conversation-turn"][data-message-author-role="assistant"]',
+  'article[data-testid^="conversation-turn"][data-turn="assistant"]',
   'article[data-testid^="conversation-turn"] [data-message-author-role="assistant"]',
+  'article[data-testid^="conversation-turn"] [data-turn="assistant"]',
   'article[data-testid^="conversation-turn"] .markdown',
   '[data-message-author-role="assistant"] .markdown',
+  '[data-turn="assistant"] .markdown',
   '[data-message-author-role="assistant"]',
+  '[data-turn="assistant"]',
 ];
 
 export const CONVERSATION_TURN_SELECTOR = 'article[data-testid^="conversation-turn"]';
-export const ASSISTANT_ROLE_SELECTOR = '[data-message-author-role="assistant"]';
+export const ASSISTANT_ROLE_SELECTOR = '[data-message-author-role="assistant"], [data-turn="assistant"]';
 export const CLOUDFLARE_SCRIPT_SELECTOR = 'script[src*="/challenge-platform/"]';
 export const CLOUDFLARE_TITLE = 'just a moment';
 export const PROMPT_PRIMARY_SELECTOR = '#prompt-textarea';

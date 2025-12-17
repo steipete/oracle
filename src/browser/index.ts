@@ -415,6 +415,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const finalSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
     const finalText = typeof finalSnapshot?.text === 'string' ? finalSnapshot.text.trim() : '';
     if (
+      !copiedMarkdown &&
       finalText &&
       finalText !== answerMarkdown.trim() &&
       finalText !== promptText.trim() &&
