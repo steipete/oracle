@@ -318,28 +318,29 @@ async function verifyPromptCommitted(
   const encodedPrompt = JSON.stringify(prompt.trim());
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
   const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
-  const script = `(() => {
-    const editor = document.querySelector(${primarySelectorLiteral});
-    const fallback = document.querySelector(${fallbackSelectorLiteral});
-    const normalize = (value) => {
-      let text = value?.toLowerCase?.() ?? '';
-      // Strip markdown code fences and inline code (ChatGPT renders these differently)
-      text = text.replace(/\`\`\`[\\s\\S]*?\`\`\`/g, ' ');
-      text = text.replace(/\`[^\`]*\`/g, ' ');
-      // Collapse whitespace
-      return text.replace(/\\s+/g, ' ').trim();
-    };
-    const normalizedPrompt = normalize(${encodedPrompt});
-    const normalizedPromptPrefix = normalizedPrompt.slice(0, 120);
-    const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
-    const articles = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
-    const normalizedTurns = articles.map((node) => normalize(node?.innerText));
-    const userMatched = normalizedTurns.some((text) => text.includes(normalizedPrompt));
-    const prefixMatched =
-      normalizedPromptPrefix.length > 30 &&
-      normalizedTurns.some((text) => text.includes(normalizedPromptPrefix));
-    const lastTurn = normalizedTurns[normalizedTurns.length - 1] ?? '';
-    return {
+	const script = `(() => {
+	    const editor = document.querySelector(${primarySelectorLiteral});
+	    const fallback = document.querySelector(${fallbackSelectorLiteral});
+	    const normalize = (value) => {
+	      let text = value?.toLowerCase?.() ?? '';
+	      // Strip markdown *markers* but keep content (ChatGPT renders fence markers differently).
+	      text = text.replace(/\`\`\`[^\\n]*\\n([\\s\\S]*?)\`\`\`/g, ' $1 ');
+	      text = text.replace(/\`\`\`/g, ' ');
+	      text = text.replace(/\`([^\`]*)\`/g, '$1');
+	      return text.replace(/\\s+/g, ' ').trim();
+	    };
+	    const normalizedPrompt = normalize(${encodedPrompt});
+	    const normalizedPromptPrefix = normalizedPrompt.slice(0, 120);
+	    const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
+	    const articles = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+	    const normalizedTurns = articles.map((node) => normalize(node?.innerText));
+	    const userMatched =
+	      normalizedPrompt.length > 0 && normalizedTurns.some((text) => text.includes(normalizedPrompt));
+	    const prefixMatched =
+	      normalizedPromptPrefix.length > 30 &&
+	      normalizedTurns.some((text) => text.includes(normalizedPromptPrefix));
+	    const lastTurn = normalizedTurns[normalizedTurns.length - 1] ?? '';
+	    return {
       userMatched,
       prefixMatched,
       fallbackValue: fallback?.value ?? '',

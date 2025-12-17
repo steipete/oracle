@@ -424,29 +424,32 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       answerText = finalText;
       answerMarkdown = finalText;
     }
-    // Detect prompt echo using normalized comparison (whitespace-insensitive)
-    const normalizedAnswer = normalizeForComparison(answerMarkdown);
-    const normalizedPrompt = normalizeForComparison(promptText);
-    const isPromptEcho =
-      normalizedAnswer === normalizedPrompt ||
-      normalizedAnswer.startsWith(normalizedPrompt.slice(0, Math.min(200, normalizedPrompt.length)));
-    if (isPromptEcho) {
-      logger('Detected prompt echo in response; waiting for actual assistant response...');
-      const deadline = Date.now() + 8_000;
-      let bestText: string | null = null;
-      let stableCount = 0;
+	    // Detect prompt echo using normalized comparison (whitespace-insensitive)
+	    const normalizedAnswer = normalizeForComparison(answerMarkdown);
+	    const normalizedPrompt = normalizeForComparison(promptText);
+	    const promptPrefix =
+	      normalizedPrompt.length >= 80
+	        ? normalizedPrompt.slice(0, Math.min(200, normalizedPrompt.length))
+	        : '';
+	    const isPromptEcho =
+	      normalizedAnswer === normalizedPrompt || (promptPrefix.length > 0 && normalizedAnswer.startsWith(promptPrefix));
+	    if (isPromptEcho) {
+	      logger('Detected prompt echo in response; waiting for actual assistant response...');
+	      const deadline = Date.now() + 8_000;
+	      let bestText: string | null = null;
+	      let stableCount = 0;
       while (Date.now() < deadline) {
         const snapshot = await readAssistantSnapshot(Runtime).catch(() => null);
         const text = typeof snapshot?.text === 'string' ? snapshot.text.trim() : '';
-        const normalizedText = normalizeForComparison(text);
-        const isStillEcho =
-          !text ||
-          normalizedText === normalizedPrompt ||
-          normalizedText.startsWith(normalizedPrompt.slice(0, Math.min(200, normalizedPrompt.length)));
-        if (!isStillEcho) {
-          if (!bestText || text.length > bestText.length) {
-            bestText = text;
-            stableCount = 0;
+	        const normalizedText = normalizeForComparison(text);
+	        const isStillEcho =
+	          !text ||
+	          normalizedText === normalizedPrompt ||
+	          (promptPrefix.length > 0 && normalizedText.startsWith(promptPrefix));
+	        if (!isStillEcho) {
+	          if (!bestText || text.length > bestText.length) {
+	            bestText = text;
+	            stableCount = 0;
           } else if (text === bestText) {
             stableCount += 1;
           }
@@ -867,29 +870,32 @@ async function runRemoteBrowserMode(
       answerText = finalText;
       answerMarkdown = finalText;
     }
-    // Detect prompt echo using normalized comparison (whitespace-insensitive)
-    const normalizedAnswer = normalizeForComparison(answerMarkdown);
-    const normalizedPrompt = normalizeForComparison(promptText);
-    const isPromptEcho =
-      normalizedAnswer === normalizedPrompt ||
-      normalizedAnswer.startsWith(normalizedPrompt.slice(0, Math.min(200, normalizedPrompt.length)));
-    if (isPromptEcho) {
-      logger('Detected prompt echo in response; waiting for actual assistant response...');
-      const deadline = Date.now() + 8_000;
-      let bestText: string | null = null;
-      let stableCount = 0;
+	    // Detect prompt echo using normalized comparison (whitespace-insensitive)
+	    const normalizedAnswer = normalizeForComparison(answerMarkdown);
+	    const normalizedPrompt = normalizeForComparison(promptText);
+	    const promptPrefix =
+	      normalizedPrompt.length >= 80
+	        ? normalizedPrompt.slice(0, Math.min(200, normalizedPrompt.length))
+	        : '';
+	    const isPromptEcho =
+	      normalizedAnswer === normalizedPrompt || (promptPrefix.length > 0 && normalizedAnswer.startsWith(promptPrefix));
+	    if (isPromptEcho) {
+	      logger('Detected prompt echo in response; waiting for actual assistant response...');
+	      const deadline = Date.now() + 8_000;
+	      let bestText: string | null = null;
+	      let stableCount = 0;
       while (Date.now() < deadline) {
         const snapshot = await readAssistantSnapshot(Runtime).catch(() => null);
         const text = typeof snapshot?.text === 'string' ? snapshot.text.trim() : '';
-        const normalizedText = normalizeForComparison(text);
-        const isStillEcho =
-          !text ||
-          normalizedText === normalizedPrompt ||
-          normalizedText.startsWith(normalizedPrompt.slice(0, Math.min(200, normalizedPrompt.length)));
-        if (!isStillEcho) {
-          if (!bestText || text.length > bestText.length) {
-            bestText = text;
-            stableCount = 0;
+	        const normalizedText = normalizeForComparison(text);
+	        const isStillEcho =
+	          !text ||
+	          normalizedText === normalizedPrompt ||
+	          (promptPrefix.length > 0 && normalizedText.startsWith(promptPrefix));
+	        if (!isStillEcho) {
+	          if (!bestText || text.length > bestText.length) {
+	            bestText = text;
+	            stableCount = 0;
           } else if (text === bestText) {
             stableCount += 1;
           }

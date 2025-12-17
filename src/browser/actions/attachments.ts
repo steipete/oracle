@@ -247,25 +247,43 @@ export async function waitForAttachmentCompletion(
     const filesAttached = attachedNames.length > 0;
     return { state: button ? (disabled ? 'disabled' : 'ready') : 'missing', uploading, filesAttached, attachedNames };
   })()`;
-  while (Date.now() < deadline) {
-    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
-    const value = result?.value as {
-      state?: string;
-      uploading?: boolean;
-      filesAttached?: boolean;
-      attachedNames?: string[];
-    } | undefined;
-    if (value && !value.uploading) {
-      const attachedNames = (value.attachedNames ?? []).map((name) => name.toLowerCase());
-      // Use fuzzy matching: check if any attached name CONTAINS the expected basename
-      const missing = expectedNormalized.filter((expected) => {
-        const baseName = expected.split('/').pop()?.split('\\').pop() ?? expected;
-        return !attachedNames.some((attached) => attached.includes(baseName) || baseName.includes(attached));
-      });
-      if (missing.length === 0) {
-        if (value.state === 'ready') {
-          return;
-        }
+	while (Date.now() < deadline) {
+	    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
+	    const value = result?.value as {
+	      state?: string;
+	      uploading?: boolean;
+	      filesAttached?: boolean;
+	      attachedNames?: string[];
+	    } | undefined;
+	    if (value && !value.uploading) {
+	      const attachedNames = (value.attachedNames ?? [])
+	        .map((name) => name.toLowerCase().replace(/\s+/g, ' ').trim())
+	        .filter(Boolean);
+	      const matchesExpected = (expected: string): boolean => {
+	        const baseName = expected.split('/').pop()?.split('\\').pop() ?? expected;
+	        const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, ' ').trim();
+	        const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, '');
+	        return attachedNames.some((raw) => {
+	          if (raw.includes(normalizedExpected)) return true;
+	          if (expectedNoExt.length >= 6 && raw.includes(expectedNoExt)) return true;
+	          if (raw.includes('…') || raw.includes('...')) {
+	            const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	            const pattern = escaped.replace(/\\…|\\\.\\\.\\\./g, '.*');
+	            try {
+	              const re = new RegExp(pattern);
+	              return re.test(normalizedExpected) || (expectedNoExt.length >= 6 && re.test(expectedNoExt));
+	            } catch {
+	              return false;
+	            }
+	          }
+	          return false;
+	        });
+	      };
+	      const missing = expectedNormalized.filter((expected) => !matchesExpected(expected));
+	      if (missing.length === 0) {
+	        if (value.state === 'ready') {
+	          return;
+	        }
         if (value.state === 'missing' && value.filesAttached) {
           return;
         }
