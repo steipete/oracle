@@ -44,11 +44,13 @@ vi.mock('../../../src/sessionStore.ts', () => ({
 const tui = await import('../../../src/cli/tui/index.ts');
 
 const originalCI = process.env.CI;
+const originalSshConnection = process.env.SSH_CONNECTION;
 
 describe('askOracleFlow', () => {
   beforeEach(() => {
     // Make notification defaults deterministic (CI disables by default).
-  process.env.CI = '';
+    process.env.CI = '';
+    process.env.SSH_CONNECTION = '';
   promptMock.mockReset();
   performSessionRunMock.mockReset();
   ensureSessionStorageMock.mockReset();
@@ -131,6 +133,7 @@ describe('askOracleFlow', () => {
 
 afterAll(() => {
   process.env.CI = originalCI;
+  process.env.SSH_CONNECTION = originalSshConnection;
 });
 
 describe('resolveCost basics', () => {

@@ -25,6 +25,7 @@ export interface BrowserSessionConfig {
   inlineCookiesSource?: string | null;
   headless?: boolean;
   keepBrowser?: boolean;
+  keepTabs?: boolean;
   hideWindow?: boolean;
   desiredModel?: string | null;
   debug?: boolean;
@@ -33,6 +34,7 @@ export interface BrowserSessionConfig {
   manualLogin?: boolean;
   manualLoginProfileDir?: string | null;
   extendedThinking?: boolean;
+  thinkingEffort?: 'standard' | 'extended' | null;
 }
 
 export interface BrowserRuntimeMetadata {

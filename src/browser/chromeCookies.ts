@@ -223,14 +223,18 @@ async function ensureCookieFile(inputPath: string): Promise<string> {
   const expanded = expandPath(inputPath);
   const stat = await fs.stat(expanded).catch(() => null);
   if (!stat) {
-    throw new Error(`Unable to locate Chrome cookie DB at ${expanded}`);
+    throw new Error(
+      `Unable to locate Chrome cookie DB at ${expanded}. Pass --browser-cookie-path <profile-dir> (e.g., ~/.config/google-chrome/Default) or --browser-manual-login.`,
+    );
   }
   if (stat.isDirectory()) {
     const directFile = path.join(expanded, 'Cookies');
     if (await fileExists(directFile)) return directFile;
     const networkFile = path.join(expanded, 'Network', 'Cookies');
     if (await fileExists(networkFile)) return networkFile;
-    throw new Error(`No Cookies DB found under ${expanded}`);
+    throw new Error(
+      `No Cookies DB found under ${expanded}. Pass --browser-cookie-path <profile-dir> (e.g., ~/.config/google-chrome/Default) or --browser-manual-login.`,
+    );
   }
   return expanded;
 }
@@ -274,8 +278,11 @@ async function defaultProfileRoot(): Promise<string> {
   if (process.platform === 'darwin') {
     candidates.push(
       path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome'),
+      path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome Beta'),
+      path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome Canary'),
       path.join(os.homedir(), 'Library', 'Application Support', 'Microsoft Edge'),
       path.join(os.homedir(), 'Library', 'Application Support', 'Chromium'),
+      path.join(os.homedir(), 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser'),
     );
   } else if (process.platform === 'linux') {
     if (isWsl()) {
@@ -288,6 +295,7 @@ async function defaultProfileRoot(): Promise<string> {
         wslCandidates.push(
           path.join(normalized, 'AppData', 'Local', 'Google', 'Chrome', 'User Data'),
           path.join(normalized, 'AppData', 'Local', 'Microsoft', 'Edge', 'User Data'),
+          path.join(normalized, 'AppData', 'Local', 'BraveSoftware', 'Brave-Browser', 'User Data'),
         );
       }
       // Ensure we don't pick a non-user Default profile ahead of real ones.
@@ -300,8 +308,11 @@ async function defaultProfileRoot(): Promise<string> {
     }
     candidates.push(
       path.join(os.homedir(), '.config', 'google-chrome'),
+      path.join(os.homedir(), '.config', 'google-chrome-beta'),
+      path.join(os.homedir(), '.config', 'google-chrome-unstable'),
       path.join(os.homedir(), '.config', 'microsoft-edge'),
       path.join(os.homedir(), '.config', 'chromium'),
+      path.join(os.homedir(), '.config', 'BraveSoftware', 'Brave-Browser'),
       // Snap Chromium profiles
       path.join(os.homedir(), 'snap', 'chromium', 'common', 'chromium'),
       path.join(os.homedir(), 'snap', 'chromium', 'current', 'chromium'),

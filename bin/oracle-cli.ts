@@ -68,6 +68,7 @@ import {
 import { loadUserConfig, type UserConfig } from '../src/config.js';
 import { applyBrowserDefaultsFromConfig } from '../src/cli/browserDefaults.js';
 import { shouldBlockDuplicatePrompt } from '../src/cli/duplicatePromptGuard.js';
+import { resolveRemoteServiceConfig } from '../src/remote/remoteServiceConfig.js';
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -114,8 +115,10 @@ interface CliOptions extends OptionValues {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
+  browserKeepTabs?: boolean;
   browserManualLogin?: boolean;
   browserExtendedThinking?: boolean;
+  browserThinkingEffort?: string;
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;
   browserInlineFiles?: boolean;
@@ -367,7 +370,16 @@ program
   .addOption(new Option('--browser-headless', 'Launch Chrome in headless mode.').hideHelp())
   .addOption(new Option('--browser-hide-window', 'Hide the Chrome window after launch (macOS headful only).').hideHelp())
   .addOption(new Option('--browser-keep-browser', 'Keep Chrome running after completion.').hideHelp())
+  .addOption(new Option('--browser-keep-tabs', 'Keep the opened ChatGPT tab(s) after completion.').hideHelp())
   .addOption(new Option('--browser-extended-thinking', 'Select Extended thinking time for GPT-5.2 Thinking model.').hideHelp())
+  .addOption(
+    new Option(
+      '--browser-thinking-effort <standard|extended>',
+      'Select reasoning effort level for thinking-capable models (Standard or Extended).',
+    )
+      .choices(['standard', 'extended'])
+      .hideHelp(),
+  )
   .addOption(
     new Option('--browser-allow-cookie-errors', 'Continue even if Chrome cookies cannot be copied.').hideHelp(),
   )
@@ -432,6 +444,67 @@ program
       port: commandOptions.port,
       token: commandOptions.token,
     });
+  });
+
+const bridgeCommand = program.command('bridge').description('Bridge a Windows-hosted ChatGPT session to Linux clients.');
+
+bridgeCommand
+  .command('host')
+  .description('Start a secure oracle serve host (optionally with an SSH reverse tunnel).')
+  .option('--bind <host:port>', 'Local bind address for the host service (default 127.0.0.1:9473).')
+  .option('--token <token|auto>', 'Service access token (default auto).', 'auto')
+  .option('--write-connection <path>', 'Write a connection artifact JSON (default ~/.oracle/bridge-connection.json).')
+  .option('--ssh <user@host>', 'Maintain an SSH reverse tunnel to the Linux host (ssh -N -R ...).')
+  .option('--ssh-remote-port <port>', 'Remote port to bind on the Linux host (default matches --bind port).', parseIntOption)
+  .option('--ssh-identity <path>', 'SSH identity file (ssh -i).')
+  .option('--ssh-extra-args <args>', 'Extra args passed to ssh (quoted string).')
+  .option('--background', 'Run the host in the background and write pid/log files.', false)
+  .option('--foreground', 'Run the host in the foreground (default).', false)
+  .option('--print', 'Print the client connection string (includes token).', false)
+  .option('--print-token', 'Print only the token.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeHost } = await import('../src/cli/bridge/host.js');
+    await runBridgeHost(commandOptions);
+  });
+
+bridgeCommand
+  .command('client')
+  .description('Configure this machine to use a remote oracle serve host.')
+  .requiredOption('--connect <connection>', 'Connection string or path to bridge-connection.json.')
+  .option('--config <path>', 'Override the oracle config file location (default ~/.oracle/config.json).')
+  .option('--no-write-config', 'Do not write ~/.oracle/config.json (just validate).')
+  .option('--no-test', 'Skip remote /health check.')
+  .option('--print-env', 'Print env var exports (includes token).', false)
+  .action(async (commandOptions) => {
+    const { runBridgeClient } = await import('../src/cli/bridge/client.js');
+    await runBridgeClient(commandOptions);
+  });
+
+bridgeCommand
+  .command('doctor')
+  .description('Diagnose bridge connectivity and browser engine prerequisites.')
+  .option('--verbose', 'Show extra diagnostics.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeDoctor } = await import('../src/cli/bridge/doctor.js');
+    await runBridgeDoctor(commandOptions);
+  });
+
+bridgeCommand
+  .command('codex-config')
+  .description('Print a Codex CLI MCP server config snippet for oracle-mcp.')
+  .option('--print-token', 'Include ORACLE_REMOTE_TOKEN in the snippet.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeCodexConfig } = await import('../src/cli/bridge/codexConfig.js');
+    await runBridgeCodexConfig(commandOptions);
+  });
+
+bridgeCommand
+  .command('claude-config')
+  .description('Print a Claude Code MCP config snippet (.mcp.json) for oracle-mcp.')
+  .option('--print-token', 'Include ORACLE_REMOTE_TOKEN in the snippet.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeClaudeConfig } = await import('../src/cli/bridge/claudeConfig.js');
+    await runBridgeClaudeConfig(commandOptions);
   });
 
 program
@@ -670,14 +743,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   };
   applyRetentionOption();
 
-  const remoteHost =
-    options.remoteHost ?? userConfig.remoteHost ?? userConfig.remote?.host ?? process.env.ORACLE_REMOTE_HOST;
-  const remoteToken =
-    options.remoteToken ?? userConfig.remoteToken ?? userConfig.remote?.token ?? process.env.ORACLE_REMOTE_TOKEN;
-  if (remoteHost) {
-    console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
-  }
-
   if (userCliArgs.length === 0) {
     console.log(chalk.yellow('No prompt or subcommand supplied. Run `oracle --help` or `oracle tui` for the TUI.'));
     program.outputHelp();
@@ -695,7 +760,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error('--dry-run cannot be combined with --render-markdown.');
   }
 
-  const preferredEngine = options.engine ?? userConfig.engine;
+  const envEngineOverride = (process.env.ORACLE_ENGINE ?? '').trim().toLowerCase();
+  const preferredEngine =
+    options.engine ?? (envEngineOverride === 'api' || envEngineOverride === 'browser' ? (envEngineOverride as EngineMode) : undefined) ?? userConfig.engine;
   let engine: EngineMode = resolveEngine({ engine: preferredEngine, browserFlag: options.browser, env: process.env });
   if (options.browser) {
     console.log(chalk.yellow('`--browser` is deprecated; use `--engine browser` instead.'));
@@ -716,12 +783,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     options.baseUrl = userConfig.apiBaseUrl;
   }
 
-  if (remoteHost && engine !== 'browser') {
-    throw new Error('--remote-host requires --engine browser.');
-  }
-  if (remoteHost && options.remoteChrome) {
-    throw new Error('--remote-host cannot be combined with --remote-chrome.');
-  }
+  const resolvedRemoteService = resolveRemoteServiceConfig({
+    cliHost: options.remoteHost,
+    cliToken: options.remoteToken,
+    userConfig,
+    env: process.env,
+  });
+  const cliRemoteHostSpecified = resolvedRemoteService.sources.host === 'cli';
 
   if (optionUsesDefault('azureEndpoint')) {
     if (process.env.AZURE_OPENAI_ENDPOINT) {
@@ -786,8 +854,28 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   if (normalizedMultiModels.length > 0) {
     engine = 'api';
   }
-  if (remoteHost && normalizedMultiModels.length > 0) {
+
+  if (cliRemoteHostSpecified && normalizedMultiModels.length > 0) {
     throw new Error('--remote-host does not support --models yet. Use API engine locally instead.');
+  }
+  if (cliRemoteHostSpecified && engine !== 'browser') {
+    throw new Error('--remote-host requires --engine browser.');
+  }
+  if (cliRemoteHostSpecified && options.remoteChrome) {
+    throw new Error('--remote-host cannot be combined with --remote-chrome.');
+  }
+
+  const remoteHost = engine === 'browser' && !options.remoteChrome ? resolvedRemoteService.host : undefined;
+  const remoteToken = remoteHost ? resolvedRemoteService.token : undefined;
+  if (remoteHost && !remoteToken) {
+    throw new Error(
+      `Remote host configured (${remoteHost}) but remote token is missing. Run \`oracle bridge client --connect <...>\` or set ORACLE_REMOTE_TOKEN.`,
+    );
+  }
+  if (remoteHost) {
+    const source = resolvedRemoteService.sources.host;
+    const sourceLabel = source === 'unset' ? '' : ` (${source})`;
+    console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}${sourceLabel}`));
   }
   const resolvedModel: ModelName =
     normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
@@ -950,7 +1038,15 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   if (options.file && options.file.length > 0) {
-    await readFiles(options.file, { cwd: process.cwd() });
+    // Preflight file expansion/validation (globs, missing paths, etc.).
+    //
+    // Note: `readFiles` enforces a 1MB size limit because API mode (and browser inline mode)
+    // read file contents into the prompt. In browser attachment mode (`--browser-attachments always`),
+    // we upload files instead, so preflight-reading would incorrectly reject larger attachments
+    // (e.g., images/screenshots). In that case, defer validation to the browser prompt assembler.
+    if (!(engine === 'browser' && options.browserAttachments === 'always')) {
+      await readFiles(options.file, { cwd: process.cwd() });
+    }
   }
 
   const getSource = (key: keyof CliOptions) => program.getOptionValueSource?.(key as string) ?? undefined;
@@ -980,7 +1076,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     browserDeps = {
       executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
     };
-    console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   }
   const remoteExecutionActive = Boolean(browserDeps);
 

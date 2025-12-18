@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import CDP from 'chrome-remote-interface';
 import { launch, Launcher, type LaunchedChrome } from 'chrome-launcher';
 import type { BrowserLogger, ResolvedBrowserConfig, ChromeClient } from './types.js';
+import { detectChromeBinary } from './detect.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -15,17 +16,26 @@ export async function launchChrome(config: ResolvedBrowserConfig, userDataDir: s
   const debugBindAddress = connectHost && connectHost !== '127.0.0.1' ? '0.0.0.0' : connectHost;
   const debugPort = config.debugPort ?? parseDebugPortEnv();
   const chromeFlags = buildChromeFlags(config.headless ?? false, debugBindAddress);
+  const resolvedChromePath =
+    config.chromePath && config.chromePath.trim().length > 0
+      ? config.chromePath.trim()
+      : (await detectChromeBinary()).path;
+  if (!resolvedChromePath) {
+    throw new Error(
+      'Browser engine unavailable: no Chrome/Chromium installation found. Install Chrome/Chromium or pass --browser-chrome-path (or set CHROME_PATH).',
+    );
+  }
   const usePatchedLauncher = Boolean(connectHost && connectHost !== '127.0.0.1');
   const launcher = usePatchedLauncher
     ? await launchWithCustomHost({
         chromeFlags,
-        chromePath: config.chromePath ?? undefined,
+        chromePath: resolvedChromePath ?? undefined,
         userDataDir,
         host: connectHost ?? '127.0.0.1',
         requestedPort: debugPort ?? undefined,
       })
     : await launch({
-        chromePath: config.chromePath ?? undefined,
+        chromePath: resolvedChromePath ?? undefined,
         chromeFlags,
         userDataDir,
         port: debugPort ?? undefined,
@@ -118,10 +128,27 @@ export async function hideChromeWindow(chrome: LaunchedChrome, logger: BrowserLo
   }
 }
 
-export async function connectToChrome(port: number, logger: BrowserLogger, host?: string): Promise<ChromeClient> {
+export async function connectToChrome(
+  port: number,
+  logger: BrowserLogger,
+  host?: string,
+  targetUrl?: string,
+): Promise<{ client: ChromeClient; targetId?: string }> {
+  await waitForDevToolsReady({ host, port, logger });
+  if (targetUrl) {
+    try {
+      const target = await CDP.New({ host, port, url: targetUrl });
+      const client = await CDP({ host, port, target: target.id });
+      logger(`Opened dedicated Chrome tab targeting ${targetUrl}`);
+      return { client, targetId: target.id };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger(`Failed to open dedicated Chrome tab (${message}); falling back to first target.`);
+    }
+  }
   const client = await CDP({ port, host });
   logger('Connected to Chrome DevTools protocol');
-  return client;
+  return { client };
 }
 
 export async function connectToRemoteChrome(
@@ -130,6 +157,7 @@ export async function connectToRemoteChrome(
   logger: BrowserLogger,
   targetUrl?: string,
 ): Promise<RemoteChromeConnection> {
+  await waitForDevToolsReady({ host, port, logger });
   if (targetUrl) {
     try {
       const target = await CDP.New({ host, port, url: targetUrl });
@@ -169,6 +197,42 @@ export async function closeRemoteChromeTarget(
 export interface RemoteChromeConnection {
   client: ChromeClient;
   targetId?: string;
+}
+
+async function waitForDevToolsReady({
+  host,
+  port,
+  logger,
+  timeoutMs = 10_000,
+}: {
+  host?: string;
+  port: number;
+  logger: BrowserLogger;
+  timeoutMs?: number;
+}): Promise<void> {
+  const connectHost = host ?? '127.0.0.1';
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const socket = net.connect({ host: connectHost, port });
+        socket.once('connect', () => {
+          socket.end();
+          resolve();
+        });
+        socket.once('error', (error) => {
+          socket.destroy();
+          reject(error);
+        });
+      });
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
+  const message = `DevTools did not become reachable on ${connectHost}:${port} within ${timeoutMs}ms`;
+  logger(message);
+  throw new Error(message);
 }
 
 function buildChromeFlags(headless: boolean, debugBindAddress?: string | null): string[] {

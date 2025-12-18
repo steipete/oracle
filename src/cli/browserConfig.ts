@@ -35,8 +35,10 @@ export interface BrowserFlagOptions {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
+  browserKeepTabs?: boolean;
   browserManualLogin?: boolean;
   browserExtendedThinking?: boolean;
+  browserThinkingEffort?: string;
   browserModelLabel?: string;
   browserAllowCookieErrors?: boolean;
   remoteChrome?: string;
@@ -83,6 +85,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     inlineCookiesSource: inline?.source ?? null,
     headless: undefined, // disable headless; Cloudflare blocks it
     keepBrowser: options.browserKeepBrowser ? true : undefined,
+    keepTabs: options.browserKeepTabs ? true : undefined,
     manualLogin: options.browserManualLogin ? true : undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel: shouldUseOverride ? desiredModelOverride : mapModelToBrowserLabel(options.model),
@@ -91,7 +94,19 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
     extendedThinking: options.browserExtendedThinking ? true : undefined,
+    thinkingEffort: normalizeThinkingEffort(options.browserThinkingEffort, options.browserExtendedThinking),
   };
+}
+
+function normalizeThinkingEffort(
+  raw: string | undefined,
+  legacyExtendedFlag: boolean | undefined,
+): 'standard' | 'extended' | null {
+  const trimmed = raw?.trim().toLowerCase();
+  if (trimmed === 'standard') return 'standard';
+  if (trimmed === 'extended') return 'extended';
+  if (legacyExtendedFlag) return 'extended';
+  return null;
 }
 
 function selectBrowserPort(options: BrowserFlagOptions): number | null {

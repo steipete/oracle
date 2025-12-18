@@ -504,7 +504,11 @@ function buildAssistantExtractor(functionName: string): string {
         messageRoot.querySelector('.markdown') ||
         messageRoot.querySelector('[data-message-content]') ||
         messageRoot;
-      const text = preferred?.innerText ?? '';
+      const renderedText = preferred?.innerText ?? '';
+      // Some ChatGPT UIs render assistant content in ways that produce an empty innerText
+      // (e.g., virtualization / hidden layers). Fall back to textContent so we can still capture
+      // the actual response text.
+      const text = renderedText.trim() ? renderedText : (preferred?.textContent ?? '');
       const html = preferred?.innerHTML ?? '';
       const messageId = messageRoot.getAttribute('data-message-id');
       const turnId = messageRoot.getAttribute('data-testid');

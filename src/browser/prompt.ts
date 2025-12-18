@@ -45,18 +45,28 @@ export async function assembleBrowserPrompt(
 ): Promise<BrowserPromptArtifacts> {
   const cwd = deps.cwd ?? process.cwd();
   const readFilesFn = deps.readFilesImpl ?? readFiles;
-  const files = await readFilesFn(runOptions.file ?? [], { cwd });
-  const basePrompt = (runOptions.prompt ?? '').trim();
-  const userPrompt = basePrompt;
-  const systemPrompt = runOptions.system?.trim() || '';
-  const sections = createFileSections(files, cwd);
-  const markdown = buildPromptMarkdown(systemPrompt, userPrompt, sections);
-
   const attachmentsPolicy: 'auto' | 'never' | 'always' =
     runOptions.browserInlineFiles
       ? 'never'
       : runOptions.browserAttachments ?? 'auto';
   const bundleRequested = Boolean(runOptions.browserBundleFiles);
+
+  const files =
+    attachmentsPolicy === 'always' && !bundleRequested
+      ? await readFilesFn(runOptions.file ?? [], {
+          cwd,
+          // 0 disables the file-size guard (we're uploading, not inlining file contents).
+          maxFileSizeBytes: 0,
+          // Upload mode doesn't need file contents; avoid decoding binary files as UTF-8.
+          readContents: false,
+        })
+      : await readFilesFn(runOptions.file ?? [], { cwd });
+
+  const basePrompt = (runOptions.prompt ?? '').trim();
+  const userPrompt = basePrompt;
+  const systemPrompt = runOptions.system?.trim() || '';
+  const sections = createFileSections(files, cwd);
+  const markdown = buildPromptMarkdown(systemPrompt, userPrompt, sections);
 
   const inlinePlan = buildAttachmentPlan(sections, { inlineFiles: true, bundleRequested });
   const uploadPlan = buildAttachmentPlan(sections, { inlineFiles: false, bundleRequested });
@@ -84,6 +94,21 @@ export async function assembleBrowserPrompt(
     .trim();
 
   const attachments: BrowserAttachment[] = selectedPlan.attachments.slice();
+
+  if (attachmentsPolicy === 'always' && attachments.length > 0 && !selectedPlan.shouldBundle) {
+    await Promise.all(
+      attachments.map(async (attachment) => {
+        try {
+          const stats = await fs.stat(attachment.path);
+          if (stats.isFile() && typeof stats.size === 'number') {
+            attachment.sizeBytes = stats.size;
+          }
+        } catch {
+          // ignore stat failures; keep best-effort sizeBytes
+        }
+      }),
+    );
+  }
 
   const shouldBundle = selectedPlan.shouldBundle;
   let bundleText: string | null = null;

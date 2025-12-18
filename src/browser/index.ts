@@ -28,7 +28,7 @@ import {
   readAssistantSnapshot,
 } from './pageActions.js';
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
-import { ensureExtendedThinking } from './actions/thinkingTime.js';
+import { ensureThinkingEffort } from './actions/thinkingTime.js';
 import { estimateTokenCount, withRetries, delay } from './utils.js';
 import { formatElapsed } from '../oracle/format.js';
 import { CHATGPT_URL } from './constants.js';
@@ -128,13 +128,26 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   if (manualLogin) {
     await mkdir(userDataDir, { recursive: true });
     logger(`Manual login mode enabled; reusing persistent profile at ${userDataDir}`);
+    const existingPort = await readDevToolsPort(userDataDir);
+    if (existingPort && (!config.debugPort || config.debugPort !== existingPort)) {
+      config = { ...config, debugPort: existingPort };
+      logger(`Using persisted DevTools port ${existingPort} from ${userDataDir}`);
+    }
+    if (!existingPort) {
+      const preferredPort = config.debugPort ?? DEFAULT_DEBUG_PORT;
+      const availablePort = await pickAvailableDebugPort(preferredPort, logger);
+      if (availablePort !== preferredPort) {
+        logger(`DevTools port ${preferredPort} busy; using ${availablePort} for manual-login Chrome.`);
+      }
+      config = { ...config, debugPort: availablePort };
+    }
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
 
   const effectiveKeepBrowser = config.keepBrowser || manualLogin;
   const reusedChrome = manualLogin ? await maybeReuseRunningChrome(userDataDir, logger) : null;
-  const chrome =
+  let chrome =
     reusedChrome ??
     (await launchChrome(
       {
@@ -162,7 +175,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // ignore failure; cleanup still happens below
   }
 
-  let client: Awaited<ReturnType<typeof connectToChrome>> | null = null;
+  let client: Awaited<ReturnType<typeof connectToChrome>>['client'] | null = null;
+  let ownedTargetId: string | undefined;
   const startedAt = Date.now();
   let answerText = '';
   let answerMarkdown = '';
@@ -174,13 +188,40 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   try {
     try {
-      client = await connectToChrome(chrome.port, logger, chromeHost);
+      const connection = await connectToChrome(chrome.port, logger, chromeHost, config.url);
+      client = connection.client;
+      ownedTargetId = connection.targetId;
     } catch (error) {
+      if (!reusedChrome && manualLogin) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger(`Failed to attach to manual-login Chrome (${message}); attempting cleanup and relaunch once.`);
+        await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: 'if_oracle_pid_dead' });
+        const preferredPort = config.debugPort ?? DEFAULT_DEBUG_PORT;
+        const availablePort = await pickAvailableDebugPort(preferredPort, logger);
+        config = { ...config, debugPort: availablePort };
+        try {
+          await chrome.kill();
+        } catch {
+          // ignore
+        }
+        chrome = await launchChrome(
+          {
+            ...config,
+            remoteChrome: config.remoteChrome,
+          },
+          userDataDir,
+          logger,
+        );
+        const connection = await connectToChrome(chrome.port, logger, (chrome as unknown as { host?: string }).host, config.url);
+        client = connection.client;
+        ownedTargetId = connection.targetId;
+      } else {
       const hint = describeDevtoolsFirewallHint(chromeHost, chrome.port);
       if (hint) {
         logger(hint);
       }
       throw error;
+      }
     }
     const disconnectPromise = new Promise<never>((_, reject) => {
       client?.on('disconnect', () => {
@@ -331,14 +372,17 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
-    if (config.extendedThinking) {
+    const desiredEffort = config.thinkingEffort ?? (config.extendedThinking ? 'extended' : null);
+    if (desiredEffort) {
       await raceWithDisconnect(
-        withRetries(() => ensureExtendedThinking(Runtime, logger), {
+        withRetries(() => ensureThinkingEffort(Runtime, logger, desiredEffort), {
           retries: 2,
           delayMs: 300,
           onRetry: (attempt, error) => {
             if (options.verbose) {
-              logger(`[retry] Extended thinking attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`);
+              logger(
+                `[retry] Thinking effort (${desiredEffort}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
             }
           },
         }),
@@ -496,6 +540,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       normalizedError,
     );
   } finally {
+    if (ownedTargetId && !config.keepTabs) {
+      await closeRemoteChromeTarget(chromeHost, chrome.port, ownedTargetId, logger);
+    }
     try {
       if (!connectionClosedUnexpectedly) {
         await client?.close();
@@ -754,13 +801,16 @@ async function runRemoteBrowserMode(
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
     }
-    if (config.extendedThinking) {
-      await withRetries(() => ensureExtendedThinking(Runtime, logger), {
+    const desiredEffort = config.thinkingEffort ?? (config.extendedThinking ? 'extended' : null);
+    if (desiredEffort) {
+      await withRetries(() => ensureThinkingEffort(Runtime, logger, desiredEffort), {
         retries: 2,
         delayMs: 300,
         onRetry: (attempt, error) => {
           if (options.verbose) {
-            logger(`[retry] Extended thinking attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`);
+            logger(
+              `[retry] Thinking effort (${desiredEffort}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+            );
           }
         },
       });

@@ -11,6 +11,8 @@ export function mapConsultToRunOptions({
   models,
   engine,
   search,
+  browserAttachments,
+  browserBundleFiles,
   userConfig,
   env = process.env,
 }: {
@@ -20,6 +22,8 @@ export function mapConsultToRunOptions({
   models?: string[];
   engine?: EngineMode;
   search?: boolean;
+  browserAttachments?: 'auto' | 'never' | 'always';
+  browserBundleFiles?: boolean;
   userConfig?: UserConfig;
   env?: NodeJS.ProcessEnv;
 }): { runOptions: RunOracleOptions; resolvedEngine: EngineMode } {
@@ -33,11 +37,21 @@ export function mapConsultToRunOptions({
   if (typeof search === 'boolean') {
     result.runOptions.search = search;
   }
+  if (browserAttachments) {
+    result.runOptions.browserAttachments = browserAttachments;
+  }
+  if (typeof browserBundleFiles === 'boolean') {
+    result.runOptions.browserBundleFiles = browserBundleFiles;
+  }
   return result;
 }
 
-export function ensureBrowserAvailable(engine: EngineMode): string | null {
+export function ensureBrowserAvailable(engine: EngineMode, options?: { remoteHost?: string | null }): string | null {
   if (engine !== 'browser') {
+    return null;
+  }
+  const remoteHost = options?.remoteHost?.trim() || process.env.ORACLE_REMOTE_HOST?.trim();
+  if (remoteHost) {
     return null;
   }
   if (process.env.CHROME_PATH) {

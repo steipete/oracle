@@ -23,12 +23,23 @@ export interface BrowserConfigDefaults {
   headless?: boolean;
   hideWindow?: boolean;
   keepBrowser?: boolean;
+  remoteHost?: string | null;
+  remoteToken?: string | null;
+  remoteViaSshReverseTunnel?: RemoteViaSshReverseTunnelConfig | null;
 }
 
 export interface AzureConfig {
   endpoint?: string;
   deployment?: string;
   apiVersion?: string;
+}
+
+export interface RemoteViaSshReverseTunnelConfig {
+  ssh?: string;
+  remotePort?: number;
+  localPort?: number;
+  identity?: string;
+  extraArgs?: string;
 }
 
 export interface RemoteServiceConfig {

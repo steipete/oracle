@@ -10,8 +10,8 @@ describe('browser thinking-time selection expression', () => {
     expect(expression).toContain('data-radix-collection-root');
     expect(expression).toContain('role=\\"menuitem\\"');
     expect(expression).toContain('role=\\"menuitemradio\\"');
-    expect(expression).toContain('thinking time');
     expect(expression).toContain('normalize');
     expect(expression).toContain('extended');
+    expect(expression).toContain('standard');
   });
 });

@@ -5,6 +5,7 @@ import type { BrowserRunOptions } from '../browserMode.js';
 import type { BrowserRunResult } from '../browserMode.js';
 import type { BrowserAttachment } from '../browser/types.js';
 import type { RemoteRunPayload, RemoteRunEvent, RemoteAttachmentPayload } from './types.js';
+import { parseHostPort } from '../bridge/connection.js';
 
 interface RemoteExecutorOptions {
   host: string;
@@ -96,12 +97,11 @@ async function serializeAttachments(attachments: BrowserAttachment[]): Promise<R
 }
 
 function parseHost(input: string): { hostname: string; port: number } {
-  const [hostname, portStr] = input.split(':');
-  const port = Number.parseInt(portStr ?? '', 10);
-  if (!hostname || Number.isNaN(port)) {
-    throw new Error(`Invalid remote host: ${input}`);
+  try {
+    return parseHostPort(input);
+  } catch (error) {
+    throw new Error(`Invalid remote host: ${input} (${error instanceof Error ? error.message : String(error)})`);
   }
-  return { hostname, port };
 }
 
 function handleEvent(

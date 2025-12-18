@@ -19,6 +19,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   inlineCookiesSource: null,
   headless: false,
   keepBrowser: false,
+  keepTabs: false,
   hideWindow: false,
   desiredModel: DEFAULT_MODEL_TARGET,
   debug: false,
@@ -27,6 +28,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   manualLogin: false,
   manualLoginProfileDir: null,
   extendedThinking: false,
+  thinkingEffort: null,
 };
 
 export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined): ResolvedBrowserConfig {
@@ -59,6 +61,7 @@ export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined
     inlineCookiesSource: config?.inlineCookiesSource ?? DEFAULT_BROWSER_CONFIG.inlineCookiesSource,
     headless: config?.headless ?? DEFAULT_BROWSER_CONFIG.headless,
     keepBrowser: config?.keepBrowser ?? DEFAULT_BROWSER_CONFIG.keepBrowser,
+    keepTabs: config?.keepTabs ?? DEFAULT_BROWSER_CONFIG.keepTabs,
     hideWindow: config?.hideWindow ?? DEFAULT_BROWSER_CONFIG.hideWindow,
     desiredModel: config?.desiredModel ?? DEFAULT_BROWSER_CONFIG.desiredModel,
     chromeProfile: config?.chromeProfile ?? DEFAULT_BROWSER_CONFIG.chromeProfile,
@@ -68,6 +71,7 @@ export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined
     allowCookieErrors: config?.allowCookieErrors ?? envAllowCookieErrors ?? DEFAULT_BROWSER_CONFIG.allowCookieErrors,
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
+    thinkingEffort: config?.thinkingEffort ?? DEFAULT_BROWSER_CONFIG.thinkingEffort,
   };
 }
 
