@@ -468,13 +468,78 @@ program
   .option('--host <address>', 'Interface to bind (default 0.0.0.0).')
   .option('--port <number>', 'Port to listen on (default random).', parseIntOption)
   .option('--token <value>', 'Access token clients must provide (random if omitted).')
+  .option('--manual-login', 'Use a dedicated Chrome profile for manual login (recommended when cookie sync is unavailable).', false)
+  .option('--manual-login-profile-dir <path>', 'Chrome profile directory for manual login (default ~/.oracle/browser-profile).')
   .action(async (commandOptions) => {
     const { serveRemote } = await import('../src/remote/server.js');
     await serveRemote({
       host: commandOptions.host,
       port: commandOptions.port,
       token: commandOptions.token,
+      manualLoginDefault: commandOptions.manualLogin,
+      manualLoginProfileDir: commandOptions.manualLoginProfileDir,
     });
+  });
+
+const bridgeCommand = program.command('bridge').description('Bridge a Windows-hosted ChatGPT session to Linux clients.');
+
+bridgeCommand
+  .command('host')
+  .description('Start a secure oracle serve host (optionally with an SSH reverse tunnel).')
+  .option('--bind <host:port>', 'Local bind address for the host service (default 127.0.0.1:9473).')
+  .option('--token <token|auto>', 'Service access token (default auto).', 'auto')
+  .option('--write-connection <path>', 'Write a connection artifact JSON (default ~/.oracle/bridge-connection.json).')
+  .option('--ssh <user@host>', 'Maintain an SSH reverse tunnel to the Linux host (ssh -N -R ...).')
+  .option('--ssh-remote-port <port>', 'Remote port to bind on the Linux host (default matches --bind port).', parseIntOption)
+  .option('--ssh-identity <path>', 'SSH identity file (ssh -i).')
+  .option('--ssh-extra-args <args>', 'Extra args passed to ssh (quoted string).')
+  .option('--background', 'Run the host in the background and write pid/log files.', false)
+  .option('--foreground', 'Run the host in the foreground (default).', false)
+  .option('--print', 'Print the client connection string (includes token).', false)
+  .option('--print-token', 'Print only the token.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeHost } = await import('../src/cli/bridge/host.js');
+    await runBridgeHost(commandOptions);
+  });
+
+bridgeCommand
+  .command('client')
+  .description('Configure this machine to use a remote oracle serve host.')
+  .requiredOption('--connect <connection>', 'Connection string or path to bridge-connection.json.')
+  .option('--config <path>', 'Override the oracle config file location (default ~/.oracle/config.json).')
+  .option('--no-write-config', 'Do not write ~/.oracle/config.json (just validate).')
+  .option('--no-test', 'Skip remote /health check.')
+  .option('--print-env', 'Print env var exports (includes token).', false)
+  .action(async (commandOptions) => {
+    const { runBridgeClient } = await import('../src/cli/bridge/client.js');
+    await runBridgeClient(commandOptions);
+  });
+
+bridgeCommand
+  .command('doctor')
+  .description('Diagnose bridge connectivity and browser engine prerequisites.')
+  .option('--verbose', 'Show extra diagnostics.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeDoctor } = await import('../src/cli/bridge/doctor.js');
+    await runBridgeDoctor(commandOptions);
+  });
+
+bridgeCommand
+  .command('codex-config')
+  .description('Print a Codex CLI MCP server config snippet for oracle-mcp.')
+  .option('--print-token', 'Include ORACLE_REMOTE_TOKEN in the snippet.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeCodexConfig } = await import('../src/cli/bridge/codexConfig.js');
+    await runBridgeCodexConfig(commandOptions);
+  });
+
+bridgeCommand
+  .command('claude-config')
+  .description('Print a Claude Code MCP config snippet (.mcp.json) for oracle-mcp.')
+  .option('--print-token', 'Include ORACLE_REMOTE_TOKEN in the snippet.', false)
+  .action(async (commandOptions) => {
+    const { runBridgeClaudeConfig } = await import('../src/cli/bridge/claudeConfig.js');
+    await runBridgeClaudeConfig(commandOptions);
   });
 
 program

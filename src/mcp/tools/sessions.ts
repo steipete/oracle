@@ -4,11 +4,20 @@ import { sessionStore } from '../../sessionStore.js';
 import { sessionsInputSchema } from '../types.js';
 
 const sessionsInputShape = {
-  id: z.string().optional(),
-  hours: z.number().optional(),
-  limit: z.number().optional(),
-  includeAll: z.boolean().optional(),
-  detail: z.boolean().optional(),
+  id: z
+    .string()
+    .optional()
+    .describe('Session id or slug. If set, returns a single session (use detail:true to include metadata/request).'),
+  hours: z.number().optional().describe('Look back this many hours when listing sessions (default: 24).'),
+  limit: z.number().optional().describe('Maximum sessions to return when listing (default: 100).'),
+  includeAll: z
+    .boolean()
+    .optional()
+    .describe('Include sessions outside the time window when listing (mirrors `oracle status --all`).'),
+  detail: z
+    .boolean()
+    .optional()
+    .describe('When id is set, include session metadata + stored request + full log text.'),
 } satisfies z.ZodRawShape;
 
 const sessionsOutputShape = {
@@ -40,7 +49,7 @@ export function registerSessionsTool(server: McpServer): void {
     {
       title: 'List or fetch oracle sessions',
       description:
-        'List stored sessions (same defaults as `oracle status`) or, with id/slug, return a summary row. Pass detail:true to include metadata, log, and stored request for that session.',
+        'Inspect Oracle session history stored under `ORACLE_HOME_DIR` (shared with the CLI). List recent sessions or fetch one by id/slug (optionally including metadata + request + log).',
       inputSchema: sessionsInputShape,
       outputSchema: sessionsOutputShape,
     },
