@@ -1,90 +1,29 @@
 import process from 'node:process';
+import {
+  startOscProgress as startOscProgressShared,
+  supportsOscProgress as supportsOscProgressShared,
+  type OscProgressOptions as OscProgressOptionsShared,
+} from 'osc-progress';
 
-export interface OscProgressOptions {
-  label?: string;
-  targetMs?: number;
-  write?: (data: string) => void;
-  env?: NodeJS.ProcessEnv;
-  isTty?: boolean;
-  /** When true, emit an indeterminate progress indicator (no percentage). */
-  indeterminate?: boolean;
-}
-
-const OSC = '\u001b]9;4;';
-const ST = '\u001b\\';
-
-function sanitizeLabel(label: string): string {
-  const withoutEscape = label.split('\u001b').join('');
-  const withoutBellAndSt = withoutEscape.replaceAll('\u0007', '').replaceAll('\u009c', '');
-  return withoutBellAndSt.replaceAll(']', '').trim();
-}
+export type OscProgressOptions = OscProgressOptionsShared;
 
 export function supportsOscProgress(
   env: NodeJS.ProcessEnv = process.env,
   isTty: boolean = process.stdout.isTTY,
 ): boolean {
-  if (!isTty) {
-    return false;
-  }
-  if (env.ORACLE_NO_OSC_PROGRESS === '1') {
-    return false;
-  }
-  if (env.ORACLE_FORCE_OSC_PROGRESS === '1') {
-    return true;
-  }
-  const termProgram = (env.TERM_PROGRAM ?? '').toLowerCase();
-  if (termProgram.includes('ghostty')) {
-    return true;
-  }
-  if (termProgram.includes('wezterm')) {
-    return true;
-  }
-  if (env.WT_SESSION) {
-    return true; // Windows Terminal exposes this
-  }
-  return false;
+  return supportsOscProgressShared(env, isTty, {
+    disableEnvVar: 'ORACLE_NO_OSC_PROGRESS',
+    forceEnvVar: 'ORACLE_FORCE_OSC_PROGRESS',
+  });
 }
 
 export function startOscProgress(options: OscProgressOptions = {}): () => void {
-  const {
-    label = 'Waiting for API',
-    targetMs = 10 * 60_000,
-    write = (text) => process.stdout.write(text),
-    indeterminate = false,
-  } = options;
-  if (!supportsOscProgress(options.env, options.isTty)) {
-    return () => {};
-  }
-  const cleanLabel = sanitizeLabel(label);
-  if (indeterminate) {
-    write(`${OSC}3;;${cleanLabel}${ST}`);
-    return () => {
-      write(`${OSC}0;0;${cleanLabel}${ST}`);
-    };
-  }
-  const target = Math.max(targetMs, 1_000);
-  const send = (state: number, percent: number): void => {
-    const clamped = Math.max(0, Math.min(100, Math.round(percent)));
-    write(`${OSC}${state};${clamped};${cleanLabel}${ST}`);
-  };
-
-  const startedAt = Date.now();
-  send(1, 0); // activate progress bar
-  const timer = setInterval(() => {
-    const elapsed = Date.now() - startedAt;
-    const percent = Math.min(99, (elapsed / target) * 100);
-    send(1, percent);
-  }, 900);
-  timer.unref?.();
-
-  let stopped = false;
-  return () => {
-    // multiple callers may try to stop
-    if (stopped) {
-      return;
-    }
-    stopped = true;
-    clearInterval(timer);
-    send(0, 0); // clear the progress bar
-  };
+  return startOscProgressShared({
+    ...options,
+    // Preserve Oracle's previous default: progress emits to stdout.
+    write: options.write ?? ((text) => process.stdout.write(text)),
+    disableEnvVar: 'ORACLE_NO_OSC_PROGRESS',
+    forceEnvVar: 'ORACLE_FORCE_OSC_PROGRESS',
+  });
 }
+

@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import kleur from 'kleur';
 import { MODEL_CONFIGS } from '../oracle.js';
 import type { SessionMetadata } from '../sessionStore.js';
+import { estimateUsdCost } from 'tokentally';
 
 const isRich = (rich?: boolean): boolean => rich ?? Boolean(process.stdout.isTTY && chalk.level > 0);
 const dim = (text: string, rich: boolean): string => (rich ? kleur.dim(text) : text);
@@ -56,7 +57,11 @@ export function resolveSessionCost(meta: SessionMetadata): number | null {
   }
   const input = meta.usage.inputTokens ?? 0;
   const output = meta.usage.outputTokens ?? 0;
-  const cost = input * pricing.inputPerToken + output * pricing.outputPerToken;
+  const cost =
+    estimateUsdCost({
+      usage: { inputTokens: input, outputTokens: output },
+      pricing: { inputUsdPerToken: pricing.inputPerToken, outputUsdPerToken: pricing.outputPerToken },
+    })?.totalUsd ?? 0;
   return cost > 0 ? cost : null;
 }
 

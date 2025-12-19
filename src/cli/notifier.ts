@@ -2,6 +2,7 @@ import notifier from 'toasted-notifier';
 import { spawn } from 'node:child_process';
 import { formatUSD, formatNumber } from '../oracle/format.js';
 import { MODEL_CONFIGS } from '../oracle/config.js';
+import { estimateUsdCost } from 'tokentally';
 import type { SessionMode, SessionMetadata } from '../sessionStore.js';
 import type { NotifyConfig } from '../config.js';
 import fs from 'node:fs/promises';
@@ -178,8 +179,13 @@ function inferCost(payload: NotificationContent): number | undefined {
   const config = MODEL_CONFIGS[model as keyof typeof MODEL_CONFIGS];
   if (!config?.pricing) return undefined;
   return (
-    usage.inputTokens * config.pricing.inputPerToken +
-    usage.outputTokens * config.pricing.outputPerToken
+    estimateUsdCost({
+      usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
+      pricing: {
+        inputUsdPerToken: config.pricing.inputPerToken,
+        outputUsdPerToken: config.pricing.outputPerToken,
+      },
+    })?.totalUsd ?? undefined
   );
 }
 

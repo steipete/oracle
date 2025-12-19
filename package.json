@@ -79,8 +79,10 @@
     "kleur": "^4.1.5",
     "markdansi": "0.1.7",
     "openai": "^6.14.0",
+    "osc-progress": "github:steipete/osc-progress#5543f1d4383edfe3040b6bcfdbdb646df8596bc8",
     "shiki": "^3.20.0",
     "sqlite3": "^5.1.7",
+    "tokentally": "github:steipete/tokentally#3c0079763da6f1bbb3a5a8a83a1d1d5da35923cf",
     "toasted-notifier": "^10.1.0",
     "zod": "^4.2.1"
   },

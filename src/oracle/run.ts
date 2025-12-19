@@ -37,6 +37,7 @@ import { renderMarkdownAnsi } from '../cli/markdownRenderer.js';
 import { createLiveRenderer } from 'markdansi';
 import { executeBackgroundResponse } from './background.js';
 import { formatTokenEstimate, formatTokenValue, resolvePreviewMode } from './runUtils.js';
+import { estimateUsdCost } from 'tokentally';
 import {
   defaultOpenRouterBaseUrl,
   isKnownModel,
@@ -609,7 +610,10 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
   const totalTokens = usage.total_tokens ?? inputTokens + outputTokens + reasoningTokens;
   const pricing = modelConfig.pricing ?? undefined;
   const cost = pricing
-    ? inputTokens * pricing.inputPerToken + outputTokens * pricing.outputPerToken
+    ? estimateUsdCost({
+        usage: { inputTokens, outputTokens, reasoningTokens, totalTokens },
+        pricing: { inputUsdPerToken: pricing.inputPerToken, outputUsdPerToken: pricing.outputPerToken },
+      })?.totalUsd
     : undefined;
 
   const elapsedDisplay = formatElapsed(elapsedMs);

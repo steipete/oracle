@@ -69,6 +69,9 @@ importers:
       openai:
         specifier: ^6.14.0
         version: 6.14.0(ws@8.18.3)(zod@4.2.1)
+      osc-progress:
+        specifier: github:steipete/osc-progress#5543f1d4383edfe3040b6bcfdbdb646df8596bc8
+        version: https://codeload.github.com/steipete/osc-progress/tar.gz/5543f1d4383edfe3040b6bcfdbdb646df8596bc8
       shiki:
         specifier: ^3.20.0
         version: 3.20.0
@@ -78,6 +81,9 @@ importers:
       toasted-notifier:
         specifier: ^10.1.0
         version: 10.1.0
+      tokentally:
+        specifier: github:steipete/tokentally#3c0079763da6f1bbb3a5a8a83a1d1d5da35923cf
+        version: https://codeload.github.com/steipete/tokentally/tar.gz/3c0079763da6f1bbb3a5a8a83a1d1d5da35923cf
       zod:
         specifier: ^4.2.1
         version: 4.2.1
@@ -2058,6 +2064,11 @@ packages:
       zod:
         optional: true
 
+  osc-progress@https://codeload.github.com/steipete/osc-progress/tar.gz/5543f1d4383edfe3040b6bcfdbdb646df8596bc8:
+    resolution: {tarball: https://codeload.github.com/steipete/osc-progress/tar.gz/5543f1d4383edfe3040b6bcfdbdb646df8596bc8}
+    version: 0.1.0
+    engines: {node: '>=20'}
+
   p-map@4.0.0:
     resolution: {integrity: sha512-/bjOqmgETBYB5BoEeGVea8dmvHb2m9GLy1E9W43yeyfP6QQCZGFNa+XRceJEuDB6zqr+gKpIAmlLebMpykw/MQ==}
     engines: {node: '>=10'}
@@ -2484,6 +2495,11 @@ packages:
   toidentifier@1.0.1:
     resolution: {integrity: sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==}
     engines: {node: '>=0.6'}
+
+  tokentally@https://codeload.github.com/steipete/tokentally/tar.gz/3c0079763da6f1bbb3a5a8a83a1d1d5da35923cf:
+    resolution: {tarball: https://codeload.github.com/steipete/tokentally/tar.gz/3c0079763da6f1bbb3a5a8a83a1d1d5da35923cf}
+    version: 0.0.1
+    engines: {node: '>=20'}
 
   tough-cookie@5.1.2:
     resolution: {integrity: sha512-FVDYdxtnj0G6Qm/DhNPSb8Ju59ULcup3tuJxkFb5K8Bv2pUXILbf0xZWU8PX8Ov19OXljbUyveOFwRMwkXzO+A==}
@@ -4856,6 +4872,8 @@ snapshots:
       ws: 8.18.3
       zod: 4.2.1
 
+  osc-progress@https://codeload.github.com/steipete/osc-progress/tar.gz/5543f1d4383edfe3040b6bcfdbdb646df8596bc8: {}
+
   p-map@4.0.0:
     dependencies:
       aggregate-error: 3.1.0
@@ -5404,6 +5422,8 @@ snapshots:
       which: 2.0.2
 
   toidentifier@1.0.1: {}
+
+  tokentally@https://codeload.github.com/steipete/tokentally/tar.gz/3c0079763da6f1bbb3a5a8a83a1d1d5da35923cf: {}
 
   tough-cookie@5.1.2:
     dependencies:

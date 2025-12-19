@@ -1,6 +1,7 @@
 import type { ModelConfig, ModelName, KnownModelName, TokenizerFn, ProModelName } from './types.js';
 import { MODEL_CONFIGS, PRO_MODELS } from './config.js';
 import { countTokens as countTokensGpt5Pro } from 'gpt-tokenizer/model/gpt-5-pro';
+import { pricingFromUsdPerMillion } from 'tokentally';
 
 const OPENROUTER_DEFAULT_BASE = 'https://openrouter.ai/api/v1';
 const OPENROUTER_MODELS_ENDPOINT = 'https://openrouter.ai/api/v1/models';
@@ -126,10 +127,16 @@ export async function resolveModelConfig(
           inputLimit: info.context_length ?? known?.inputLimit ?? 200_000,
           pricing:
             info.pricing && info.pricing.prompt != null && info.pricing.completion != null
-              ? {
-                  inputPerToken: info.pricing.prompt / 1_000_000,
-                  outputPerToken: info.pricing.completion / 1_000_000,
-                }
+              ? (() => {
+                  const pricing = pricingFromUsdPerMillion({
+                    inputUsdPerMillion: info.pricing.prompt,
+                    outputUsdPerMillion: info.pricing.completion,
+                  });
+                  return {
+                    inputPerToken: pricing.inputUsdPerToken,
+                    outputPerToken: pricing.outputUsdPerToken,
+                  };
+                })()
               : known?.pricing ?? null,
           supportsBackground: known?.supportsBackground ?? true,
           supportsSearch: known?.supportsSearch ?? true,
