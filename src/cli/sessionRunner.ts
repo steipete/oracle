@@ -123,7 +123,11 @@ export async function performSessionRun({
         error: undefined,
       });
       await writeAssistantOutput(runOptions.writeOutputPath, result.answerText ?? '', log);
+      if (result.shareUrl) {
+        log(kleur.cyan(`Share Link: ${result.shareUrl}`));
+      }
       await sendSessionNotification(
+
         {
           sessionId: sessionMeta.id,
           sessionName: sessionMeta.options?.slug ?? sessionMeta.id,

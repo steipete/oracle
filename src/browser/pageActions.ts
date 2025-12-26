@@ -9,3 +9,4 @@ export {
   buildAssistantExtractorForTest,
   buildConversationDebugExpressionForTest,
 } from './actions/assistantResponse.js';
+export { shareConversation } from './actions/shareLink.js';

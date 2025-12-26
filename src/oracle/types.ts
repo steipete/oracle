@@ -151,6 +151,8 @@ export interface RunOracleOptions {
   suppressAnswerHeader?: boolean;
   /** Skip preamble tips (no-files / short prompt) when a higher-level runner already printed them. */
   suppressTips?: boolean;
+  /** Browser-only: automatically attempt to capture a public share link for the conversation. Defaults to true. */
+  browserShareLink?: boolean;
 }
 
 export interface UsageSummary {

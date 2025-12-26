@@ -19,7 +19,9 @@ export interface BrowserExecutionResult {
   elapsedMs: number;
   runtime: BrowserRuntimeMetadata;
   answerText: string;
+  shareUrl?: string;
 }
+
 
 interface RunBrowserSessionArgs {
   runOptions: RunOracleOptions;
@@ -96,6 +98,7 @@ export async function runBrowserSessionExecution(
       log: automationLogger,
       heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
       verbose: runOptions.verbose,
+      browserShareLink: runOptions.browserShareLink,
       runtimeHintCb: async (runtime) => {
         await persistRuntimeHint({ ...runtime, controllerPid: runtime.controllerPid ?? process.pid });
       },
@@ -153,5 +156,7 @@ export async function runBrowserSessionExecution(
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     answerText,
+    shareUrl: browserResult.shareUrl,
   };
 }
+

@@ -75,6 +75,8 @@ export interface BrowserRunOptions {
   log?: BrowserLogger;
   heartbeatIntervalMs?: number;
   verbose?: boolean;
+  /** Automatically attempt to capture a public share link for the conversation. Defaults to true. */
+  browserShareLink?: boolean;
   /** Optional hook to persist runtime info (port/url/target) as soon as Chrome is ready. */
   runtimeHintCb?: (hint: BrowserRuntimeMetadata) => void | Promise<void>;
 }
@@ -92,6 +94,7 @@ export interface BrowserRunResult {
   userDataDir?: string;
   chromeTargetId?: string;
   tabUrl?: string;
+  shareUrl?: string;
   controllerPid?: number;
 }
 

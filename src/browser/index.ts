@@ -27,7 +27,9 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
   readAssistantSnapshot,
+  shareConversation,
 } from './pageActions.js';
+
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
 import { ensureThinkingTime } from './actions/thinkingTime.js';
 import { estimateTokenCount, withRetries, delay } from './utils.js';
@@ -547,6 +549,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
+    const shareUrl =
+      options.browserShareLink !== false
+        ? (await raceWithDisconnect(shareConversation(Runtime, logger)).catch(() => null)) ?? undefined
+        : undefined;
+
     return {
       answerText,
       answerMarkdown,
@@ -554,7 +561,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tookMs: durationMs,
       answerTokens,
       answerChars,
+      shareUrl,
       chromePid: chrome.pid,
+
+
       chromePort: chrome.port,
       chromeHost,
       userDataDir,
@@ -1015,6 +1025,10 @@ async function runRemoteBrowserMode(
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
+    const shareUrl =
+      options.browserShareLink !== false
+        ? (await shareConversation(Runtime, logger).catch(() => null)) ?? undefined
+        : undefined;
 
     return {
       answerText,
@@ -1023,7 +1037,9 @@ async function runRemoteBrowserMode(
       tookMs: durationMs,
       answerTokens,
       answerChars,
+      shareUrl,
       chromePid: undefined,
+
       chromePort: port,
       chromeHost: host,
       userDataDir: undefined,

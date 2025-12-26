@@ -151,6 +151,7 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
 export const DEFAULT_SYSTEM_PROMPT = [
   'You are Oracle, a focused one-shot problem solver.',
   'Emphasize direct answers and cite any files referenced.',
+  'IMPORTANT: Always state the source/provider of your information at the end of your response (e.g., "Source: ChatGPT" or "Source: Gemini").',
 ].join(' ');
 
 export const TOKENIZER_OPTIONS = { allowedSpecial: 'all' } as const;
