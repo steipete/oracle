@@ -110,8 +110,8 @@ function buildModelSelectionExpression(targetModel: string): string {
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
 
-      // Special case: 'auto' or 'default' means we accept whatever is currently selected.
-      if (PRIMARY_LABEL === 'auto' || PRIMARY_LABEL === 'default' || PRIMARY_LABEL === 'gemini-auto') {
+      // Special case: 'gpt-auto' or 'gemini-auto' means we accept whatever is currently selected.
+      if (PRIMARY_LABEL === 'gpt-auto' || PRIMARY_LABEL === 'gemini-auto') {
         return true;
       }
 
