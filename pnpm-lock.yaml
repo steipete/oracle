@@ -64,14 +64,14 @@ importers:
         specifier: ^4.1.5
         version: 4.1.5
       markdansi:
-        specifier: 0.1.7
-        version: 0.1.7
+        specifier: 0.2.0
+        version: 0.2.0
       openai:
         specifier: ^6.15.0
         version: 6.15.0(ws@8.18.3)(zod@4.2.1)
       osc-progress:
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.2.0
+        version: 0.2.0
       shiki:
         specifier: ^3.20.0
         version: 3.20.0
@@ -1736,8 +1736,8 @@ packages:
     resolution: {integrity: sha512-+zopwDy7DNknmwPQplem5lAZX/eCOzSvSNNcSKm5eVwTkOBzoktEfXsa9L23J/GIRhxRsaxzkPEhrJEpE2F4Gg==}
     engines: {node: '>= 10'}
 
-  markdansi@0.1.7:
-    resolution: {integrity: sha512-Nf3lwBTqkn1h2j5Grg4RHU1sTcHlF25UFPY6z9qe4ihTmdyZwvEVSfRBi9OuR8b4OkL6RAqWBMhfsNYfQO9vrw==}
+  markdansi@0.2.0:
+    resolution: {integrity: sha512-VmO6Myis1lo2meHey5hgeHYnhDJijw33Ft8exwY4+bjVyOqTH1zCf3mZko5jY9vvgQi+fdOWfzbfwF0XZJu3Cg==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -2064,8 +2064,8 @@ packages:
       zod:
         optional: true
 
-  osc-progress@0.1.0:
-    resolution: {integrity: sha512-9HrEuN+6C/ZsbLI58ZVIOMMfk3K9y1wEf7v1KA9eiChfWoe/HCOVJrRdPhP815tY/CB4wt5snJMfFMEBPZDhng==}
+  osc-progress@0.2.0:
+    resolution: {integrity: sha512-GJR9XnS8dQ+sAdbhX90RA4WbmEyrso7X9aHMws4MaQ2GRpfEjnOUSZIdOXJQfnIfBoy9oCc7US/MNFCyuJQzjg==}
     engines: {node: '>=20'}
 
   p-map@4.0.0:
@@ -2427,8 +2427,8 @@ packages:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
 
-  supports-hyperlinks@4.3.0:
-    resolution: {integrity: sha512-i6sWEzuwadSlcr2mOnb0ktlIl+K5FVxsPXmoPfknDd2gyw4ZBIAZ5coc0NQzYqDdEYXMHy8NaY9rWwa1Q1myiQ==}
+  supports-hyperlinks@4.4.0:
+    resolution: {integrity: sha512-UKbpT93hN5Nr9go5UY7bopIB9YQlMz9nm/ct4IXt/irb5YRkn9WaqrOBJGZ5Pwvsd5FQzSVeYlGdXoCAPQZrPg==}
     engines: {node: '>=20'}
 
   system-architecture@0.1.0:
@@ -4369,7 +4369,7 @@ snapshots:
       - supports-color
     optional: true
 
-  markdansi@0.1.7:
+  markdansi@0.2.0:
     dependencies:
       chalk: 5.6.2
       mdast-util-from-markdown: 2.0.2
@@ -4379,7 +4379,7 @@ snapshots:
       micromark-util-combine-extensions: 2.0.1
       string-width: 8.1.0
       strip-ansi: 7.1.2
-      supports-hyperlinks: 4.3.0
+      supports-hyperlinks: 4.4.0
     transitivePeerDependencies:
       - supports-color
 
@@ -4870,7 +4870,7 @@ snapshots:
       ws: 8.18.3
       zod: 4.2.1
 
-  osc-progress@0.1.0: {}
+  osc-progress@0.2.0: {}
 
   p-map@4.0.0:
     dependencies:
@@ -5326,7 +5326,7 @@ snapshots:
     dependencies:
       has-flag: 4.0.0
 
-  supports-hyperlinks@4.3.0:
+  supports-hyperlinks@4.4.0:
     dependencies:
       has-flag: 5.0.1
       supports-color: 10.2.2
