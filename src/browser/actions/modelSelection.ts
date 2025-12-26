@@ -109,6 +109,12 @@ function buildModelSelectionExpression(targetModel: string): string {
     const buttonMatchesTarget = () => {
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
+
+      // Special case: 'auto' or 'default' means we accept whatever is currently selected.
+      if (PRIMARY_LABEL === 'auto' || PRIMARY_LABEL === 'default') {
+        return true;
+      }
+
       if (desiredVersion) {
         if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
         if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;

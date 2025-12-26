@@ -793,7 +793,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const isCodex = primaryModelCandidate.startsWith('gpt-5.1-codex');
   const isClaude = primaryModelCandidate.startsWith('claude');
   const userForcedBrowser = options.browser || options.engine === 'browser';
-  const isBrowserCompatible = (model: string) => model.startsWith('gpt-') || model.startsWith('gemini');
+  const isBrowserCompatible = (model: string) =>
+    model.startsWith('gpt-') || model.startsWith('gemini') || model === 'auto' || model === 'default';
   const hasNonBrowserCompatibleTarget =
     (engine === 'browser' || userForcedBrowser) &&
     (normalizedMultiModels.length > 0
