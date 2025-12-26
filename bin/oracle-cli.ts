@@ -794,7 +794,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const isClaude = primaryModelCandidate.startsWith('claude');
   const userForcedBrowser = options.browser || options.engine === 'browser';
   const isBrowserCompatible = (model: string) =>
-    model.startsWith('gpt-') || model.startsWith('gemini') || model === 'auto' || model === 'default';
+    model.startsWith('gpt-') || model.startsWith('gemini') || model === 'auto' || model === 'default' || model === 'gemini-auto';
   const hasNonBrowserCompatibleTarget =
     (engine === 'browser' || userForcedBrowser) &&
     (normalizedMultiModels.length > 0

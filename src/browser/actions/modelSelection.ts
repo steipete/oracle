@@ -111,7 +111,7 @@ function buildModelSelectionExpression(targetModel: string): string {
       if (!normalizedLabel) return false;
 
       // Special case: 'auto' or 'default' means we accept whatever is currently selected.
-      if (PRIMARY_LABEL === 'auto' || PRIMARY_LABEL === 'default') {
+      if (PRIMARY_LABEL === 'auto' || PRIMARY_LABEL === 'default' || PRIMARY_LABEL === 'gemini-auto') {
         return true;
       }
 

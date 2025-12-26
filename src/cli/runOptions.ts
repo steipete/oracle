@@ -56,7 +56,7 @@ export function resolveRunOptionsFromConfig({
       ? Array.from(new Set(normalizedRequestedModels.map((entry) => resolveApiModel(entry))))
       : [resolvedModel];
   const isBrowserCompatible = (m: string) =>
-    m.startsWith('gpt-') || m.startsWith('gemini') || m === 'auto' || m === 'default';
+    m.startsWith('gpt-') || m.startsWith('gemini') || m === 'auto' || m === 'default' || m === 'gemini-auto';
   const hasNonBrowserCompatibleTarget = (browserRequested || browserConfigured) && allModels.some((m) => !isBrowserCompatible(m));
   if (hasNonBrowserCompatibleTarget) {
     throw new PromptValidationError(

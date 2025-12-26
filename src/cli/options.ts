@@ -164,7 +164,7 @@ export function parseTimeoutOption(value: string | undefined): number | 'auto' |
 
 export function resolveApiModel(modelValue: string): ModelName {
   const normalized = normalizeModelOption(modelValue).toLowerCase();
-  if (normalized === 'auto' || normalized === 'default') {
+  if (normalized === 'auto' || normalized === 'default' || normalized === 'gemini-auto') {
     return normalized as ModelName;
   }
   if (normalized in MODEL_CONFIGS) {
@@ -218,7 +218,7 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (!normalized) {
     return DEFAULT_MODEL;
   }
-  if (normalized === 'auto' || normalized === 'default') {
+  if (normalized === 'auto' || normalized === 'default' || normalized === 'gemini-auto') {
     return normalized as ModelName;
   }
   if (normalized in MODEL_CONFIGS) {
