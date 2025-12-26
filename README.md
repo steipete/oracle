@@ -1,5 +1,8 @@
 # oracle 🧿 — Whispering your tokens to the silicon sage
 
+[![Run in Smithery](https://smithery.ai/badge/skills/steipete)](https://smithery.ai/skills?ns=steipete&utm_source=github&utm_medium=badge)
+
+
 <p align="center">
   <img src="./README-header.png" alt="Oracle CLI header banner" width="1100">
 </p>
