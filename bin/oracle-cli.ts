@@ -117,6 +117,7 @@ interface CliOptions extends OptionValues {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
+  browserModelStrategy?: 'select' | 'current' | 'ignore';
   browserManualLogin?: boolean;
   browserThinkingTime?: 'light' | 'standard' | 'extended' | 'heavy';
   browserAllowCookieErrors?: boolean;
@@ -370,6 +371,12 @@ program
   .addOption(new Option('--browser-headless', 'Launch Chrome in headless mode.').hideHelp())
   .addOption(new Option('--browser-hide-window', 'Hide the Chrome window after launch (macOS headful only).').hideHelp())
   .addOption(new Option('--browser-keep-browser', 'Keep Chrome running after completion.').hideHelp())
+  .addOption(
+    new Option(
+      '--browser-model-strategy <mode>',
+      'ChatGPT model picker strategy: select (default) switches to the requested model, current keeps the active model, ignore skips the picker entirely.',
+    ).choices(['select', 'current', 'ignore']),
+  )
   .addOption(
     new Option('--browser-thinking-time <level>', 'Thinking time intensity for Thinking/Pro models: light, standard, extended, heavy.')
       .choices(['light', 'standard', 'extended', 'heavy'])
@@ -793,8 +800,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const isCodex = primaryModelCandidate.startsWith('gpt-5.1-codex');
   const isClaude = primaryModelCandidate.startsWith('claude');
   const userForcedBrowser = options.browser || options.engine === 'browser';
-  const isBrowserCompatible = (model: string) =>
-    model.startsWith('gpt-') || model.startsWith('gemini') || model === 'gpt-auto' || model === 'gemini-auto';
+  const isBrowserCompatible = (model: string) => model.startsWith('gpt-') || model.startsWith('gemini');
   const hasNonBrowserCompatibleTarget =
     (engine === 'browser' || userForcedBrowser) &&
     (normalizedMultiModels.length > 0
@@ -1027,6 +1033,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       }),
     };
     console.log(chalk.dim('Using Gemini web client for browser automation'));
+    if (browserConfig.modelStrategy && browserConfig.modelStrategy !== 'select') {
+      console.log(chalk.dim('Browser model strategy is ignored for Gemini web runs.'));
+    }
   }
   const remoteExecutionActive = Boolean(browserDeps);
 

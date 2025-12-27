@@ -33,7 +33,7 @@ import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js
 import { ensureThinkingTime } from './actions/thinkingTime.js';
 import { estimateTokenCount, withRetries, delay } from './utils.js';
 import { formatElapsed } from '../oracle/format.js';
-import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR } from './constants.js';
+import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from './constants.js';
 import type { LaunchedChrome } from 'chrome-launcher';
 import { BrowserAutomationError } from '../oracle/errors.js';
 import { alignPromptEchoPair, buildPromptEchoMatcher } from './reattachHelpers.js';
@@ -47,7 +47,7 @@ import {
 } from './profileState.js';
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from './types.js';
-export { CHATGPT_URL, DEFAULT_MODEL_TARGET } from './constants.js';
+export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from './utils.js';
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
@@ -345,10 +345,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         });
     };
     await captureRuntimeSnapshot();
-    if (config.desiredModel) {
+    const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
+    if (config.desiredModel && modelStrategy !== 'ignore') {
       await raceWithDisconnect(
         withRetries(
-          () => ensureModelSelection(Runtime, config.desiredModel as string, logger),
+          () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
           {
             retries: 2,
             delayMs: 300,
@@ -371,6 +372,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       });
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
+    } else if (modelStrategy === 'ignore') {
+      logger('Model picker: skipped (strategy=ignore)');
     }
     // Handle thinking time selection if specified
     const thinkingTime = config.thinkingTime;
@@ -916,9 +919,10 @@ async function runRemoteBrowserMode(
       // ignore
     }
 
-    if (config.desiredModel) {
+    const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
+    if (config.desiredModel && modelStrategy !== 'ignore') {
       await withRetries(
-        () => ensureModelSelection(Runtime, config.desiredModel as string, logger),
+        () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
         {
           retries: 2,
           delayMs: 300,
@@ -931,6 +935,8 @@ async function runRemoteBrowserMode(
       );
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       logger(`Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`);
+    } else if (modelStrategy === 'ignore') {
+      logger('Model picker: skipped (strategy=ignore)');
     }
     // Handle thinking time selection if specified
     const thinkingTime = config.thinkingTime;

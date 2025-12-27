@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSON5 from 'json5';
 import { getOracleHomeDir } from './oracleHome.js';
+import type { BrowserModelStrategy } from './browser/types.js';
 
 export type EnginePreference = 'api' | 'browser';
 
@@ -23,6 +24,7 @@ export interface BrowserConfigDefaults {
   headless?: boolean;
   hideWindow?: boolean;
   keepBrowser?: boolean;
+  modelStrategy?: BrowserModelStrategy;
 }
 
 export interface AzureConfig {

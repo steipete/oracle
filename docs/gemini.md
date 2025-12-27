@@ -48,6 +48,7 @@ oracle --engine browser --model gemini-3-pro \
 Notes:
 - If your logged-in Gemini account can’t access “Pro”, Oracle will auto-fallback to a supported model for web runs (and logs the fallback in verbose mode).
 - This path runs fully in Node/TypeScript (no Python/venv dependency).
+- `--browser-model-strategy` only affects ChatGPT automation; Gemini web always uses the explicit Gemini model ID.
 
 ## Implementation details
 
