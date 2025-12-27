@@ -1,5 +1,6 @@
 import { normalizeChatgptUrl, CHATGPT_URL } from '../browserMode.js';
 import type { UserConfig } from '../config.js';
+import type { BrowserModelStrategy } from '../browser/types.js';
 
 export interface BrowserDefaultsOptions {
   chatgptUrl?: string;
@@ -13,6 +14,7 @@ export interface BrowserDefaultsOptions {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
+  browserModelStrategy?: BrowserModelStrategy;
 }
 
 type SourceGetter = (key: keyof BrowserDefaultsOptions) => string | undefined;
@@ -65,5 +67,8 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset('browserKeepBrowser') && browser.keepBrowser !== undefined) {
     options.browserKeepBrowser = browser.keepBrowser;
+  }
+  if (isUnset('browserModelStrategy') && browser.modelStrategy !== undefined) {
+    options.browserModelStrategy = browser.modelStrategy;
   }
 }

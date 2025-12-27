@@ -2,6 +2,9 @@
 
 ## 0.8.0 — Unreleased
 
+### Added
+- Browser: `--browser-model-strategy` controls ChatGPT model selection (`select`/`current`/`ignore`) in browser mode. Original PR #49 by @djangonavarro220 — thank you!
+
 ### Fixed
 - Browser: persist the `/c/` conversation URL after submit so reattach can reopen the exact session.
 - Browser: avoid capturing user “You said” echo turns and require assistant-role markdown for project-view fallback snapshots.

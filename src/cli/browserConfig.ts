@@ -2,7 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BrowserSessionConfig } from '../sessionStore.js';
 import type { ModelName, ThinkingTimeLevel } from '../oracle.js';
-import { CHATGPT_URL, DEFAULT_MODEL_TARGET, isTemporaryChatUrl, normalizeChatgptUrl, parseDuration } from '../browserMode.js';
+import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET, isTemporaryChatUrl, normalizeChatgptUrl, parseDuration } from '../browserMode.js';
+import { normalizeBrowserModelStrategy } from '../browser/modelStrategy.js';
+import type { BrowserModelStrategy } from '../browser/types.js';
 import type { CookieParam } from '../browser/types.js';
 import { getOracleHomeDir } from '../oracleHome.js';
 
@@ -44,6 +46,7 @@ export interface BrowserFlagOptions {
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
   browserModelLabel?: string;
+  browserModelStrategy?: BrowserModelStrategy;
   browserAllowCookieErrors?: boolean;
   remoteChrome?: string;
   browserPort?: number;
@@ -82,6 +85,8 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
   const baseModel = options.model.toLowerCase();
   const isChatGptModel = baseModel.startsWith('gpt-') && !baseModel.includes('codex');
   const shouldUseOverride = !isChatGptModel && normalizedOverride.length > 0 && normalizedOverride !== baseModel;
+  const modelStrategy =
+    normalizeBrowserModelStrategy(options.browserModelStrategy) ?? DEFAULT_MODEL_STRATEGY;
   const cookieNames = parseCookieNames(options.browserCookieNames ?? process.env.ORACLE_BROWSER_COOKIE_NAMES);
   const inline = await resolveInlineCookies({
     inlineArg: options.browserInlineCookies,
@@ -104,7 +109,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
       ? desiredModelOverride
       : mapModelToBrowserLabel(options.model);
 
-  if (url && isTemporaryChatUrl(url) && /\bpro\b/i.test(desiredModel ?? '')) {
+  if (modelStrategy === 'select' && url && isTemporaryChatUrl(url) && /\bpro\b/i.test(desiredModel ?? '')) {
     throw new Error(
       'Temporary Chat mode does not expose Pro models in the ChatGPT model picker. ' +
         'Remove "temporary-chat=true" from --chatgpt-url (or omit --chatgpt-url), or use a non-Pro model (e.g. --model gpt-5.2).',
@@ -130,6 +135,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     manualLogin: options.browserManualLogin ? true : undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,
+    modelStrategy,
     debug: options.verbose ? true : undefined,
     // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
     allowCookieErrors: options.browserAllowCookieErrors ?? true,

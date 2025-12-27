@@ -1,4 +1,4 @@
-import type { ChromeClient, BrowserLogger } from '../types.js';
+import type { ChromeClient, BrowserLogger, BrowserModelStrategy } from '../types.js';
 import {
   MENU_CONTAINER_SELECTOR,
   MENU_ITEM_SELECTOR,
@@ -11,9 +11,10 @@ export async function ensureModelSelection(
   Runtime: ChromeClient['Runtime'],
   desiredModel: string,
   logger: BrowserLogger,
+  strategy: BrowserModelStrategy = 'select',
 ) {
   const outcome = await Runtime.evaluate({
-    expression: buildModelSelectionExpression(desiredModel),
+    expression: buildModelSelectionExpression(desiredModel, strategy),
     awaitPromise: true,
     returnByValue: true,
   });
@@ -56,11 +57,12 @@ export async function ensureModelSelection(
  * Builds the DOM expression that runs inside the ChatGPT tab to select a model.
  * The string is evaluated inside Chrome, so keep it self-contained and well-commented.
  */
-function buildModelSelectionExpression(targetModel: string): string {
+function buildModelSelectionExpression(targetModel: string, strategy: BrowserModelStrategy): string {
   const matchers = buildModelMatchersLiteral(targetModel);
   const labelLiteral = JSON.stringify(matchers.labelTokens);
   const idLiteral = JSON.stringify(matchers.testIdTokens);
   const primaryLabelLiteral = JSON.stringify(targetModel);
+  const strategyLiteral = JSON.stringify(strategy);
   const menuContainerLiteral = JSON.stringify(MENU_CONTAINER_SELECTOR);
   const menuItemLiteral = JSON.stringify(MENU_ITEM_SELECTOR);
   return `(() => {
@@ -70,6 +72,7 @@ function buildModelSelectionExpression(targetModel: string): string {
     const LABEL_TOKENS = ${labelLiteral};
     const TEST_IDS = ${idLiteral};
     const PRIMARY_LABEL = ${primaryLabelLiteral};
+    const MODEL_STRATEGY = ${strategyLiteral};
     const INITIAL_WAIT_MS = 150;
     const REOPEN_INTERVAL_MS = 400;
     const MAX_WAIT_MS = 20000;
@@ -106,15 +109,12 @@ function buildModelSelectionExpression(targetModel: string): string {
     }
 
     const getButtonLabel = () => (button.textContent ?? '').trim();
+    if (MODEL_STRATEGY === 'current') {
+      return { status: 'already-selected', label: getButtonLabel() };
+    }
     const buttonMatchesTarget = () => {
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
-
-      // Special case: 'gpt-auto' or 'gemini-auto' means we accept whatever is currently selected.
-      if (PRIMARY_LABEL === 'gpt-auto' || PRIMARY_LABEL === 'gemini-auto') {
-        return true;
-      }
-
       if (desiredVersion) {
         if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
         if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;

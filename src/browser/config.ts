@@ -1,4 +1,5 @@
-import { CHATGPT_URL, DEFAULT_MODEL_TARGET } from './constants.js';
+import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';
+import { normalizeBrowserModelStrategy } from './modelStrategy.js';
 import type { BrowserAutomationConfig, ResolvedBrowserConfig } from './types.js';
 import { isTemporaryChatUrl, normalizeChatgptUrl } from './utils.js';
 import os from 'node:os';
@@ -21,6 +22,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   keepBrowser: false,
   hideWindow: false,
   desiredModel: DEFAULT_MODEL_TARGET,
+  modelStrategy: DEFAULT_MODEL_STRATEGY,
   debug: false,
   allowCookieErrors: false,
   remoteChrome: null,
@@ -38,7 +40,11 @@ export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined
   const rawUrl = config?.chatgptUrl ?? config?.url ?? DEFAULT_BROWSER_CONFIG.url;
   const normalizedUrl = normalizeChatgptUrl(rawUrl ?? DEFAULT_BROWSER_CONFIG.url, DEFAULT_BROWSER_CONFIG.url);
   const desiredModel = config?.desiredModel ?? DEFAULT_BROWSER_CONFIG.desiredModel ?? DEFAULT_MODEL_TARGET;
-  if (isTemporaryChatUrl(normalizedUrl) && /\bpro\b/i.test(desiredModel)) {
+  const modelStrategy =
+    normalizeBrowserModelStrategy(config?.modelStrategy) ??
+    DEFAULT_BROWSER_CONFIG.modelStrategy ??
+    DEFAULT_MODEL_STRATEGY;
+  if (modelStrategy === 'select' && isTemporaryChatUrl(normalizedUrl) && /\bpro\b/i.test(desiredModel)) {
     throw new Error(
       'Temporary Chat mode does not expose Pro models in the ChatGPT model picker. ' +
         'Remove "temporary-chat=true" from your browser URL, or use a non-Pro model label (e.g. "GPT-5.2").',
@@ -67,6 +73,7 @@ export function resolveBrowserConfig(config: BrowserAutomationConfig | undefined
     keepBrowser: config?.keepBrowser ?? DEFAULT_BROWSER_CONFIG.keepBrowser,
     hideWindow: config?.hideWindow ?? DEFAULT_BROWSER_CONFIG.hideWindow,
     desiredModel,
+    modelStrategy,
     chromeProfile: config?.chromeProfile ?? DEFAULT_BROWSER_CONFIG.chromeProfile,
     chromePath: config?.chromePath ?? DEFAULT_BROWSER_CONFIG.chromePath,
     chromeCookiePath: config?.chromeCookiePath ?? DEFAULT_BROWSER_CONFIG.chromeCookiePath,
