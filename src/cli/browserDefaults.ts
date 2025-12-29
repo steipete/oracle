@@ -17,6 +17,8 @@ export interface BrowserDefaultsOptions {
   browserKeepBrowser?: boolean;
   browserModelStrategy?: BrowserModelStrategy;
   browserThinkingTime?: ThinkingTimeLevel;
+  browserManualLogin?: boolean;
+  browserManualLoginProfileDir?: string | null;
 }
 
 type SourceGetter = (key: keyof BrowserDefaultsOptions) => string | undefined;
@@ -75,5 +77,11 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset('browserThinkingTime') && browser.thinkingTime !== undefined) {
     options.browserThinkingTime = browser.thinkingTime;
+  }
+  if (isUnset('browserManualLogin') && browser.manualLogin !== undefined) {
+    options.browserManualLogin = browser.manualLogin;
+  }
+  if (isUnset('browserManualLoginProfileDir') && browser.manualLoginProfileDir !== undefined) {
+    options.browserManualLoginProfileDir = browser.manualLoginProfileDir;
   }
 }

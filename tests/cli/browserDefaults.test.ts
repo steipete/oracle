@@ -97,4 +97,33 @@ describe('applyBrowserDefaultsFromConfig', () => {
 
     expect(options.browserThinkingTime).toBe('light');
   });
+
+  test('applies manual-login defaults from config when CLI flags are untouched', () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = {
+      browser: {
+        manualLogin: true,
+        manualLoginProfileDir: '/tmp/oracle-profile',
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => 'default');
+
+    expect(options.browserManualLogin).toBe(true);
+    expect(options.browserManualLoginProfileDir).toBe('/tmp/oracle-profile');
+  });
+
+  test('does not override manual-login when CLI enabled it', () => {
+    const options: BrowserDefaultsOptions = { browserManualLogin: true };
+    const config: UserConfig = {
+      browser: {
+        manualLogin: false,
+      },
+    };
+
+    const source = (key: keyof BrowserDefaultsOptions) => (key === 'browserManualLogin' ? 'cli' : 'default');
+    applyBrowserDefaultsFromConfig(options, config, source);
+
+    expect(options.browserManualLogin).toBe(true);
+  });
 });
