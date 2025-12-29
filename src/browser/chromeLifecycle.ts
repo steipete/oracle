@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import CDP from 'chrome-remote-interface';
 import { launch, Launcher, type LaunchedChrome } from 'chrome-launcher';
 import type { BrowserLogger, ResolvedBrowserConfig, ChromeClient } from './types.js';
+import { cleanupStaleProfileState } from './profileState.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -47,6 +48,8 @@ export function registerTerminationHooks(
     isInFlight?: () => boolean;
     /** Persist runtime hints so reattach can find the live Chrome. */
     emitRuntimeHint?: () => Promise<void>;
+    /** Preserve the profile directory even when Chrome is terminated. */
+    preserveUserDataDir?: boolean;
   },
 ): () => void {
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
@@ -77,7 +80,13 @@ export function registerTerminationHooks(
         } catch {
           // ignore kill failures
         }
-        await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+        if (opts?.preserveUserDataDir) {
+          // Preserve the profile directory (manual login), but clear reattach hints so we don't
+          // try to reuse a dead DevTools port on the next run.
+          await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: 'never' }).catch(() => undefined);
+        } else {
+          await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+        }
       }
     })().finally(() => {
       const exitCode = signal === 'SIGINT' ? 130 : 1;

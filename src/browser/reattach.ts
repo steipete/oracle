@@ -16,6 +16,7 @@ import { launchChrome, connectToChrome, hideChromeWindow } from './chromeLifecyc
 import { resolveBrowserConfig } from './config.js';
 import { syncCookies } from './cookies.js';
 import { CHATGPT_URL } from './constants.js';
+import { cleanupStaleProfileState } from './profileState.js';
 import {
   pickTarget,
   extractConversationIdFromUrl,
@@ -239,13 +240,17 @@ async function resumeBrowserSessionViaNewChrome(
       // ignore
     }
   }
-  if (!resolved.keepBrowser && !manualLogin) {
+  if (!resolved.keepBrowser) {
     try {
       await chrome.kill();
     } catch {
       // ignore
     }
-    await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+    if (manualLogin) {
+      await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: 'never' }).catch(() => undefined);
+    } else {
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };

@@ -94,7 +94,8 @@ oracle --engine browser \
 
 - Oracle launches Chrome headful with a persistent automation profile at `~/.oracle/browser-profile` (override with `ORACLE_BROWSER_PROFILE_DIR` or config).
 - Log into chatgpt.com in that window the first time; Oracle polls until the session is active, then proceeds.
-- Reuse the same profile on subsequent runs (no re-login unless the session expires). Add `--browser-keep-browser` to leave Chrome running; otherwise Oracle closes it but preserves the profile on disk.
+- Reuse the same profile on subsequent runs (no re-login unless the session expires).
+- Add `--browser-keep-browser` (or config `browser.keepBrowser=true`) when doing the initial login/setup or debugging so the Chrome window stays open after the run. When omitted, Oracle closes Chrome but preserves the profile on disk.
 - Cookie copy is skipped entirely in this mode; inline cookies still apply if provided.
 - If Chrome is already running with that profile and DevTools remote debugging enabled (see `DevToolsActivePort` in the profile dir), you can reuse it instead of relaunching by pointing Oracle at it with `--remote-chrome <host:port>`.
 

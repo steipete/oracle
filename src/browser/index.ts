@@ -138,7 +138,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
 
-  const effectiveKeepBrowser = config.keepBrowser || manualLogin;
+  const effectiveKeepBrowser = Boolean(config.keepBrowser);
   const reusedChrome = manualLogin ? await maybeReuseRunningChrome(userDataDir, logger) : null;
   const chrome =
     reusedChrome ??
@@ -163,6 +163,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     removeTerminationHooks = registerTerminationHooks(chrome, userDataDir, effectiveKeepBrowser, logger, {
       isInFlight: () => runStatus !== 'complete',
       emitRuntimeHint,
+      preserveUserDataDir: manualLogin,
     });
   } catch {
     // ignore failure; cleanup still happens below
@@ -731,7 +732,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           // ignore kill failures
         }
       }
-      await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+      if (manualLogin) {
+        // Preserve the persistent manual-login profile, but clear stale reattach hints.
+        await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: 'never' }).catch(() => undefined);
+      } else {
+        await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+      }
       if (!connectionClosedUnexpectedly) {
         const totalSeconds = (Date.now() - startedAt) / 1000;
         logger(`Cleanup ${runStatus} • ${totalSeconds.toFixed(1)}s total`);
