@@ -142,6 +142,11 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
           if (aria.includes('thinking') || text.includes('thinking')) {
             return btn;
           }
+
+          // In some cases the pill is labeled "Pro".
+          if (aria.includes('pro') || text.includes('pro')) {
+            return btn;
+          }
         }
       }
       return null;
