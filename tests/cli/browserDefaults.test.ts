@@ -70,4 +70,31 @@ describe('applyBrowserDefaultsFromConfig', () => {
     expect(options.browserHideWindow).toBe(true);
     expect(options.browserKeepBrowser).toBe(true);
   });
+
+  test('applies thinking time when CLI flag is untouched', () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = {
+      browser: {
+        thinkingTime: 'extended',
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => 'default');
+
+    expect(options.browserThinkingTime).toBe('extended');
+  });
+
+  test('does not override thinking time when CLI provided a value', () => {
+    const options: BrowserDefaultsOptions = { browserThinkingTime: 'light' };
+    const config: UserConfig = {
+      browser: {
+        thinkingTime: 'heavy',
+      },
+    };
+
+    const source = (key: keyof BrowserDefaultsOptions) => (key === 'browserThinkingTime' ? 'cli' : 'default');
+    applyBrowserDefaultsFromConfig(options, config, source);
+
+    expect(options.browserThinkingTime).toBe('light');
+  });
 });

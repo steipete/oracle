@@ -3,6 +3,7 @@ import path from 'node:path';
 import JSON5 from 'json5';
 import { getOracleHomeDir } from './oracleHome.js';
 import type { BrowserModelStrategy } from './browser/types.js';
+import type { ThinkingTimeLevel } from './oracle/types.js';
 
 export type EnginePreference = 'api' | 'browser';
 
@@ -25,6 +26,8 @@ export interface BrowserConfigDefaults {
   hideWindow?: boolean;
   keepBrowser?: boolean;
   modelStrategy?: BrowserModelStrategy;
+  /** Thinking time intensity (ChatGPT Thinking/Pro models): 'light', 'standard', 'extended', 'heavy' */
+  thinkingTime?: ThinkingTimeLevel;
 }
 
 export interface AzureConfig {

@@ -27,6 +27,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     timeoutMs: 1200000,
     inputTimeoutMs: 30000,
     modelStrategy: "select", // select | current | ignore (ChatGPT only; ignored for Gemini web)
+    thinkingTime: "extended", // light | standard | extended | heavy (ChatGPT Thinking/Pro models)
     headless: false,
     hideWindow: false,
     keepBrowser: false,
@@ -65,6 +66,7 @@ CLI flags → `config.json` → environment → built-in defaults.
 - `ORACLE_NOTIFY*` env vars still layer on top of the config’s `notify` block.
 - `sessionRetentionHours` controls the default value for `--retain-hours`. When unset, `ORACLE_RETAIN_HOURS` (if present) becomes the fallback, and the CLI flag still wins over both.
 - `browser.chatgptUrl` accepts either the root ChatGPT URL (`https://chatgpt.com/`) or a folder/workspace URL (e.g., `https://chatgpt.com/g/.../project`); `browser.url` remains as a legacy alias.
+- Browser automation defaults can be set under `browser.*`, including `browser.thinkingTime` (CLI override: `--browser-thinking-time`).
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
 
