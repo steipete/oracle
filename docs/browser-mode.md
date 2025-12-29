@@ -82,7 +82,7 @@ All options are persisted with the session so reruns (`oracle exec <id>`) reuse 
 
 ### Manual login mode (persistent profile, no cookie copy)
 
-Use `--browser-manual-login` when cookie decrypt is blocked (e.g., Windows app-bound cookies) or you prefer to sign in explicitly:
+Use `--browser-manual-login` when cookie decrypt is blocked (e.g., Windows app-bound cookies) or you prefer to sign in explicitly. You can also make it the default via `browser.manualLogin` in `~/.oracle/config.json`.
 
 ```bash
 oracle --engine browser \
@@ -92,7 +92,7 @@ oracle --engine browser \
   -p "Say hi"
 ```
 
-- Oracle launches Chrome headful with a persistent automation profile at `~/.oracle/browser-profile` (override with `ORACLE_BROWSER_PROFILE_DIR` or config).
+- Oracle launches Chrome headful with a persistent automation profile at `~/.oracle/browser-profile` (override with `ORACLE_BROWSER_PROFILE_DIR` or `browser.manualLoginProfileDir` in `~/.oracle/config.json`).
 - Log into chatgpt.com in that window the first time; Oracle polls until the session is active, then proceeds.
 - Reuse the same profile on subsequent runs (no re-login unless the session expires). Add `--browser-keep-browser` to leave Chrome running; otherwise Oracle closes it but preserves the profile on disk.
 - Cookie copy is skipped entirely in this mode; inline cookies still apply if provided.

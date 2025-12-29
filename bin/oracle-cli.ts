@@ -119,6 +119,7 @@ interface CliOptions extends OptionValues {
   browserKeepBrowser?: boolean;
   browserModelStrategy?: 'select' | 'current' | 'ignore';
   browserManualLogin?: boolean;
+  browserManualLoginProfileDir?: string;
   browserThinkingTime?: 'light' | 'standard' | 'extended' | 'heavy';
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;

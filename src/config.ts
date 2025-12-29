@@ -28,6 +28,10 @@ export interface BrowserConfigDefaults {
   modelStrategy?: BrowserModelStrategy;
   /** Thinking time intensity (ChatGPT Thinking/Pro models): 'light', 'standard', 'extended', 'heavy' */
   thinkingTime?: ThinkingTimeLevel;
+  /** Skip cookie sync and reuse a persistent automation profile (waits for manual ChatGPT login). */
+  manualLogin?: boolean;
+  /** Manual-login profile directory override (also available via ORACLE_BROWSER_PROFILE_DIR). */
+  manualLoginProfileDir?: string | null;
 }
 
 export interface AzureConfig {

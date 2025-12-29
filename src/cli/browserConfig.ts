@@ -43,6 +43,7 @@ export interface BrowserFlagOptions {
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
+  browserManualLoginProfileDir?: string | null;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
   browserModelLabel?: string;
@@ -135,7 +136,8 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     inlineCookiesSource: inline?.source ?? null,
     headless: undefined, // disable headless; Cloudflare blocks it
     keepBrowser: options.browserKeepBrowser ? true : undefined,
-    manualLogin: options.browserManualLogin ? true : undefined,
+    manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
+    manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,
     modelStrategy,
