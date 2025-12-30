@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 — 2025-12-30
+
+### Fixed
+- Browser: preserve manual-login DevToolsActivePort when Chrome is still reachable after a connection drop, plus new live coverage for the scenario. Original PR #53 by TheCrazyLex — thank you!
+
 ## 0.8.0 — 2025-12-28
 
 ### Highlights

@@ -41,6 +41,7 @@ import {
   cleanupStaleProfileState,
   readChromePid,
   readDevToolsPort,
+  shouldCleanupManualLoginProfileState,
   verifyDevToolsReachable,
   writeChromePid,
   writeDevToolsActivePort,
@@ -733,8 +734,18 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         }
       }
       if (manualLogin) {
-        // Preserve the persistent manual-login profile, but clear stale reattach hints.
-        await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: 'never' }).catch(() => undefined);
+        const shouldCleanup = await shouldCleanupManualLoginProfileState(
+          userDataDir,
+          logger.verbose ? logger : undefined,
+          {
+            connectionClosedUnexpectedly,
+            host: chromeHost,
+          },
+        );
+        if (shouldCleanup) {
+          // Preserve the persistent manual-login profile, but clear stale reattach hints.
+          await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: 'never' }).catch(() => undefined);
+        }
       } else {
         await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
       }

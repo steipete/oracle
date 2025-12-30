@@ -120,6 +120,31 @@ export async function verifyDevToolsReachable({
   return { ok: false, error: 'unreachable' };
 }
 
+export async function shouldCleanupManualLoginProfileState(
+  userDataDir: string,
+  logger?: ProfileStateLogger,
+  options: {
+    connectionClosedUnexpectedly?: boolean;
+    host?: string;
+    probe?: typeof verifyDevToolsReachable;
+  } = {},
+): Promise<boolean> {
+  if (!options.connectionClosedUnexpectedly) {
+    return true;
+  }
+  const port = await readDevToolsPort(userDataDir);
+  if (!port) {
+    return true;
+  }
+  const probe = await (options.probe ?? verifyDevToolsReachable)({ port, host: options.host });
+  if (probe.ok) {
+    logger?.(`DevTools port ${port} still reachable; preserving manual-login profile state`);
+    return false;
+  }
+  logger?.(`DevTools port ${port} unreachable (${probe.error}); clearing stale profile state`);
+  return true;
+}
+
 export async function cleanupStaleProfileState(
   userDataDir: string,
   logger?: ProfileStateLogger,
