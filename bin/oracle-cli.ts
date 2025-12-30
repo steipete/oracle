@@ -110,6 +110,7 @@ interface CliOptions extends OptionValues {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
+  browserCookieWait?: string;
   browserNoCookieSync?: boolean;
   browserInlineCookiesFile?: string;
   browserCookieNames?: string;
@@ -347,6 +348,12 @@ program
   .addOption(new Option('--browser-timeout <ms|s|m>', 'Maximum time to wait for an answer (default 1200s / 20m).').hideHelp())
   .addOption(
     new Option('--browser-input-timeout <ms|s|m>', 'Maximum time to wait for the prompt textarea (default 30s).').hideHelp(),
+  )
+  .addOption(
+    new Option(
+      '--browser-cookie-wait <ms|s|m>',
+      'Wait before retrying cookie sync when Chrome cookies are empty or locked.',
+    ).hideHelp(),
   )
   .addOption(
     new Option('--browser-port <port>', 'Use a fixed Chrome DevTools port (helpful on WSL firewalls).')
@@ -1266,6 +1273,7 @@ function printDebugHelp(cliName: string): void {
     ['--browser-url <url>', 'Alias for --chatgpt-url.'],
     ['--browser-timeout <ms|s|m>', 'Cap total wait time for the assistant response.'],
     ['--browser-input-timeout <ms|s|m>', 'Cap how long we wait for the composer textarea.'],
+    ['--browser-cookie-wait <ms|s|m>', 'Wait before retrying cookie sync when Chrome cookies are empty or locked.'],
     ['--browser-no-cookie-sync', 'Skip copying cookies from your main profile.'],
     ['--browser-manual-login', 'Skip cookie copy; reuse a persistent automation profile and log in manually.'],
     ['--browser-headless', 'Launch Chrome in headless mode.'],

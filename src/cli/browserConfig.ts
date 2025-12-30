@@ -35,6 +35,7 @@ export interface BrowserFlagOptions {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
+  browserCookieWait?: string;
   browserNoCookieSync?: boolean;
   browserInlineCookiesFile?: string;
   browserCookieNames?: string;
@@ -130,6 +131,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     inputTimeoutMs: options.browserInputTimeout
       ? parseDuration(options.browserInputTimeout, DEFAULT_BROWSER_INPUT_TIMEOUT_MS)
       : undefined,
+    cookieSyncWaitMs: options.browserCookieWait ? parseDuration(options.browserCookieWait, 0) : undefined,
     cookieSync: options.browserNoCookieSync ? false : undefined,
     cookieNames,
     inlineCookies: inline?.cookies,
