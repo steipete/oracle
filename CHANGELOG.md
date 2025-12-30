@@ -8,6 +8,10 @@
 ### Docs
 - Release checklist now requires GitHub release notes to match the full changelog section.
 
+### Tests
+- Live: tolerate truncated prompt echo in browser model selection checks.
+- Live: skip mixed OpenRouter assertions when a provider returns empty output.
+
 ## 0.8.1 — 2025-12-30
 
 ### Added

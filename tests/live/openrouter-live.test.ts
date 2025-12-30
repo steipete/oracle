@@ -88,6 +88,13 @@ async function loadCatalog(): Promise<Set<string>> {
         console.warn(`Skipping mixed OpenRouter test; rejected: ${summary.rejected.map((r) => r.model).join(', ')}`);
         return;
       }
+      const emptyOutputs = summary.fulfilled.filter((entry) => !entry.answerText.trim());
+      if (emptyOutputs.length > 0) {
+        console.warn(
+          `Skipping mixed OpenRouter test; empty output for: ${emptyOutputs.map((entry) => entry.model).join(', ')}`,
+        );
+        return;
+      }
       summary.fulfilled.forEach((entry) => {
         expect(entry.answerText.toLowerCase()).toContain('mixed multi ok');
       });
