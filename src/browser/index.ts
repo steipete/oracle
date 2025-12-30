@@ -234,7 +234,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       filterNames: config.cookieNames ?? undefined,
       inlineCookies: config.inlineCookies ?? undefined,
       cookiePath: config.chromeCookiePath ?? undefined,
-      });
+      waitMs: config.cookieSyncWaitMs ?? 0,
+    });
       appliedCookies = cookieCount;
       if (config.inlineCookies && cookieCount === 0) {
         throw new Error('No inline cookies were applied; aborting before navigation.');
@@ -261,7 +262,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       // Fail early so the user knows to sign in.
       throw new BrowserAutomationError(
         'No ChatGPT cookies were applied from your Chrome profile; cannot proceed in browser mode. ' +
-          'Make sure ChatGPT is signed in in the selected profile, or use --browser-manual-login / inline cookies.',
+          'Make sure ChatGPT is signed in in the selected profile, use --browser-manual-login / inline cookies, ' +
+          'or retry with --browser-cookie-wait 5s if Keychain prompts are slow.',
         {
           stage: 'execute-browser',
           details: {

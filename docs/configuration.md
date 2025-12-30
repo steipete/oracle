@@ -26,6 +26,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     debugPort: null,          // fixed DevTools port (env: ORACLE_BROWSER_PORT / ORACLE_BROWSER_DEBUG_PORT)
     timeoutMs: 1200000,
     inputTimeoutMs: 30000,
+    cookieSyncWaitMs: 0,      // wait (ms) before retrying cookie sync when Chrome cookies are empty/locked
     modelStrategy: "select", // select | current | ignore (ChatGPT only; ignored for Gemini web)
     thinkingTime: "extended", // light | standard | extended | heavy (ChatGPT Thinking/Pro models)
     manualLogin: false,        // set true to reuse a persistent automation profile and sign in once (Windows defaults to true when unset)

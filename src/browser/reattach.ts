@@ -187,6 +187,7 @@ async function resumeBrowserSessionViaNewChrome(
       filterNames: resolved.cookieNames ?? undefined,
       inlineCookies: resolved.inlineCookies ?? undefined,
       cookiePath: resolved.chromeCookiePath ?? undefined,
+      waitMs: resolved.cookieSyncWaitMs ?? 0,
     });
   }
 

@@ -22,6 +22,7 @@ export interface BrowserSessionConfig {
   inputTimeoutMs?: number;
   cookieSync?: boolean;
   cookieNames?: string[] | null;
+  cookieSyncWaitMs?: number;
   inlineCookies?: CookieParam[] | null;
   inlineCookiesSource?: string | null;
   headless?: boolean;

@@ -22,6 +22,7 @@ export interface BrowserConfigDefaults {
   timeoutMs?: number;
   debugPort?: number | null;
   inputTimeoutMs?: number;
+  cookieSyncWaitMs?: number;
   headless?: boolean;
   hideWindow?: boolean;
   keepBrowser?: boolean;

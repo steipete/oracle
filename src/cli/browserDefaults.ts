@@ -11,6 +11,7 @@ export interface BrowserDefaultsOptions {
   browserCookiePath?: string;
   browserTimeout?: string | number;
   browserInputTimeout?: string | number;
+  browserCookieWait?: string | number;
   browserPort?: number;
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
@@ -62,6 +63,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset('browserInputTimeout') && typeof browser.inputTimeoutMs === 'number') {
     options.browserInputTimeout = String(browser.inputTimeoutMs);
+  }
+  if (isUnset('browserCookieWait') && typeof browser.cookieSyncWaitMs === 'number') {
+    options.browserCookieWait = String(browser.cookieSyncWaitMs);
   }
   if (isUnset('browserHeadless') && browser.headless !== undefined) {
     options.browserHeadless = browser.headless;

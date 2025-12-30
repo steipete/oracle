@@ -1,5 +1,6 @@
 import { COOKIE_URLS } from './constants.js';
 import type { BrowserLogger, ChromeClient, CookieParam } from './types.js';
+import { delay } from './utils.js';
 import { getCookies, type Cookie } from '@steipete/sweet-cookie';
 
 export class ChromeCookieSyncError extends Error {}
@@ -14,14 +15,22 @@ export async function syncCookies(
     filterNames?: string[] | null;
     inlineCookies?: CookieParam[] | null;
     cookiePath?: string | null;
+    waitMs?: number;
   } = {},
 ) {
-  const { allowErrors = false, filterNames, inlineCookies, cookiePath } = options;
+  const { allowErrors = false, filterNames, inlineCookies, cookiePath, waitMs = 0 } = options;
   try {
     // Learned: inline cookies are the most deterministic (avoid Keychain + profile ambiguity).
     const cookies = inlineCookies?.length
       ? normalizeInlineCookies(inlineCookies, new URL(url).hostname)
-      : await readChromeCookies(url, profile, filterNames ?? undefined, cookiePath ?? undefined);
+      : await readChromeCookiesWithWait(
+          url,
+          profile,
+          filterNames ?? undefined,
+          cookiePath ?? undefined,
+          waitMs,
+          logger,
+        );
     if (!cookies.length) {
       return 0;
     }
@@ -48,6 +57,40 @@ export async function syncCookies(
     }
     throw error instanceof ChromeCookieSyncError ? error : new ChromeCookieSyncError(message);
   }
+}
+
+async function readChromeCookiesWithWait(
+  url: string,
+  profile: string | null | undefined,
+  filterNames: string[] | undefined,
+  cookiePath: string | null | undefined,
+  waitMs: number,
+  logger: BrowserLogger,
+): Promise<CookieParam[]> {
+  if (waitMs <= 0) {
+    return readChromeCookies(url, profile, filterNames, cookiePath);
+  }
+  let cookies: CookieParam[] = [];
+  let firstError: unknown;
+  try {
+    cookies = await readChromeCookies(url, profile, filterNames, cookiePath);
+  } catch (error) {
+    firstError = error;
+  }
+
+  if (cookies.length > 0 && !firstError) {
+    return cookies;
+  }
+
+  const waitLabel = waitMs >= 1000 ? `${Math.round(waitMs / 1000)}s` : `${waitMs}ms`;
+  const message = firstError instanceof Error ? firstError.message : String(firstError ?? '');
+  if (firstError) {
+    logger(`[cookies] Cookie read failed (${message}); waiting ${waitLabel} then retrying once.`);
+  } else {
+    logger(`[cookies] No cookies found; waiting ${waitLabel} then retrying once.`);
+  }
+  await delay(waitMs);
+  return readChromeCookies(url, profile, filterNames, cookiePath);
 }
 
 async function readChromeCookies(
