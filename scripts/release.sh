@@ -8,6 +8,11 @@ set -euo pipefail
 RUNNER="${MCP_RUNNER:-./runner}"
 VERSION="${VERSION:-$(node -p "require('./package.json').version")}" 
 
+if [[ "${CODEX_MANAGED_BY_NPM:-}" == "1" ]]; then
+  export NPM_CONFIG_PROGRESS=false
+  export npm_config_progress=false
+fi
+
 banner() { printf "\n==== %s ====" "$1"; printf "\n"; }
 run() { echo ">> $*"; "$@"; }
 

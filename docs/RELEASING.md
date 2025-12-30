@@ -25,6 +25,7 @@
   - [ ] Keep changelog entries product-facing only; avoid adding release-status/meta lines (e.g., “Published to npm …”)—that belongs in the GitHub release body.
   - [ ] Verify changelog structure: versions strictly descending, no duplicates or skipped numbers, single heading per version.
   - [ ] Ensure README reflects current CLI options (globs, `--status`, heartbeat behavior).
+  - [ ] **Release notes must exactly match the version’s changelog section** (full Added/Changed/Fixed/Tests bullets, no omissions). After creating the GitHub release, compare the body to `CHANGELOG.md` and fix any mismatch.
 4. **Validation**
    - [ ] `pnpm run check` (zero warnings allowed; fail on any lint/type warnings).
    - [ ] `pnpm vitest`
@@ -55,6 +56,7 @@
       - `brew uninstall oracle`
 7. **Post-publish**
   - [ ] Verify GitHub release exists for `vX.Y.Z` and has the intended assets (tarball + checksums if produced). Add missing assets before announcing.
+  - [ ] Confirm the GitHub release body exactly matches the `CHANGELOG.md` section for `X.Y.Z` (full bullet list). If not, update with `gh release edit vX.Y.Z --notes-file <file>`.
   - [ ] Confirm npm shows the new version: `npm view @steipete/oracle version` and `npx -y @steipete/oracle@X.Y.Z --version`.
   - [ ] Promote desired dist-tag (e.g., `npm dist-tag add @steipete/oracle@X.Y.Z latest`).
   - [ ] `git tag vX.Y.Z && git push origin vX.Y.Z` (always tag each release).
