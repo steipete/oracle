@@ -220,7 +220,51 @@ export const GEMINI_TIMEOUTS = {
   promptReady: 30_000,
   response: 300_000,        // Standard response timeout (5 min)
   deepThinkResponse: 600_000, // Deep Think can take 10+ minutes for complex queries
+  deepResearchResponse: 1_200_000, // Deep Research takes 10-20 minutes typically
   thinkingPoll: 2_000,      // Poll interval for checking response status
+  researchPoll: 5_000,      // Poll interval for Deep Research (longer intervals)
   attachmentUpload: 60_000,
   imageGeneration: 60_000,  // Image generation timeout
 };
+
+// Deep Research specific selectors
+// Based on the immersive panel structure shown in Gemini UI
+export const GEMINI_DEEP_RESEARCH_SELECTORS = {
+  // Immersive panel container
+  immersivePanel: 'deep-research-immersive-panel',
+  immersivePanelContent: 'deep-research-immersive-panel > div',
+
+  // Research confirmation widget (appears after selecting Deep Research)
+  confirmationWidget: 'deep-research-confirmation-widget',
+  researchTitle: '[data-test-id="title"]',
+  researchSteps: '[data-test-id="research-steps"]',
+  timeEstimate: '[data-test-id="time-estimation-message"]',
+
+  // Action buttons
+  editPlanButton: '[data-test-id="edit-button"]',
+  startResearchButton: '[data-test-id="confirm-button"]',
+  retryWithoutButton: '.retry-without-tool-button',
+
+  // Progress indicators
+  researchProgress: '.research-step',
+  progressTitle: '.research-step-title',
+  progressDescription: '.research-step-description',
+
+  // Result extraction - Share and Export menu
+  exportMenuButton: '[data-test-id="export-menu-button"]', // "Share and export" dropdown
+  shareButton: '[data-test-id="share-button"]',            // Inside export menu
+  exportToDocsButton: '[data-test-id="export-to-docs-button"]', // Inside export menu
+  copyButton: '[data-test-id="copy-button"]',              // Inside export menu OR direct
+  moreMenuButton: '[data-test-id="more-menu-button"]',     // "Show more options" button
+
+  // Response content container
+  markdownContent: '.markdown-main-panel, .markdown',
+  responseContent: '[id^="model-response-message-content"]',
+
+  // Status indicators
+  researchInProgress: '[aria-busy="true"]',
+  researchComplete: '.research-complete, [data-status="complete"]',
+} as const;
+
+// Deep Research model requirement - must use Pro model
+export const DEEP_RESEARCH_BASE_MODEL = 'gemini-3-pro' as const;

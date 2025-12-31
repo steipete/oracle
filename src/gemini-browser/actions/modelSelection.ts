@@ -15,8 +15,10 @@ import type { BrowserLogger } from '../types.js';
 import type { GeminiDeepThinkModel, GeminiTool } from '../constants.js';
 import {
   GEMINI_MODEL_PICKER_SELECTORS,
+  GEMINI_MODEL_OPTION_SELECTORS,
   GEMINI_DEEP_THINK_MODELS,
   DEFAULT_GEMINI_MODEL,
+  DEEP_RESEARCH_BASE_MODEL,
 } from '../constants.js';
 import { delay } from '../../browser/utils.js';
 import {
@@ -51,8 +53,11 @@ export async function ensureGeminiModelSelection(
 
   // Determine base model for picker
   let baseModel: GeminiDeepThinkModel;
-  if (needsDeepThink || needsDeepResearch) {
-    // For tools, use Thinking or Pro as base
+  if (needsDeepResearch) {
+    // Deep Research requires Pro model
+    baseModel = DEEP_RESEARCH_BASE_MODEL;
+  } else if (needsDeepThink) {
+    // Deep Think uses Thinking as base
     baseModel = 'gemini-3-thinking';
   } else {
     baseModel = normalizeModelName(desiredModel);
@@ -65,19 +70,56 @@ export async function ensureGeminiModelSelection(
   const currentModel = await getCurrentModel(Runtime);
   let modelChanged = false;
 
+  // For Deep Research, we MUST ensure Pro is selected
+  const requiresPro = needsDeepResearch;
+
   if (!currentModel || !isModelMatch(currentModel, baseModel)) {
+    logger(`Current model: ${currentModel || 'unknown'}, need: ${baseModel}`);
+
     const pickerOpened = await openModelPicker(Runtime, logger);
     if (pickerOpened) {
-      await delay(300);
+      await delay(400);
       const selected = await selectModelFromPicker(Runtime, baseModel, targetLabel, logger);
       if (selected) {
         logger(`Model changed to: ${baseModel}`);
         modelChanged = true;
-        await delay(500);
+        await delay(600);
+
+        // Verify selection for Deep Research
+        if (requiresPro) {
+          const verifiedModel = await getCurrentModel(Runtime);
+          if (verifiedModel && verifiedModel.toLowerCase().includes('pro')) {
+            logger(`Verified Pro model selected: ${verifiedModel}`);
+          } else {
+            logger(`WARNING: Pro model may not be selected. Current: ${verifiedModel}`);
+          }
+        }
+      } else if (requiresPro) {
+        // Retry Pro selection
+        logger('Retrying Pro model selection...');
+        await delay(300);
+        const retryOpened = await openModelPicker(Runtime, logger);
+        if (retryOpened) {
+          await delay(400);
+          await selectModelFromPicker(Runtime, 'gemini-3-pro', 'Pro', logger);
+          await delay(500);
+        }
       }
     }
   } else {
     logger(`Model already selected: ${currentModel}`);
+
+    // Double check Pro for Deep Research
+    if (requiresPro && !currentModel.toLowerCase().includes('pro')) {
+      logger('Deep Research requires Pro model, switching...');
+      const pickerOpened = await openModelPicker(Runtime, logger);
+      if (pickerOpened) {
+        await delay(400);
+        await selectModelFromPicker(Runtime, 'gemini-3-pro', 'Pro', logger);
+        modelChanged = true;
+        await delay(600);
+      }
+    }
   }
 
   // Step 2: Activate tool if needed (Deep Think or Deep Research)
@@ -194,6 +236,7 @@ async function openModelPicker(
 
 /**
  * Select a model from the open picker menu
+ * Uses data-test-id selectors first (most reliable), then falls back to text matching
  */
 async function selectModelFromPicker(
   Runtime: ChromeClient['Runtime'],
@@ -201,7 +244,11 @@ async function selectModelFromPicker(
   targetLabel: string,
   logger: BrowserLogger,
 ): Promise<boolean> {
-  // Build list of search terms
+  // Map model to data-test-id selector key
+  const selectorKey = getModelSelectorKey(modelId);
+  const directSelector = selectorKey ? GEMINI_MODEL_OPTION_SELECTORS[selectorKey] : null;
+
+  // Build list of search terms for fallback
   const searchTerms = [
     modelId,
     targetLabel,
@@ -209,19 +256,44 @@ async function selectModelFromPicker(
     ...getModelSearchTerms(modelId),
   ];
   const searchTermsJson = JSON.stringify(searchTerms);
+  const directSelectorJson = directSelector ? JSON.stringify(directSelector) : 'null';
 
   const { result } = await Runtime.evaluate({
     expression: `(() => {
+      const directSelector = ${directSelectorJson};
       const searchTerms = ${searchTermsJson};
 
-      // Find menu items
+      // METHOD 1: Use data-test-id selector (most reliable)
+      if (directSelector) {
+        const directEl = document.querySelector(directSelector);
+        if (directEl && directEl instanceof HTMLElement) {
+          directEl.click();
+          return { selected: true, text: directEl.textContent?.trim(), method: 'data-test-id' };
+        }
+      }
+
+      // METHOD 2: Look for bard-mode-option elements by text
+      const modeOptions = document.querySelectorAll('[data-test-id^="bard-mode-option"]');
+      for (const opt of modeOptions) {
+        const text = opt.textContent?.toLowerCase() || '';
+        for (const term of searchTerms) {
+          if (text.includes(term.toLowerCase())) {
+            if (opt instanceof HTMLElement) {
+              opt.click();
+              return { selected: true, text: opt.textContent?.trim(), method: 'bard-mode-option' };
+            }
+          }
+        }
+      }
+
+      // METHOD 3: Find menu items by role
       const menuItems = Array.from(document.querySelectorAll(
         '[role="menuitem"], [role="option"], [role="listitem"], ' +
         '[data-testid*="model"], .model-option, button[data-value]'
       ));
 
       // Also check general buttons/links in any open menu
-      const menuContainer = document.querySelector('[role="menu"], [role="listbox"], .dropdown-menu');
+      const menuContainer = document.querySelector('[role="menu"], [role="listbox"], .dropdown-menu, .mat-mdc-menu-panel');
       if (menuContainer) {
         menuItems.push(...Array.from(menuContainer.querySelectorAll('button, a, [role="button"]')));
       }
@@ -234,7 +306,7 @@ async function selectModelFromPicker(
           if (text.includes(term.toLowerCase()) || value.toLowerCase().includes(term.toLowerCase())) {
             if (item instanceof HTMLElement) {
               item.click();
-              return { selected: true, text: item.textContent?.trim() };
+              return { selected: true, text: item.textContent?.trim(), method: 'menu-item' };
             }
           }
         }
@@ -245,14 +317,34 @@ async function selectModelFromPicker(
     returnByValue: true,
   });
 
-  const outcome = result?.value as { selected?: boolean; text?: string } | undefined;
+  const outcome = result?.value as { selected?: boolean; text?: string; method?: string } | undefined;
 
   if (outcome?.selected) {
-    logger(`Selected model: ${outcome.text ?? modelId}`);
+    logger(`Selected model: ${outcome.text ?? modelId} via ${outcome.method}`);
     return true;
   }
 
+  logger(`Failed to select model: ${modelId}`);
   return false;
+}
+
+/**
+ * Get the selector key for a model (fast, thinking, pro)
+ */
+function getModelSelectorKey(model: GeminiDeepThinkModel): keyof typeof GEMINI_MODEL_OPTION_SELECTORS | null {
+  const normalized = model.toLowerCase();
+
+  if (normalized.includes('pro') || normalized === 'gemini-3-pro' || normalized === 'gemini-deep-research') {
+    return 'pro';
+  }
+  if (normalized.includes('thinking') || normalized === 'gemini-3-thinking' || normalized.includes('deep-think')) {
+    return 'thinking';
+  }
+  if (normalized.includes('fast') || normalized.includes('flash') || normalized === 'gemini-3-fast') {
+    return 'fast';
+  }
+
+  return null;
 }
 
 /**
@@ -323,7 +415,7 @@ function getModelSearchTerms(model: GeminiDeepThinkModel): string[] {
     case 'deep-think':
       return ['thinking']; // Select Thinking from picker, tool handled separately
     case 'gemini-deep-research':
-      return ['thinking']; // Select Thinking from picker, tool handled separately
+      return ['pro']; // Select Pro from picker, Deep Research requires Pro model
     default:
       return [model];
   }

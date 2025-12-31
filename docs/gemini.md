@@ -64,9 +64,6 @@ Examples:
 # Basic Deep Think query (can take several minutes for complex questions)
 oracle --engine browser --model gemini-deep-think --prompt "Analyze the trade-offs of microservices vs monolithic architecture"
 
-# Deep Research mode
-oracle --engine browser --model gemini-deep-research --prompt "Research the current state of quantum computing"
-
 # Use the Thinking model (faster than Deep Think, still has reasoning)
 oracle --engine browser --model gemini-3-thinking --prompt "Solve this step by step"
 
@@ -76,6 +73,47 @@ oracle --engine browser --model gemini-3-fast --prompt "Hello world"
 # Manual login mode (first-time setup)
 oracle --engine browser --model gemini-deep-think --browser-manual-login --prompt "Test query"
 ```
+
+## Usage (Gemini Deep Research)
+
+Deep Research is a special mode that performs extended multi-step research with web searches, analysis, and report generation. **This mode takes 10-20 minutes to complete** as it performs thorough research.
+
+```bash
+# Deep Research mode (uses Pro model, takes 10-20 minutes)
+oracle --engine browser --model gemini-deep-research --prompt "Research the current state of quantum computing"
+
+# Deep Research with extended timeout
+oracle --engine browser --model gemini-deep-research --browser-timeout 1800 --prompt "Comprehensive analysis of AI trends in 2025"
+
+# Keep browser open to see the research progress
+oracle --engine browser --model gemini-deep-research --browser-keep-browser --prompt "Research topic"
+```
+
+### Deep Research Flow
+
+When you run a Deep Research query, Oracle:
+1. Selects **Pro** model from the model picker (required for Deep Research)
+2. Opens the Tools drawer and activates **Deep Research**
+3. Submits your prompt and waits for the research plan to appear
+4. Clicks **Start research** to begin the research process
+5. Monitors progress for 10-20 minutes (research involves web searches, analysis, and report generation)
+6. Extracts the completed research report
+7. Attempts to copy content via the Copy button (falls back to Export to Docs if needed)
+
+### Deep Research Options
+
+- `--browser-timeout <seconds>` - Override timeout (default: 1200s / 20 minutes for Deep Research)
+- `--browser-keep-browser` - Keep browser open to watch the research progress
+- `--browser-manual-login` - First-time setup to sign into Google account
+
+### Deep Research Output
+
+The output includes:
+- Full research report text
+- HTML content (for formatting preservation)
+- Markdown conversion of the report
+- Research title/topic
+- Metadata about copy/export success
 
 ### Gemini UI Structure
 
@@ -106,17 +144,19 @@ Browser automation models:
 - `gemini-3-thinking` - Thinking mode (Gemini Flash 3 with reasoning)
 - `gemini-3-pro` - Pro mode (Gemini 3 Pro Preview)
 - `gemini-deep-think` - Deep Think tool (experimental advanced reasoning)
-- `gemini-deep-research` - Deep Research tool
+- `gemini-deep-research` - Deep Research tool (extended multi-step research)
 
 Options:
 - `--browser-manual-login` - Keep browser visible for manual Google sign-in
 - `--browser-keep-browser` - Don't close browser after completion
-- `--browser-timeout <seconds>` - Override response timeout (default: 300s, Deep Think: 600s)
+- `--browser-timeout <seconds>` - Override response timeout (default: 300s, Deep Think: 600s, Deep Research: 1200s)
 - `--show-thinking` - Include thinking/reasoning process in output
 
 Notes:
 - Browser automation uses Chrome DevTools Protocol (CDP), same as ChatGPT mode.
 - Deep Think runs can take 5-10+ minutes for complex queries - this is normal.
+- Deep Research runs typically take 10-20 minutes as it performs thorough web research, analysis, and report generation.
+- Deep Research automatically uses the Pro model (required by Gemini for this feature).
 - The browser automation mode uses a separate debug port (9223) from ChatGPT (9222) to allow both to run simultaneously.
 
 ## Implementation details
@@ -136,7 +176,7 @@ Notes:
 - `src/gemini-web/client.ts` — talks to `gemini.google.com` and downloads generated images via authenticated `gg-dl` redirects.
 - `src/gemini-web/executor.ts` — browser-engine executor for Gemini (loads Chrome cookies and runs the web client).
 
-### Gemini browser automation (Deep Think)
+### Gemini browser automation (Deep Think / Deep Research)
 
 - `src/gemini-browser/index.ts` — main entry point for Gemini browser automation mode.
 - `src/gemini-browser/constants.ts` — Gemini-specific selectors, URLs, model definitions, and tool configs.
@@ -146,6 +186,7 @@ Notes:
 - `src/gemini-browser/actions/toolsSelection.ts` — Tools drawer automation (Deep Think, Create images, etc.).
 - `src/gemini-browser/actions/promptComposer.ts` — prompt input and submission.
 - `src/gemini-browser/actions/assistantResponse.ts` — response capture and thinking status detection.
+- `src/gemini-browser/actions/deepResearch.ts` — Deep Research specific flow: start research, wait for completion, extract results.
 
 The browser automation module:
 1. Launches Chrome using the shared `chromeLifecycle.ts` module

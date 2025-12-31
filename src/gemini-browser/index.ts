@@ -14,6 +14,7 @@ import type {
   GeminiBrowserConfig,
   GeminiBrowserRunOptions,
   GeminiBrowserRunResult,
+  GeminiDeepResearchRunResult,
   BrowserLogger,
 } from './types.js';
 import {
@@ -49,8 +50,10 @@ import {
   readGeminiResponse,
   captureGeminiMarkdown,
 } from './actions/assistantResponse.js';
+import { isDeepResearchRequested } from './actions/toolsSelection.js';
+import { runDeepResearchFlow } from './actions/deepResearch.js';
 
-export type { GeminiBrowserConfig, GeminiBrowserRunOptions, GeminiBrowserRunResult };
+export type { GeminiBrowserConfig, GeminiBrowserRunOptions, GeminiBrowserRunResult, GeminiDeepResearchRunResult };
 export { GEMINI_APP_URL, DEFAULT_GEMINI_MODEL };
 
 const DEFAULT_DEBUG_PORT = 9223; // Different from ChatGPT to allow both to run
@@ -227,11 +230,47 @@ export async function runGeminiBrowserMode(
     const modelResult = await ensureGeminiModelSelection(Runtime, desiredModel, logger);
     modelUsed = modelResult.modelSelected;
 
-    // Take baseline snapshot
-    const baselineSnapshot = await readGeminiResponse(Runtime);
+    // Check if this is a Deep Research request
+    const isDeepResearch = isDeepResearchRequested(desiredModel);
 
     // Submit prompt
     await submitGeminiPrompt({ runtime: Runtime, input: Input }, promptText, logger);
+
+    if (isDeepResearch) {
+      // Deep Research flow: wait for plan, start research, wait for completion
+      logger('Running Deep Research flow...');
+      const researchTimeout = config.timeoutMs ?? GEMINI_TIMEOUTS.deepResearchResponse;
+      const researchResult = await runDeepResearchFlow(Runtime, researchTimeout, logger);
+
+      answerText = researchResult.text;
+      answerHtml = researchResult.html ?? '';
+      answerMarkdown = researchResult.markdown ?? researchResult.text;
+
+      runStatus = 'complete';
+
+      const durationMs = Date.now() - startedAt;
+      return {
+        answerText,
+        answerMarkdown,
+        answerHtml: answerHtml || undefined,
+        modelUsed,
+        deepThinkActive: false,
+        tookMs: durationMs,
+        answerTokens: estimateTokenCount(answerMarkdown),
+        answerChars: answerText.length,
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        userDataDir,
+        controllerPid: process.pid,
+        // Deep Research specific fields
+        deepResearchResult: researchResult,
+        isDeepResearch: true,
+      } as GeminiDeepResearchRunResult;
+    }
+
+    // Regular flow (Deep Think, regular chat, etc.)
+    // Take baseline snapshot
+    const baselineSnapshot = await readGeminiResponse(Runtime);
 
     // Wait for response
     const response = await waitForGeminiResponse(
@@ -367,9 +406,42 @@ async function runRemoteGeminiBrowserMode(
     const modelResult = await ensureGeminiModelSelection(Runtime, desiredModel, logger);
     modelUsed = modelResult.modelSelected;
 
-    // Submit and wait for response
-    const baselineSnapshot = await readGeminiResponse(Runtime);
+    // Check if this is a Deep Research request
+    const isDeepResearch = isDeepResearchRequested(desiredModel);
+
+    // Submit prompt
     await submitGeminiPrompt({ runtime: Runtime, input: Input }, promptText, logger);
+
+    if (isDeepResearch) {
+      // Deep Research flow
+      logger('Running Deep Research flow...');
+      const researchTimeout = config.timeoutMs ?? GEMINI_TIMEOUTS.deepResearchResponse;
+      const researchResult = await runDeepResearchFlow(Runtime, researchTimeout, logger);
+
+      answerText = researchResult.text;
+      answerHtml = researchResult.html ?? '';
+      answerMarkdown = researchResult.markdown ?? researchResult.text;
+
+      const durationMs = Date.now() - startedAt;
+      return {
+        answerText,
+        answerMarkdown,
+        answerHtml: answerHtml || undefined,
+        modelUsed,
+        deepThinkActive: false,
+        tookMs: durationMs,
+        answerTokens: estimateTokenCount(answerMarkdown),
+        answerChars: answerText.length,
+        chromePort: port,
+        chromeHost: host,
+        controllerPid: process.pid,
+        deepResearchResult: researchResult,
+        isDeepResearch: true,
+      } as GeminiDeepResearchRunResult;
+    }
+
+    // Regular flow
+    const baselineSnapshot = await readGeminiResponse(Runtime);
 
     const response = await waitForGeminiResponse(
       Runtime,

@@ -127,3 +127,25 @@ export interface GeminiLoginProbeResult {
   /** Error message if any */
   error?: string | null;
 }
+
+export interface DeepResearchResult {
+  /** Research report text content */
+  text: string;
+  /** HTML content of the report */
+  html?: string;
+  /** Markdown formatted content */
+  markdown?: string;
+  /** Research title/topic */
+  title?: string;
+  /** Whether copy to clipboard succeeded */
+  copySucceeded: boolean;
+  /** Whether export to docs was triggered as fallback */
+  exportTriggered: boolean;
+}
+
+export interface GeminiDeepResearchRunResult extends GeminiBrowserRunResult {
+  /** Deep Research specific result */
+  deepResearchResult?: DeepResearchResult;
+  /** Whether this was a Deep Research run */
+  isDeepResearch: boolean;
+}
