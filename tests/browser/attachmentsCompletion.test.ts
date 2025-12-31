@@ -21,7 +21,7 @@ describe('attachment completion fallbacks', () => {
           value: {
             state: 'ready',
             uploading: false,
-            filesAttached: false,
+            filesAttached: true,
             attachedNames: [],
             inputNames: ['oracle-attach-verify.txt'],
           },
@@ -67,7 +67,7 @@ describe('attachment completion fallbacks', () => {
           value: {
             state: 'missing',
             uploading: false,
-            filesAttached: false,
+            filesAttached: true,
             attachedNames: [],
             inputNames: ['oracle-attach-verify.txt'],
           },
@@ -191,5 +191,26 @@ describe('sent turn attachment verification', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     await expect(promise).resolves.toBe(false);
     useRealTime();
+  });
+
+  test('waitForUserTurnAttachments resolves when attachment UI count satisfies expected files (no filename text)', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: true,
+            text: 'You said:\n(no attachment name here)',
+            attrs: [],
+            hasAttachmentUi: true,
+            attachmentUiCount: 2,
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient['Runtime'];
+
+    await expect(
+      waitForUserTurnAttachments(runtime, ['oracle-attach-verify-a.txt', 'oracle-attach-verify-b.txt'], 1000),
+    ).resolves.toBe(true);
   });
 });

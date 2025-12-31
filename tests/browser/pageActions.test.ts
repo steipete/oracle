@@ -863,6 +863,25 @@ describe('uploadAttachmentFile', () => {
   });
 });
 
+describe('waitForAttachmentVisible', () => {
+  test('treats file input name match as a valid visibility signal', async () => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    const evaluate = vi.fn().mockResolvedValue({ result: { value: { found: true, source: 'file-input' } } });
+    const runtime = { evaluate } as unknown as ChromeClient['Runtime'];
+
+    await expect(attachments.waitForAttachmentVisible(runtime, 'oracle-browser-smoke.txt', 100, logger)).resolves.toBeUndefined();
+
+    const call = (evaluate as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0] as
+      | { expression?: string }
+      | undefined;
+    const capturedExpression = String(call?.expression ?? '');
+    expect(capturedExpression).toContain("source: 'file-input'");
+    expect(capturedExpression).toContain('input[type=\"file\"]');
+    expect(capturedExpression).toContain('attachments?');
+  });
+});
+
 describe('waitForAttachmentCompletion', () => {
   test('resolves when composer ready', async () => {
     const evaluate = vi.fn();

@@ -179,7 +179,7 @@ export async function uploadAttachmentFile(
           });
         });
 
-        const countRegex = /(?:^|\\b)(\\d+)\\s+files?\\b/;
+        const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
         const collectFileCount = (candidates) => {
           let count = 0;
           for (const node of candidates) {
@@ -213,7 +213,8 @@ export async function uploadAttachmentFile(
             let hasFileHint = false;
             for (const raw of values) {
               if (!raw) continue;
-              if (normalize(raw).includes('file')) {
+              const normalized = normalize(raw);
+              if (normalized.includes('file') || normalized.includes('attachment')) {
                 hasFileHint = true;
                 break;
               }
@@ -494,7 +495,7 @@ export async function uploadAttachmentFile(
           return /\\buploading\\b/.test(text) || /\\bprocessing\\b/.test(text);
         });
       });
-      const countRegex = /(?:^|\\b)(\\d+)\\s+files?\\b/;
+      const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
       const collectFileCount = (candidates) => {
         let count = 0;
         for (const node of candidates) {
@@ -528,7 +529,8 @@ export async function uploadAttachmentFile(
           let hasFileHint = false;
           for (const raw of values) {
             if (!raw) continue;
-            if (String(raw).toLowerCase().includes('file')) {
+            const lowered = String(raw).toLowerCase();
+            if (lowered.includes('file') || lowered.includes('attachment')) {
               hasFileHint = true;
               break;
             }
@@ -927,29 +929,30 @@ export async function uploadAttachmentFile(
         const expectedSatisfied =
           Boolean(signalResult?.expectedSatisfied) ||
           (signalResult?.signals ? isExpectedSatisfied(signalResult.signals) : false);
-        const uiAcknowledged =
-          Boolean(signalResult?.signals?.ui) ||
-          Boolean(signalResult?.chipDelta) ||
-          Boolean(signalResult?.uploadDelta) ||
-          Boolean(signalResult?.fileCountDelta) ||
-          expectedSatisfied;
-        if (uiAcknowledged) {
+        const inputNameCandidates = resolveInputNameCandidates();
+        const inputHasFile =
+          inputNameCandidates.some((name) => matchesExpectedName(name)) ||
+          (lastInputValue && matchesExpectedName(lastInputValue));
+        const inputEvidence =
+          immediateInputMatch ||
+          postInputSignals.touched ||
+          Boolean(signalResult?.signals?.input) ||
+          Boolean(signalResult?.inputDelta) ||
+          inputHasFile;
+        const uiDirect = Boolean(signalResult?.signals?.ui) || expectedSatisfied;
+        const uiDelta =
+          Boolean(signalResult?.chipDelta) || Boolean(signalResult?.uploadDelta) || Boolean(signalResult?.fileCountDelta);
+        if (uiDirect || (uiDelta && inputEvidence)) {
           return { status: 'ui' as const };
         }
         const postSignals = await readAttachmentSignals(expectedName);
         if (
           postSignals.ui ||
           isExpectedSatisfied(postSignals) ||
-          hasChipDelta(postSignals) ||
-          hasUploadDelta(postSignals) ||
-          hasFileCountDelta(postSignals)
+          ((hasChipDelta(postSignals) || hasUploadDelta(postSignals) || hasFileCountDelta(postSignals)) && inputEvidence)
         ) {
           return { status: 'ui' as const };
         }
-        const inputNameCandidates = resolveInputNameCandidates();
-        const inputHasFile =
-          inputNameCandidates.some((name) => matchesExpectedName(name)) ||
-          (lastInputValue && matchesExpectedName(lastInputValue));
         const inputSignal =
           immediateInputMatch ||
           postInputSignals.touched ||
@@ -970,6 +973,22 @@ export async function uploadAttachmentFile(
         if (!hasExpectedFile) {
           if (mode === 'set') {
             await dom.setFileInputFiles({ nodeId: resultNode.nodeId, files: [attachment.path] });
+            await runtime
+              .evaluate({
+                expression: `(() => {
+                  const input = document.querySelector('input[type="file"][data-oracle-upload-idx="${idx}"]');
+                  if (!(input instanceof HTMLInputElement)) return false;
+                  try {
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                })()`,
+                returnByValue: true,
+              })
+              .catch(() => undefined);
           } else {
             const selector = `input[type="file"][data-oracle-upload-idx="${idx}"]`;
             try {
@@ -1004,9 +1023,19 @@ export async function uploadAttachmentFile(
         break;
       }
       if (result.evaluation.status === 'input') {
-        logger('Attachment input set; proceeding without UI confirmation.');
-        inputConfirmed = true;
-        break;
+        logger('Attachment input set; retrying with data transfer to trigger ChatGPT upload.');
+        await dom.setFileInputFiles({ nodeId: resultNode.nodeId, files: [] }).catch(() => undefined);
+        await delay(150);
+        result = await runInputAttempt('transfer');
+        if (result.evaluation.status === 'ui') {
+          confirmedAttachment = true;
+          break;
+        }
+        if (result.evaluation.status === 'input') {
+          logger('Attachment input set; proceeding without UI confirmation.');
+          inputConfirmed = true;
+          break;
+        }
       }
 
       const lateSignals = await readAttachmentSignals(expectedName);
@@ -1334,7 +1363,7 @@ export async function waitForAttachmentCompletion(
         if (file?.name) inputNames.push(file.name.toLowerCase());
       }
     }
-    const countRegex = /(?:^|\\b)(\\d+)\\s+files?\\b/;
+    const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
     const fileCountSelectors = [
       'button',
       '[role="button"]',
@@ -1380,7 +1409,8 @@ export async function waitForAttachmentCompletion(
         let hasFileHint = false;
         for (const raw of candidates) {
           if (!raw) continue;
-          if (String(raw).toLowerCase().includes('file')) {
+          const lowered = String(raw).toLowerCase();
+          if (lowered.includes('file') || lowered.includes('attachment')) {
             hasFileHint = true;
             break;
           }
@@ -1519,14 +1549,15 @@ export async function waitForAttachmentCompletion(
       // Don't include 'disabled' - a disabled button likely means upload is still in progress.
       const inputStateOk = value.state === 'ready' || value.state === 'missing';
       const inputSeenNow = inputMissing.length === 0 || fileCountSatisfied;
+      const inputEvidenceOk = Boolean(value.filesAttached) || Boolean(value.uploading) || fileCountSatisfied;
       const stableThresholdMs = value.uploading ? 3000 : 1500;
-      if (inputSeenNow && inputStateOk) {
+      if (inputSeenNow && inputStateOk && inputEvidenceOk) {
         if (inputMatchSince === null) {
           inputMatchSince = Date.now();
         }
         sawInputMatch = true;
       }
-      if (inputMatchSince !== null && inputStateOk && Date.now() - inputMatchSince > stableThresholdMs) {
+      if (inputMatchSince !== null && inputStateOk && inputEvidenceOk && Date.now() - inputMatchSince > stableThresholdMs) {
         return;
       }
       if (!inputSeenNow && !sawInputMatch) {
@@ -1577,10 +1608,10 @@ export async function waitForUserTurnAttachments(
       '[title*="file"]',
       '[title*="attachment"]',
     ];
+    const attachmentUiCount = lastUser.querySelectorAll(attachmentSelectors.join(',')).length;
     const hasAttachmentUi =
-      lastUser.querySelectorAll(attachmentSelectors.join(',')).length > 0 ||
-      attrs.some((attr) => attr.includes('file') || attr.includes('attachment'));
-    const countRegex = /(?:^|\\b)(\\d+)\\s+files?\\b/;
+      attachmentUiCount > 0 || attrs.some((attr) => attr.includes('file') || attr.includes('attachment'));
+    const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
     const fileCountNodes = Array.from(lastUser.querySelectorAll('button,span,div,[aria-label],[title]'));
     let fileCount = 0;
     for (const node of fileCountNodes) {
@@ -1596,7 +1627,8 @@ export async function waitForUserTurnAttachments(
       let hasFileHint = false;
       for (const raw of candidates) {
         if (!raw) continue;
-        if (String(raw).toLowerCase().includes('file')) {
+        const lowered = String(raw).toLowerCase();
+        if (lowered.includes('file') || lowered.includes('attachment')) {
           hasFileHint = true;
           break;
         }
@@ -1613,7 +1645,7 @@ export async function waitForUserTurnAttachments(
         }
       }
     }
-    return { ok: true, text, attrs, fileCount, hasAttachmentUi };
+    return { ok: true, text, attrs, fileCount, hasAttachmentUi, attachmentUiCount };
   })()`;
 
   const deadline = Date.now() + timeoutMs;
@@ -1621,7 +1653,14 @@ export async function waitForUserTurnAttachments(
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression, returnByValue: true });
     const value = result?.value as
-      | { ok?: boolean; text?: string; attrs?: string[]; fileCount?: number; hasAttachmentUi?: boolean }
+      | {
+          ok?: boolean;
+          text?: string;
+          attrs?: string[];
+          fileCount?: number;
+          hasAttachmentUi?: boolean;
+          attachmentUiCount?: number;
+        }
       | undefined;
     if (!value?.ok) {
       await delay(200);
@@ -1632,7 +1671,10 @@ export async function waitForUserTurnAttachments(
     }
     const haystack = [value.text ?? '', ...(value.attrs ?? [])].join('\n');
     const fileCount = typeof value.fileCount === 'number' ? value.fileCount : 0;
+    const attachmentUiCount = typeof value.attachmentUiCount === 'number' ? value.attachmentUiCount : 0;
     const fileCountSatisfied = fileCount >= expectedNormalized.length && expectedNormalized.length > 0;
+    const attachmentUiSatisfied =
+      attachmentUiCount >= expectedNormalized.length && expectedNormalized.length > 0;
     const missing = expectedNormalized.filter((expected) => {
       const baseName = expected.split('/').pop()?.split('\\').pop() ?? expected;
       const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -1641,7 +1683,7 @@ export async function waitForUserTurnAttachments(
       if (expectedNoExt.length >= 6 && haystack.includes(expectedNoExt)) return false;
       return true;
     });
-    if (missing.length === 0 || fileCountSatisfied) {
+    if (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied) {
       return true;
     }
     await delay(250);
@@ -1670,6 +1712,12 @@ export async function waitForAttachmentVisible(
     const expected = ${JSON.stringify(expectedName)};
     const normalized = expected.toLowerCase();
     const normalizedNoExt = normalized.replace(/\\.[a-z0-9]{1,10}$/i, '');
+    const matchesExpectedFileName = (value) => {
+      const text = String(value || '').toLowerCase();
+      if (!text) return false;
+      if (text.includes(normalized)) return true;
+      return normalizedNoExt.length >= 6 && text.includes(normalizedNoExt);
+    };
     const matchNode = (node) => {
       if (!node) return false;
       if (node.tagName === 'INPUT' && node.type === 'file') return false;
@@ -1682,12 +1730,37 @@ export async function waitForAttachmentVisible(
       return candidates.some((value) => value.includes(normalized) || (normalizedNoExt.length >= 6 && value.includes(normalizedNoExt)));
     };
 
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    for (const input of inputs) {
+      if (!(input instanceof HTMLInputElement)) continue;
+      const files = Array.from(input.files || []);
+      if (files.some((file) => matchesExpectedFileName(file?.name))) {
+        return { found: true, source: 'file-input' };
+      }
+    }
+
+    const composerRoot =
+      document.querySelector('[data-testid*="composer"]') || document.querySelector('form') || document.body;
     const attachmentSelectors = ['[data-testid*="attachment"]','[data-testid*="chip"]','[data-testid*="upload"]','[data-testid*="file"]'];
     const attachmentMatch = attachmentSelectors.some((selector) =>
       Array.from(document.querySelectorAll(selector)).some(matchNode),
     );
     if (attachmentMatch) {
       return { found: true, source: 'attachments' };
+    }
+
+    const removeButtons = Array.from(
+      (composerRoot ?? document).querySelectorAll('[aria-label*=\"Remove\"],[aria-label*=\"remove\"]'),
+    );
+    const visibleRemove = removeButtons.some((btn) => {
+      if (!(btn instanceof HTMLElement)) return false;
+      const rect = btn.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return false;
+      const style = window.getComputedStyle(btn);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    });
+    if (visibleRemove) {
+      return { found: true, source: 'remove-button' };
     }
 
     const cardTexts = Array.from(document.querySelectorAll('[aria-label*="Remove"]')).map((btn) =>
@@ -1697,7 +1770,7 @@ export async function waitForAttachmentVisible(
       return { found: true, source: 'attachment-cards' };
     }
 
-    const countRegex = /(?:^|\\b)(\\d+)\\s+files?\\b/;
+    const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
     const fileCountNodes = (() => {
       const nodes = [];
       const seen = new Set();
@@ -1706,8 +1779,7 @@ export async function waitForAttachmentVisible(
         seen.add(node);
         nodes.push(node);
       };
-      const root =
-        document.querySelector('[data-testid*="composer"]') || document.querySelector('form') || document.body;
+      const root = composerRoot;
       const localNodes = root ? Array.from(root.querySelectorAll('button,span,div,[aria-label],[title]')) : [];
       for (const node of localNodes) add(node);
       for (const node of Array.from(document.querySelectorAll('button,span,div,[aria-label],[title]'))) {
@@ -1747,7 +1819,8 @@ export async function waitForAttachmentVisible(
       let hasFileHint = false;
       for (const raw of candidates) {
         if (!raw) continue;
-        if (String(raw).toLowerCase().includes('file')) {
+        const lowered = String(raw).toLowerCase();
+        if (lowered.includes('file') || lowered.includes('attachment')) {
           hasFileHint = true;
           break;
         }
@@ -1810,12 +1883,24 @@ async function waitForAttachmentAnchored(
       return false;
     };
 
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    for (const input of inputs) {
+      if (!(input instanceof HTMLInputElement)) continue;
+      for (const file of Array.from(input.files || [])) {
+        if (file?.name && matchesExpected(file.name)) {
+          return { found: true, text: 'file-input' };
+        }
+      }
+    }
+
     const selectors = [
       '[data-testid*="attachment"]',
       '[data-testid*="chip"]',
       '[data-testid*="upload"]',
       '[aria-label*="Remove"]',
       'button[aria-label*="Remove"]',
+      '[aria-label*="remove"]',
+      'button[aria-label*="remove"]',
     ];
     for (const selector of selectors) {
       for (const node of Array.from(document.querySelectorAll(selector))) {
@@ -1834,7 +1919,7 @@ async function waitForAttachmentAnchored(
     if (cards.some(matchesExpected)) {
       return { found: true, text: cards.find(matchesExpected) };
     }
-    const countRegex = /(?:^|\\b)(\\d+)\\s+files?\\b/;
+    const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
     const fileCountNodes = (() => {
       const nodes = [];
       const seen = new Set();
@@ -1884,7 +1969,8 @@ async function waitForAttachmentAnchored(
       let hasFileHint = false;
       for (const raw of candidates) {
         if (!raw) continue;
-        if (String(raw).toLowerCase().includes('file')) {
+        const lowered = String(raw).toLowerCase();
+        if (lowered.includes('file') || lowered.includes('attachment')) {
           hasFileHint = true;
           break;
         }

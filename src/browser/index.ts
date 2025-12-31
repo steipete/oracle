@@ -484,9 +484,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           logger('Attachment UI did not render before send; skipping user-turn attachment verification.');
         } else {
           const verified = await waitForUserTurnAttachments(Runtime, attachmentNames, 20_000, logger);
-          if (verified) {
-            logger('Verified attachments present on sent user message');
+          if (!verified) {
+            throw new Error('Sent user message did not expose attachment UI after upload.');
           }
+          logger('Verified attachments present on sent user message');
         }
       }
       // Reattach needs a /c/ URL; ChatGPT can update it late, so poll in the background.

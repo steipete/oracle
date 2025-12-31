@@ -33,6 +33,65 @@ export interface PromptReadyNavigationDeps {
   ensurePromptReady?: typeof ensurePromptReady;
 }
 
+async function dismissBlockingUi(Runtime: ChromeClient['Runtime'], logger: BrowserLogger): Promise<boolean> {
+  const outcome = await Runtime.evaluate({
+    expression: `(() => {
+      const isVisible = (el) => {
+        if (!(el instanceof HTMLElement)) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = window.getComputedStyle(el);
+        if (!style) return false;
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        return true;
+      };
+      const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+      const labelFor = (el) => normalize(el?.textContent || el?.getAttribute?.('aria-label') || el?.getAttribute?.('title'));
+      const buttonCandidates = (root) =>
+        Array.from(root.querySelectorAll('button,[role="button"],a')).filter((el) => isVisible(el));
+
+      const roots = [
+        ...Array.from(document.querySelectorAll('[role="dialog"],dialog')),
+        document.body,
+      ].filter(Boolean);
+      for (const root of roots) {
+        const buttons = buttonCandidates(root);
+        const close = buttons.find((el) => labelFor(el).includes('close'));
+        if (close) {
+          (close).click();
+          return { dismissed: true, action: 'close' };
+        }
+        const okLike = buttons.find((el) => {
+          const label = labelFor(el);
+          return (
+            label === 'ok' ||
+            label === 'got it' ||
+            label === 'dismiss' ||
+            label === 'continue' ||
+            label === 'back' ||
+            label.includes('back to chatgpt') ||
+            label.includes('go to chatgpt') ||
+            label.includes('return') ||
+            label.includes('take me')
+          );
+        });
+        if (okLike) {
+          (okLike).click();
+          return { dismissed: true, action: 'confirm' };
+        }
+      }
+      return { dismissed: false };
+    })()`,
+    returnByValue: true,
+  }).catch(() => null);
+  const value = outcome?.result?.value as { dismissed?: boolean; action?: string } | undefined;
+  if (value?.dismissed) {
+    logger(`[nav] dismissed blocking UI (${value.action ?? 'unknown'})`);
+    return true;
+  }
+  return false;
+}
+
 export async function navigateToPromptReadyWithFallback(
   Page: ChromeClient['Page'],
   Runtime: ChromeClient['Runtime'],
@@ -53,6 +112,7 @@ export async function navigateToPromptReadyWithFallback(
 
   await navigate(Page, Runtime, url, logger);
   await ensureBlocked(Runtime, headless, logger);
+  await dismissBlockingUi(Runtime, logger).catch(() => false);
   try {
     await ensureReady(Runtime, timeoutMs, logger);
     return { usedFallback: false };
@@ -66,6 +126,7 @@ export async function navigateToPromptReadyWithFallback(
     );
     await navigate(Page, Runtime, fallbackUrl, logger);
     await ensureBlocked(Runtime, headless, logger);
+    await dismissBlockingUi(Runtime, logger).catch(() => false);
     await ensureReady(Runtime, fallbackTimeout, logger);
     return { usedFallback: true };
   }
