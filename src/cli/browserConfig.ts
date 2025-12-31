@@ -24,8 +24,23 @@ const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Base models last (least specific)
   ['gpt-5.2', 'GPT-5.2'],       // Selects "Auto" in ChatGPT UI
   ['gpt-5.1', 'GPT-5.2'],       // Legacy alias → Auto
+  // Gemini models for browser automation
   ['gemini-3-pro', 'Gemini 3 Pro'],
+  ['gemini-2.5-pro', 'Gemini 2.5 Pro'],
+  ['gemini-2.5-flash', 'Gemini 2.5 Flash'],
+  ['gemini-deep-think' as ModelName, 'Deep Think'],
+  ['gemini-deep-research' as ModelName, 'Deep Research'],
 ];
+
+/**
+ * Check if a model should use Gemini browser automation instead of ChatGPT
+ */
+export function isGeminiBrowserModel(model: string): boolean {
+  const normalized = model.toLowerCase();
+  return normalized.startsWith('gemini') ||
+         normalized.includes('deep-think') ||
+         normalized.includes('deep-research');
+}
 
 export interface BrowserFlagOptions {
   browserChromeProfile?: string;

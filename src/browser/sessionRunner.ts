@@ -5,6 +5,9 @@ import { formatFinishLine } from '../oracle/finishLine.js';
 import type { BrowserSessionConfig, BrowserRuntimeMetadata } from '../sessionStore.js';
 import { runBrowserMode } from '../browserMode.js';
 import type { BrowserRunResult } from '../browserMode.js';
+import { runGeminiBrowserMode } from '../gemini-browser/index.js';
+import type { GeminiBrowserRunResult } from '../gemini-browser/types.js';
+import { isGeminiBrowserModel } from '../cli/browserConfig.js';
 import { assembleBrowserPrompt } from './prompt.js';
 import { BrowserAutomationError } from '../oracle/errors.js';
 import type { BrowserLogger } from './types.js';
@@ -84,22 +87,63 @@ export async function runBrowserSessionExecution(
     log(chalk.dim('Chrome automation does not stream output; this may take a minute...'));
   }
   const persistRuntimeHint = deps.persistRuntimeHint ?? (() => {});
-  let browserResult: BrowserRunResult;
+  let browserResult: BrowserRunResult | GeminiBrowserRunResult;
+
+  // Route to Gemini browser automation for Gemini models
+  const useGeminiBrowser = isGeminiBrowserModel(runOptions.model);
+
   try {
-    browserResult = await executeBrowser({
-      prompt: promptArtifacts.composerText,
-      attachments: promptArtifacts.attachments,
-      fallbackSubmission: promptArtifacts.fallback
-        ? { prompt: promptArtifacts.fallback.composerText, attachments: promptArtifacts.fallback.attachments }
-        : undefined,
-      config: browserConfig,
-      log: automationLogger,
-      heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
-      verbose: runOptions.verbose,
-      runtimeHintCb: async (runtime) => {
-        await persistRuntimeHint({ ...runtime, controllerPid: runtime.controllerPid ?? process.pid });
-      },
-    });
+    if (useGeminiBrowser) {
+      // Use Gemini browser automation
+      browserResult = await runGeminiBrowserMode({
+        prompt: promptArtifacts.composerText,
+        attachments: promptArtifacts.attachments,
+        config: {
+          chromeProfile: browserConfig.chromeProfile,
+          chromePath: browserConfig.chromePath,
+          chromeCookiePath: browserConfig.chromeCookiePath,
+          timeoutMs: browserConfig.timeoutMs,
+          debugPort: browserConfig.debugPort,
+          inputTimeoutMs: browserConfig.inputTimeoutMs,
+          cookieSync: browserConfig.cookieSync,
+          cookieNames: browserConfig.cookieNames,
+          inlineCookies: browserConfig.inlineCookies,
+          inlineCookiesSource: browserConfig.inlineCookiesSource,
+          headless: browserConfig.headless,
+          keepBrowser: browserConfig.keepBrowser,
+          hideWindow: browserConfig.hideWindow,
+          desiredModel: browserConfig.desiredModel,
+          debug: browserConfig.debug,
+          allowCookieErrors: browserConfig.allowCookieErrors,
+          remoteChrome: browserConfig.remoteChrome,
+          manualLogin: browserConfig.manualLogin,
+          manualLoginProfileDir: browserConfig.manualLoginProfileDir,
+          manualLoginCookieSync: browserConfig.manualLoginCookieSync,
+        },
+        log: automationLogger,
+        heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
+        verbose: runOptions.verbose,
+        runtimeHintCb: async (runtime) => {
+          await persistRuntimeHint({ ...runtime, controllerPid: runtime.controllerPid ?? process.pid });
+        },
+      });
+    } else {
+      // Use ChatGPT browser automation
+      browserResult = await executeBrowser({
+        prompt: promptArtifacts.composerText,
+        attachments: promptArtifacts.attachments,
+        fallbackSubmission: promptArtifacts.fallback
+          ? { prompt: promptArtifacts.fallback.composerText, attachments: promptArtifacts.fallback.attachments }
+          : undefined,
+        config: browserConfig,
+        log: automationLogger,
+        heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
+        verbose: runOptions.verbose,
+        runtimeHintCb: async (runtime) => {
+          await persistRuntimeHint({ ...runtime, controllerPid: runtime.controllerPid ?? process.pid });
+        },
+      });
+    }
   } catch (error) {
     if (error instanceof BrowserAutomationError) {
       throw error;
