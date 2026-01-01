@@ -8,7 +8,7 @@ import {
   STOP_BUTTON_SELECTOR,
   ASSISTANT_ROLE_SELECTOR,
 } from '../constants.js';
-import { delay } from '../utils.js';
+import { delay, isGrokUrl } from '../utils.js';
 import { logDomFailure } from '../domDebug.js';
 import { buildClickDispatcher } from './domEvents.js';
 import { BrowserAutomationError } from '../../oracle/errors.js';
@@ -20,6 +20,80 @@ const ENTER_KEY_EVENT = {
   nativeVirtualKeyCode: 13,
 } as const;
 const ENTER_KEY_TEXT = '\r';
+
+async function ensureGrokHardMode(Runtime: ChromeClient['Runtime'], logger?: BrowserLogger) {
+  const hrefResult = await Runtime.evaluate({
+    expression: 'typeof location === "object" && location.href ? location.href : ""',
+    returnByValue: true,
+  });
+  const url = typeof hrefResult?.result?.value === 'string' ? hrefResult.result.value : '';
+  if (!url || !isGrokUrl(url)) {
+    return;
+  }
+  const deadline = Date.now() + 2_500;
+  let payload: { clicked?: boolean; reason?: string; label?: string } | undefined;
+  while (Date.now() < deadline) {
+    const { result } = await Runtime.evaluate({
+      expression: `(() => {
+        const labels = ['think harder', 'deepsearch', 'deep search'];
+        const normalize = (value) => String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const candidates = Array.from(document.querySelectorAll('button,[role="button"]'));
+        let best = null;
+        let bestRank = labels.length + 1;
+        let bestLabel = '';
+        for (const node of candidates) {
+          const label = normalize(node.textContent || node.getAttribute('aria-label') || '');
+          if (!label) continue;
+          const rank = labels.findIndex((needle) => label === needle || label.includes(needle));
+          if (rank === -1) continue;
+          if (rank < bestRank) {
+            best = node;
+            bestRank = rank;
+            bestLabel = label;
+          }
+        }
+        if (!best) {
+          return { clicked: false, reason: 'missing' };
+        }
+        const ariaPressed = best.getAttribute('aria-pressed');
+        const dataState = best.getAttribute('data-state');
+        const className = best.className || '';
+        const active =
+          ariaPressed === 'true' ||
+          dataState === 'active' ||
+          dataState === 'on' ||
+          dataState === 'selected' ||
+          className.includes('bg-button-filled') ||
+          className.includes('text-fg-invert');
+        if (active) {
+          return { clicked: false, reason: 'already-active', label: bestLabel };
+        }
+        best.click();
+        return { clicked: true, label: bestLabel };
+      })()`,
+      returnByValue: true,
+    });
+    payload = result?.value as { clicked?: boolean; reason?: string; label?: string } | undefined;
+    if (payload?.clicked || payload?.reason === 'already-active') {
+      break;
+    }
+    if (payload?.reason !== 'missing') {
+      break;
+    }
+    await delay(250);
+  }
+  if (payload?.clicked) {
+    logger?.(`Enabled Grok hard mode (${payload.label ?? 'unknown'})`);
+    return;
+  }
+  if (logger?.verbose) {
+    if (payload?.reason === 'already-active') {
+      logger(`Grok hard mode already active (${payload.label ?? 'unknown'})`);
+    } else if (payload?.reason === 'missing') {
+      logger('Grok hard mode control not found; continuing.');
+    }
+  }
+}
 
 export async function submitPrompt(
   deps: {
@@ -35,6 +109,7 @@ export async function submitPrompt(
   const { runtime, input } = deps;
 
   await waitForDomReady(runtime, logger, deps.inputTimeoutMs ?? undefined);
+  await ensureGrokHardMode(runtime, logger);
   const encodedPrompt = JSON.stringify(prompt);
   const focusResult = await runtime.evaluate({
     expression: `(() => {
@@ -86,13 +161,31 @@ export async function submitPrompt(
 
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
   const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   const verification = await runtime.evaluate({
     expression: `(() => {
+      const SELECTORS = ${inputSelectorsLiteral};
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return node.value ?? '';
+        }
+        if (node.getAttribute && node.getAttribute('contenteditable') === 'true') {
+          return node.textContent ?? node.innerText ?? '';
+        }
+        return node.textContent ?? '';
+      };
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
+      const active = document.activeElement;
+      const input = SELECTORS.map((selector) => document.querySelector(selector)).find(Boolean) || null;
+      const activeMatches = active && SELECTORS.some((selector) => active.matches?.(selector));
+      const activeText = activeMatches ? readValue(active) : '';
       return {
-        editorText: editor?.innerText ?? '',
-        fallbackValue: fallback?.value ?? '',
+        editorText: readValue(editor),
+        fallbackValue: readValue(fallback),
+        activeText,
+        inputText: readValue(input),
       };
     })()`,
     returnByValue: true,
@@ -100,12 +193,18 @@ export async function submitPrompt(
 
   const editorTextRaw = verification.result?.value?.editorText ?? '';
   const fallbackValueRaw = verification.result?.value?.fallbackValue ?? '';
+  const activeTextRaw = verification.result?.value?.activeText ?? '';
+  const inputTextRaw = verification.result?.value?.inputText ?? '';
   const editorTextTrimmed = editorTextRaw?.trim?.() ?? '';
   const fallbackValueTrimmed = fallbackValueRaw?.trim?.() ?? '';
-  if (!editorTextTrimmed && !fallbackValueTrimmed) {
-    // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
+  const activeTextTrimmed = activeTextRaw?.trim?.() ?? '';
+  const inputTextTrimmed = inputTextRaw?.trim?.() ?? '';
+  const hasContent = Boolean(editorTextTrimmed || fallbackValueTrimmed || activeTextTrimmed || inputTextTrimmed);
+  if (!hasContent) {
+    // Learned: occasionally Input.insertText doesn't land in the editor; force text/value + input events.
     await runtime.evaluate({
       expression: `(() => {
+        const SELECTORS = ${inputSelectorsLiteral};
         const fallback = document.querySelector(${fallbackSelectorLiteral});
         if (fallback) {
           fallback.value = ${encodedPrompt};
@@ -118,6 +217,21 @@ export async function submitPrompt(
           // Nudge ProseMirror to register the textContent write so its state/send-button updates
           editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${encodedPrompt}, inputType: 'insertFromPaste' }));
         }
+        const setContentEditable = (node) => {
+          if (!node) return false;
+          if (node.getAttribute && node.getAttribute('contenteditable') === 'true') {
+            node.textContent = ${encodedPrompt};
+            node.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${encodedPrompt}, inputType: 'insertFromPaste' }));
+            return true;
+          }
+          return false;
+        };
+        for (const selector of SELECTORS) {
+          const node = document.querySelector(selector);
+          if (setContentEditable(node)) {
+            break;
+          }
+        }
       })()`,
     });
   }
@@ -125,18 +239,37 @@ export async function submitPrompt(
   const promptLength = prompt.length;
   const postVerification = await runtime.evaluate({
     expression: `(() => {
+      const SELECTORS = ${inputSelectorsLiteral};
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return node.value ?? '';
+        }
+        if (node.getAttribute && node.getAttribute('contenteditable') === 'true') {
+          return node.textContent ?? node.innerText ?? '';
+        }
+        return node.textContent ?? '';
+      };
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
+      const active = document.activeElement;
+      const input = SELECTORS.map((selector) => document.querySelector(selector)).find(Boolean) || null;
+      const activeMatches = active && SELECTORS.some((selector) => active.matches?.(selector));
+      const activeText = activeMatches ? readValue(active) : '';
       return {
-        editorText: editor?.innerText ?? '',
-        fallbackValue: fallback?.value ?? '',
+        editorText: readValue(editor),
+        fallbackValue: readValue(fallback),
+        activeText,
+        inputText: readValue(input),
       };
     })()`,
     returnByValue: true,
   });
   const observedEditor = postVerification.result?.value?.editorText ?? '';
   const observedFallback = postVerification.result?.value?.fallbackValue ?? '';
-  const observedLength = Math.max(observedEditor.length, observedFallback.length);
+  const observedActive = postVerification.result?.value?.activeText ?? '';
+  const observedInput = postVerification.result?.value?.inputText ?? '';
+  const observedLength = Math.max(observedEditor.length, observedFallback.length, observedActive.length, observedInput.length);
   if (promptLength >= 50_000 && observedLength > 0 && observedLength < promptLength - 2_000) {
     // Learned: very large prompts can truncate silently; fail fast so we can fall back to file uploads.
     await logDomFailure(runtime, logger, 'prompt-too-large');
@@ -187,6 +320,12 @@ export async function clearPromptComposer(Runtime: ChromeClient['Runtime'], logg
       if (editor) {
         editor.textContent = '';
         editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
+        cleared = true;
+      }
+      const editable = document.querySelector('[contenteditable="true"]');
+      if (editable) {
+        editable.textContent = '';
+        editable.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
         cleared = true;
       }
       return { cleared };
@@ -336,6 +475,17 @@ async function verifyPromptCommitted(
   const script = `(() => {
 	    const editor = document.querySelector(${primarySelectorLiteral});
 	    const fallback = document.querySelector(${fallbackSelectorLiteral});
+	    const editable = document.querySelector('[contenteditable="true"]');
+	    const readValue = (node) => {
+	      if (!node) return '';
+	      if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+	        return node.value ?? '';
+	      }
+	      if (node.getAttribute && node.getAttribute('contenteditable') === 'true') {
+	        return node.textContent ?? node.innerText ?? '';
+	      }
+	      return node.textContent ?? '';
+	    };
 	    const normalize = (value) => {
 	      let text = value?.toLowerCase?.() ?? '';
 	      // Strip markdown *markers* but keep content (ChatGPT renders fence markers differently).
@@ -367,9 +517,11 @@ async function verifyPromptCommitted(
         document.querySelector('[data-testid*="assistant"]'),
       );
       // Learned: composer clearing + stop button or assistant presence is a reliable fallback signal.
-      const editorValue = editor?.innerText ?? '';
-      const fallbackValue = fallback?.value ?? '';
-      const composerCleared = !(String(editorValue).trim() || String(fallbackValue).trim());
+      const editorValue = readValue(editor);
+      const fallbackValue = readValue(fallback);
+      const editableValue = readValue(editable);
+      const composerCleared =
+        !(String(editorValue).trim() || String(fallbackValue).trim() || String(editableValue).trim());
       const href = typeof location === 'object' && location.href ? location.href : '';
       const inConversation = /\\/c\\//.test(href);
 	    return {
@@ -384,6 +536,7 @@ async function verifyPromptCommitted(
       href,
       fallbackValue,
       editorValue,
+      editableValue,
       lastTurn,
       turnsCount: normalizedTurns.length,
     };

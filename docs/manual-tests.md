@@ -34,6 +34,21 @@ Prereqs:
    `pnpm run oracle -- --engine browser --model gemini-3-pro --prompt "add sunglasses" --edit-image /tmp/gemini-gen.jpg --output /tmp/gemini-edit.jpg --wait --verbose`
    - Confirm `/tmp/gemini-edit.jpg` exists.
 
+### Grok browser mode (Grok web)
+
+Run this whenever you touch Grok selectors, prompt submission, or response extraction.
+
+Prereqs:
+- Chrome profile is signed into `grok.com` (or at least has a session that can chat anonymously).
+
+1. Basic prompt:
+   `pnpm run oracle -- --engine browser --grok-url https://grok.com --browser-model-strategy ignore --prompt "Reply with OK" --wait --verbose`
+   - Confirm the answer text is captured in the CLI.
+2. Hard mode toggle:
+   - If the Grok UI shows `DeepSearch` or `Think Harder`, confirm the log line "Enabled Grok hard mode" appears before sending.
+
+Note: Grok browser mode currently skips file uploads; keep prompts text-only.
+
 ### Multi-Model CLI fan-out
 
 Run this whenever you touch the session store, CLI session views, or TUI wiring for multi-model runs.

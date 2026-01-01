@@ -37,6 +37,9 @@ Recommended defaults:
 
 - Browser run (main path; long-running is normal):
   - `npx -y @steipete/oracle --engine browser --model gpt-5.2-pro -p "<task>" --file "src/**"`
+- Browser run (Grok):
+  - `npx -y @steipete/oracle --engine browser --grok-url https://grok.com --browser-model-strategy ignore -p "<task>"`
+  - Note: Grok browser mode currently does not upload file attachments.
 
 - Manual paste fallback (assemble bundle, copy to clipboard):
   - `npx -y @steipete/oracle --render --copy -p "<task>" --file "src/**"`
@@ -70,7 +73,7 @@ Recommended defaults:
 ## Engines (API vs browser)
 
 - Auto-pick: uses `api` when `OPENAI_API_KEY` is set, otherwise `browser`.
-- Browser engine supports GPT + Gemini only; use `--engine api` for Claude/Grok/Codex or multi-model runs.
+- Browser engine supports ChatGPT (GPT-*) + Grok (`--grok-url`) + Gemini web; use `--engine api` for Claude/Codex or multi-model runs.
 - **API runs require explicit user consent** before starting because they incur usage costs.
 - Browser attachments:
   - `--browser-attachments auto|never|always` (auto pastes inline up to ~60k chars then uploads).

@@ -2,6 +2,7 @@ import type { ChromeClient, BrowserLogger } from '../types.js';
 import type { ThinkingTimeLevel } from '../../oracle/types.js';
 import { MENU_CONTAINER_SELECTOR, MENU_ITEM_SELECTOR } from '../constants.js';
 import { logDomFailure } from '../domDebug.js';
+import { isGrokUrl } from '../utils.js';
 import { buildClickDispatcher } from './domEvents.js';
 
 type ThinkingTimeOutcome =
@@ -10,6 +11,19 @@ type ThinkingTimeOutcome =
   | { status: 'chip-not-found' }
   | { status: 'menu-not-found' }
   | { status: 'option-not-found' };
+
+async function isGrokRuntime(Runtime: ChromeClient['Runtime']): Promise<boolean> {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: 'typeof location === "object" && location.href ? location.href : ""',
+      returnByValue: true,
+    });
+    const url = typeof result?.value === 'string' ? result.value : '';
+    return url ? isGrokUrl(url) : false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Selects a specific thinking time level in ChatGPT's composer pill menu.
@@ -20,6 +34,10 @@ export async function ensureThinkingTime(
   level: ThinkingTimeLevel,
   logger: BrowserLogger,
 ) {
+  if (await isGrokRuntime(Runtime)) {
+    logger('Thinking time: skipped (Grok)');
+    return;
+  }
   const result = await evaluateThinkingTimeSelection(Runtime, level);
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
 
@@ -59,6 +77,12 @@ export async function ensureThinkingTimeIfAvailable(
   level: ThinkingTimeLevel,
   logger: BrowserLogger,
 ): Promise<boolean> {
+  if (await isGrokRuntime(Runtime)) {
+    if (logger.verbose) {
+      logger('Thinking time: skipped (Grok)');
+    }
+    return false;
+  }
   try {
     const result = await evaluateThinkingTimeSelection(Runtime, level);
     const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);

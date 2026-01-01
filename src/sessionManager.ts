@@ -16,6 +16,7 @@ export interface BrowserSessionConfig {
   chromePath?: string | null;
   chromeCookiePath?: string | null;
   chatgptUrl?: string | null;
+  grokUrl?: string | null;
   url?: string;
   timeoutMs?: number;
   debugPort?: number | null;

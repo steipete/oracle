@@ -12,4 +12,6 @@ Owner: Oracle CLI
 
 Notes:
 - If you supply `--base-url`, it overrides the default xAI endpoint.
-- Browser engine is not supported for Grok; Oracle coerces `--engine browser` to `api`.
+- Browser engine is supported for Grok via `--grok-url https://grok.com` (automation via Chrome). Use `--browser-model-strategy ignore` to skip the ChatGPT picker logic.
+- Grok browser mode auto-enables hard mode when `DeepSearch` / `Think Harder` is available.
+- Grok browser mode currently does not upload file attachments.

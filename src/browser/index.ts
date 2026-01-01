@@ -31,7 +31,7 @@ import {
 } from './pageActions.js';
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
 import { ensureThinkingTime } from './actions/thinkingTime.js';
-import { estimateTokenCount, withRetries, delay } from './utils.js';
+import { estimateTokenCount, withRetries, delay, isGrokUrl } from './utils.js';
 import { formatElapsed } from '../oracle/format.js';
 import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from './constants.js';
 import type { LaunchedChrome } from 'chrome-launcher';
@@ -47,8 +47,8 @@ import {
 } from './profileState.js';
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from './types.js';
-export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';
-export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from './utils.js';
+export { CHATGPT_URL, GROK_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';
+export { parseDuration, delay, normalizeBrowserUrl, normalizeChatgptUrl, normalizeGrokUrl, isTemporaryChatUrl } from './utils.js';
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
@@ -61,6 +61,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   let config = resolveBrowserConfig(options.config);
   const logger: BrowserLogger = options.log ?? ((_message: string) => {});
+  const isGrokSession = isGrokUrl(config.url);
   if (logger.verbose === undefined) {
     logger.verbose = Boolean(config.debug);
   }
@@ -249,7 +250,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
 
-    if (cookieSyncEnabled && !manualLogin && (appliedCookies ?? 0) === 0 && !config.inlineCookies) {
+    if (!isGrokSession && cookieSyncEnabled && !manualLogin && (appliedCookies ?? 0) === 0 && !config.inlineCookies) {
       // Learned: if the profile has no ChatGPT cookies, browser mode will just bounce to login.
       // Fail early so the user knows to sign in.
       throw new BrowserAutomationError(
@@ -266,8 +267,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
 
-    const baseUrl = CHATGPT_URL;
-    // First load the base ChatGPT homepage to satisfy potential interstitials,
+    const baseUrl = config.grokUrl ?? CHATGPT_URL;
+    // First load the base homepage to satisfy potential interstitials,
     // then hop to the requested URL if it differs.
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
     await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
@@ -352,7 +353,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     };
     await captureRuntimeSnapshot();
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
-    if (config.desiredModel && modelStrategy !== 'ignore') {
+    if (isGrokSession) {
+      logger('Model picker: skipped (Grok)');
+    } else if (config.desiredModel && modelStrategy !== 'ignore') {
       await raceWithDisconnect(
         withRetries(
           () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
@@ -383,7 +386,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     // Handle thinking time selection if specified
     const thinkingTime = config.thinkingTime;
-    if (thinkingTime) {
+    if (thinkingTime && !isGrokSession) {
       await raceWithDisconnect(
         withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
           retries: 2,
@@ -395,6 +398,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           },
         }),
       );
+    } else if (thinkingTime && isGrokSession) {
+      logger('Thinking time: skipped (Grok)');
     }
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
@@ -402,6 +407,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         typeof baselineSnapshot?.text === 'string' ? baselineSnapshot.text.trim() : '';
       const attachmentNames = submissionAttachments.map((a) => path.basename(a.path));
       let inputOnlyAttachments = false;
+      if (submissionAttachments.length > 0 && isGrokSession) {
+        throw new BrowserAutomationError('Grok browser mode does not support file uploads yet.', {
+          stage: 'upload-attachments',
+          code: 'attachments-unsupported',
+          count: submissionAttachments.length,
+        });
+      }
       if (submissionAttachments.length > 0) {
         if (!DOM) {
           throw new Error('Chrome DOM domain unavailable while uploading attachments.');
@@ -687,7 +699,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
     if (!socketClosed) {
-      logger(`Failed to complete ChatGPT run: ${normalizedError.message}`);
+      logger(`Failed to complete ${isGrokSession ? 'Grok' : 'ChatGPT'} run: ${normalizedError.message}`);
       if ((config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === '1') && normalizedError.stack) {
         logger(normalizedError.stack);
       }
@@ -813,21 +825,21 @@ async function waitForLogin({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const loginDetected = message?.toLowerCase().includes('login button');
-      const sessionMissing = message?.toLowerCase().includes('session not detected');
+      const sessionMissing = message?.toLowerCase().includes('session not detected') || message?.toLowerCase().includes('login missing');
       if (!loginDetected && !sessionMissing) {
         throw error;
       }
       const now = Date.now();
       if (now - lastNotice > 5000) {
         logger(
-          'Manual login mode: please sign into chatgpt.com in the opened Chrome window; waiting for session to appear...',
+          'Manual login mode: please sign into the AI provider in the opened Chrome window; waiting for session to appear...',
         );
         lastNotice = now;
       }
       await delay(1000);
     }
   }
-  throw new Error('Manual login mode timed out waiting for ChatGPT session; please sign in and retry.');
+  throw new Error('Manual login mode timed out waiting for session; please sign in and retry.');
 }
 
 async function _assertNavigatedToHttp(
@@ -849,7 +861,7 @@ async function _assertNavigatedToHttp(
     }
     await delay(250);
   }
-  throw new BrowserAutomationError('ChatGPT session not detected; page never left new tab.', {
+  throw new BrowserAutomationError('Browser session not detected; page never left new tab.', {
     stage: 'execute-browser',
     details: { url: lastUrl || '(empty)' },
   });
@@ -1219,7 +1231,7 @@ async function runRemoteBrowserMode(
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
 
     if (!socketClosed) {
-      logger(`Failed to complete ChatGPT run: ${normalizedError.message}`);
+      logger(`Failed to complete ${isGrokUrl(config.url) ? 'Grok' : 'ChatGPT'} run: ${normalizedError.message}`);
       if ((config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === '1') && normalizedError.stack) {
         logger(normalizedError.stack);
       }

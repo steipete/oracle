@@ -4,10 +4,10 @@ import {
   CLOUDFLARE_TITLE,
   INPUT_SELECTORS,
 } from '../constants.js';
-import { delay } from '../utils.js';
+import { delay, isGrokUrl } from '../utils.js';
 import { logDomFailure } from '../domDebug.js';
 
-export async function navigateToChatGPT(
+export async function navigateToUrl(
   Page: ChromeClient['Page'],
   Runtime: ChromeClient['Runtime'],
   url: string,
@@ -16,6 +16,15 @@ export async function navigateToChatGPT(
   logger(`Navigating to ${url}`);
   await Page.navigate({ url });
   await waitForDocumentReady(Runtime, 45_000);
+}
+
+export async function navigateToChatGPT(
+  Page: ChromeClient['Page'],
+  Runtime: ChromeClient['Runtime'],
+  url: string,
+  logger: BrowserLogger,
+) {
+  return navigateToUrl(Page, Runtime, url, logger);
 }
 
 export async function ensureNotBlocked(Runtime: ChromeClient['Runtime'], headless: boolean, logger: BrowserLogger) {
@@ -31,6 +40,50 @@ export async function ensureNotBlocked(Runtime: ChromeClient['Runtime'], headles
 const LOGIN_CHECK_TIMEOUT_MS = 5_000;
 
 export async function ensureLoggedIn(
+  Runtime: ChromeClient['Runtime'],
+  logger: BrowserLogger,
+  options: { appliedCookies?: number | null; remoteSession?: boolean } = {},
+) {
+  const url = await currentUrl(Runtime);
+  if (url && isGrokUrl(url)) {
+    return ensureLoggedInToGrok(Runtime, logger, options);
+  }
+  return ensureLoggedInToChatGPT(Runtime, logger, options);
+}
+
+export async function ensureLoggedInToGrok(
+  Runtime: ChromeClient['Runtime'],
+  logger: BrowserLogger,
+  options: { appliedCookies?: number | null; remoteSession?: boolean } = {},
+) {
+  // Grok allows anonymous usage - check if the chat interface is ready
+  // The textarea may not exist on a conversation page (only the input at bottom)
+  // So we check for either a working chat input OR existing message bubbles
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const textarea = document.querySelector('textarea[aria-label="Ask Grok anything"]');
+      const messageBubbles = document.querySelectorAll('.message-bubble');
+      const conversationPage = location.pathname.startsWith('/c/');
+      // Grok is usable if we have a textarea OR we're on a conversation page with messages
+      const isUsable = !!textarea || (conversationPage && messageBubbles.length > 0);
+      return { isUsable, hasTextarea: !!textarea, bubbleCount: messageBubbles.length, conversationPage };
+    })()`,
+    returnByValue: true
+  });
+  
+  const state = result.value as { isUsable: boolean; hasTextarea: boolean; bubbleCount: number; conversationPage: boolean };
+  
+  if (state.isUsable) {
+    logger(`Grok ready (textarea=${state.hasTextarea}, bubbles=${state.bubbleCount}, convPage=${state.conversationPage})`);
+    return;
+  }
+  
+  // Grok allows anonymous use, so we don't fail on sign-in presence
+  // Just log the state and continue - the prompt wait will handle timeouts
+  logger(`Grok state unclear (textarea=${state.hasTextarea}, bubbles=${state.bubbleCount}), continuing...`);
+}
+
+export async function ensureLoggedInToChatGPT(
   Runtime: ChromeClient['Runtime'],
   logger: BrowserLogger,
   options: { appliedCookies?: number | null; remoteSession?: boolean } = {},
@@ -172,6 +225,10 @@ export async function ensurePromptReady(Runtime: ChromeClient['Runtime'], timeou
   const ready = await waitForPrompt(Runtime, timeoutMs);
   if (!ready) {
     const authUrl = await currentUrl(Runtime);
+    if (authUrl && isGrokUrl(authUrl)) {
+      await logDomFailure(Runtime, logger, 'grok-prompt');
+      throw new Error('Grok prompt did not appear before timeout. Open grok.com and start a new chat or sign in.');
+    }
     if (authUrl && isAuthLoginUrl(authUrl)) {
       // Learned: auth.openai.com/login can appear after cookies are copied; allow manual login window.
       logger('Auth login page detected; waiting for manual login to complete...');

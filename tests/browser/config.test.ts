@@ -35,6 +35,15 @@ describe('resolveBrowserConfig', () => {
     expect(resolved.debug).toBe(true);
   });
 
+  test('uses grokUrl when provided', () => {
+    const resolved = resolveBrowserConfig({
+      grokUrl: 'https://grok.com',
+    });
+    expect(resolved.url).toBe('https://grok.com/');
+    expect(resolved.grokUrl).toBe('https://grok.com/');
+    expect(resolved.chatgptUrl).toBe('https://grok.com/');
+  });
+
   test('rejects temporary chat URLs when desiredModel is Pro', () => {
     expect(() =>
       resolveBrowserConfig({

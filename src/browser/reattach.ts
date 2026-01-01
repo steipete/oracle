@@ -15,7 +15,8 @@ import type { BrowserLogger, ChromeClient } from './types.js';
 import { launchChrome, connectToChrome, hideChromeWindow } from './chromeLifecycle.js';
 import { resolveBrowserConfig } from './config.js';
 import { syncCookies } from './cookies.js';
-import { CHATGPT_URL } from './constants.js';
+import { CHATGPT_URL, GROK_URL } from './constants.js';
+import { isGrokUrl } from './utils.js';
 import {
   pickTarget,
   extractConversationIdFromUrl,
@@ -88,6 +89,10 @@ export async function resumeBrowserSession(
     const ensureConversationOpen = async () => {
       const { result } = await Runtime.evaluate({ expression: 'location.href', returnByValue: true });
       const href = typeof result?.value === 'string' ? result.value : '';
+      const grokHint = config?.grokUrl ?? runtime.tabUrl ?? href;
+      if (grokHint && isGrokUrl(grokHint)) {
+        return;
+      }
       if (href.includes('/c/')) {
         const currentId = extractConversationIdFromUrl(href);
         if (!runtime.conversationId || (currentId && currentId === runtime.conversationId)) {
@@ -189,37 +194,51 @@ async function resumeBrowserSessionViaNewChrome(
     });
   }
 
-  await navigateToChatGPT(Page, Runtime, CHATGPT_URL, logger);
+  const isGrokSession =
+    isGrokUrl(resolved.url ?? '') || Boolean(resolved.grokUrl) || isGrokUrl(runtime.tabUrl ?? '');
+  const baseUrl = isGrokSession ? (resolved.grokUrl ?? resolved.url ?? GROK_URL) : CHATGPT_URL;
+
+  await navigateToChatGPT(Page, Runtime, baseUrl, logger);
   await ensureNotBlocked(Runtime, resolved.headless, logger);
   await ensureLoggedIn(Runtime, logger, { appliedCookies });
-  if (resolved.url !== CHATGPT_URL) {
+  if (resolved.url && resolved.url !== baseUrl) {
     await navigateToChatGPT(Page, Runtime, resolved.url, logger);
     await ensureNotBlocked(Runtime, resolved.headless, logger);
   }
   await ensurePromptReady(Runtime, resolved.inputTimeoutMs, logger);
 
-  const conversationUrl = buildConversationUrl(runtime, resolved.url);
-  if (conversationUrl) {
-    logger(`Reopening conversation at ${conversationUrl}`);
-    await navigateToChatGPT(Page, Runtime, conversationUrl, logger);
-    await ensureNotBlocked(Runtime, resolved.headless, logger);
-    await ensurePromptReady(Runtime, resolved.inputTimeoutMs, logger);
-  } else {
-    const opened = await openConversationFromSidebarWithRetry(
-      Runtime,
-      {
-        conversationId: runtime.conversationId ?? extractConversationIdFromUrl(runtime.tabUrl ?? ''),
-        preferProjects:
-          resolved.url !== CHATGPT_URL ||
-          Boolean(runtime.tabUrl && (/\/g\//.test(runtime.tabUrl) || runtime.tabUrl.includes('/project'))),
-        promptPreview: deps.promptPreview,
-      },
-      15_000,
-    );
-    if (!opened) {
-      throw new Error('Unable to locate prior ChatGPT conversation in sidebar.');
+  if (isGrokSession) {
+    const targetUrl = runtime.tabUrl ?? resolved.url ?? baseUrl;
+    if (targetUrl && targetUrl !== baseUrl) {
+      logger(`Reopening Grok conversation at ${targetUrl}`);
+      await navigateToChatGPT(Page, Runtime, targetUrl, logger);
+      await ensureNotBlocked(Runtime, resolved.headless, logger);
+      await ensurePromptReady(Runtime, resolved.inputTimeoutMs, logger);
     }
-    await waitForLocationChange(Runtime, 15_000);
+  } else {
+    const conversationUrl = buildConversationUrl(runtime, resolved.url);
+    if (conversationUrl) {
+      logger(`Reopening conversation at ${conversationUrl}`);
+      await navigateToChatGPT(Page, Runtime, conversationUrl, logger);
+      await ensureNotBlocked(Runtime, resolved.headless, logger);
+      await ensurePromptReady(Runtime, resolved.inputTimeoutMs, logger);
+    } else {
+      const opened = await openConversationFromSidebarWithRetry(
+        Runtime,
+        {
+          conversationId: runtime.conversationId ?? extractConversationIdFromUrl(runtime.tabUrl ?? ''),
+          preferProjects:
+            resolved.url !== CHATGPT_URL ||
+            Boolean(runtime.tabUrl && (/\/g\//.test(runtime.tabUrl) || runtime.tabUrl.includes('/project'))),
+          promptPreview: deps.promptPreview,
+        },
+        15_000,
+      );
+      if (!opened) {
+        throw new Error('Unable to locate prior ChatGPT conversation in sidebar.');
+      }
+      await waitForLocationChange(Runtime, 15_000);
+    }
   }
 
   const waitForResponse = deps.waitForAssistantResponse ?? waitForAssistantResponse;

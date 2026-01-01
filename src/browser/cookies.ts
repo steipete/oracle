@@ -30,7 +30,7 @@ export async function syncCookies(
       const cookieWithUrl = attachUrl(cookie, url);
       try {
         // Learned: CDP will silently drop cookies without a url; always attach one.
-        const result = await Network.setCookie(cookieWithUrl);
+        const result = await Network.setCookie(cookieWithUrl as any);
         if (result?.success) {
           applied += 1;
         }

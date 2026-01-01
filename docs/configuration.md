@@ -22,11 +22,12 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     chromePath: null,
     chromeCookiePath: null,
     chatgptUrl: "https://chatgpt.com/", // root is fine; folder URLs also work
+    grokUrl: null, // set to https://grok.com to target Grok browser runs
     url: null, // alias for chatgptUrl (kept for back-compat)
     debugPort: null,          // fixed DevTools port (env: ORACLE_BROWSER_PORT / ORACLE_BROWSER_DEBUG_PORT)
     timeoutMs: 1200000,
     inputTimeoutMs: 30000,
-    modelStrategy: "select", // select | current | ignore (ChatGPT only; ignored for Gemini web)
+    modelStrategy: "select", // select | current | ignore (ChatGPT only; ignored for Grok/Gemini)
     headless: false,
     hideWindow: false,
     keepBrowser: false,
@@ -65,6 +66,7 @@ CLI flags → `config.json` → environment → built-in defaults.
 - `ORACLE_NOTIFY*` env vars still layer on top of the config’s `notify` block.
 - `sessionRetentionHours` controls the default value for `--retain-hours`. When unset, `ORACLE_RETAIN_HOURS` (if present) becomes the fallback, and the CLI flag still wins over both.
 - `browser.chatgptUrl` accepts either the root ChatGPT URL (`https://chatgpt.com/`) or a folder/workspace URL (e.g., `https://chatgpt.com/g/.../project`); `browser.url` remains as a legacy alias.
+- `browser.grokUrl` targets Grok browser runs (e.g., `https://grok.com/`).
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
 

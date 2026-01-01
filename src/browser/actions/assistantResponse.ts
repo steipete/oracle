@@ -7,11 +7,67 @@ import {
   FINISHED_ACTIONS_SELECTOR,
   STOP_BUTTON_SELECTOR,
 } from '../constants.js';
-import { delay } from '../utils.js';
+import { delay, isGrokUrl } from '../utils.js';
 import { logDomFailure, logConversationSnapshot, buildConversationDebugExpression } from '../domDebug.js';
 import { buildClickDispatcher } from './domEvents.js';
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = 'assistant-response-watchdog-timeout';
+
+// Grok-specific response extraction
+async function extractGrokResponse(
+  Runtime: ChromeClient['Runtime'],
+  minTurnIndex?: number,
+): Promise<AssistantSnapshot | null> {
+  const minTurnLiteral =
+    typeof minTurnIndex === 'number' && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
+      ? Math.floor(minTurnIndex)
+      : -1;
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const MIN_TURN_INDEX = ${minTurnLiteral};
+      const bubbles = Array.from(document.querySelectorAll('.message-bubble'));
+      if (bubbles.length === 0) return null;
+      const isUserBubble = (bubble) => {
+        const container = bubble.closest('[class*="items-"]');
+        if (container?.classList?.contains('items-end')) return true;
+        if (container?.classList?.contains('items-start')) return false;
+        return bubble.classList.contains('bg-surface-l1');
+      };
+      for (let i = bubbles.length - 1; i >= 0; i--) {
+        if (MIN_TURN_INDEX >= 0 && i < MIN_TURN_INDEX) continue;
+        const bubble = bubbles[i];
+        if (isUserBubble(bubble)) continue;
+        const markdown =
+          bubble.querySelector('.response-content-markdown') ||
+          bubble.querySelector('.markdown') ||
+          bubble;
+        const text = (markdown.innerText || markdown.textContent || '').trim();
+        const html = markdown.innerHTML || '';
+        if (text) {
+          return { text, html, messageId: null, turnId: null, turnIndex: i };
+        }
+      }
+      return null;
+    })()`,
+    returnByValue: true,
+  });
+
+  const value = result?.value;
+  if (value && typeof value === 'object' && 'text' in value) {
+    return value as AssistantSnapshot;
+  }
+  return null;
+}
+
+// Check if we're on Grok
+async function isOnGrok(Runtime: ChromeClient['Runtime']): Promise<boolean> {
+  const { result } = await Runtime.evaluate({
+    expression: 'typeof location === "object" && location.href ? location.href : ""',
+    returnByValue: true,
+  });
+  const url = typeof result?.value === 'string' ? result.value : '';
+  return url ? isGrokUrl(url) : false;
+}
 
 function isAnswerNowPlaceholderText(normalized: string): boolean {
   const text = normalized.trim();
@@ -25,6 +81,46 @@ function isAnswerNowPlaceholderText(normalized: string): boolean {
   return text.includes('answer now') && (text.includes('pro thinking') || text.includes('chatgpt said'));
 }
 
+async function waitForGrokResponse(
+  Runtime: ChromeClient['Runtime'],
+  timeoutMs: number,
+  logger: BrowserLogger,
+  minTurnIndex?: number,
+): Promise<{ text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } }> {
+  const deadline = Date.now() + timeoutMs;
+  let lastText = '';
+  let stableCycles = 0;
+  let best: { text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } } | null = null;
+
+  while (Date.now() < deadline) {
+    const snapshot = await extractGrokResponse(Runtime, minTurnIndex);
+    const normalized = snapshot?.text ? cleanAssistantText(snapshot.text) : '';
+    if (normalized) {
+      if (!best || normalized.length >= best.text.length) {
+        best = { text: normalized, html: snapshot?.html ?? undefined, meta: {} };
+      }
+      if (normalized === lastText) {
+        stableCycles += 1;
+      } else {
+        lastText = normalized;
+        stableCycles = 0;
+      }
+      const shortAnswer = normalized.length < 16;
+      const requiredStableCycles = shortAnswer ? 10 : 4;
+      if (stableCycles >= requiredStableCycles) {
+        return best ?? { text: normalized, html: snapshot?.html ?? undefined, meta: {} };
+      }
+    }
+    await delay(400);
+  }
+
+  if (best) {
+    logger('Grok response timed out; returning best snapshot.');
+    return best;
+  }
+  throw new Error('Grok response did not appear before timeout');
+}
+
 export async function waitForAssistantResponse(
   Runtime: ChromeClient['Runtime'],
   timeoutMs: number,
@@ -32,6 +128,13 @@ export async function waitForAssistantResponse(
   minTurnIndex?: number,
 ): Promise<{ text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } }> {
   const start = Date.now();
+  
+  // Check if we're on Grok - use a simpler extraction path
+  if (await isOnGrok(Runtime)) {
+    logger('Waiting for Grok response');
+    return waitForGrokResponse(Runtime, timeoutMs, logger, minTurnIndex);
+  }
+  
   logger('Waiting for ChatGPT response');
   // Learned: two paths are needed:
   // 1) DOM observer (fast when mutations fire),
@@ -142,6 +245,10 @@ export async function readAssistantSnapshot(
   Runtime: ChromeClient['Runtime'],
   minTurnIndex?: number,
 ): Promise<AssistantSnapshot | null> {
+  if (await isOnGrok(Runtime)) {
+    const snapshot = await extractGrokResponse(Runtime, minTurnIndex);
+    return snapshot ?? null;
+  }
   const { result } = await Runtime.evaluate({
     expression: buildAssistantSnapshotExpression(minTurnIndex),
     returnByValue: true,
@@ -400,7 +507,7 @@ async function isCompletionVisible(Runtime: ChromeClient['Runtime']): Promise<bo
           if (role === 'assistant') return true;
           const testId = (node.getAttribute('data-testid') || '').toLowerCase();
           if (testId.includes('assistant')) return true;
-          return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+          return Boolean((node.matches?.(ASSISTANT_SELECTOR)) || node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
         };
 
         const turns = Array.from(document.querySelectorAll('${CONVERSATION_TURN_SELECTOR}'));
@@ -528,7 +635,7 @@ function buildResponseObserverExpression(timeoutMs: number, minTurnIndex?: numbe
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
-      return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+      return Boolean((node.matches?.(ASSISTANT_SELECTOR)) || node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
     };
 
     const MIN_TURN_INDEX = ${minTurnLiteral};
@@ -695,7 +802,7 @@ function buildAssistantExtractor(functionName: string): string {
       if (testId.includes('assistant')) {
         return true;
       }
-      return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+      return Boolean((node.matches?.(ASSISTANT_SELECTOR)) || node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
     };
 
     const expandCollapsibles = (root) => {
@@ -917,7 +1024,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
         if (role === 'assistant') return true;
         const testId = (node.getAttribute('data-testid') || '').toLowerCase();
         if (testId.includes('assistant')) return true;
-        return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+        return Boolean((node.matches?.(ASSISTANT_SELECTOR)) || node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
       };
       const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
       for (let i = turns.length - 1; i >= 0; i -= 1) {

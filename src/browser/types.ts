@@ -24,6 +24,7 @@ export interface BrowserAutomationConfig {
   chromeCookiePath?: string | null;
   url?: string;
   chatgptUrl?: string | null;
+  grokUrl?: string | null;
   timeoutMs?: number;
   debugPort?: number | null;
   inputTimeoutMs?: number;

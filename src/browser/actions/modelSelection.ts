@@ -5,6 +5,7 @@ import {
   MODEL_BUTTON_SELECTOR,
 } from '../constants.js';
 import { logDomFailure } from '../domDebug.js';
+import { isGrokUrl } from '../utils.js';
 import { buildClickDispatcher } from './domEvents.js';
 
 export async function ensureModelSelection(
@@ -13,6 +14,20 @@ export async function ensureModelSelection(
   logger: BrowserLogger,
   strategy: BrowserModelStrategy = 'select',
 ) {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: 'typeof location === "object" && location.href ? location.href : ""',
+      returnByValue: true,
+    });
+    const url = typeof result?.value === 'string' ? result.value : '';
+    if (url && isGrokUrl(url)) {
+      logger('Model picker: skipped (Grok)');
+      return;
+    }
+  } catch {
+    // ignore URL probe failures and proceed
+  }
+
   const outcome = await Runtime.evaluate({
     expression: buildModelSelectionExpression(desiredModel, strategy),
     awaitPromise: true,

@@ -2,7 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { BrowserSessionConfig } from '../sessionStore.js';
 import type { ModelName, ThinkingTimeLevel } from '../oracle.js';
-import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET, isTemporaryChatUrl, normalizeChatgptUrl, parseDuration } from '../browserMode.js';
+import {
+  CHATGPT_URL,
+  GROK_URL,
+  DEFAULT_MODEL_STRATEGY,
+  DEFAULT_MODEL_TARGET,
+  isTemporaryChatUrl,
+  normalizeChatgptUrl,
+  normalizeGrokUrl,
+  parseDuration,
+} from '../browserMode.js';
 import { normalizeBrowserModelStrategy } from '../browser/modelStrategy.js';
 import type { BrowserModelStrategy } from '../browser/types.js';
 import type { CookieParam } from '../browser/types.js';
@@ -32,6 +41,7 @@ export interface BrowserFlagOptions {
   browserChromePath?: string;
   browserCookiePath?: string;
   chatgptUrl?: string;
+  grokUrl?: string;
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
@@ -103,6 +113,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
   if (options.remoteChrome) {
     remoteChrome = parseRemoteChromeTarget(options.remoteChrome);
   }
+  const grokUrl = options.grokUrl ? normalizeGrokUrl(options.grokUrl, GROK_URL) : undefined;
   const rawUrl = options.chatgptUrl ?? options.browserUrl;
   const url = rawUrl ? normalizeChatgptUrl(rawUrl, CHATGPT_URL) : undefined;
 
@@ -124,6 +135,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     chromePath: options.browserChromePath ?? null,
     chromeCookiePath: options.browserCookiePath ?? null,
     url,
+    grokUrl,
     debugPort: selectBrowserPort(options),
     timeoutMs: options.browserTimeout ? parseDuration(options.browserTimeout, DEFAULT_BROWSER_TIMEOUT_MS) : undefined,
     inputTimeoutMs: options.browserInputTimeout

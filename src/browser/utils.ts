@@ -98,10 +98,14 @@ export function formatBytes(size: number): string {
 }
 
 /**
- * Normalizes a ChatGPT URL, ensuring it is absolute, uses http/https, and trims whitespace.
+ * Normalizes a browser URL, ensuring it is absolute, uses http/https, and trims whitespace.
  * Falls back to the provided default when input is empty/undefined.
  */
-export function normalizeChatgptUrl(raw: string | null | undefined, fallback: string): string {
+export function normalizeBrowserUrl(
+  raw: string | null | undefined,
+  fallback: string,
+  label: string,
+): string {
   const candidate = raw?.trim();
   if (!candidate) {
     return fallback;
@@ -112,13 +116,27 @@ export function normalizeChatgptUrl(raw: string | null | undefined, fallback: st
   try {
     parsed = new URL(withScheme);
   } catch {
-    throw new Error(`Invalid ChatGPT URL: "${raw}". Provide an absolute http(s) URL.`);
+    throw new Error(`Invalid ${label} URL: "${raw}". Provide an absolute http(s) URL.`);
   }
   if (!/^https?:$/i.test(parsed.protocol)) {
-    throw new Error(`Invalid ChatGPT URL protocol: "${parsed.protocol}". Use http or https.`);
+    throw new Error(`Invalid ${label} URL protocol: "${parsed.protocol}". Use http or https.`);
   }
   // Preserve user-provided path/query; URL#toString will normalize trailing slashes appropriately.
   return parsed.toString();
+}
+
+/**
+ * Normalizes a ChatGPT URL, ensuring it is absolute, uses http/https, and trims whitespace.
+ */
+export function normalizeChatgptUrl(raw: string | null | undefined, fallback: string): string {
+  return normalizeBrowserUrl(raw, fallback, 'ChatGPT');
+}
+
+/**
+ * Normalizes a Grok URL, ensuring it is absolute, uses http/https, and trims whitespace.
+ */
+export function normalizeGrokUrl(raw: string | null | undefined, fallback: string): string {
+  return normalizeBrowserUrl(raw, fallback, 'Grok');
 }
 
 export function isTemporaryChatUrl(url: string): boolean {
@@ -126,6 +144,15 @@ export function isTemporaryChatUrl(url: string): boolean {
     const parsed = new URL(url);
     const value = (parsed.searchParams.get('temporary-chat') ?? '').trim().toLowerCase();
     return value === 'true' || value === '1' || value === 'yes';
+  } catch {
+    return false;
+  }
+}
+
+export function isGrokUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.endsWith('grok.com');
   } catch {
     return false;
   }

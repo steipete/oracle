@@ -109,6 +109,15 @@ describe('buildBrowserConfig', () => {
     expect(config.url).toBe('https://chatgpt.example.com/workspace');
   });
 
+  test('passes grokUrl through', async () => {
+    const config = await buildBrowserConfig({
+      model: 'gpt-5.2-pro',
+      grokUrl: 'https://grok.com',
+    });
+    expect(config.grokUrl).toBe('https://grok.com/');
+    expect(config.url).toBeUndefined();
+  });
+
   test('rejects invalid chatgpt URL protocols', async () => {
     await expect(
       buildBrowserConfig({

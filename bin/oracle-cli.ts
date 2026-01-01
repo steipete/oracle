@@ -107,6 +107,7 @@ interface CliOptions extends OptionValues {
   browserChromePath?: string;
   browserCookiePath?: string;
   chatgptUrl?: string;
+  grokUrl?: string;
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
@@ -342,6 +343,12 @@ program
       `Override the ChatGPT web URL (e.g., workspace/folder like https://chatgpt.com/g/.../project; default ${CHATGPT_URL}).`,
     ),
   )
+  .addOption(
+    new Option(
+      '--grok-url <url>',
+      'Override the Grok web URL (default https://grok.com).',
+    ),
+  )
   .addOption(new Option('--browser-url <url>', `Alias for --chatgpt-url (default ${CHATGPT_URL}).`).hideHelp())
   .addOption(new Option('--browser-timeout <ms|s|m>', 'Maximum time to wait for an answer (default 1200s / 20m).').hideHelp())
   .addOption(
@@ -365,7 +372,7 @@ program
   .addOption(
     new Option(
       '--browser-manual-login',
-      'Skip cookie copy; reuse a persistent automation profile and wait for manual ChatGPT login.',
+      'Skip cookie copy; reuse a persistent automation profile and wait for manual ChatGPT/Grok login.',
     ).hideHelp(),
   )
   .addOption(new Option('--browser-headless', 'Launch Chrome in headless mode.').hideHelp())
@@ -374,7 +381,7 @@ program
   .addOption(
     new Option(
       '--browser-model-strategy <mode>',
-      'ChatGPT model picker strategy: select (default) switches to the requested model, current keeps the active model, ignore skips the picker entirely.',
+      'ChatGPT model picker strategy: select (default) switches to the requested model, current keeps the active model, ignore skips the picker entirely (ignored for Grok/Gemini).',
     ).choices(['select', 'current', 'ignore']),
   )
   .addOption(
@@ -1259,6 +1266,7 @@ function printDebugHelp(cliName: string): void {
   console.log(chalk.bold('Browser Options'));
   printDebugOptionGroup([
     ['--chatgpt-url <url>', 'Override the ChatGPT web URL (workspace/folder targets).'],
+    ['--grok-url <url>', 'Override the Grok web URL (browser mode).'],
     ['--browser-chrome-profile <name>', 'Reuse cookies from a specific Chrome profile.'],
     ['--browser-chrome-path <path>', 'Point to a custom Chrome/Chromium binary.'],
     ['--browser-cookie-path <path>', 'Use a specific Chrome/Chromium cookie store file.'],
@@ -1266,7 +1274,7 @@ function printDebugHelp(cliName: string): void {
     ['--browser-timeout <ms|s|m>', 'Cap total wait time for the assistant response.'],
     ['--browser-input-timeout <ms|s|m>', 'Cap how long we wait for the composer textarea.'],
     ['--browser-no-cookie-sync', 'Skip copying cookies from your main profile.'],
-    ['--browser-manual-login', 'Skip cookie copy; reuse a persistent automation profile and log in manually.'],
+    ['--browser-manual-login', 'Skip cookie copy; reuse a persistent automation profile and log in manually (ChatGPT/Grok).'],
     ['--browser-headless', 'Launch Chrome in headless mode.'],
     ['--browser-hide-window', 'Hide the Chrome window (macOS headful only).'],
     ['--browser-keep-browser', 'Leave Chrome running after completion.'],

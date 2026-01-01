@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="MIT License"></a>
 </p>
 
-Oracle bundles your prompt and files so another AI can answer with real context. It speaks GPT-5.1 Pro (default alias to GPT-5.2 Pro on the API), GPT-5.1 Codex (API-only), GPT-5.1, GPT-5.2, Gemini 3 Pro, Claude Sonnet 4.5, Claude Opus 4.1, and more—and it can ask one or multiple models in a single run. Browser automation is available; use `--browser-model-strategy current` to keep the active ChatGPT model (or `ignore` to skip the picker). API remains the most reliable path, and `--copy` is an easy manual fallback.
+Oracle bundles your prompt and files so another AI can answer with real context. It speaks GPT-5.1 Pro (default alias to GPT-5.2 Pro on the API), GPT-5.1 Codex (API-only), GPT-5.1, GPT-5.2, Gemini 3 Pro, Claude Sonnet 4.5, Claude Opus 4.1, and more—and it can ask one or multiple models in a single run. Browser automation is available for ChatGPT + Grok; use `--browser-model-strategy current` to keep the active ChatGPT model (or `ignore` for Grok to skip the picker). API remains the most reliable path, and `--copy` is an easy manual fallback.
 
 ## Quick start
 
@@ -36,6 +36,9 @@ npx -y @steipete/oracle --dry-run summary -p "Check release notes" --file docs/r
 # Browser run (no API key, will open ChatGPT)
 npx -y @steipete/oracle --engine browser -p "Walk through the UI smoke test" --file "src/**/*.ts"
 
+# Browser run (Grok)
+npx -y @steipete/oracle --engine browser --grok-url https://grok.com --browser-model-strategy ignore -p "Summarize the latest xAI update"
+
 # Gemini browser mode (no API key; uses Chrome cookies from gemini.google.com)
 npx -y @steipete/oracle --engine browser --model gemini-3-pro --prompt "a cute robot holding a banana" --generate-image out.jpg --aspect 1:1
 
@@ -54,6 +57,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 **CLI**
 - API mode expects API keys in your environment: `OPENAI_API_KEY` (GPT-5.x), `GEMINI_API_KEY` (Gemini 3 Pro), `ANTHROPIC_API_KEY` (Claude Sonnet 4.5 / Opus 4.1).
 - Gemini browser mode uses Chrome cookies instead of an API key—just be logged into `gemini.google.com` in Chrome (no Python/venv required).
+- Grok browser mode uses the shared Chrome session on `grok.com`; pass `--grok-url https://grok.com` and `--browser-model-strategy ignore`. File uploads are not supported in Grok browser runs.
 - If your Gemini account can’t access “Pro”, Oracle auto-falls back to a supported model for web runs (and logs the fallback in verbose mode).
 - Prefer API mode or `--copy` + manual paste; browser automation is experimental.
 - Browser support: stable on macOS; works on Linux (add `--browser-chrome-path/--browser-cookie-path` when needed) and Windows (manual-login or inline cookies recommended when app-bound cookies block decryption).
@@ -63,7 +67,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
   - Oracle bundles a prompt plus the right files so another AI (GPT 5 Pro + more) can answer. Use when stuck/bugs/reviewing.
   - Run `npx -y @steipete/oracle --help` once per session before first use.
   ```
-- Tip: set `browser.chatgptUrl` in config (or `--chatgpt-url`) to a dedicated ChatGPT project folder so browser runs don’t clutter your main history.
+- Tip: set `browser.chatgptUrl` in config (or `--chatgpt-url`) to a dedicated ChatGPT project folder so browser runs don’t clutter your main history. For Grok, use `browser.grokUrl` (or `--grok-url`).
 
 **Codex skill**
 - Copy the bundled skill from this repo to your Codex skills folder:
@@ -94,6 +98,7 @@ npx -y @steipete/oracle oracle-mcp
 - Bundle once, reuse anywhere (API or experimental browser).
 - Multi-model API runs with aggregated cost/usage, including OpenRouter IDs alongside first-party models.
 - Render/copy bundles for manual paste into ChatGPT when automation is blocked.
+- Grok browser automation support (with hard-mode toggle when available).
 - GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
 - Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs.
 - File safety: globs/excludes, size guards, `--files-report`.
@@ -111,7 +116,8 @@ npx -y @steipete/oracle oracle-mcp
 | `--models <list>` | Comma-separated API models (mix built-ins and OpenRouter ids) for multi-model runs. |
 | `--base-url <url>` | Point API runs at LiteLLM/Azure/OpenRouter/etc. |
 | `--chatgpt-url <url>` | Target a ChatGPT workspace/folder (browser). |
-| `--browser-model-strategy <select\|current\|ignore>` | Control ChatGPT model selection in browser mode (current keeps the active model; ignore skips the picker). |
+| `--grok-url <url>` | Target Grok in browser mode. |
+| `--browser-model-strategy <select\|current\|ignore>` | Control ChatGPT model selection in browser mode (current keeps the active model; ignore skips the picker; ignored for Grok/Gemini). |
 | `--browser-port <port>` | Pin the Chrome DevTools port (WSL/Windows firewall helper). |
 | `--browser-inline-cookies[(-file)] <payload|path>` | Supply cookies without Chrome/Keychain (browser). |
 | `--browser-timeout`, `--browser-input-timeout` | Control overall/browser input timeouts (supports h/m/s/ms). |
@@ -136,18 +142,19 @@ Put defaults in `~/.oracle/config.json` (JSON5). Example:
   engine: "api",
   filesReport: true,
   browser: {
-    chatgptUrl: "https://chatgpt.com/g/g-p-691edc9fec088191b553a35093da1ea8-oracle/project"
+    chatgptUrl: "https://chatgpt.com/g/g-p-691edc9fec088191b553a35093da1ea8-oracle/project",
+    grokUrl: null // set to https://grok.com to target Grok browser runs
   }
 }
 ```
-Use `browser.chatgptUrl` (or the legacy alias `browser.url`) to target a specific ChatGPT workspace/folder for browser automation.
+Use `browser.chatgptUrl` (or the legacy alias `browser.url`) to target a specific ChatGPT workspace/folder for browser automation. Use `browser.grokUrl` to target Grok.
 See [docs/configuration.md](docs/configuration.md) for precedence and full schema.
 
 Advanced flags
 
 | Area | Flags |
 | --- | --- |
-| Browser | `--browser-timeout`, `--browser-input-timeout`, `--browser-inline-cookies[(-file)]`, `--browser-attachments`, `--browser-inline-files`, `--browser-bundle-files`, `--browser-keep-browser`, `--browser-headless`, `--browser-hide-window`, `--browser-no-cookie-sync`, `--browser-allow-cookie-errors`, `--browser-chrome-path`, `--browser-cookie-path`, `--chatgpt-url` |
+| Browser | `--browser-timeout`, `--browser-input-timeout`, `--browser-inline-cookies[(-file)]`, `--browser-attachments`, `--browser-inline-files`, `--browser-bundle-files`, `--browser-keep-browser`, `--browser-headless`, `--browser-hide-window`, `--browser-no-cookie-sync`, `--browser-allow-cookie-errors`, `--browser-chrome-path`, `--browser-cookie-path`, `--chatgpt-url`, `--grok-url` |
 | Azure/OpenAI | `--azure-endpoint`, `--azure-deployment`, `--azure-api-version`, `--base-url` |
 
 Remote browser example
