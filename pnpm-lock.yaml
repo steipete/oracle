@@ -16,13 +16,13 @@ importers:
         version: 0.0.4
       '@google/genai':
         specifier: ^1.34.0
-        version: 1.34.0(@modelcontextprotocol/sdk@1.25.1(hono@4.11.1)(zod@4.3.3))
+        version: 1.34.0(@modelcontextprotocol/sdk@1.25.1(hono@4.11.1)(zod@4.3.4))
       '@google/generative-ai':
         specifier: ^0.24.1
         version: 0.24.1
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.1
-        version: 1.25.1(hono@4.11.1)(zod@4.3.3)
+        version: 1.25.1(hono@4.11.1)(zod@4.3.4)
       '@steipete/sweet-cookie':
         specifier: ^0.1.0
         version: 0.1.0
@@ -64,7 +64,7 @@ importers:
         version: 0.2.0
       openai:
         specifier: ^6.15.0
-        version: 6.15.0(ws@8.18.3)(zod@4.3.3)
+        version: 6.15.0(ws@8.18.3)(zod@4.3.4)
       osc-progress:
         specifier: ^0.2.0
         version: 0.2.0
@@ -82,7 +82,7 @@ importers:
         version: 0.1.1
       zod:
         specifier: ^4.3.3
-        version: 4.3.3
+        version: 4.3.4
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.3.10
@@ -2424,8 +2424,8 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.3.3:
-    resolution: {integrity: sha512-bQ7Rxwfn04DCrTjjRfD9SavY2vWdmf3REjs/mkc1LdwI1KkcHClBRJmnvmA/6epGeqlHePtIRF1J4SrMMlW7IA==}
+  zod@4.3.4:
+    resolution: {integrity: sha512-Zw/uYiiyF6pUT1qmKbZziChgNPRu+ZRneAsMUDU6IwmXdWt5JwcUfy2bvLOCUtz5UniaN/Zx5aFttZYbYc7O/A==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -2570,12 +2570,12 @@ snapshots:
   '@esbuild/win32-x64@0.27.2':
     optional: true
 
-  '@google/genai@1.34.0(@modelcontextprotocol/sdk@1.25.1(hono@4.11.1)(zod@4.3.3))':
+  '@google/genai@1.34.0(@modelcontextprotocol/sdk@1.25.1(hono@4.11.1)(zod@4.3.4))':
     dependencies:
       google-auth-library: 10.5.0
       ws: 8.18.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.25.1(hono@4.11.1)(zod@4.3.3)
+      '@modelcontextprotocol/sdk': 1.25.1(hono@4.11.1)(zod@4.3.4)
     transitivePeerDependencies:
       - bufferutil
       - supports-color
@@ -2724,7 +2724,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@modelcontextprotocol/sdk@1.25.1(hono@4.11.1)(zod@4.3.3)':
+  '@modelcontextprotocol/sdk@1.25.1(hono@4.11.1)(zod@4.3.4)':
     dependencies:
       '@hono/node-server': 1.19.7(hono@4.11.1)
       ajv: 8.17.1
@@ -2740,8 +2740,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.3.3
-      zod-to-json-schema: 3.25.1(zod@4.3.3)
+      zod: 4.3.4
+      zod-to-json-schema: 3.25.1(zod@4.3.4)
     transitivePeerDependencies:
       - hono
       - supports-color
@@ -4216,10 +4216,10 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
-  openai@6.15.0(ws@8.18.3)(zod@4.3.3):
+  openai@6.15.0(ws@8.18.3)(zod@4.3.4):
     optionalDependencies:
       ws: 8.18.3
-      zod: 4.3.3
+      zod: 4.3.4
 
   osc-progress@0.2.0: {}
 
@@ -4874,12 +4874,12 @@ snapshots:
 
   yoctocolors@2.1.2: {}
 
-  zod-to-json-schema@3.25.1(zod@4.3.3):
+  zod-to-json-schema@3.25.1(zod@4.3.4):
     dependencies:
-      zod: 4.3.3
+      zod: 4.3.4
 
   zod@3.25.76: {}
 
-  zod@4.3.3: {}
+  zod@4.3.4: {}
 
   zwitch@2.0.4: {}
