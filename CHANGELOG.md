@@ -3,7 +3,7 @@
 ## 0.8.4 — Unreleased
 
 ### Changed
-- Deps: update zod to `4.3.3`.
+- Deps: update zod to `4.3.5`.
 - Deps: add `qs` as a direct dependency (avoids Dependabot pnpm transitive-update failures).
 
 ## 0.8.3 — 2025-12-31
