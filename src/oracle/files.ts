@@ -17,7 +17,17 @@ interface PartitionedFiles {
 
 export async function readFiles(
   filePaths: string[],
-  { cwd = process.cwd(), fsModule = DEFAULT_FS, maxFileSizeBytes = MAX_FILE_SIZE_BYTES } = {},
+  {
+    cwd = process.cwd(),
+    fsModule = DEFAULT_FS,
+    maxFileSizeBytes = MAX_FILE_SIZE_BYTES,
+    readContents = true,
+  }: {
+    cwd?: string;
+    fsModule?: MinimalFsModule;
+    maxFileSizeBytes?: number;
+    readContents?: boolean;
+  } = {},
 ): Promise<FileContent[]> {
   if (!filePaths || filePaths.length === 0) {
     return [];
@@ -102,7 +112,7 @@ export async function readFiles(
 
   const files: FileContent[] = [];
   for (const filePath of accepted) {
-    const content = await fsModule.readFile(filePath, 'utf8');
+    const content = readContents ? await fsModule.readFile(filePath, 'utf8') : '';
     files.push({ path: filePath, content });
   }
   return files;

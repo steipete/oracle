@@ -6,7 +6,6 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const TSX_BIN = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const CLI_ENTRY = path.join(process.cwd(), 'bin', 'oracle-cli.ts');
 const CLIENT_FACTORY = path.join(process.cwd(), 'tests', 'fixtures', 'mockClientFactory.cjs');
 const INTEGRATION_TIMEOUT = process.platform === 'win32' ? 60000 : 30000;
@@ -34,7 +33,8 @@ describe('oracle CLI integration', () => {
     await execFileAsync(
       process.execPath,
       [
-        TSX_BIN,
+        '--import',
+        'tsx',
         CLI_ENTRY,
         '--prompt',
         'Integration check',
@@ -73,13 +73,20 @@ describe('oracle CLI integration', () => {
       ORACLE_DISABLE_KEYTAR: '1',
     };
 
-	    await expect(
-	      execFileAsync(
-	        process.execPath,
-	        [TSX_BIN, CLI_ENTRY, '--prompt', 'conflict', '--model', 'gpt-5.1', '--models', 'gpt-5.2-pro'],
-	        { env },
-	      ),
-	    ).rejects.toThrow(/--models cannot be combined with --model/i);
+    try {
+      await execFileAsync(
+        process.execPath,
+        ['--import', 'tsx', CLI_ENTRY, '--prompt', 'conflict', '--model', 'gpt-5.1', '--models', 'gpt-5.1-pro'],
+        { env },
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/--models cannot be combined with --model/i);
+    }
 
     await rm(oracleHome, { recursive: true, force: true });
   }, INTEGRATION_TIMEOUT);
@@ -102,7 +109,7 @@ describe('oracle CLI integration', () => {
 
     await execFileAsync(
       process.execPath,
-      [TSX_BIN, CLI_ENTRY, '--prompt', 'Codex integration', '--model', 'gpt-5.1-codex'],
+      ['--import', 'tsx', CLI_ENTRY, '--prompt', 'Codex integration', '--model', 'gpt-5.1-codex'],
       { env },
     );
 
@@ -132,13 +139,20 @@ describe('oracle CLI integration', () => {
       ORACLE_DISABLE_KEYTAR: '1',
     };
 
-    await expect(
-      execFileAsync(
+    try {
+      await execFileAsync(
         process.execPath,
-        [TSX_BIN, CLI_ENTRY, '--prompt', 'Codex Max integration', '--model', 'gpt-5.1-codex-max'],
+        ['--import', 'tsx', CLI_ENTRY, '--prompt', 'Codex Max integration', '--model', 'gpt-5.1-codex-max'],
         { env },
-      ),
-    ).rejects.toThrow(/codex-max is not available yet/i);
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/codex-max is not available yet/i);
+    }
 
     await rm(oracleHome, { recursive: true, force: true });
   }, INTEGRATION_TIMEOUT);
@@ -163,7 +177,15 @@ describe('oracle CLI integration', () => {
 
     await execFileAsync(
       process.execPath,
-      [TSX_BIN, CLI_ENTRY, '--prompt', 'Multi run test prompt long enough', '--models', 'gpt-5.1,gemini-3-pro,claude-4.5-sonnet'],
+      [
+        '--import',
+        'tsx',
+        CLI_ENTRY,
+        '--prompt',
+        'Multi run test prompt long enough',
+        '--models',
+        'gpt-5.1,gemini-3-pro,claude-4.5-sonnet',
+      ],
       { env },
     );
 
@@ -204,7 +226,8 @@ describe('oracle CLI integration', () => {
     await execFileAsync(
       process.execPath,
       [
-        TSX_BIN,
+        '--import',
+        'tsx',
         CLI_ENTRY,
         '--prompt',
         'Shorthand multi-model normalization prompt that is safely over twenty characters.',

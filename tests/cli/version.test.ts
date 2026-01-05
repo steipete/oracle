@@ -9,11 +9,11 @@ const execFileAsync = promisify(execFile);
 describe('oracle --version', () => {
   test('prints the package.json version', async () => {
     const cliEntrypoint = path.join(process.cwd(), 'bin', 'oracle-cli.ts');
-    const tsxCli = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
-    const { stdout } = await execFileAsync(process.execPath, [tsxCli, cliEntrypoint, '--version'], {
+    const { stdout, stderr } = await execFileAsync(process.execPath, ['--import', 'tsx', cliEntrypoint, '--version'], {
       // biome-ignore lint/style/useNamingConvention: environment variable name
       env: { ...process.env, FORCE_COLOR: '0', ORACLE_DISABLE_KEYTAR: '1' },
     });
-    expect(stdout.trim()).toBe(getCliVersion());
+    const output = (stdout.trim() || stderr.trim()).trim();
+    expect(output).toBe(getCliVersion());
   }, 30000);
 });

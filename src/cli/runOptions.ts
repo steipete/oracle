@@ -117,6 +117,10 @@ function resolveEngineWithConfig({
   env: NodeJS.ProcessEnv;
 }): EngineMode {
   if (engine) return engine;
+  const envOverride = (env.ORACLE_ENGINE ?? '').trim().toLowerCase();
+  if (envOverride === 'api' || envOverride === 'browser') {
+    return envOverride as EngineMode;
+  }
   if (configEngine) return configEngine;
   return resolveEngine({ engine: undefined, env });
 }
