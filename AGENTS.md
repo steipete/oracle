@@ -16,6 +16,7 @@ Oracle-specific notes:
 - Working on Windows? Read and update `docs/windows-work.md` before you start.
 - Sparkle signing key lives at `/Users/steipete/Library/CloudStorage/Dropbox/Backup/Sparkle`; set `SPARKLE_PRIVATE_KEY_FILE` to that path when notarizing the notifier.
 - Browser cookie sync + Node 25: if browser runs fail with “Failed to load keytar… Cannot find module '../build/Release/keytar.node'” and no cookies are applied, rebuild keytar in the pnpm dlx cache: run `PYTHON=/usr/bin/python3 /Users/steipete/Projects/oracle/runner npx node-gyp rebuild` inside the keytar directory printed in the error, then rerun the oracle command.
+- npm publish OTP: prepare/tag/release first, then run `npm publish ...` and stop at `Enter OTP:`; ask user for the OTP and continue (ok to handle OTP in chat).
 
 Browser-mode debug notes (ChatGPT URL override)
 - When a ChatGPT folder/workspace URL is set, Cloudflare can block automation even after cookie sync. Use `--browser-keep-browser` to leave Chrome open, solve the interstitial manually, then rerun.
