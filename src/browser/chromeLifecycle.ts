@@ -187,6 +187,41 @@ export interface RemoteChromeConnection {
   targetId?: string;
 }
 
+export interface IsolatedTabConnection {
+  client: ChromeClient;
+  targetId: string;
+}
+
+export async function connectWithNewTab(
+  port: number,
+  logger: BrowserLogger,
+  initialUrl?: string,
+  host?: string,
+): Promise<IsolatedTabConnection> {
+  const effectiveHost = host ?? '127.0.0.1';
+  const url = initialUrl ?? 'about:blank';
+  const target = await CDP.New({ host: effectiveHost, port, url });
+  const client = await CDP({ host: effectiveHost, port, target: target.id });
+  logger(`Opened isolated browser tab (target=${target.id})`);
+  return { client, targetId: target.id };
+}
+
+export async function closeTab(
+  port: number,
+  targetId: string,
+  logger: BrowserLogger,
+  host?: string,
+): Promise<void> {
+  const effectiveHost = host ?? '127.0.0.1';
+  try {
+    await CDP.Close({ host: effectiveHost, port, id: targetId });
+    logger(`Closed isolated browser tab (target=${targetId})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`Failed to close browser tab ${targetId}: ${message}`);
+  }
+}
+
 function buildChromeFlags(headless: boolean, debugBindAddress?: string | null): string[] {
   const flags = [
     '--disable-background-networking',
