@@ -12,6 +12,7 @@ import type { BrowserRunResult } from '../browserMode.js';
 import type { RemoteRunPayload, RemoteRunEvent } from './types.js';
 import { getCookies, type Cookie } from '@steipete/sweet-cookie';
 import { CHATGPT_URL } from '../browser/constants.js';
+import { getCliVersion } from '../version.js';
 import {
   cleanupStaleProfileState,
   readDevToolsPort,
@@ -64,6 +65,7 @@ export async function createRemoteServer(
   const server = http.createServer();
   const logger = options.logger ?? console.log;
   const authToken = options.token ?? randomBytes(16).toString('hex');
+  const startedAt = Date.now();
   const verbose = process.argv.includes('--verbose') || process.env.ORACLE_SERVE_VERBOSE === '1';
   const color = process.stdout.isTTY
     ? (formatter: (msg: string) => string, msg: string) => formatter(msg)
@@ -82,6 +84,26 @@ export async function createRemoteServer(
       logger('[serve] Health check /status');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/health') {
+      const authHeader = req.headers.authorization ?? '';
+      if (authHeader !== `Bearer ${authToken}`) {
+        if (verbose) {
+          logger(`[serve] Unauthorized /health attempt from ${formatSocket(req)} (missing/invalid token)`);
+        }
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          version: getCliVersion(),
+          uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+        }),
+      );
       return;
     }
     if (req.method !== 'POST' || req.url !== '/runs') {
@@ -398,7 +420,13 @@ async function loadLocalChatgptCookies(logger: (message: string) => void, target
     return { cookies, opened: false };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger(`Unable to load local ChatGPT cookies on this host: ${message}`);
+    const missingDbMatch = message.match(/Unable to locate Chrome cookie DB at (.+?)(?:\.|$)/);
+    if (missingDbMatch) {
+      const lookedPath = missingDbMatch[1];
+      logger(`Chrome cookies not found at ${lookedPath}. Set --browser-cookie-path to your Chrome profile or log in manually.`);
+    } else {
+      logger(`Unable to load local ChatGPT cookies on this host: ${message}`);
+    }
     if (process.platform === 'linux' && isWsl()) {
       logger(
         'WSL hint: Chrome lives under /mnt/c/Users/<you>/AppData/Local/Google/Chrome/User Data/Default; pass --browser-cookie-path to that directory if auto-detect fails.',

@@ -171,6 +171,7 @@ oracle status --clear --hours 168
 ```
 
 ## More docs
+- Bridge (Windows host → Linux client): [docs/bridge.md](docs/bridge.md)
 - Browser mode & forks: [docs/browser-mode.md](docs/browser-mode.md) (includes `oracle serve` remote service), [docs/chromium-forks.md](docs/chromium-forks.md), [docs/linux.md](docs/linux.md)
 - MCP: [docs/mcp.md](docs/mcp.md)
 - OpenAI/Azure/OpenRouter endpoints: [docs/openai-endpoints.md](docs/openai-endpoints.md), [docs/openrouter.md](docs/openrouter.md)

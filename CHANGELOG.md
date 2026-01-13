@@ -2,6 +2,9 @@
 
 ## 0.8.5 — Unreleased
 
+### Added
+- Bridge: add the bridge workflow + MCP browser controls for remote ChatGPT sessions. Original PR #42 by Kyle McCleary (@kmccleary3301) — thank you!
+
 ## 0.8.4 — 2026-01-04
 
 ### Changed
