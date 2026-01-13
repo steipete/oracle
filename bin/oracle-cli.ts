@@ -71,6 +71,7 @@ import {
 import { loadUserConfig, type UserConfig } from '../src/config.js';
 import { applyBrowserDefaultsFromConfig } from '../src/cli/browserDefaults.js';
 import { shouldBlockDuplicatePrompt } from '../src/cli/duplicatePromptGuard.js';
+import { resolveRemoteServiceConfig } from '../src/remote/remoteServiceConfig.js';
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -784,10 +785,14 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   };
   applyRetentionOption();
 
-  const remoteHost =
-    options.remoteHost ?? userConfig.remoteHost ?? userConfig.remote?.host ?? process.env.ORACLE_REMOTE_HOST;
-  const remoteToken =
-    options.remoteToken ?? userConfig.remoteToken ?? userConfig.remote?.token ?? process.env.ORACLE_REMOTE_TOKEN;
+  const remoteConfig = resolveRemoteServiceConfig({
+    cliHost: options.remoteHost,
+    cliToken: options.remoteToken,
+    userConfig,
+    env: process.env,
+  });
+  const remoteHost = remoteConfig.host;
+  const remoteToken = remoteConfig.token;
   if (remoteHost) {
     console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
   }

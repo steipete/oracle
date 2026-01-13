@@ -99,7 +99,7 @@ Then start Claude Code with that config (or register it via `claude mcp add` dep
 Notes:
 
 - The snippet includes `ORACLE_ENGINE="browser"` so MCP consult calls use browser mode even if `OPENAI_API_KEY` is set.
- - By default the snippets leave `ORACLE_REMOTE_TOKEN` as `<YOUR_TOKEN>` to avoid printing secrets; rerun with `--print-token` if you explicitly want it included.
+- By default the snippets leave `ORACLE_REMOTE_TOKEN` as `<YOUR_TOKEN>` to avoid printing secrets; rerun with `--print-token` if you explicitly want it included.
 
 ## 4) Troubleshooting
 
