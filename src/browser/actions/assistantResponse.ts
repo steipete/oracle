@@ -350,11 +350,15 @@ async function pollAssistantCompletion(
         isCompletionVisible(Runtime),
       ]);
       const shortAnswer = currentLength > 0 && currentLength < 16;
+      const mediumAnswer = currentLength >= 16 && currentLength < 40;
+      const longAnswer = currentLength >= 40 && currentLength < 500;
       // Learned: short answers need a longer stability window or they truncate.
-      const completionStableTarget = shortAnswer ? 12 : currentLength < 40 ? 8 : 4;
-      const requiredStableCycles = shortAnswer ? 12 : 6;
+      // Learned: long streaming responses (esp. thinking models) can pause mid-stream;
+      // use progressively longer windows to avoid truncation (#71).
+      const completionStableTarget = shortAnswer ? 12 : mediumAnswer ? 8 : longAnswer ? 6 : 8;
+      const requiredStableCycles = shortAnswer ? 12 : mediumAnswer ? 8 : longAnswer ? 8 : 10;
       const stableMs = Date.now() - lastChangeAt;
-      const minStableMs = shortAnswer ? 8000 : 1200;
+      const minStableMs = shortAnswer ? 8000 : mediumAnswer ? 1200 : longAnswer ? 2000 : 3000;
       // Require stop button to disappear before treating completion as final.
       if (!stopVisible) {
         const stableEnough = stableCycles >= requiredStableCycles && stableMs >= minStableMs;
@@ -618,15 +622,19 @@ function buildResponseObserverExpression(timeoutMs: number, minTurnIndex?: numbe
 
     const waitForSettle = async (snapshot) => {
       // Learned: short answers can be 1-2 tokens; enforce longer settle windows to avoid truncation.
+      // Learned: long streaming responses (esp. thinking models) can pause mid-stream;
+      // use progressively longer windows to avoid truncation (#71).
       const initialLength = snapshot?.text?.length ?? 0;
       const shortAnswer = initialLength > 0 && initialLength < 16;
-      const settleWindowMs = shortAnswer ? 12_000 : 5_000;
+      const mediumAnswer = initialLength >= 16 && initialLength < 40;
+      const longAnswer = initialLength >= 40 && initialLength < 500;
+      const settleWindowMs = shortAnswer ? 12_000 : mediumAnswer ? 5_000 : longAnswer ? 8_000 : 10_000;
       const settleIntervalMs = 400;
       const deadline = Date.now() + settleWindowMs;
       let latest = snapshot;
       let lastLength = snapshot?.text?.length ?? 0;
       let stableCycles = 0;
-      const stableTarget = shortAnswer ? 6 : 3;
+      const stableTarget = shortAnswer ? 6 : mediumAnswer ? 3 : longAnswer ? 5 : 6;
       while (Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, settleIntervalMs));
         const refreshedRaw = extractFromTurns();
