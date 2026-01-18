@@ -37,6 +37,7 @@ import {
   inferModelFromLabel,
   parseHeartbeatOption,
   parseTimeoutOption,
+  parseDurationOption,
   mergePathLikeOptions,
   dedupePathInputs,
 } from '../src/cli/options.js';
@@ -104,6 +105,10 @@ interface CliOptions extends OptionValues {
   engine?: EngineMode;
   browser?: boolean;
   timeout?: number | 'auto';
+  background?: boolean;
+  httpTimeout?: number;
+  zombieTimeout?: number;
+  zombieLastActivity?: boolean;
   browserChromeProfile?: string;
   browserChromePath?: string;
   browserCookiePath?: string;
@@ -160,7 +165,16 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
 
 const VERSION = getCliVersion();
 const CLI_ENTRYPOINT = fileURLToPath(import.meta.url);
-const rawCliArgs = process.argv.slice(2);
+const LEGACY_FLAG_ALIASES = new Map<string, string>([
+  ['--[no-]notify', '--notify'],
+  ['--[no-]notify-sound', '--notify-sound'],
+  ['--[no-]background', '--background'],
+]);
+const normalizedArgv = process.argv.map((arg, index) => {
+  if (index < 2) return arg;
+  return LEGACY_FLAG_ALIASES.get(arg) ?? arg;
+});
+const rawCliArgs = normalizedArgv.slice(2);
 const userCliArgs = rawCliArgs[0] === CLI_ENTRYPOINT ? rawCliArgs.slice(1) : rawCliArgs;
 const isTty = process.stdout.isTTY;
 
@@ -267,12 +281,13 @@ program
   .option('--files-report', 'Show token usage per attached file (also prints automatically when files exceed the token budget).', false)
   .option('-v, --verbose', 'Enable verbose logging for all operations.', false)
   .addOption(
-    new Option('--[no-]notify', 'Desktop notification when a session finishes (default on unless CI/SSH).')
-      .default(undefined),
+    new Option('--notify', 'Desktop notification when a session finishes (default on unless CI/SSH).').default(undefined),
   )
+  .addOption(new Option('--no-notify', 'Disable desktop notifications.').default(undefined))
   .addOption(
-    new Option('--[no-]notify-sound', 'Play a notification sound on completion (default off).').default(undefined),
+    new Option('--notify-sound', 'Play a notification sound on completion (default off).').default(undefined),
   )
+  .addOption(new Option('--no-notify-sound', 'Disable notification sounds.').default(undefined))
   .addOption(
     new Option(
       '--timeout <seconds|auto>',
@@ -280,6 +295,26 @@ program
     )
       .argParser(parseTimeoutOption)
       .default('auto'),
+  )
+  .addOption(new Option('--background', 'Use Responses API background mode (create + retrieve) for API runs.').default(undefined))
+  .addOption(new Option('--no-background', 'Disable Responses API background mode.').default(undefined))
+  .addOption(
+    new Option('--http-timeout <ms|s|m|h>', 'HTTP client timeout for API requests (default 20m).')
+      .argParser((value) => parseDurationOption(value, 'HTTP timeout'))
+      .default(undefined),
+  )
+  .addOption(
+    new Option(
+      '--zombie-timeout <ms|s|m|h>',
+      'Override stale-session cutoff used by `oracle status` (default 60m).',
+    )
+      .argParser((value) => parseDurationOption(value, 'Zombie timeout'))
+      .default(undefined),
+  )
+  .option(
+    '--zombie-last-activity',
+    'Base stale-session detection on last log activity instead of start time.',
+    false,
   )
   .addOption(
     new Option(
@@ -644,6 +679,9 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
     maxOutput: overrides.maxOutput ?? options.maxOutput,
     system: overrides.system ?? options.system,
     timeoutSeconds: overrides.timeoutSeconds ?? (options.timeout as number | 'auto' | undefined),
+    httpTimeoutMs: overrides.httpTimeoutMs ?? options.httpTimeout,
+    zombieTimeoutMs: overrides.zombieTimeoutMs ?? options.zombieTimeout,
+    zombieUseLastActivity: overrides.zombieUseLastActivity ?? options.zombieLastActivity,
     silent: overrides.silent ?? options.silent,
     search: overrides.search ?? options.search,
     preview: overrides.preview ?? undefined,
@@ -701,6 +739,10 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     apiKey: undefined,
     baseUrl: normalizeBaseUrl(stored.baseUrl),
     azure: stored.azure,
+    timeoutSeconds: stored.timeoutSeconds,
+    httpTimeoutMs: stored.httpTimeoutMs,
+    zombieTimeoutMs: stored.zombieTimeoutMs,
+    zombieUseLastActivity: stored.zombieUseLastActivity,
     sessionId: metadata.id,
     verbose: stored.verbose,
     heartbeatIntervalMs: stored.heartbeatIntervalMs,
@@ -1141,7 +1183,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const baseRunOptions = buildRunOptions(resolvedOptions, {
     preview: false,
     previewMode: undefined,
-    background: userConfig.background ?? resolvedOptions.background,
+    background: resolvedOptions.background ?? userConfig.background,
     baseUrl: resolvedBaseUrl,
   });
   enforceBrowserSearchFlag(baseRunOptions, sessionMode, console.log);
@@ -1384,7 +1426,7 @@ program.action(async function (this: Command) {
 });
 
 async function main(): Promise<void> {
-  const parsePromise = program.parseAsync(process.argv);
+  const parsePromise = program.parseAsync(normalizedArgv);
   const sigintPromise = once(process, 'SIGINT').then(() => 'sigint' as const);
   const result = await Promise.race([parsePromise.then(() => 'parsed' as const), sigintPromise]);
   if (result === 'sigint') {

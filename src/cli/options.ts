@@ -1,4 +1,5 @@
 import { InvalidArgumentError, type Command } from 'commander';
+import { parseDuration } from '../browserMode.js';
 import path from 'node:path';
 import fg from 'fast-glob';
 import type { ModelName, PreviewMode } from '../oracle.js';
@@ -158,6 +159,19 @@ export function parseTimeoutOption(value: string | undefined): number | 'auto' |
   const parsed = Number.parseFloat(normalized);
   if (Number.isNaN(parsed) || parsed <= 0) {
     throw new InvalidArgumentError('Timeout must be a positive number of seconds or "auto".');
+  }
+  return parsed;
+}
+
+export function parseDurationOption(value: string | undefined, label: string): number | undefined {
+  if (value == null) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new InvalidArgumentError(`${label} must be a duration like 30m, 10s, 500ms, or 2h.`);
+  }
+  const parsed = parseDuration(trimmed, Number.NaN);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError(`${label} must be a positive duration like 30m, 10s, 500ms, or 2h.`);
   }
   return parsed;
 }

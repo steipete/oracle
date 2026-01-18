@@ -10,7 +10,6 @@ import {
 } from './errors.js';
 import type { ClientLike, OracleResponse, OracleRequestBody } from './types.js';
 
-const BACKGROUND_MAX_WAIT_MS = 30 * 60 * 1000;
 const BACKGROUND_POLL_INTERVAL_MS = 5000;
 const BACKGROUND_RETRY_BASE_MS = 3000;
 const BACKGROUND_RETRY_MAX_MS = 15000;
@@ -42,7 +41,7 @@ export async function executeBackgroundResponse(params: BackgroundExecutionParam
   log(
     chalk.dim(
       `API scheduled background response ${responseId} (status=${initialResponse.status ?? 'unknown'}). Monitoring up to ${Math.round(
-        BACKGROUND_MAX_WAIT_MS / 60000,
+        maxWaitMs / 60000,
       )} minutes for completion...`,
     ),
   );

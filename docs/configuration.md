@@ -88,5 +88,11 @@ Under the hood, pruning removes entire session directories (metadata + logs). Th
 ## API timeouts
 
 - `--timeout <seconds|auto>` controls the overall API deadline for a run.
+- `--http-timeout <ms|s|m|h>` overrides the HTTP client timeout for API requests (default 20m).
 - Defaults: `auto` = 60 m for `gpt-5.1-pro`; non-pro API models use `120s` if you don’t set a value.
 - Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.
+
+## Zombie/session staleness
+
+- `--zombie-timeout <ms|s|m|h>` overrides the stale-session cutoff used by `oracle status`.
+- `--zombie-last-activity` uses last log activity instead of start time to detect stale sessions.

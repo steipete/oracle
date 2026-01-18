@@ -119,6 +119,11 @@ npx -y @steipete/oracle oracle-mcp
 | `--browser-timeout`, `--browser-input-timeout` | Control overall/browser input timeouts (supports h/m/s/ms). |
 | `--render`, `--copy` | Print and/or copy the assembled markdown bundle. |
 | `--wait` | Block for background API runs (e.g., GPT‑5.1 Pro) instead of detaching. |
+| `--timeout <seconds\|auto>` | Overall API deadline (auto = 60m for pro, 120s otherwise). |
+| `--background`, `--no-background` | Force Responses API background mode (create + retrieve) for API runs. |
+| `--http-timeout <ms\|s\|m\|h>` | HTTP client timeout (default 20m). |
+| `--zombie-timeout <ms\|s\|m\|h>` | Override stale-session cutoff used by `oracle status`. |
+| `--zombie-last-activity` | Use last log activity to detect stale sessions. |
 | `--write-output <path>` | Save only the final answer (multi-model adds `.<model>`). |
 | `--files-report` | Print per-file token usage. |
 | `--dry-run [summary\|json\|full]` | Preview without sending. |
@@ -150,6 +155,7 @@ Advanced flags
 | Area | Flags |
 | --- | --- |
 | Browser | `--browser-manual-login`, `--browser-thinking-time`, `--browser-timeout`, `--browser-input-timeout`, `--browser-cookie-wait`, `--browser-inline-cookies[(-file)]`, `--browser-attachments`, `--browser-inline-files`, `--browser-bundle-files`, `--browser-keep-browser`, `--browser-headless`, `--browser-hide-window`, `--browser-no-cookie-sync`, `--browser-allow-cookie-errors`, `--browser-chrome-path`, `--browser-cookie-path`, `--chatgpt-url` |
+| Run control | `--background`, `--no-background`, `--http-timeout`, `--zombie-timeout`, `--zombie-last-activity` |
 | Azure/OpenAI | `--azure-endpoint`, `--azure-deployment`, `--azure-api-version`, `--base-url` |
 
 Remote browser example
