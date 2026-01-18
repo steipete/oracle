@@ -30,7 +30,13 @@ export interface AzureOptions {
 
 export type ClientFactory = (
   apiKey: string,
-  options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string },
+  options?: {
+    baseUrl?: string;
+    azure?: AzureOptions;
+    model?: ModelName;
+    resolvedModelId?: string;
+    httpTimeoutMs?: number;
+  },
 ) => ClientLike;
 
 export interface ModelConfig {
@@ -143,6 +149,12 @@ export interface RunOracleOptions {
   writeOutputPath?: string;
   /** Number of seconds to wait before timing out, or 'auto' to use model defaults. */
   timeoutSeconds?: number | 'auto';
+  /** Override HTTP client timeout (milliseconds). */
+  httpTimeoutMs?: number;
+  /** Override zombie timeout for the session (milliseconds). */
+  zombieTimeoutMs?: number;
+  /** Use last log activity to detect stale sessions. */
+  zombieUseLastActivity?: boolean;
   /** Render plain text instead of ANSI-rendered markdown when printing answers to a rich TTY. */
   renderPlain?: boolean;
   /** Suppress the per-run header log line (used for multi-model logs where a model header is already printed). */

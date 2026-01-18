@@ -5,7 +5,7 @@ import type { WriteStream } from 'node:fs';
 import net from 'node:net';
 import type { BrowserModelStrategy, CookieParam } from './browser/types.js';
 import type { TransportFailureReason, AzureOptions, ModelName, ThinkingTimeLevel } from './oracle.js';
-import { DEFAULT_MODEL } from './oracle.js';
+import { DEFAULT_MODEL, formatElapsed } from './oracle.js';
 import { safeModelSlug } from './oracle/modelResolver.js';
 import { getOracleHomeDir } from './oracleHome.js';
 
@@ -99,6 +99,10 @@ export interface StoredRunOptions {
   effectiveModelId?: string;
   renderPlain?: boolean;
   writeOutputPath?: string;
+  timeoutSeconds?: number | 'auto';
+  httpTimeoutMs?: number;
+  zombieTimeoutMs?: number;
+  zombieUseLastActivity?: boolean;
 }
 
 export interface SessionMetadata {
@@ -396,6 +400,10 @@ export async function initializeSession(
       search: options.search,
       baseUrl: options.baseUrl,
       azure: options.azure,
+      timeoutSeconds: options.timeoutSeconds,
+      httpTimeoutMs: options.httpTimeoutMs,
+      zombieTimeoutMs: options.zombieTimeoutMs,
+      zombieUseLastActivity: options.zombieUseLastActivity,
       writeOutputPath: options.writeOutputPath,
     },
   };
@@ -668,7 +676,7 @@ export async function getSessionPaths(sessionId: string): Promise<{
 }
 
 async function markZombie(meta: SessionMetadata, { persist }: { persist: boolean }): Promise<SessionMetadata> {
-  if (!isZombie(meta)) {
+  if (!(await isZombie(meta))) {
     return meta;
   }
   if (meta.mode === 'browser') {
@@ -687,10 +695,11 @@ async function markZombie(meta: SessionMetadata, { persist }: { persist: boolean
       }
     }
   }
+  const maxAgeMs = resolveZombieMaxAgeMs(meta);
   const updated: SessionMetadata = {
     ...meta,
     status: 'error',
-    errorMessage: 'Session marked as zombie (>60m stale)',
+    errorMessage: `Session marked as zombie (> ${formatElapsed(maxAgeMs)} stale)`,
     completedAt: new Date().toISOString(),
   };
   if (persist) {
@@ -738,7 +747,7 @@ async function markDeadBrowser(meta: SessionMetadata, { persist }: { persist: bo
   return updated;
 }
 
-function isZombie(meta: SessionMetadata): boolean {
+async function isZombie(meta: SessionMetadata): Promise<boolean> {
   if (meta.status !== 'running') {
     return false;
   }
@@ -750,7 +759,61 @@ function isZombie(meta: SessionMetadata): boolean {
   if (Number.isNaN(startedMs)) {
     return false;
   }
-  return Date.now() - startedMs > ZOMBIE_MAX_AGE_MS;
+  const useLastActivity = meta.options?.zombieUseLastActivity === true;
+  const lastActivityMs = useLastActivity ? await getLastActivityMs(meta) : null;
+  const anchorMs = lastActivityMs ?? startedMs;
+  const maxAgeMs = resolveZombieMaxAgeMs(meta);
+  return Date.now() - anchorMs > maxAgeMs;
+}
+
+function resolveZombieMaxAgeMs(meta: SessionMetadata): number {
+  const explicit = meta.options?.zombieTimeoutMs;
+  const hasExplicit = typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0;
+  let maxAgeMs = hasExplicit ? explicit : ZOMBIE_MAX_AGE_MS;
+  if (!hasExplicit) {
+    const timeoutSeconds = meta.options?.timeoutSeconds;
+    if (typeof timeoutSeconds === 'number' && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) {
+      const timeoutMs = timeoutSeconds * 1000;
+      if (timeoutMs > maxAgeMs) {
+        maxAgeMs = timeoutMs;
+      }
+    }
+  }
+  return maxAgeMs;
+}
+
+async function getLastActivityMs(meta: SessionMetadata): Promise<number | null> {
+  const candidates = new Set<string>();
+  candidates.add(logPath(meta.id));
+  const modelNames = new Set<string>();
+  if (typeof meta.model === 'string' && meta.model.length > 0) {
+    modelNames.add(meta.model);
+  }
+  if (Array.isArray(meta.models)) {
+    for (const entry of meta.models) {
+      if (entry?.model) {
+        modelNames.add(entry.model);
+      }
+    }
+  }
+  for (const modelName of modelNames) {
+    candidates.add(modelLogPath(meta.id, modelName));
+  }
+  let latest = 0;
+  let sawStat = false;
+  for (const candidate of candidates) {
+    try {
+      const stats = await fs.stat(candidate);
+      const mtimeMs = Number.isFinite(stats.mtimeMs) ? stats.mtimeMs : stats.mtime.getTime();
+      if (Number.isFinite(mtimeMs)) {
+        latest = Math.max(latest, mtimeMs);
+        sawStat = true;
+      }
+    } catch {
+      // ignore missing logs; fallback to startedAt
+    }
+  }
+  return sawStat ? latest : null;
 }
 
 function isProcessAlive(pid?: number): boolean {

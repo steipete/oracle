@@ -371,6 +371,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
         : modelConfig.model.startsWith('gemini')
           ? resolveGeminiModelId(effectiveModelId as ModelName)
           : effectiveModelId,
+      httpTimeoutMs: options.httpTimeoutMs,
     });
   logVerbose('Dispatching request to API...');
   if (options.verbose) {

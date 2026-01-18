@@ -25,7 +25,7 @@ export function createDefaultClientFactory(): ClientFactory {
   if (customFactory) return customFactory;
   return (
     key: string,
-    options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string },
+    options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string; httpTimeoutMs?: number },
   ): ClientLike => {
     if (options?.model?.startsWith('gemini')) {
       // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
@@ -39,18 +39,22 @@ export function createDefaultClientFactory(): ClientFactory {
     const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
     const defaultHeaders: Record<string, string> | undefined = openRouter ? buildOpenRouterHeaders() : undefined;
 
+    const httpTimeoutMs =
+      typeof options?.httpTimeoutMs === 'number' && Number.isFinite(options.httpTimeoutMs) && options.httpTimeoutMs > 0
+        ? options.httpTimeoutMs
+        : 20 * 60 * 1000;
     if (options?.azure?.endpoint) {
       instance = new AzureOpenAI({
         apiKey: key,
         endpoint: options.azure.endpoint,
         apiVersion: options.azure.apiVersion,
         deployment: options.azure.deployment,
-        timeout: 20 * 60 * 1000,
+        timeout: httpTimeoutMs,
       });
     } else {
       instance = new OpenAI({
         apiKey: key,
-        timeout: 20 * 60 * 1000,
+        timeout: httpTimeoutMs,
         baseURL: options?.baseUrl,
         defaultHeaders,
       });
