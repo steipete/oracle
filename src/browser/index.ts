@@ -607,32 +607,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     answerMarkdown = copiedMarkdown ?? answerText;
 
     const promptEchoMatcher = buildPromptEchoMatcher(promptText);
-
-    // Learned: long streaming responses can still be rendering after initial capture.
-    // Add a brief delay and re-poll to catch any additional content (#71).
-    const capturedLength = answerText.trim().length;
-    if (capturedLength > 500) {
-      // For long responses, do a delayed re-read to catch any trailing content
-      await delay(1500);
-      let bestLength = capturedLength;
-      let bestText = answerText;
-      for (let i = 0; i < 5; i++) {
-        const laterSnapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(() => null);
-        const laterText = typeof laterSnapshot?.text === 'string' ? laterSnapshot.text.trim() : '';
-        if (laterText.length > bestLength) {
-          bestLength = laterText.length;
-          bestText = laterText;
-          await delay(800); // More content appeared, keep waiting
-        } else {
-          break; // Stable, stop polling
-        }
-      }
-      if (bestLength > capturedLength) {
-        logger(`Recovered ${bestLength - capturedLength} additional chars via delayed re-read`);
-        answerText = bestText;
-        answerMarkdown = bestText;
-      }
-    }
+    ({ answerText, answerMarkdown } = await maybeRecoverLongAssistantResponse({
+      runtime: Runtime,
+      baselineTurns,
+      answerText,
+      answerMarkdown,
+      logger,
+      allowMarkdownUpdate: !copiedMarkdown,
+    }));
 
     // Final sanity check: ensure we didn't accidentally capture the user prompt instead of the assistant turn.
     const finalSnapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(() => null);
@@ -907,6 +889,52 @@ async function waitForLogin({
     }
   }
   throw new Error('Manual login mode timed out waiting for ChatGPT session; please sign in and retry.');
+}
+
+async function maybeRecoverLongAssistantResponse({
+  runtime,
+  baselineTurns,
+  answerText,
+  answerMarkdown,
+  logger,
+  allowMarkdownUpdate,
+}: {
+  runtime: ChromeClient['Runtime'];
+  baselineTurns: number | null;
+  answerText: string;
+  answerMarkdown: string;
+  logger: BrowserLogger;
+  allowMarkdownUpdate: boolean;
+}): Promise<{ answerText: string; answerMarkdown: string }> {
+  // Learned: long streaming responses can still be rendering after initial capture.
+  // Add a brief delay and re-poll to catch any additional content (#71).
+  const capturedLength = answerText.trim().length;
+  if (capturedLength <= 500) {
+    return { answerText, answerMarkdown };
+  }
+
+  await delay(1500);
+  let bestLength = capturedLength;
+  let bestText = answerText;
+  for (let i = 0; i < 5; i++) {
+    const laterSnapshot = await readAssistantSnapshot(runtime, baselineTurns ?? undefined).catch(() => null);
+    const laterText = typeof laterSnapshot?.text === 'string' ? laterSnapshot.text.trim() : '';
+    if (laterText.length > bestLength) {
+      bestLength = laterText.length;
+      bestText = laterText;
+      await delay(800); // More content appeared, keep waiting
+    } else {
+      break; // Stable, stop polling
+    }
+  }
+  if (bestLength > capturedLength) {
+    logger(`Recovered ${bestLength - capturedLength} additional chars via delayed re-read`);
+    return {
+      answerText: bestText,
+      answerMarkdown: allowMarkdownUpdate ? bestText : answerMarkdown,
+    };
+  }
+  return { answerText, answerMarkdown };
 }
 
 async function _assertNavigatedToHttp(
@@ -1214,32 +1242,14 @@ async function runRemoteBrowserMode(
     ).catch(() => null);
 
     answerMarkdown = copiedMarkdown ?? answerText;
-
-    // Learned: long streaming responses can still be rendering after initial capture.
-    // Add a brief delay and re-poll to catch any additional content (#71).
-    const reattachCapturedLength = answerText.trim().length;
-    if (reattachCapturedLength > 500) {
-      // For long responses, do a delayed re-read to catch any trailing content
-      await delay(1500);
-      let bestLength = reattachCapturedLength;
-      let bestText = answerText;
-      for (let i = 0; i < 5; i++) {
-        const laterSnapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(() => null);
-        const laterText = typeof laterSnapshot?.text === 'string' ? laterSnapshot.text.trim() : '';
-        if (laterText.length > bestLength) {
-          bestLength = laterText.length;
-          bestText = laterText;
-          await delay(800); // More content appeared, keep waiting
-        } else {
-          break; // Stable, stop polling
-        }
-      }
-      if (bestLength > reattachCapturedLength) {
-        logger(`Recovered ${bestLength - reattachCapturedLength} additional chars via delayed re-read`);
-        answerText = bestText;
-        answerMarkdown = bestText;
-      }
-    }
+    ({ answerText, answerMarkdown } = await maybeRecoverLongAssistantResponse({
+      runtime: Runtime,
+      baselineTurns,
+      answerText,
+      answerMarkdown,
+      logger,
+      allowMarkdownUpdate: !copiedMarkdown,
+    }));
 
     // Final sanity check: ensure we didn't accidentally capture the user prompt instead of the assistant turn.
     const finalSnapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(() => null);
