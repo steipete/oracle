@@ -83,6 +83,8 @@ pnpm tsx scripts/browser-tools.ts kill --all --force   # tear down straggler Dev
 
 This mirrors Mario Zechner’s “What if you don’t need MCP?” technique and is handy when you just need a few quick interactions without spinning up additional tooling.
 
+Debug note: when you have a live ChatGPT tab open under a DevTools port and need a quick DOM dump of the last assistant turn, run `pnpm tsx scripts/debug/extract-chatgpt-response.ts <port>`.
+
 1. **Prompt Submission & Model Switching**
    - With Chrome signed in and cookie sync enabled, run  
      ```bash
