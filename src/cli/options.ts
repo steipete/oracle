@@ -169,6 +169,9 @@ export function parseDurationOption(value: string | undefined, label: string): n
   if (!trimmed) {
     throw new InvalidArgumentError(`${label} must be a duration like 30m, 10s, 500ms, or 2h.`);
   }
+  if (/^[0-9]+$/.test(trimmed)) {
+    throw new InvalidArgumentError(`${label} must include a unit (e.g. 30m, 10s, 500ms, or 2h).`);
+  }
   const parsed = parseDuration(trimmed, Number.NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new InvalidArgumentError(`${label} must be a positive duration like 30m, 10s, 500ms, or 2h.`);

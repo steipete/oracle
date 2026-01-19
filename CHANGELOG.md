@@ -8,6 +8,7 @@
 
 ### Fixed
 - CLI: restore legacy `--[no-]notify`, `--[no-]notify-sound`, and `--[no-]background` flags as hidden aliases (Commander no longer accepts `[no-]` in `new Option()`).
+- CLI: require units for `--http-timeout`/`--zombie-timeout` to avoid accidental millisecond values. (#74, thanks @enki)
 - Sessions: zombie detection now respects explicit timeouts and can optionally use last log activity to avoid false “zombie” status on long runs.
 
 ### Changed
