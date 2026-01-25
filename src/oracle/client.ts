@@ -27,6 +27,26 @@ export function createDefaultClientFactory(): ClientFactory {
     key: string,
     options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string; httpTimeoutMs?: number },
   ): ClientLike => {
+    // Check for OpenRouter FIRST - when using OpenRouter, route ALL models through it
+    // instead of using native SDKs (which would fail with OpenRouter API keys)
+    const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
+    const defaultHeaders: Record<string, string> | undefined = openRouter ? buildOpenRouterHeaders() : undefined;
+
+    if (openRouter) {
+      const httpTimeoutMs =
+        typeof options?.httpTimeoutMs === 'number' && Number.isFinite(options.httpTimeoutMs) && options.httpTimeoutMs > 0
+          ? options.httpTimeoutMs
+          : 20 * 60 * 1000;
+      const instance = new OpenAI({
+        apiKey: key,
+        timeout: httpTimeoutMs,
+        baseURL: options?.baseUrl,
+        defaultHeaders,
+      });
+      return buildOpenRouterCompletionClient(instance);
+    }
+
+    // Only use native SDKs when NOT using OpenRouter
     if (options?.model?.startsWith('gemini')) {
       // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
       return createGeminiClient(key, options.model, options.resolvedModelId);
@@ -36,8 +56,6 @@ export function createDefaultClientFactory(): ClientFactory {
     }
 
     let instance: OpenAI;
-    const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
-    const defaultHeaders: Record<string, string> | undefined = openRouter ? buildOpenRouterHeaders() : undefined;
 
     const httpTimeoutMs =
       typeof options?.httpTimeoutMs === 'number' && Number.isFinite(options.httpTimeoutMs) && options.httpTimeoutMs > 0
@@ -58,10 +76,6 @@ export function createDefaultClientFactory(): ClientFactory {
         baseURL: options?.baseUrl,
         defaultHeaders,
       });
-    }
-
-    if (openRouter) {
-      return buildOpenRouterCompletionClient(instance);
     }
 
     return {
