@@ -42,6 +42,7 @@ npx -y @steipete/oracle --engine browser --model gemini-3-pro --prompt "a cute r
 # Sessions (list and replay)
 npx -y @steipete/oracle status --hours 72
 npx -y @steipete/oracle session <id> --render
+npx -y @steipete/oracle restart <id>
 
 # TUI (interactive, only for humans)
 npx -y @steipete/oracle tui

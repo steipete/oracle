@@ -117,6 +117,14 @@ export interface StoredRunOptions {
   httpTimeoutMs?: number;
   zombieTimeoutMs?: number;
   zombieUseLastActivity?: boolean;
+  /** Whether the run preferred to stay attached (true) or detach (false). */
+  waitPreference?: boolean;
+  youtube?: string;
+  generateImage?: string;
+  editImage?: string;
+  outputPath?: string;
+  aspectRatio?: string;
+  geminiShowThoughts?: boolean;
 }
 
 export interface SessionMetadata {
@@ -362,9 +370,10 @@ export async function initializeSession(
   options: InitializeSessionOptions,
   cwd: string,
   notifications?: SessionNotifications,
+  baseSlugOverride?: string,
 ): Promise<SessionMetadata> {
   await ensureSessionStorage();
-  const baseSlug = createSessionId(options.prompt || DEFAULT_SLUG, options.slug);
+  const baseSlug = baseSlugOverride || createSessionId(options.prompt || DEFAULT_SLUG, options.slug);
   const sessionId = await ensureUniqueSessionId(baseSlug);
   const dir = sessionDir(sessionId);
   await ensureDir(dir);
@@ -419,6 +428,13 @@ export async function initializeSession(
       zombieTimeoutMs: options.zombieTimeoutMs,
       zombieUseLastActivity: options.zombieUseLastActivity,
       writeOutputPath: options.writeOutputPath,
+      waitPreference: options.waitPreference,
+      youtube: options.youtube,
+      generateImage: options.generateImage,
+      editImage: options.editImage,
+      outputPath: options.outputPath,
+      aspectRatio: options.aspectRatio,
+      geminiShowThoughts: options.geminiShowThoughts,
     },
   };
   await ensureDir(modelsDir(sessionId));

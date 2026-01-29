@@ -263,6 +263,7 @@ export function registerConsultTool(server: McpServer): void {
           mode: resolvedEngine,
           slug,
           browserConfig,
+          waitPreference: true,
         },
         cwd,
         notifications,
