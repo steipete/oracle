@@ -138,6 +138,12 @@ interface CliOptions extends OptionValues {
   browserDebugPort?: number;
   remoteHost?: string;
   remoteToken?: string;
+  youtube?: string;
+  generateImage?: string;
+  editImage?: string;
+  output?: string;
+  aspect?: string;
+  geminiShowThoughts?: boolean;
   copyMarkdown?: boolean;
   copy?: boolean;
   verbose?: boolean;
@@ -163,6 +169,13 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
   effectiveModelId?: string;
   writeOutputPath?: string;
 };
+
+interface RestartCommandOptions {
+  wait?: boolean;
+  noWait?: boolean;
+  remoteHost?: string;
+  remoteToken?: string;
+}
 
 const VERSION = getCliVersion();
 const CLI_ENTRYPOINT = fileURLToPath(import.meta.url);
@@ -694,6 +707,18 @@ const statusCommand = program
       limit: statusOptions.limit,
       showExamples,
     });
+  });
+
+program
+  .command('restart <id>')
+  .description('Re-run a stored session as a new session (clones options).')
+  .addOption(new Option('--wait').default(undefined))
+  .addOption(new Option('--no-wait').default(undefined).hideHelp())
+  .option('--remote-host <host:port>', 'Delegate browser runs to a remote `oracle serve` instance.')
+  .option('--remote-token <token>', 'Access token for the remote `oracle serve` instance.')
+  .action(async (sessionId: string, _options: RestartCommandOptions, cmd: Command) => {
+    const restartOptions = cmd.opts<RestartCommandOptions>();
+    await restartSession(sessionId, restartOptions);
   });
 
 function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOracleOptions> = {}): RunOracleOptions {
@@ -1239,6 +1264,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       ...baseRunOptions,
       mode: sessionMode,
       browserConfig,
+      waitPreference,
+      youtube: options.youtube,
+      generateImage: options.generateImage,
+      editImage: options.editImage,
+      outputPath: options.output,
+      aspectRatio: options.aspect,
+      geminiShowThoughts: options.geminiShowThoughts,
     },
     process.cwd(),
     notifications,
@@ -1308,6 +1340,7 @@ async function runInteractiveSession(
   userConfig?: UserConfig,
   suppressSummary = false,
   browserDeps?: BrowserSessionRunnerDeps,
+  cwd: string = process.cwd(),
 ): Promise<void> {
   const { logLine, writeChunk, stream } = sessionStore.createLogWriter(sessionMeta.id);
   let headerAugmented = false;
@@ -1336,7 +1369,7 @@ async function runInteractiveSession(
       runOptions,
       mode,
       browserConfig,
-      cwd: process.cwd(),
+      cwd,
       log: combinedLog,
       write: combinedWrite,
       version: VERSION,
@@ -1377,6 +1410,166 @@ async function launchDetachedSession(sessionId: string): Promise<boolean> {
       reject(error);
     }
   });
+}
+
+async function restartSession(sessionId: string, options: RestartCommandOptions): Promise<void> {
+  const metadata = await sessionStore.readSession(sessionId);
+  if (!metadata) {
+    console.error(chalk.red(`No session found with ID ${sessionId}`));
+    process.exitCode = 1;
+    return;
+  }
+
+  const runOptions = buildRunOptionsFromMetadata(metadata);
+  if (!runOptions.prompt) {
+    console.error(chalk.red(`Session ${sessionId} has no stored prompt; cannot restart.`));
+    process.exitCode = 1;
+    return;
+  }
+
+  const sessionMode = getSessionMode(metadata);
+  const engine: EngineMode = sessionMode === 'browser' ? 'browser' : 'api';
+  const browserConfig = getBrowserConfigFromMetadata(metadata);
+  if (sessionMode === 'browser' && !browserConfig) {
+    console.error(chalk.red(`Session ${sessionId} is missing browser config; cannot restart.`));
+    process.exitCode = 1;
+    return;
+  }
+
+  const userConfig = (await loadUserConfig()).config;
+  const cwd = metadata.cwd ?? process.cwd();
+  const storedOptions = metadata.options ?? {};
+
+  if (runOptions.file && runOptions.file.length > 0) {
+    const isBrowserMode = engine === 'browser';
+    const filesToValidate = isBrowserMode ? runOptions.file.filter((f) => !isMediaFile(f)) : runOptions.file;
+    if (filesToValidate.length > 0) {
+      await readFiles(filesToValidate, { cwd });
+    }
+  }
+
+  enforceBrowserSearchFlag(runOptions, sessionMode, console.log);
+
+  const waitPreference = resolveRestartWaitPreference({
+    waitFlag: options.wait,
+    noWaitFlag: options.noWait,
+    storedPreference: storedOptions.waitPreference,
+    model: runOptions.model,
+    engine,
+  });
+
+  const remoteConfig = resolveRemoteServiceConfig({
+    cliHost: options.remoteHost,
+    cliToken: options.remoteToken,
+    userConfig,
+    env: process.env,
+  });
+  const remoteHost = remoteConfig.host;
+  const remoteToken = remoteConfig.token;
+  if (remoteHost && engine !== 'browser') {
+    throw new Error('--remote-host requires a browser session.');
+  }
+  if (remoteHost) {
+    console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
+  }
+
+  let browserDeps: BrowserSessionRunnerDeps | undefined;
+  if (browserConfig && remoteHost) {
+    browserDeps = {
+      executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
+    };
+    console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
+  } else if (browserConfig && runOptions.model.startsWith('gemini')) {
+    browserDeps = {
+      executeBrowser: createGeminiWebExecutor({
+        youtube: storedOptions.youtube,
+        generateImage: storedOptions.generateImage,
+        editImage: storedOptions.editImage,
+        outputPath: storedOptions.outputPath,
+        aspectRatio: storedOptions.aspectRatio,
+        showThoughts: storedOptions.geminiShowThoughts,
+      }),
+    };
+    console.log(chalk.dim('Using Gemini web client for browser automation'));
+    if (browserConfig.modelStrategy && browserConfig.modelStrategy !== 'select') {
+      console.log(chalk.dim('Browser model strategy is ignored for Gemini web runs.'));
+    }
+  }
+  const remoteExecutionActive = Boolean(browserDeps);
+
+  await sessionStore.ensureStorage();
+  const notifications = deriveNotificationSettingsFromMetadata(metadata, process.env, userConfig.notify);
+  const sessionMeta = await sessionStore.createSession(
+    {
+      ...runOptions,
+      mode: sessionMode,
+      browserConfig,
+      waitPreference,
+      youtube: storedOptions.youtube,
+      generateImage: storedOptions.generateImage,
+      editImage: storedOptions.editImage,
+      outputPath: storedOptions.outputPath,
+      aspectRatio: storedOptions.aspectRatio,
+      geminiShowThoughts: storedOptions.geminiShowThoughts,
+    },
+    cwd,
+    notifications,
+    sessionId,
+  );
+
+  const liveRunOptions: RunOracleOptions = {
+    ...runOptions,
+    sessionId: sessionMeta.id,
+    effectiveModelId: resolveEffectiveModelIdForRun(runOptions.model, runOptions.effectiveModelId),
+  };
+
+  const disableDetachEnv = process.env.ORACLE_NO_DETACH === '1';
+  const detachAllowed = remoteExecutionActive
+    ? false
+    : shouldDetachSession({
+        engine,
+        model: runOptions.model,
+        waitPreference,
+        disableDetachEnv,
+      });
+  const detached = !detachAllowed
+    ? false
+    : await launchDetachedSession(sessionMeta.id).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(chalk.yellow(`Unable to detach session runner (${message}). Running inline...`));
+        return false;
+      });
+
+  if (!waitPreference) {
+    if (!detached) {
+      console.log(chalk.red('Unable to start in background; use --wait to run inline.'));
+      process.exitCode = 1;
+      return;
+    }
+    console.log(chalk.blue(`Session running in background. Reattach via: oracle session ${sessionMeta.id}`));
+    console.log(chalk.dim('Pro runs can take up to 60 minutes (usually 10-15). Add --wait to stay attached.'));
+    return;
+  }
+
+  if (detached === false) {
+    await runInteractiveSession(
+      sessionMeta,
+      liveRunOptions,
+      sessionMode,
+      browserConfig,
+      false,
+      notifications,
+      userConfig,
+      true,
+      browserDeps,
+      cwd,
+    );
+    return;
+  }
+  if (detached) {
+    console.log(chalk.blue(`Reattach via: oracle session ${sessionMeta.id}`));
+    await attachSession(sessionMeta.id, { suppressMetadata: true });
+  }
 }
 
 async function executeSession(sessionId: string) {
@@ -1468,6 +1661,33 @@ function resolveWaitFlag({
   if (waitFlag === true) return true;
   if (noWaitFlag === true) return false;
   return defaultWaitPreference(model, engine);
+}
+
+function resolveRestartWaitPreference({
+  waitFlag,
+  noWaitFlag,
+  storedPreference,
+  model,
+  engine,
+}: {
+  waitFlag?: boolean;
+  noWaitFlag?: boolean;
+  storedPreference?: boolean;
+  model: ModelName;
+  engine: EngineMode;
+}): boolean {
+  if (waitFlag === true) return true;
+  if (noWaitFlag === true) return false;
+  if (typeof storedPreference === 'boolean') return storedPreference;
+  return defaultWaitPreference(model, engine);
+}
+
+function resolveEffectiveModelIdForRun(model: ModelName, stored?: string): string {
+  if (stored) return stored;
+  if (model.startsWith('gemini')) {
+    return resolveGeminiModelId(model);
+  }
+  return isKnownModel(model) ? MODEL_CONFIGS[model].apiModel ?? model : model;
 }
 
 program.action(async function (this: Command) {
