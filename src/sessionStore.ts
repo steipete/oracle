@@ -23,6 +23,7 @@ export interface SessionStore {
     options: InitializeSessionOptionsType,
     cwd: string,
     notifications?: SessionNotifications,
+    baseSlugOverride?: string,
   ): Promise<SessionMetadata>;
   readSession(sessionId: string): Promise<SessionMetadata | null>;
   updateSession(sessionId: string, updates: Partial<SessionMetadata>): Promise<SessionMetadata>;
@@ -50,8 +51,9 @@ class FileSessionStore implements SessionStore {
     options: InitializeSessionOptionsType,
     cwd: string,
     notifications?: SessionNotifications,
+    baseSlugOverride?: string,
   ): Promise<SessionMetadata> {
-    return initializeSession(options, cwd, notifications);
+    return initializeSession(options, cwd, notifications, baseSlugOverride);
   }
 
   readSession(sessionId: string): Promise<SessionMetadata | null> {

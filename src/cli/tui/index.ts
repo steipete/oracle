@@ -491,6 +491,7 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       ...runOptions,
       mode,
       browserConfig,
+      waitPreference: true,
     },
     process.cwd(),
     notifications,

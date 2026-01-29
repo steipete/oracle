@@ -79,7 +79,7 @@ You can pass the same payload inline (`--browser-inline-cookies '<json or base64
     ]
     ```
 
-All options are persisted with the session so reruns (`oracle exec <id>`) reuse the same automation settings.
+All options are persisted with the session so restarts (`oracle restart <id>`) reuse the same automation settings.
 
 ### Manual login mode (persistent profile, no cookie copy)
 
