@@ -26,6 +26,7 @@ import {
   deriveNotificationSettingsFromMetadata,
 } from './notifier.js';
 import { sessionStore } from '../sessionStore.js';
+import { wait } from '../sessionManager.js';
 import { runMultiModelApiSession } from '../oracle/multiModelRunner.js';
 import { MODEL_CONFIGS, DEFAULT_SYSTEM_PROMPT } from '../oracle/config.js';
 import { isKnownModel } from '../oracle/modelResolver.js';
@@ -37,6 +38,10 @@ import { formatFinishLine } from '../oracle/finishLine.js';
 import { sanitizeOscProgress } from './oscUtils.js';
 import { readFiles } from '../oracle/files.js';
 import { cwd as getCwd } from 'node:process';
+import { resumeBrowserSession } from '../browser/reattach.js';
+import { estimateTokenCount } from '../browser/utils.js';
+import type { BrowserLogger } from '../browser/types.js';
+import { formatElapsed } from '../oracle/format.js';
 
 const isTty = process.stdout.isTTY;
 const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
@@ -396,6 +401,8 @@ export async function performSessionRun({
     const userError = asOracleUserError(error);
     const connectionLost =
       userError?.category === 'browser-automation' && (userError.details as { stage?: string } | undefined)?.stage === 'connection-lost';
+    const assistantTimeout =
+      userError?.category === 'browser-automation' && (userError.details as { stage?: string } | undefined)?.stage === 'assistant-timeout';
     if (connectionLost && mode === 'browser') {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)?.runtime;
       log(dim('Chrome disconnected before completion; keeping session running for reattach.'));
@@ -415,6 +422,44 @@ export async function performSessionRun({
         },
         response: { status: 'running', incompleteReason: 'chrome-disconnected' },
       });
+      return;
+    }
+    if (assistantTimeout && mode === 'browser') {
+      const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)?.runtime;
+      log(dim('Assistant response timed out; keeping session running for reattach.'));
+      if (modelForStatus) {
+        await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+          status: 'running',
+          completedAt: undefined,
+        });
+      }
+      await sessionStore.updateSession(sessionMeta.id, {
+        status: 'running',
+        errorMessage: message,
+        mode,
+        browser: {
+          config: browserConfig,
+          runtime: runtime ?? sessionMeta.browser?.runtime,
+        },
+        response: { status: 'running', incompleteReason: 'assistant-timeout' },
+      });
+      const autoReattachIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
+      if (autoReattachIntervalMs > 0) {
+        const autoRuntime = runtime ?? sessionMeta.browser?.runtime;
+        const success = await autoReattachUntilComplete({
+          sessionMeta,
+          runtime: autoRuntime ?? undefined,
+          browserConfig,
+          runOptions,
+          modelForStatus,
+          notificationSettings,
+          log,
+        });
+        if (success) {
+          return;
+        }
+      }
+      log(dim(`Reattach later with: oracle session ${sessionMeta.id}`));
       return;
     }
     if (userError) {
@@ -500,6 +545,124 @@ async function writeAssistantOutput(targetPath: string | undefined, content: str
       }
     }
     log(dim(`write-output failed (${reason}); session completed anyway.`));
+  }
+}
+
+async function autoReattachUntilComplete({
+  sessionMeta,
+  runtime,
+  browserConfig,
+  runOptions,
+  modelForStatus,
+  notificationSettings,
+  log,
+}: {
+  sessionMeta: SessionMetadata;
+  runtime?: BrowserRuntimeMetadata;
+  browserConfig?: BrowserSessionConfig;
+  runOptions: RunOracleOptions;
+  modelForStatus?: string;
+  notificationSettings: NotificationSettings;
+  log: (message?: string) => void;
+}): Promise<boolean> {
+  if (!runtime || !browserConfig) {
+    log(dim('Auto-reattach disabled: missing runtime or browser config.'));
+    return false;
+  }
+  const delayMs = Math.max(0, browserConfig.autoReattachDelayMs ?? 0);
+  const intervalMs = Math.max(0, browserConfig.autoReattachIntervalMs ?? 0);
+  if (intervalMs <= 0) {
+    return false;
+  }
+  const timeoutMs =
+    Math.max(0, browserConfig.autoReattachTimeoutMs ?? 0) ||
+    Math.max(0, browserConfig.timeoutMs ?? 0) ||
+    120_000;
+
+  if (delayMs > 0) {
+    log(dim(`Auto-reattach starting in ${formatElapsed(delayMs)}...`));
+    await wait(delayMs);
+  }
+
+  const logger: BrowserLogger = ((message?: string) => {
+    if (message) {
+      log(dim(message));
+    }
+  }) as BrowserLogger;
+  logger.verbose = true;
+
+  let attempt = 0;
+  for (;;) {
+    attempt += 1;
+    log(dim(`Auto-reattach attempt ${attempt}...`));
+    try {
+      const reattachConfig: BrowserSessionConfig = {
+        ...browserConfig,
+        timeoutMs,
+      };
+      const result = await resumeBrowserSession(runtime, reattachConfig, logger, {
+        promptPreview: sessionMeta.promptPreview,
+      });
+      const answerText = result.answerMarkdown || result.answerText || '';
+      const outputTokens = estimateTokenCount(answerText);
+      const logWriter = sessionStore.createLogWriter(sessionMeta.id);
+      logWriter.logLine(`[auto-reattach] captured assistant response on attempt ${attempt}`);
+      logWriter.logLine('Answer:');
+      logWriter.logLine(answerText);
+      logWriter.stream.end();
+      if (modelForStatus) {
+        await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          usage: {
+            inputTokens: 0,
+            outputTokens,
+            reasoningTokens: 0,
+            totalTokens: outputTokens,
+          },
+        });
+      }
+      await sessionStore.updateSession(sessionMeta.id, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        usage: {
+          inputTokens: 0,
+          outputTokens,
+          reasoningTokens: 0,
+          totalTokens: outputTokens,
+        },
+        browser: {
+          config: browserConfig,
+          runtime,
+        },
+        response: { status: 'completed' },
+        error: undefined,
+        transport: undefined,
+      });
+      await writeAssistantOutput(runOptions.writeOutputPath, answerText, log);
+      await sendSessionNotification(
+        {
+          sessionId: sessionMeta.id,
+          sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
+          mode: sessionMeta.mode ?? 'browser',
+          model: sessionMeta.model ?? runOptions.model,
+          usage: {
+            inputTokens: 0,
+            outputTokens,
+          },
+          characters: answerText.length,
+        },
+        notificationSettings,
+        log,
+        answerText.slice(0, 140),
+      );
+      log(kleur.green('Auto-reattach succeeded; session marked completed.'));
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(dim(`Auto-reattach attempt ${attempt} failed: ${message}`));
+    }
+    await wait(intervalMs);
   }
 }
 

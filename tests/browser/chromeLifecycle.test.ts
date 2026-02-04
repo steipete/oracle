@@ -95,6 +95,18 @@ describe('connectWithNewTab', () => {
     expect(logger).toHaveBeenCalledWith(expect.stringContaining('Failed to attach to isolated browser tab'));
   });
 
+  test('throws when strict mode disallows fallback', async () => {
+    cdpNewMock.mockRejectedValue(new Error('boom'));
+
+    const { connectWithNewTab } = await import('../../src/browser/chromeLifecycle.js');
+    const logger = vi.fn();
+
+    await expect(connectWithNewTab(9222, logger, undefined, undefined, { fallbackToDefault: false })).rejects.toThrow(
+      /isolated browser tab/i,
+    );
+    expect(cdpMock).not.toHaveBeenCalled();
+  });
+
   test('returns isolated target when attach succeeds', async () => {
     cdpNewMock.mockResolvedValue({ id: 'target-2' });
     cdpMock.mockResolvedValue({});

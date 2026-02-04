@@ -20,6 +20,20 @@ export interface BrowserSessionConfig {
   timeoutMs?: number;
   debugPort?: number | null;
   inputTimeoutMs?: number;
+  /** Delay before rechecking the conversation after an assistant timeout. */
+  assistantRecheckDelayMs?: number;
+  /** Time budget for the delayed recheck attempt. */
+  assistantRecheckTimeoutMs?: number;
+  /** Wait for an existing shared Chrome to appear before launching a new one. */
+  reuseChromeWaitMs?: number;
+  /** Max time to wait for a shared manual-login profile lock (serializes parallel runs). */
+  profileLockTimeoutMs?: number;
+  /** Delay before starting periodic auto-reattach attempts after a timeout. */
+  autoReattachDelayMs?: number;
+  /** Interval between auto-reattach attempts (0 disables). */
+  autoReattachIntervalMs?: number;
+  /** Time budget for each auto-reattach attempt. */
+  autoReattachTimeoutMs?: number;
   cookieSync?: boolean;
   cookieNames?: string[] | null;
   cookieSyncWaitMs?: number;

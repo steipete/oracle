@@ -32,6 +32,7 @@ import {
   waitForUserTurnAttachments,
   readAssistantSnapshot,
 } from './pageActions.js';
+import { INPUT_SELECTORS } from './constants.js';
 import { uploadAttachmentViaDataTransfer } from './actions/remoteFileTransfer.js';
 import { ensureThinkingTime } from './actions/thinkingTime.js';
 import { estimateTokenCount, withRetries, delay } from './utils.js';
@@ -40,8 +41,10 @@ import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from 
 import type { LaunchedChrome } from 'chrome-launcher';
 import { BrowserAutomationError } from '../oracle/errors.js';
 import { alignPromptEchoPair, buildPromptEchoMatcher } from './reattachHelpers.js';
+import type { ProfileRunLock } from './profileState.js';
 import {
   cleanupStaleProfileState,
+  acquireProfileRunLock,
   readChromePid,
   readDevToolsPort,
   shouldCleanupManualLoginProfileState,
@@ -143,7 +146,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   }
 
   const effectiveKeepBrowser = Boolean(config.keepBrowser);
-  const reusedChrome = manualLogin ? await maybeReuseRunningChrome(userDataDir, logger) : null;
+  const reusedChrome = manualLogin
+    ? await maybeReuseRunningChrome(userDataDir, logger, { waitForPortMs: config.reuseChromeWaitMs })
+    : null;
   const chrome =
     reusedChrome ??
     (await launchChrome(
@@ -187,7 +192,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   try {
     try {
-      const connection = await connectWithNewTab(chrome.port, logger, undefined, chromeHost);
+      const strictTabIsolation = Boolean(manualLogin && reusedChrome);
+      const connection = await connectWithNewTab(chrome.port, logger, undefined, chromeHost, {
+        fallbackToDefault: !strictTabIsolation,
+        retries: strictTabIsolation ? 3 : 0,
+        retryDelayMs: 500,
+      });
       client = connection.client;
       isolatedTargetId = connection.targetId ?? null;
     } catch (error) {
@@ -420,6 +430,21 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         }),
       );
     }
+    const profileLockTimeoutMs = manualLogin ? (config.profileLockTimeoutMs ?? 0) : 0;
+    let profileLock: ProfileRunLock | null = null;
+    const acquireProfileLockIfNeeded = async () => {
+      if (profileLockTimeoutMs <= 0) return;
+      profileLock = await acquireProfileRunLock(userDataDir, {
+        timeoutMs: profileLockTimeoutMs,
+        logger,
+      });
+    };
+    const releaseProfileLockIfHeld = async () => {
+      if (!profileLock) return;
+      const handle = profileLock;
+      profileLock = null;
+      await handle.release().catch(() => undefined);
+    };
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
       const baselineAssistantText =
@@ -504,27 +529,32 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
     let baselineTurns: number | null = null;
     let baselineAssistantText: string | null = null;
+    await acquireProfileLockIfNeeded();
     try {
-      const submission = await raceWithDisconnect(submitOnce(promptText, attachments));
-      baselineTurns = submission.baselineTurns;
-      baselineAssistantText = submission.baselineAssistantText;
-    } catch (error) {
-      const isPromptTooLarge =
-        error instanceof BrowserAutomationError &&
-        (error.details as { code?: string } | undefined)?.code === 'prompt-too-large';
-      if (fallbackSubmission && isPromptTooLarge) {
-        // Learned: when prompts truncate, retry with file uploads so the UI receives the full content.
-        logger('[browser] Inline prompt too large; retrying with file uploads.');
-        await raceWithDisconnect(clearPromptComposer(Runtime, logger));
-        await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
-        const submission = await raceWithDisconnect(
-          submitOnce(fallbackSubmission.prompt, fallbackSubmission.attachments),
-        );
+      try {
+        const submission = await raceWithDisconnect(submitOnce(promptText, attachments));
         baselineTurns = submission.baselineTurns;
         baselineAssistantText = submission.baselineAssistantText;
-      } else {
-        throw error;
+      } catch (error) {
+        const isPromptTooLarge =
+          error instanceof BrowserAutomationError &&
+          (error.details as { code?: string } | undefined)?.code === 'prompt-too-large';
+        if (fallbackSubmission && isPromptTooLarge) {
+          // Learned: when prompts truncate, retry with file uploads so the UI receives the full content.
+          logger('[browser] Inline prompt too large; retrying with file uploads.');
+          await raceWithDisconnect(clearPromptComposer(Runtime, logger));
+          await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+          const submission = await raceWithDisconnect(
+            submitOnce(fallbackSubmission.prompt, fallbackSubmission.attachments),
+          );
+          baselineTurns = submission.baselineTurns;
+          baselineAssistantText = submission.baselineAssistantText;
+        } else {
+          throw error;
+        }
       }
+    } finally {
+      await releaseProfileLockIfHeld();
     }
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
@@ -555,15 +585,104 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
       return null;
     };
-    let answer = await raceWithDisconnect(
-      waitForAssistantResponseWithReload(
-        Runtime,
-        Page,
-        config.timeoutMs,
-        logger,
-        baselineTurns ?? undefined,
-      ),
-    );
+    let answer: { text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } };
+    const recheckDelayMs = Math.max(0, config.assistantRecheckDelayMs ?? 0);
+    const recheckTimeoutMs = Math.max(0, config.assistantRecheckTimeoutMs ?? 0);
+    const attemptAssistantRecheck = async () => {
+      if (!recheckDelayMs) return null;
+      logger(
+        `[browser] Assistant response timed out; waiting ${formatElapsed(recheckDelayMs)} before rechecking conversation.`,
+      );
+      await raceWithDisconnect(delay(recheckDelayMs));
+      await updateConversationHint('assistant-recheck', 15_000).catch(() => false);
+      await captureRuntimeSnapshot().catch(() => undefined);
+      const conversationUrl = await readConversationUrl(Runtime);
+      if (conversationUrl && isConversationUrl(conversationUrl)) {
+        logger(`[browser] Rechecking assistant response at ${conversationUrl}`);
+        await raceWithDisconnect(Page.navigate({ url: conversationUrl }));
+        await raceWithDisconnect(delay(1000));
+      }
+      // Validate session before attempting recheck - sessions can expire during the delay
+      const sessionValid = await validateChatGPTSession(Runtime, logger);
+      if (!sessionValid.valid) {
+        logger(`[browser] Session validation failed: ${sessionValid.reason}`);
+        // Update session metadata to indicate login is needed
+        await emitRuntimeHint();
+        throw new BrowserAutomationError(
+          `ChatGPT session expired during recheck: ${sessionValid.reason}. ` +
+          `Conversation URL: ${conversationUrl || lastUrl || 'unknown'}. ` +
+          `Please sign in and retry.`,
+          {
+            stage: 'assistant-recheck',
+            details: {
+              conversationUrl: conversationUrl || lastUrl || null,
+              sessionStatus: 'needs_login',
+              validationReason: sessionValid.reason,
+            },
+            runtime: {
+              chromePid: chrome.pid,
+              chromePort: chrome.port,
+              chromeHost,
+              userDataDir,
+              chromeTargetId: lastTargetId,
+              tabUrl: lastUrl,
+              conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              controllerPid: process.pid,
+            },
+          },
+        );
+      }
+      const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
+      const rechecked = await raceWithDisconnect(
+        waitForAssistantResponseWithReload(
+          Runtime,
+          Page,
+          timeoutMs,
+          logger,
+          baselineTurns ?? undefined,
+        ),
+      );
+      logger('Recovered assistant response after delayed recheck');
+      return rechecked;
+    };
+    try {
+      answer = await raceWithDisconnect(
+        waitForAssistantResponseWithReload(
+          Runtime,
+          Page,
+          config.timeoutMs,
+          logger,
+          baselineTurns ?? undefined,
+        ),
+      );
+    } catch (error) {
+      if (isAssistantResponseTimeoutError(error)) {
+        const rechecked = await attemptAssistantRecheck().catch(() => null);
+        if (rechecked) {
+          answer = rechecked;
+        } else {
+          await updateConversationHint('assistant-timeout', 15_000).catch(() => false);
+          await captureRuntimeSnapshot().catch(() => undefined);
+          const runtime = {
+            chromePid: chrome.pid,
+            chromePort: chrome.port,
+            chromeHost,
+            userDataDir,
+            chromeTargetId: lastTargetId,
+            tabUrl: lastUrl,
+            conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+            controllerPid: process.pid,
+          };
+          throw new BrowserAutomationError(
+            'Assistant response timed out before completion; reattach later to capture the answer.',
+            { stage: 'assistant-timeout', runtime },
+            error,
+          );
+        }
+      } else {
+        throw error;
+      }
+    }
     // Ensure we store the final conversation URL even if the UI updated late.
     await updateConversationHint('post-response', 15_000);
     const baselineNormalized = baselineAssistantText ? normalizeForComparison(baselineAssistantText) : '';
@@ -969,11 +1088,24 @@ async function _assertNavigatedToHttp(
   });
 }
 
-async function maybeReuseRunningChrome(userDataDir: string, logger: BrowserLogger): Promise<LaunchedChrome | null> {
-  const port = await readDevToolsPort(userDataDir);
+async function maybeReuseRunningChrome(
+  userDataDir: string,
+  logger: BrowserLogger,
+  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
+): Promise<LaunchedChrome | null> {
+  const waitForPortMs = Math.max(0, options.waitForPortMs ?? 0);
+  let port = await readDevToolsPort(userDataDir);
+  if (!port && waitForPortMs > 0) {
+    const deadline = Date.now() + waitForPortMs;
+    logger(`Waiting up to ${formatElapsed(waitForPortMs)} for shared Chrome to appear...`);
+    while (!port && Date.now() < deadline) {
+      await delay(250);
+      port = await readDevToolsPort(userDataDir);
+    }
+  }
   if (!port) return null;
 
-  const probe = await verifyDevToolsReachable({ port });
+  const probe = await (options.probe ?? verifyDevToolsReachable)({ port });
   if (!probe.ok) {
     logger(`DevToolsActivePort found for ${userDataDir} but unreachable (${probe.error}); launching new Chrome.`);
     // Safe cleanup: remove stale DevToolsActivePort; only remove lock files if this was an Oracle-owned pid that died.
@@ -1199,13 +1331,103 @@ async function runRemoteBrowserMode(
       }
       return null;
     };
-    let answer = await waitForAssistantResponseWithReload(
-      Runtime,
-      Page,
-      config.timeoutMs,
-      logger,
-      baselineTurns ?? undefined,
-    );
+    let answer: { text: string; html?: string; meta: { turnId?: string | null; messageId?: string | null } };
+    const recheckDelayMs = Math.max(0, config.assistantRecheckDelayMs ?? 0);
+    const recheckTimeoutMs = Math.max(0, config.assistantRecheckTimeoutMs ?? 0);
+    const attemptAssistantRecheck = async () => {
+      if (!recheckDelayMs) return null;
+      logger(
+        `[browser] Assistant response timed out; waiting ${formatElapsed(recheckDelayMs)} before rechecking conversation.`,
+      );
+      await delay(recheckDelayMs);
+      const conversationUrl = await readConversationUrl(Runtime);
+      if (conversationUrl && isConversationUrl(conversationUrl)) {
+        lastUrl = conversationUrl;
+        logger(`[browser] Rechecking assistant response at ${conversationUrl}`);
+        await Page.navigate({ url: conversationUrl });
+        await delay(1000);
+      }
+      // Validate session before attempting recheck - sessions can expire during the delay
+      const sessionValid = await validateChatGPTSession(Runtime, logger);
+      if (!sessionValid.valid) {
+        logger(`[browser] Session validation failed: ${sessionValid.reason}`);
+        // Update session metadata to indicate login is needed
+        await emitRuntimeHint();
+        throw new BrowserAutomationError(
+          `ChatGPT session expired during recheck: ${sessionValid.reason}. ` +
+          `Conversation URL: ${conversationUrl || lastUrl || 'unknown'}. ` +
+          `Please sign in and retry.`,
+          {
+            stage: 'assistant-recheck',
+            details: {
+              conversationUrl: conversationUrl || lastUrl || null,
+              sessionStatus: 'needs_login',
+              validationReason: sessionValid.reason,
+            },
+            runtime: {
+              chromeHost: host,
+              chromePort: port,
+              chromeTargetId: remoteTargetId ?? undefined,
+              tabUrl: lastUrl,
+              conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              controllerPid: process.pid,
+            },
+          },
+        );
+      }
+      await emitRuntimeHint();
+      const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
+      const rechecked = await waitForAssistantResponseWithReload(
+        Runtime,
+        Page,
+        timeoutMs,
+        logger,
+        baselineTurns ?? undefined,
+      );
+      logger('Recovered assistant response after delayed recheck');
+      return rechecked;
+    };
+    try {
+      answer = await waitForAssistantResponseWithReload(
+        Runtime,
+        Page,
+        config.timeoutMs,
+        logger,
+        baselineTurns ?? undefined,
+      );
+    } catch (error) {
+      if (isAssistantResponseTimeoutError(error)) {
+        const rechecked = await attemptAssistantRecheck().catch(() => null);
+        if (rechecked) {
+          answer = rechecked;
+        } else {
+          try {
+            const conversationUrl = await readConversationUrl(Runtime);
+            if (conversationUrl) {
+              lastUrl = conversationUrl;
+            }
+          } catch {
+            // ignore
+          }
+          await emitRuntimeHint();
+          const runtime = {
+            chromePort: port,
+            chromeHost: host,
+            chromeTargetId: remoteTargetId ?? undefined,
+            tabUrl: lastUrl,
+            conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+            controllerPid: process.pid,
+          };
+          throw new BrowserAutomationError(
+            'Assistant response timed out before completion; reattach later to capture the answer.',
+            { stage: 'assistant-timeout', runtime },
+            error,
+          );
+        }
+      } else {
+        throw error;
+      }
+    }
     const baselineNormalized = baselineAssistantText ? normalizeForComparison(baselineAssistantText) : '';
     if (baselineNormalized) {
       const normalizedAnswer = normalizeForComparison(answer.text ?? '');
@@ -1391,6 +1613,14 @@ export {
   waitForAttachmentCompletion,
 } from './pageActions.js';
 
+export async function maybeReuseRunningChromeForTest(
+  userDataDir: string,
+  logger: BrowserLogger,
+  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
+): Promise<LaunchedChrome | null> {
+  return maybeReuseRunningChrome(userDataDir, logger, options);
+}
+
 function isWebSocketClosureError(error: Error): boolean {
   const message = error.message.toLowerCase();
   return (
@@ -1447,6 +1677,19 @@ function shouldReloadAfterAssistantError(error: unknown): boolean {
   );
 }
 
+function isAssistantResponseTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  if (!message) return false;
+  return (
+    message.includes('assistant-response') ||
+    message.includes('assistant response') ||
+    message.includes('timeout') ||
+    message.includes('watchdog') ||
+    message.includes('capture assistant response')
+  );
+}
+
 async function readConversationUrl(Runtime: ChromeClient['Runtime']): Promise<string | null> {
   try {
     const currentUrl = await Runtime.evaluate({ expression: 'location.href', returnByValue: true });
@@ -1454,6 +1697,127 @@ async function readConversationUrl(Runtime: ChromeClient['Runtime']): Promise<st
   } catch {
     return null;
   }
+}
+
+interface SessionValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * Validates that the ChatGPT session is still active by checking for login CTAs
+ * and textarea availability. Sessions can expire during long delays (e.g., recheck).
+ *
+ * @param Runtime - Chrome Runtime client
+ * @param logger - Browser logger for diagnostics
+ * @returns SessionValidationResult indicating if session is valid and reason if not
+ */
+async function validateChatGPTSession(
+  Runtime: ChromeClient['Runtime'],
+  logger: BrowserLogger,
+): Promise<SessionValidationResult> {
+  try {
+    const outcome = await Runtime.evaluate({
+      expression: buildSessionValidationExpression(),
+      awaitPromise: true,
+      returnByValue: true,
+    });
+
+    const result = outcome.result?.value as
+      | { valid: boolean; hasLoginCta: boolean; hasTextarea: boolean; onAuthPage: boolean; pageUrl: string | null }
+      | undefined;
+
+    if (!result) {
+      return { valid: false, reason: 'Failed to evaluate session state' };
+    }
+
+    if (result.onAuthPage) {
+      return { valid: false, reason: 'Redirected to auth page' };
+    }
+
+    if (result.hasLoginCta) {
+      return { valid: false, reason: 'Login button detected on page' };
+    }
+
+    if (!result.hasTextarea) {
+      return { valid: false, reason: 'Prompt textarea not available' };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`[browser] Session validation error: ${message}`);
+    return { valid: false, reason: `Validation error: ${message}` };
+  }
+}
+
+function buildSessionValidationExpression(): string {
+  const selectorLiteral = JSON.stringify(INPUT_SELECTORS);
+  return `(async () => {
+    const pageUrl = typeof location === 'object' && location?.href ? location.href : null;
+    const onAuthPage =
+      typeof location === 'object' &&
+      typeof location.pathname === 'string' &&
+      /^\\/(auth|login|signin)/i.test(location.pathname);
+
+    // Check for login CTAs (similar to ensureLoggedIn logic)
+    const hasLoginCta = (() => {
+      const candidates = Array.from(
+        document.querySelectorAll(
+          [
+            'a[href*="/auth/login"]',
+            'a[href*="/auth/signin"]',
+            'button[type="submit"]',
+            'button[data-testid*="login"]',
+            'button[data-testid*="log-in"]',
+            'button[data-testid*="sign-in"]',
+            'button[data-testid*="signin"]',
+            'button',
+            'a',
+          ].join(','),
+        ),
+      );
+      const textMatches = (text) => {
+        if (!text) return false;
+        const normalized = text.toLowerCase().trim();
+        return ['log in', 'login', 'sign in', 'signin', 'continue with'].some((needle) =>
+          normalized.startsWith(needle),
+        );
+      };
+      for (const node of candidates) {
+        if (!(node instanceof HTMLElement)) continue;
+        const label =
+          node.textContent?.trim() ||
+          node.getAttribute('aria-label') ||
+          node.getAttribute('title') ||
+          '';
+        if (textMatches(label)) {
+          return true;
+        }
+      }
+      return false;
+    })();
+
+    // Check for textarea availability
+    const hasTextarea = (() => {
+      const selectors = ${selectorLiteral};
+      for (const selector of selectors) {
+        const node = document.querySelector(selector);
+        if (node && !node.hasAttribute('disabled')) {
+          return true;
+        }
+      }
+      return false;
+    })();
+
+    return {
+      valid: !onAuthPage && !hasLoginCta && hasTextarea,
+      hasLoginCta,
+      hasTextarea,
+      onAuthPage,
+      pageUrl,
+    };
+  })()`;
 }
 
 async function readConversationTurnCount(

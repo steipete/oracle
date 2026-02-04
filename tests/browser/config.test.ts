@@ -10,6 +10,7 @@ describe('resolveBrowserConfig', () => {
     expect(resolved.cookieSync).toBe(!isWindows);
     expect(resolved.headless).toBe(false);
     expect(resolved.manualLogin).toBe(isWindows);
+    expect(resolved.profileLockTimeoutMs).toBe(300_000);
   });
 
   test('applies overrides', () => {

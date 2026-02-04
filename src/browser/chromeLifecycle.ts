@@ -8,6 +8,7 @@ import CDP from 'chrome-remote-interface';
 import { launch, Launcher, type LaunchedChrome } from 'chrome-launcher';
 import type { BrowserLogger, ResolvedBrowserConfig, ChromeClient } from './types.js';
 import { cleanupStaleProfileState } from './profileState.js';
+import { delay } from './utils.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -237,18 +238,36 @@ export async function connectWithNewTab(
   logger: BrowserLogger,
   initialUrl?: string,
   host?: string,
+  options?: { fallbackToDefault?: boolean; retries?: number; retryDelayMs?: number },
 ): Promise<IsolatedTabConnection> {
   const effectiveHost = host ?? '127.0.0.1';
   const url = initialUrl ?? 'about:blank';
-  const targetConnection = await connectToNewTarget(effectiveHost, port, url, logger, {
-    opened: (targetId) => `Opened isolated browser tab (target=${targetId})`,
-    openFailed: (message) => `Failed to open isolated browser tab (${message}); falling back to default target.`,
-    attachFailed: (targetId, message) =>
-      `Failed to attach to isolated browser tab ${targetId} (${message}); falling back to default target.`,
-    closeFailed: (targetId, message) => `Failed to close unused browser tab ${targetId}: ${message}`,
-  });
-  if (targetConnection) {
-    return targetConnection;
+  const fallbackToDefault = options?.fallbackToDefault ?? true;
+  const retries = Math.max(0, options?.retries ?? 0);
+  const retryDelayMs = Math.max(0, options?.retryDelayMs ?? 250);
+  const fallbackLabel = fallbackToDefault ? 'falling back to default target.' : 'strict mode: not falling back.';
+
+  let attempt = 0;
+  while (attempt <= retries) {
+    const targetConnection = await connectToNewTarget(effectiveHost, port, url, logger, {
+      opened: (targetId) => `Opened isolated browser tab (target=${targetId})`,
+      openFailed: (message) => `Failed to open isolated browser tab (${message}); ${fallbackLabel}`,
+      attachFailed: (targetId, message) =>
+        `Failed to attach to isolated browser tab ${targetId} (${message}); ${fallbackLabel}`,
+      closeFailed: (targetId, message) => `Failed to close unused browser tab ${targetId}: ${message}`,
+    });
+    if (targetConnection) {
+      return targetConnection;
+    }
+    if (attempt >= retries) {
+      break;
+    }
+    attempt += 1;
+    await delay(retryDelayMs * attempt);
+  }
+
+  if (!fallbackToDefault) {
+    throw new Error('Failed to open isolated browser tab; refusing to attach to default target.');
   }
   const client = await connectToChrome(port, logger, effectiveHost);
   return { client };

@@ -40,6 +40,13 @@ export async function submitPrompt(
     expression: `(() => {
       ${buildClickDispatcher()}
       const SELECTORS = ${JSON.stringify(INPUT_SELECTORS)};
+      const isVisible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== 'function') {
+          return false;
+        }
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
       const focusNode = (node) => {
         if (!node) {
           return false;
@@ -61,12 +68,16 @@ export async function submitPrompt(
         return true;
       };
 
+      const candidates = [];
       for (const selector of SELECTORS) {
         const node = document.querySelector(selector);
-        if (!node) continue;
-        if (focusNode(node)) {
-          return { focused: true };
+        if (node) {
+          candidates.push(node);
         }
+      }
+      const preferred = candidates.find((node) => isVisible(node)) || candidates[0];
+      if (preferred && focusNode(preferred)) {
+        return { focused: true };
       }
       return { focused: false };
     })()`,
@@ -90,9 +101,25 @@ export async function submitPrompt(
     expression: `(() => {
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
+      const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+        return node.innerText ?? '';
+      };
+      const isVisible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const candidates = inputSelectors
+        .map((selector) => document.querySelector(selector))
+        .filter((node) => Boolean(node));
+      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
       return {
         editorText: editor?.innerText ?? '',
         fallbackValue: fallback?.value ?? '',
+        activeValue: active ? readValue(active) : '',
       };
     })()`,
     returnByValue: true,
@@ -100,9 +127,11 @@ export async function submitPrompt(
 
   const editorTextRaw = verification.result?.value?.editorText ?? '';
   const fallbackValueRaw = verification.result?.value?.fallbackValue ?? '';
+  const activeValueRaw = verification.result?.value?.activeValue ?? '';
   const editorTextTrimmed = editorTextRaw?.trim?.() ?? '';
   const fallbackValueTrimmed = fallbackValueRaw?.trim?.() ?? '';
-  if (!editorTextTrimmed && !fallbackValueTrimmed) {
+  const activeValueTrimmed = activeValueRaw?.trim?.() ?? '';
+  if (!editorTextTrimmed && !fallbackValueTrimmed && !activeValueTrimmed) {
     // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
     await runtime.evaluate({
       expression: `(() => {
@@ -127,16 +156,33 @@ export async function submitPrompt(
     expression: `(() => {
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
+      const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+        return node.innerText ?? '';
+      };
+      const isVisible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const candidates = inputSelectors
+        .map((selector) => document.querySelector(selector))
+        .filter((node) => Boolean(node));
+      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
       return {
         editorText: editor?.innerText ?? '',
         fallbackValue: fallback?.value ?? '',
+        activeValue: active ? readValue(active) : '',
       };
     })()`,
     returnByValue: true,
   });
   const observedEditor = postVerification.result?.value?.editorText ?? '';
   const observedFallback = postVerification.result?.value?.fallbackValue ?? '';
-  const observedLength = Math.max(observedEditor.length, observedFallback.length);
+  const observedActive = postVerification.result?.value?.activeValue ?? '';
+  const observedLength = Math.max(observedEditor.length, observedFallback.length, observedActive.length);
   if (promptLength >= 50_000 && observedLength > 0 && observedLength < promptLength - 2_000) {
     // Learned: very large prompts can truncate silently; fail fast so we can fall back to file uploads.
     await logDomFailure(runtime, logger, 'prompt-too-large');
@@ -173,10 +219,12 @@ export async function submitPrompt(
 export async function clearPromptComposer(Runtime: ChromeClient['Runtime'], logger: BrowserLogger) {
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
   const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   const result = await Runtime.evaluate({
     expression: `(() => {
       const fallback = document.querySelector(${fallbackSelectorLiteral});
       const editor = document.querySelector(${primarySelectorLiteral});
+      const inputSelectors = ${inputSelectorsLiteral};
       let cleared = false;
       if (fallback) {
         fallback.value = '';
@@ -188,6 +236,24 @@ export async function clearPromptComposer(Runtime: ChromeClient['Runtime'], logg
         editor.textContent = '';
         editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
         cleared = true;
+      }
+      const nodes = inputSelectors
+        .map((selector) => document.querySelector(selector))
+        .filter((node) => Boolean(node));
+      for (const node of nodes) {
+        if (!node) continue;
+        if (node instanceof HTMLTextAreaElement) {
+          node.value = '';
+          node.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
+          node.dispatchEvent(new Event('change', { bubbles: true }));
+          cleared = true;
+          continue;
+        }
+        if (node.isContentEditable || node.getAttribute('contenteditable') === 'true') {
+          node.textContent = '';
+          node.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
+          cleared = true;
+        }
       }
       return { cleared };
     })()`,
@@ -326,6 +392,7 @@ async function verifyPromptCommitted(
   const encodedPrompt = JSON.stringify(prompt.trim());
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
   const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   const stopSelectorLiteral = JSON.stringify(STOP_BUTTON_SELECTOR);
   const assistantSelectorLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   const baselineLiteral =
@@ -336,6 +403,7 @@ async function verifyPromptCommitted(
   const script = `(() => {
 	    const editor = document.querySelector(${primarySelectorLiteral});
 	    const fallback = document.querySelector(${fallbackSelectorLiteral});
+	    const inputSelectors = ${inputSelectorsLiteral};
 	    const normalize = (value) => {
 	      let text = value?.toLowerCase?.() ?? '';
 	      // Strip markdown *markers* but keep content (ChatGPT renders fence markers differently).
@@ -349,6 +417,21 @@ async function verifyPromptCommitted(
 	    const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
 	    const articles = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
 	    const normalizedTurns = articles.map((node) => normalize(node?.innerText));
+	    const readValue = (node) => {
+	      if (!node) return '';
+	      if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+	      return node.innerText ?? '';
+	    };
+	    const isVisible = (node) => {
+	      if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+	      const rect = node.getBoundingClientRect();
+	      return rect.width > 0 && rect.height > 0;
+	    };
+	    const inputs = inputSelectors
+	      .map((selector) => document.querySelector(selector))
+	      .filter((node) => Boolean(node));
+	    const visibleInputs = inputs.filter((node) => isVisible(node));
+	    const activeInputs = visibleInputs.length > 0 ? visibleInputs : inputs;
 	    const userMatched =
 	      normalizedPrompt.length > 0 && normalizedTurns.some((text) => text.includes(normalizedPrompt));
 	    const prefixMatched =
@@ -361,15 +444,17 @@ async function verifyPromptCommitted(
 	        (normalizedPromptPrefix.length > 30 && lastTurn.includes(normalizedPromptPrefix)));
 	    const baseline = ${baselineLiteral};
 	    const hasNewTurn = baseline < 0 ? true : normalizedTurns.length > baseline;
-      const stopVisible = Boolean(document.querySelector(${stopSelectorLiteral}));
-      const assistantVisible = Boolean(
-        document.querySelector(${assistantSelectorLiteral}) ||
-        document.querySelector('[data-testid*="assistant"]'),
-      );
-      // Learned: composer clearing + stop button or assistant presence is a reliable fallback signal.
+	    const stopVisible = Boolean(document.querySelector(${stopSelectorLiteral}));
+	    const assistantVisible = Boolean(
+	      document.querySelector(${assistantSelectorLiteral}) ||
+	      document.querySelector('[data-testid*="assistant"]'),
+	    );
+	    // Learned: composer clearing + stop button or assistant presence is a reliable fallback signal.
       const editorValue = editor?.innerText ?? '';
       const fallbackValue = fallback?.value ?? '';
-      const composerCleared = !(String(editorValue).trim() || String(fallbackValue).trim());
+      const activeEmpty =
+        activeInputs.length === 0 ? null : activeInputs.every((node) => !String(readValue(node)).trim());
+      const composerCleared = activeEmpty ?? !(String(editorValue).trim() || String(fallbackValue).trim());
       const href = typeof location === 'object' && location.href ? location.href : '';
       const inConversation = /\\/c\\//.test(href);
 	    return {

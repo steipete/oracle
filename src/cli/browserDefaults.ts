@@ -11,6 +11,13 @@ export interface BrowserDefaultsOptions {
   browserCookiePath?: string;
   browserTimeout?: string | number;
   browserInputTimeout?: string | number;
+  browserRecheckDelay?: string | number;
+  browserRecheckTimeout?: string | number;
+  browserReuseWait?: string | number;
+  browserProfileLockTimeout?: string | number;
+  browserAutoReattachDelay?: string | number;
+  browserAutoReattachInterval?: string | number;
+  browserAutoReattachTimeout?: string | number;
   browserCookieWait?: string | number;
   browserPort?: number;
   browserHeadless?: boolean;
@@ -63,6 +70,27 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset('browserInputTimeout') && typeof browser.inputTimeoutMs === 'number') {
     options.browserInputTimeout = String(browser.inputTimeoutMs);
+  }
+  if (isUnset('browserRecheckDelay') && typeof browser.assistantRecheckDelayMs === 'number') {
+    options.browserRecheckDelay = String(browser.assistantRecheckDelayMs);
+  }
+  if (isUnset('browserRecheckTimeout') && typeof browser.assistantRecheckTimeoutMs === 'number') {
+    options.browserRecheckTimeout = String(browser.assistantRecheckTimeoutMs);
+  }
+  if (isUnset('browserReuseWait') && typeof browser.reuseChromeWaitMs === 'number') {
+    options.browserReuseWait = String(browser.reuseChromeWaitMs);
+  }
+  if (isUnset('browserProfileLockTimeout') && typeof browser.profileLockTimeoutMs === 'number') {
+    options.browserProfileLockTimeout = String(browser.profileLockTimeoutMs);
+  }
+  if (isUnset('browserAutoReattachDelay') && typeof browser.autoReattachDelayMs === 'number') {
+    options.browserAutoReattachDelay = String(browser.autoReattachDelayMs);
+  }
+  if (isUnset('browserAutoReattachInterval') && typeof browser.autoReattachIntervalMs === 'number') {
+    options.browserAutoReattachInterval = String(browser.autoReattachIntervalMs);
+  }
+  if (isUnset('browserAutoReattachTimeout') && typeof browser.autoReattachTimeoutMs === 'number') {
+    options.browserAutoReattachTimeout = String(browser.autoReattachTimeoutMs);
   }
   if (isUnset('browserCookieWait') && typeof browser.cookieSyncWaitMs === 'number') {
     options.browserCookieWait = String(browser.cookieSyncWaitMs);

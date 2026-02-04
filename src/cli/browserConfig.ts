@@ -10,6 +10,8 @@ import { getOracleHomeDir } from '../oracleHome.js';
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 1_200_000;
 const DEFAULT_BROWSER_INPUT_TIMEOUT_MS = 60_000;
+const DEFAULT_BROWSER_RECHECK_TIMEOUT_MS = 120_000;
+const DEFAULT_BROWSER_AUTO_REATTACH_TIMEOUT_MS = 120_000;
 const DEFAULT_CHROME_PROFILE = 'Default';
 
 // Ordered array: most specific models first to ensure correct selection.
@@ -35,6 +37,13 @@ export interface BrowserFlagOptions {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
+  browserRecheckDelay?: string;
+  browserRecheckTimeout?: string;
+  browserReuseWait?: string;
+  browserProfileLockTimeout?: string;
+  browserAutoReattachDelay?: string;
+  browserAutoReattachInterval?: string;
+  browserAutoReattachTimeout?: string;
   browserCookieWait?: string;
   browserNoCookieSync?: boolean;
   browserInlineCookiesFile?: string;
@@ -130,6 +139,25 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
     timeoutMs: options.browserTimeout ? parseDuration(options.browserTimeout, DEFAULT_BROWSER_TIMEOUT_MS) : undefined,
     inputTimeoutMs: options.browserInputTimeout
       ? parseDuration(options.browserInputTimeout, DEFAULT_BROWSER_INPUT_TIMEOUT_MS)
+      : undefined,
+    assistantRecheckDelayMs: options.browserRecheckDelay
+      ? parseDuration(options.browserRecheckDelay, 0)
+      : undefined,
+    assistantRecheckTimeoutMs: options.browserRecheckTimeout
+      ? parseDuration(options.browserRecheckTimeout, DEFAULT_BROWSER_RECHECK_TIMEOUT_MS)
+      : undefined,
+    reuseChromeWaitMs: options.browserReuseWait ? parseDuration(options.browserReuseWait, 0) : undefined,
+    profileLockTimeoutMs: options.browserProfileLockTimeout
+      ? parseDuration(options.browserProfileLockTimeout, 0)
+      : undefined,
+    autoReattachDelayMs: options.browserAutoReattachDelay
+      ? parseDuration(options.browserAutoReattachDelay, 0)
+      : undefined,
+    autoReattachIntervalMs: options.browserAutoReattachInterval
+      ? parseDuration(options.browserAutoReattachInterval, 0)
+      : undefined,
+    autoReattachTimeoutMs: options.browserAutoReattachTimeout
+      ? parseDuration(options.browserAutoReattachTimeout, DEFAULT_BROWSER_AUTO_REATTACH_TIMEOUT_MS)
       : undefined,
     cookieSyncWaitMs: options.browserCookieWait ? parseDuration(options.browserCookieWait, 0) : undefined,
     cookieSync: options.browserNoCookieSync ? false : undefined,

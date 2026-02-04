@@ -21,6 +21,10 @@ vi.mock('../../src/browser/sessionRunner.ts', () => ({
   runBrowserSessionExecution: vi.fn(),
 }));
 
+vi.mock('../../src/browser/reattach.ts', () => ({
+  resumeBrowserSession: vi.fn(),
+}));
+
 vi.mock('../../src/cli/notifier.ts', () => ({
   sendSessionNotification: vi.fn(),
   deriveNotificationSettingsFromMetadata: vi.fn(() => ({ enabled: true, sound: false })),
@@ -59,6 +63,7 @@ import { runBrowserSessionExecution } from '../../src/browser/sessionRunner.ts';
 import { sendSessionNotification } from '../../src/cli/notifier.ts';
 import { getCliVersion } from '../../src/version.ts';
 import { deriveModelOutputPath } from '../../src/cli/sessionRunner.ts';
+import { resumeBrowserSession } from '../../src/browser/reattach.ts';
 
 const baseSessionMeta: SessionMetadata = {
   id: 'sess-1',
@@ -799,6 +804,75 @@ describe('performSessionRun', () => {
     const logLines = log.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logLines).not.toContain('Next steps (browser fallback)');
     expect(logLines).not.toContain('--engine api');
+  });
+
+  test('keeps session running when assistant response times out', async () => {
+    const automationError = new BrowserAutomationError('assistant timed out', {
+      stage: 'assistant-timeout',
+      runtime: { chromePort: 9222, chromeHost: '127.0.0.1', tabUrl: 'https://chatgpt.com/c/demo' },
+    });
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: 'browser',
+      browserConfig: { chromePath: null },
+      cwd: '/tmp',
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: 'running',
+      response: { status: 'running', incompleteReason: 'assistant-timeout' },
+      browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePort: 9222 }) }),
+    });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      'gpt-5.2-pro',
+      expect.objectContaining({ status: 'running' }),
+    );
+    const logLines = log.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logLines).toContain('Assistant response timed out; keeping session running for reattach.');
+  });
+
+  test('auto-reattaches after assistant timeout when configured', async () => {
+    const automationError = new BrowserAutomationError('assistant timed out', {
+      stage: 'assistant-timeout',
+      runtime: { chromePort: 9222, chromeHost: '127.0.0.1', tabUrl: 'https://chatgpt.com/c/demo' },
+    });
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+    vi.mocked(resumeBrowserSession).mockResolvedValue({
+      answerText: 'ok text',
+      answerMarkdown: 'ok markdown',
+    });
+
+    await performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: 'browser',
+      browserConfig: {
+        chromePath: null,
+        autoReattachDelayMs: 0,
+        autoReattachIntervalMs: 1000,
+        autoReattachTimeoutMs: 1000,
+      },
+      cwd: '/tmp',
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    expect(vi.mocked(resumeBrowserSession)).toHaveBeenCalled();
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: 'completed',
+      response: { status: 'completed' },
+    });
+    expect(vi.mocked(sendSessionNotification)).toHaveBeenCalled();
   });
 
   test('records response metadata when runOracle throws OracleResponseError', async () => {

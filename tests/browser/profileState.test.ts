@@ -91,4 +91,53 @@ describe('profileState', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test('acquires and releases the manual-login profile lock', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'oracle-profile-'));
+    try {
+      const lock = await profileState.acquireProfileRunLock(dir, { timeoutMs: 500, pollMs: 50 });
+      expect(lock).not.toBeNull();
+      const lockPath = path.join(dir, 'oracle-automation.lock');
+      expect(existsSync(lockPath)).toBe(true);
+      await lock?.release();
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('waits for profile lock and errors on timeout', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'oracle-profile-'));
+    try {
+      const lock = await profileState.acquireProfileRunLock(dir, { timeoutMs: 500, pollMs: 50 });
+      await expect(profileState.acquireProfileRunLock(dir, { timeoutMs: 150, pollMs: 50 })).rejects.toThrow(
+        /profile lock/i,
+      );
+      await lock?.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('clears stale profile lock when pid is dead', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'oracle-profile-'));
+    try {
+      const child = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
+      await once(child, 'exit');
+      if (!child.pid) {
+        throw new Error('Missing child pid');
+      }
+      const lockPath = path.join(dir, 'oracle-automation.lock');
+      await writeFile(
+        lockPath,
+        JSON.stringify({ pid: child.pid, lockId: 'stale', createdAt: new Date().toISOString() }),
+      );
+      const lock = await profileState.acquireProfileRunLock(dir, { timeoutMs: 500, pollMs: 50 });
+      expect(lock).not.toBeNull();
+      await lock?.release();
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

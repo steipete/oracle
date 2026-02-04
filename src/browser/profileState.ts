@@ -1,7 +1,9 @@
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { delay } from './utils.js';
 
 export type ProfileStateLogger = (message: string) => void;
 
@@ -12,6 +14,7 @@ const DEVTOOLS_ACTIVE_PORT_RELATIVE_PATHS = [
 ] as const;
 
 const CHROME_PID_FILENAME = 'chrome.pid';
+const ORACLE_PROFILE_LOCK_FILENAME = 'oracle-automation.lock';
 
 const execFileAsync = promisify(execFile);
 
@@ -83,6 +86,112 @@ export function isProcessAlive(pid: number): boolean {
       return true;
     }
     return false;
+  }
+}
+
+export interface ProfileRunLock {
+  path: string;
+  lockId: string;
+  release: () => Promise<void>;
+}
+
+interface ProfileRunLockRecord {
+  pid: number;
+  lockId: string;
+  createdAt: string;
+  sessionId?: string;
+}
+
+function parseProfileRunLock(payload: string | null): ProfileRunLockRecord | null {
+  if (!payload) return null;
+  try {
+    const parsed = JSON.parse(payload) as ProfileRunLockRecord;
+    if (!Number.isFinite(parsed.pid) || parsed.pid <= 0) return null;
+    if (!parsed.lockId || typeof parsed.lockId !== 'string') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export async function acquireProfileRunLock(
+  userDataDir: string,
+  options: {
+    timeoutMs: number;
+    pollMs?: number;
+    logger?: ProfileStateLogger;
+    sessionId?: string;
+  },
+): Promise<ProfileRunLock | null> {
+  const timeoutMs = options.timeoutMs;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return null;
+  }
+  const pollMs =
+    typeof options.pollMs === 'number' && Number.isFinite(options.pollMs) && options.pollMs > 0
+      ? options.pollMs
+      : 1000;
+  const lockPath = path.join(userDataDir, ORACLE_PROFILE_LOCK_FILENAME);
+  const lockId = randomUUID();
+  const startedAt = Date.now();
+  let warned = false;
+
+  for (;;) {
+    try {
+      const payload: ProfileRunLockRecord = {
+        pid: process.pid,
+        lockId,
+        createdAt: new Date().toISOString(),
+        sessionId: options.sessionId,
+      };
+      await mkdir(path.dirname(lockPath), { recursive: true });
+      await writeFile(lockPath, JSON.stringify(payload), { encoding: 'utf8', flag: 'wx' });
+      options.logger?.(`Acquired Oracle profile lock at ${lockPath}`);
+      return {
+        path: lockPath,
+        lockId,
+        release: async () => releaseProfileRunLock(lockPath, lockId, options.logger),
+      };
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== 'EEXIST') {
+        throw error;
+      }
+      const existing = parseProfileRunLock(await readFile(lockPath, 'utf8').catch(() => null));
+      if (!existing || !isProcessAlive(existing.pid)) {
+        await rm(lockPath, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (!warned) {
+        const waited = Math.round(timeoutMs / 1000);
+        options.logger?.(`Oracle profile lock held by pid ${existing.pid}; waiting up to ${waited}s.`);
+        warned = true;
+      }
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= timeoutMs) {
+        throw new Error(
+          `Oracle profile lock still held by pid ${existing.pid} after ${Math.round(elapsed / 1000)}s`,
+        );
+      }
+      await delay(Math.min(pollMs, timeoutMs - elapsed));
+    }
+  }
+}
+
+export async function releaseProfileRunLock(
+  lockPath: string,
+  lockId: string,
+  logger?: ProfileStateLogger,
+): Promise<void> {
+  try {
+    const existing = parseProfileRunLock(await readFile(lockPath, 'utf8').catch(() => null));
+    if (!existing || existing.lockId !== lockId) {
+      return;
+    }
+    await rm(lockPath, { force: true });
+    logger?.(`Released Oracle profile lock ${lockPath}`);
+  } catch {
+    // best effort
   }
 }
 
