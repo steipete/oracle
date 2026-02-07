@@ -578,11 +578,14 @@ async function autoReattachUntilComplete({
     Math.max(0, browserConfig.autoReattachTimeoutMs ?? 0) ||
     Math.max(0, browserConfig.timeoutMs ?? 0) ||
     120_000;
+  const maxTotalMs = 2 * 60 * 60 * 1000; // 2h hard cap; avoid infinite polling by default.
+  const maxDeadline = Date.now() + maxTotalMs;
 
   if (delayMs > 0) {
     log(dim(`Auto-reattach starting in ${formatElapsed(delayMs)}...`));
     await wait(delayMs);
   }
+  log(dim(`Auto-reattach will stop after ${formatElapsed(maxTotalMs)} if no answer is captured.`));
 
   const logger: BrowserLogger = ((message?: string) => {
     if (message) {
@@ -593,6 +596,11 @@ async function autoReattachUntilComplete({
 
   let attempt = 0;
   for (;;) {
+    const remainingBudgetMs = maxDeadline - Date.now();
+    if (remainingBudgetMs <= 0) {
+      log(dim(`Auto-reattach stopped after ${formatElapsed(maxTotalMs)} without capturing an answer.`));
+      return false;
+    }
     attempt += 1;
     log(dim(`Auto-reattach attempt ${attempt}...`));
     try {
@@ -662,7 +670,12 @@ async function autoReattachUntilComplete({
       const message = error instanceof Error ? error.message : String(error);
       log(dim(`Auto-reattach attempt ${attempt} failed: ${message}`));
     }
-    await wait(intervalMs);
+    const remainingAfterAttemptMs = maxDeadline - Date.now();
+    if (remainingAfterAttemptMs <= 0) {
+      log(dim(`Auto-reattach stopped after ${formatElapsed(maxTotalMs)} without capturing an answer.`));
+      return false;
+    }
+    await wait(Math.min(intervalMs, remainingAfterAttemptMs));
   }
 }
 

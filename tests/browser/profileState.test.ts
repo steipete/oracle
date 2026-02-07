@@ -140,4 +140,19 @@ describe('profileState', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test('deletes unreadable profile lock and continues', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'oracle-profile-'));
+    try {
+      const lockPath = path.join(dir, 'oracle-automation.lock');
+      await writeFile(lockPath, 'not-json');
+      const lock = await profileState.acquireProfileRunLock(dir, { timeoutMs: 2000, pollMs: 50 });
+      expect(lock).not.toBeNull();
+      expect(existsSync(lockPath)).toBe(true);
+      await lock?.release();
+      expect(existsSync(lockPath)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

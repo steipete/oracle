@@ -6,7 +6,7 @@
 - Bridge: add the bridge workflow + MCP browser controls for remote ChatGPT sessions. Original PR #42 by Kyle McCleary (@kmccleary3301) — thank you!
 - CLI: add `--background`/`--no-background`, `--http-timeout`, `--zombie-timeout`, and `--zombie-last-activity` to support long-running API sessions.
 - Browser: optional delayed recheck after assistant timeouts (`--browser-recheck-delay` / `--browser-recheck-timeout`).
-- Browser: optional periodic auto-reattach attempts after timeouts (`--browser-auto-reattach-delay` / `--browser-auto-reattach-interval` / `--browser-auto-reattach-timeout`).
+- Browser: optional periodic auto-reattach attempts after timeouts (`--browser-auto-reattach-delay` / `--browser-auto-reattach-interval` / `--browser-auto-reattach-timeout`). Original PR #87 by Felix Huber (@felix-huber) — thank you!
 - Browser: add `--browser-profile-lock-timeout` to serialize manual-login runs that share a Chrome profile.
 
 ### Fixed

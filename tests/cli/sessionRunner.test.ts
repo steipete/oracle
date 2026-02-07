@@ -875,6 +875,49 @@ describe('performSessionRun', () => {
     expect(vi.mocked(sendSessionNotification)).toHaveBeenCalled();
   });
 
+  test('auto-reattach stops after a hard cap when it cannot capture an answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const automationError = new BrowserAutomationError('assistant timed out', {
+        stage: 'assistant-timeout',
+        runtime: { chromePort: 9222, chromeHost: '127.0.0.1', tabUrl: 'https://chatgpt.com/c/demo' },
+      });
+      vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+      vi.mocked(resumeBrowserSession).mockRejectedValue(new Error('not ready'));
+
+      const pending = performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: 'browser',
+        browserConfig: {
+          chromePath: null,
+          autoReattachDelayMs: 0,
+          autoReattachIntervalMs: 60 * 60 * 1000,
+          autoReattachTimeoutMs: 1000,
+        },
+        cwd: '/tmp',
+        log,
+        write,
+        version: cliVersion,
+      });
+
+      await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000 + 5_000);
+      await pending;
+
+      expect(vi.mocked(resumeBrowserSession).mock.calls.length).toBeGreaterThanOrEqual(2);
+      const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+      expect(finalUpdate).toMatchObject({
+        status: 'running',
+        response: { status: 'running', incompleteReason: 'assistant-timeout' },
+      });
+      const logLines = log.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logLines).toContain('Auto-reattach stopped');
+      expect(logLines).toContain('Reattach later with: oracle session');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('records response metadata when runOracle throws OracleResponseError', async () => {
     const errorResponse: OracleResponse = { id: 'resp-error', output: [], usage: {} };
     vi.mocked(runOracle).mockRejectedValue(new OracleResponseError('boom', errorResponse));

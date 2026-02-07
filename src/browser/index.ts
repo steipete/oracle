@@ -1684,7 +1684,6 @@ function isAssistantResponseTimeoutError(error: unknown): boolean {
   return (
     message.includes('assistant-response') ||
     message.includes('assistant response') ||
-    message.includes('timeout') ||
     message.includes('watchdog') ||
     message.includes('capture assistant response')
   );
@@ -1803,7 +1802,7 @@ function buildSessionValidationExpression(): string {
       const selectors = ${selectorLiteral};
       for (const selector of selectors) {
         const node = document.querySelector(selector);
-        if (node && !node.hasAttribute('disabled')) {
+        if (node) {
           return true;
         }
       }

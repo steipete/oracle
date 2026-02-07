@@ -157,7 +157,17 @@ export async function acquireProfileRunLock(
       if (code !== 'EEXIST') {
         throw error;
       }
-      const existing = parseProfileRunLock(await readFile(lockPath, 'utf8').catch(() => null));
+      let existing = parseProfileRunLock(await readFile(lockPath, 'utf8').catch(() => null));
+      if (!existing) {
+        // Likely partial write / corruption; re-read once, then delete (user preference: delete unreadable lockfiles).
+        await delay(200);
+        existing = parseProfileRunLock(await readFile(lockPath, 'utf8').catch(() => null));
+        if (!existing) {
+          options.logger?.('Oracle profile lock unreadable; deleting lockfile.');
+          await rm(lockPath, { force: true }).catch(() => undefined);
+          continue;
+        }
+      }
       if (!existing || !isProcessAlive(existing.pid)) {
         await rm(lockPath, { force: true }).catch(() => undefined);
         continue;
