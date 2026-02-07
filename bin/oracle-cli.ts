@@ -151,8 +151,8 @@ interface CliOptions extends OptionValues {
   heartbeat?: number;
   status?: boolean;
   dryRun?: boolean;
+  // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
-  noWait?: boolean;
   baseUrl?: string;
   azureEndpoint?: string;
   azureDeployment?: string;
@@ -171,8 +171,8 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
 };
 
 interface RestartCommandOptions {
+  // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
-  noWait?: boolean;
   remoteHost?: string;
   remoteToken?: string;
 }
@@ -1037,11 +1037,10 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   // - otherwise block for fast models (gpt-5.1, browser) and detach by default for pro API runs
   let waitPreference = resolveWaitFlag({
     waitFlag: options.wait,
-    noWaitFlag: options.noWait,
     model: resolvedModel,
     engine,
   });
-  if (remoteHost && !waitPreference) {
+  if (remoteHost && waitPreference === false) {
     console.log(chalk.dim('Remote browser runs require --wait; ignoring --no-wait.'));
     waitPreference = true;
   }
@@ -1450,9 +1449,8 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
 
   enforceBrowserSearchFlag(runOptions, sessionMode, console.log);
 
-  const waitPreference = resolveRestartWaitPreference({
+  let waitPreference = resolveRestartWaitPreference({
     waitFlag: options.wait,
-    noWaitFlag: options.noWait,
     storedPreference: storedOptions.waitPreference,
     model: runOptions.model,
     engine,
@@ -1471,6 +1469,10 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   }
   if (remoteHost) {
     console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
+  }
+  if (remoteHost && waitPreference === false) {
+    console.log(chalk.dim('Remote browser runs require --wait; ignoring --no-wait.'));
+    waitPreference = true;
   }
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
@@ -1649,35 +1651,31 @@ function printDebugOptionGroup(entries: Array<[string, string]>): void {
 
 function resolveWaitFlag({
   waitFlag,
-  noWaitFlag,
   model,
   engine,
 }: {
   waitFlag?: boolean;
-  noWaitFlag?: boolean;
   model: ModelName;
   engine: EngineMode;
 }): boolean {
   if (waitFlag === true) return true;
-  if (noWaitFlag === true) return false;
+  if (waitFlag === false) return false;
   return defaultWaitPreference(model, engine);
 }
 
 function resolveRestartWaitPreference({
   waitFlag,
-  noWaitFlag,
   storedPreference,
   model,
   engine,
 }: {
   waitFlag?: boolean;
-  noWaitFlag?: boolean;
   storedPreference?: boolean;
   model: ModelName;
   engine: EngineMode;
 }): boolean {
   if (waitFlag === true) return true;
-  if (noWaitFlag === true) return false;
+  if (waitFlag === false) return false;
   if (typeof storedPreference === 'boolean') return storedPreference;
   return defaultWaitPreference(model, engine);
 }

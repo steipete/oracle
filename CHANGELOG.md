@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+### Added
+- Sessions: add `oracle restart <id>` to re-run a stored session as a new session (clones options) (#84, thanks @enki).
+
 ### Fixed
 - Browser: fix markdown fallback extractor TDZ crash in browser mode (#90, thanks @julianknutsen).
+- CLI: honor `--no-wait` for Commander `--no-` flags (fixes restart wait preference) (#84, thanks @enki).
 
 ## 0.8.5 — 2026-01-19
 

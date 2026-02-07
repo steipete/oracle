@@ -32,6 +32,32 @@ describe('sessionStore', () => {
     expect(request?.prompt).toBe('Inspect me');
   });
 
+  test('persists waitPreference and gemini browser metadata for restarts', async () => {
+    const meta = await store.createSession(
+      {
+        prompt: 'Persist me',
+        model: 'gemini-3-pro',
+        mode: 'browser',
+        waitPreference: false,
+        youtube: 'https://example.com/video',
+        generateImage: 'in.png',
+        editImage: 'edit.png',
+        outputPath: 'out.png',
+        aspectRatio: '1:1',
+        geminiShowThoughts: true,
+      },
+      process.cwd(),
+    );
+    const fetched = await store.readSession(meta.id);
+    expect(fetched?.options.waitPreference).toBe(false);
+    expect(fetched?.options.youtube).toBe('https://example.com/video');
+    expect(fetched?.options.generateImage).toBe('in.png');
+    expect(fetched?.options.editImage).toBe('edit.png');
+    expect(fetched?.options.outputPath).toBe('out.png');
+    expect(fetched?.options.aspectRatio).toBe('1:1');
+    expect(fetched?.options.geminiShowThoughts).toBe(true);
+  });
+
   test('writes per-model logs and aggregates combined log', async () => {
     const meta = await store.createSession(
       {
