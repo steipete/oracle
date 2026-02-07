@@ -760,7 +760,7 @@ function buildAssistantExtractor(functionName: string): string {
 function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
   const turnIndexValue = minTurnLiteral ? `(${minTurnLiteral} >= 0 ? ${minTurnLiteral} : null)` : 'null';
   return `(() => {
-    const MIN_TURN_INDEX = ${turnIndexValue};
+    const __minTurn = ${turnIndexValue};
     const roots = [
       document.querySelector('section[data-testid="screen-threadFlyOut"]'),
       document.querySelector('[data-testid="chat-thread"]'),
@@ -802,10 +802,10 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
       return idx >= 0 ? idx : null;
     };
     const isAfterMinTurn = (node) => {
-      if (MIN_TURN_INDEX === null) return true;
+      if (__minTurn === null) return true;
       if (!hasTurns) return true;
       const idx = resolveTurnIndex(node);
-      return idx !== null && idx >= MIN_TURN_INDEX;
+      return idx !== null && idx >= __minTurn;
     };
     const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
     const collectUserText = (scope) => {
