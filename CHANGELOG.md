@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Browser: fix markdown fallback extractor TDZ crash in browser mode (#90, thanks @julianknutsen).
+
 ## 0.8.5 — 2026-01-19
 
 ### Added

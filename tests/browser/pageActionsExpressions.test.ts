@@ -21,10 +21,18 @@ describe('browser automation expressions', () => {
 
   test('markdown fallback filters user turns and respects assistant indicators', () => {
     const expression = buildMarkdownFallbackExtractorForTest('2');
-    expect(expression).toContain('MIN_TURN_INDEX');
+    expect(expression).not.toContain('const MIN_TURN_INDEX = (MIN_TURN_INDEX');
+    expect(expression).toContain('const __minTurn');
     expect(expression).toContain("role !== 'user'");
     expect(expression).toContain('copy-turn-action-button');
     expect(expression).toContain(CONVERSATION_TURN_SELECTOR);
+  });
+
+  test('markdown fallback does not self-reference MIN_TURN_INDEX literal', () => {
+    const expression = buildMarkdownFallbackExtractorForTest('MIN_TURN_INDEX');
+    expect(expression).toContain('MIN_TURN_INDEX');
+    expect(expression).not.toContain('const MIN_TURN_INDEX = (MIN_TURN_INDEX');
+    expect(expression).toContain('const __minTurn');
   });
 
   test('copy expression scopes to assistant turn buttons', () => {
