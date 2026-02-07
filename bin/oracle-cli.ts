@@ -151,8 +151,8 @@ interface CliOptions extends OptionValues {
   heartbeat?: number;
   status?: boolean;
   dryRun?: boolean;
+  // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
-  noWait?: boolean;
   baseUrl?: string;
   azureEndpoint?: string;
   azureDeployment?: string;
@@ -171,8 +171,8 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
 };
 
 interface RestartCommandOptions {
+  // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
-  noWait?: boolean;
   remoteHost?: string;
   remoteToken?: string;
 }
@@ -1035,13 +1035,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   // Decide whether to block until completion:
   // - explicit --wait / --no-wait wins
   // - otherwise block for fast models (gpt-5.1, browser) and detach by default for pro API runs
-  let waitPreference = resolveWaitFlag({
-    waitFlag: options.wait,
-    noWaitFlag: options.noWait,
+  let waitPreference = resolveWaitPreference({
+    wait: options.wait,
     model: resolvedModel,
     engine,
   });
-  if (remoteHost && !waitPreference) {
+  if (remoteHost && waitPreference === false) {
     console.log(chalk.dim('Remote browser runs require --wait; ignoring --no-wait.'));
     waitPreference = true;
   }
@@ -1450,9 +1449,8 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
 
   enforceBrowserSearchFlag(runOptions, sessionMode, console.log);
 
-  const waitPreference = resolveRestartWaitPreference({
-    waitFlag: options.wait,
-    noWaitFlag: options.noWait,
+  let waitPreference = resolveRestartWaitPreference({
+    wait: options.wait,
     storedPreference: storedOptions.waitPreference,
     model: runOptions.model,
     engine,
@@ -1471,6 +1469,10 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   }
   if (remoteHost) {
     console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
+  }
+  if (remoteHost && waitPreference === false) {
+    console.log(chalk.dim('Remote browser runs require --wait; ignoring --no-wait.'));
+    waitPreference = true;
   }
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
@@ -1649,35 +1651,43 @@ function printDebugOptionGroup(entries: Array<[string, string]>): void {
 
 function resolveWaitFlag({
   waitFlag,
-  noWaitFlag,
   model,
   engine,
 }: {
   waitFlag?: boolean;
-  noWaitFlag?: boolean;
   model: ModelName;
   engine: EngineMode;
 }): boolean {
   if (waitFlag === true) return true;
-  if (noWaitFlag === true) return false;
+  if (waitFlag === false) return false;
   return defaultWaitPreference(model, engine);
 }
 
+function resolveWaitPreference({
+  wait,
+  model,
+  engine,
+}: {
+  wait?: boolean;
+  model: ModelName;
+  engine: EngineMode;
+}): boolean {
+  return resolveWaitFlag({ waitFlag: wait, model, engine });
+}
+
 function resolveRestartWaitPreference({
-  waitFlag,
-  noWaitFlag,
+  wait,
   storedPreference,
   model,
   engine,
 }: {
-  waitFlag?: boolean;
-  noWaitFlag?: boolean;
+  wait?: boolean;
   storedPreference?: boolean;
   model: ModelName;
   engine: EngineMode;
 }): boolean {
-  if (waitFlag === true) return true;
-  if (noWaitFlag === true) return false;
+  if (wait === true) return true;
+  if (wait === false) return false;
   if (typeof storedPreference === 'boolean') return storedPreference;
   return defaultWaitPreference(model, engine);
 }
