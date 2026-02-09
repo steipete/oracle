@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.6 — 2026-02-09
+
 ### Added
 - Sessions: add `oracle restart <id>` to re-run a stored session as a new session (clones options) (#84, thanks @enki).
 - Browser: optional periodic auto-reattach attempts after assistant timeouts (`--browser-auto-reattach-delay` / `--browser-auto-reattach-interval` / `--browser-auto-reattach-timeout`). Original PR #87 by Felix Huber (@felix-huber) — thank you!
