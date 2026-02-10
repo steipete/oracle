@@ -245,12 +245,15 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
         : DEFAULT_TIMEOUT_NON_PRO_MS / 1000
       : options.timeoutSeconds;
   const timeoutMs = timeoutSeconds * 1000;
+  const azureDeploymentName = isAzureOpenAI ? options.azure?.deployment?.trim() : undefined;
   // Track the concrete model id we dispatch to (especially for Gemini preview aliases)
   const effectiveModelId =
     options.effectiveModelId ??
-    (options.model.startsWith('gemini')
-      ? resolveGeminiModelId(options.model)
-      : (modelConfig.apiModel ?? modelConfig.model));
+    (azureDeploymentName
+      ? azureDeploymentName
+      : options.model.startsWith('gemini')
+        ? resolveGeminiModelId(options.model)
+        : (modelConfig.apiModel ?? modelConfig.model));
   if (!isPreview && options.previousResponseId) {
     log(dim(`Continuing from response ${options.previousResponseId}`));
   }

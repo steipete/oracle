@@ -52,7 +52,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
   azure: {
     endpoint: "https://your-resource-name.openai.azure.com/",
     deployment: "gpt-5-1-pro",
-    apiVersion: "2024-02-15-preview"
+    apiVersion: "2025-04-01-preview" // optional legacy knob; Azure v1 Responses runs do not require it
   },
 
   heartbeatSeconds: 30,     // default heartbeat interval

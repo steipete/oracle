@@ -1,4 +1,4 @@
-import OpenAI, { AzureOpenAI } from 'openai';
+import OpenAI from 'openai';
 import type {
   ChatCompletion,
   ChatCompletionChunk,
@@ -42,6 +42,10 @@ export function isCustomBaseUrl(baseUrl: string | undefined): boolean {
   }
 }
 
+export function buildAzureResponsesBaseUrl(endpoint: string): string {
+  return `${endpoint.replace(/\/+$/, '')}/openai/v1`;
+}
+
 export function createDefaultClientFactory(): ClientFactory {
   const customFactory = loadCustomClientFactory();
   if (customFactory) return customFactory;
@@ -73,12 +77,10 @@ export function createDefaultClientFactory(): ClientFactory {
         ? options.httpTimeoutMs
         : 20 * 60 * 1000;
     if (options?.azure?.endpoint) {
-      instance = new AzureOpenAI({
+      instance = new OpenAI({
         apiKey: key,
-        endpoint: options.azure.endpoint,
-        apiVersion: options.azure.apiVersion,
-        deployment: options.azure.deployment,
         timeout: httpTimeoutMs,
+        baseURL: buildAzureResponsesBaseUrl(options.azure.endpoint),
       });
     } else {
       instance = new OpenAI({

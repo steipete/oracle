@@ -153,10 +153,10 @@ describe('runOracle request payload', () => {
     }
   });
 
-  test('passes azure config to clientFactory', async () => {
+  test('passes azure config to clientFactory and sends the deployment name as the Azure model', async () => {
     const stream = new MockStream([], buildResponse());
     const client = new MockClient(stream);
-    const captured: Array<{ apiKey: string; azure?: unknown }> = [];
+    const captured: Array<{ apiKey: string; azure?: unknown; resolvedModelId?: string }> = [];
     const azureOptions = {
       endpoint: 'https://my-azure.com/',
       deployment: 'gpt-4-test',
@@ -173,14 +173,15 @@ describe('runOracle request payload', () => {
       {
         apiKey: 'sk-test',
         clientFactory: (apiKey, options) => {
-          captured.push({ apiKey, azure: options?.azure });
+          captured.push({ apiKey, azure: options?.azure, resolvedModelId: options?.resolvedModelId });
           return client;
         },
         log: () => {},
         write: () => true,
       },
     );
-    expect(captured).toEqual([{ apiKey: 'sk-test', azure: azureOptions }]);
+    expect(captured).toEqual([{ apiKey: 'sk-test', azure: azureOptions, resolvedModelId: 'gpt-4-test' }]);
+    expect(client.lastRequest?.model).toBe('gpt-4-test');
   });
 
   test('uses grok search tool shape', async () => {

@@ -138,7 +138,7 @@ describe('createDefaultClientFactory', () => {
     const defaultClient = factory('sk-test', { model: 'gpt-5.1' });
     const azureClient = factory('sk-azure', {
       model: 'gpt-5.1',
-      azure: { endpoint: 'https://example.azure.com', apiVersion: '2024-08-01-preview', deployment: 'gpt5' },
+      azure: { endpoint: 'https://example.azure.com', apiVersion: '2025-04-01-preview', deployment: 'gpt5' },
     });
 
     expect(defaultClient.responses).toMatchObject({
@@ -147,6 +147,65 @@ describe('createDefaultClientFactory', () => {
       retrieve: expect.any(Function),
     });
     expect(azureClient.responses).toMatchObject({
+      create: expect.any(Function),
+      stream: expect.any(Function),
+      retrieve: expect.any(Function),
+    });
+  });
+
+  test('uses the OpenAI client with Azure v1 base URLs for responses', async () => {
+    process.env.ORACLE_CLIENT_FACTORY = '';
+    const openAIArgs: unknown[] = [];
+    const azureArgs: unknown[] = [];
+
+    class MockOpenAI {
+      responses = {
+        create: async () => ({ id: 'ok', status: 'completed' }),
+        stream: async () => ({
+          [Symbol.asyncIterator]: () => ({
+            async next() {
+              return { done: true, value: undefined };
+            },
+          }),
+          finalResponse: async () => ({ id: 'ok', status: 'completed' }),
+        }),
+        retrieve: async (id: string) => ({ id, status: 'completed' }),
+      };
+
+      constructor(options: unknown) {
+        openAIArgs.push(options);
+      }
+    }
+
+    class MockAzureOpenAI {
+      constructor(options: unknown) {
+        azureArgs.push(options);
+      }
+    }
+
+    vi.doMock('openai', () => ({
+      __esModule: true,
+      default: MockOpenAI,
+      AzureOpenAI: MockAzureOpenAI,
+    }));
+
+    const { buildAzureResponsesBaseUrl, createDefaultClientFactory } = await import('../../src/oracle/client.js');
+    expect(buildAzureResponsesBaseUrl('https://example.azure.com/')).toBe('https://example.azure.com/openai/v1');
+
+    const factory = createDefaultClientFactory();
+    const client = factory('sk-azure', {
+      model: 'gpt-5.1',
+      azure: { endpoint: 'https://example.azure.com/', deployment: 'gpt5' },
+    });
+
+    expect(openAIArgs).toEqual([
+      expect.objectContaining({
+        apiKey: 'sk-azure',
+        baseURL: 'https://example.azure.com/openai/v1',
+      }),
+    ]);
+    expect(azureArgs).toEqual([]);
+    expect(client.responses).toMatchObject({
       create: expect.any(Function),
       stream: expect.any(Function),
       retrieve: expect.any(Function),
