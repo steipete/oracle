@@ -56,6 +56,17 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
     },
     reasoning: { effort: 'high' },
   },
+  'gpt-5.2-codex': {
+    model: 'gpt-5.2-codex',
+    provider: 'openai',
+    tokenizer: countTokensGpt5 as TokenizerFn,
+    inputLimit: 272000,
+    pricing: {
+      inputPerToken: 1.5 / 1_000_000,
+      outputPerToken: 12 / 1_000_000,
+    },
+    reasoning: { effort: 'high' },
+  },
   'gpt-5.2': {
     model: 'gpt-5.2',
     provider: 'openai',

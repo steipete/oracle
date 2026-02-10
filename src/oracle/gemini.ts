@@ -9,6 +9,7 @@ const MODEL_ID_MAP: Record<ModelName, string> = {
   'gpt-5.1': 'gpt-5.1',
   'gpt-5.1-codex': 'gpt-5.1-codex',
   'gpt-5.2': 'gpt-5.2',
+  'gpt-5.2-codex': 'gpt-5.2-codex',
   'gpt-5.2-instant': 'gpt-5.2-instant',
   'gpt-5.2-pro': 'gpt-5.2-pro',
   'claude-4.5-sonnet': 'claude-4.5-sonnet',

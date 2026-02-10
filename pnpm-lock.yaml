@@ -103,8 +103,8 @@ importers:
         specifier: 4.0.18
         version: 4.0.18(vitest@4.0.18(@types/node@25.2.1)(tsx@4.21.0))
       devtools-protocol:
-        specifier: 0.0.1580600
-        version: 0.0.1580600
+        specifier: 0.0.1568893
+        version: 0.0.1568893
       es-toolkit:
         specifier: ^1.44.0
         version: 1.44.0
@@ -1127,9 +1127,6 @@ packages:
 
   devtools-protocol@0.0.1568893:
     resolution: {integrity: sha512-jSwwNnDwRQ5CQh5DNhnmQGms/pkdOUIrJDlKf7VR9bl/nRlcifyxe1jieFnP7bL1vUIElTcLzxu3AYB8YBBpjQ==}
-
-  devtools-protocol@0.0.1580600:
-    resolution: {integrity: sha512-PR0akqnHRgXFtqK7f1rJhg74PRUc2b709QgWA3dpN2Qp717LqqsroamSD/cQ5pBHxyeePnF2LmwU4iq8ZNVI7w==}
 
   dotenv@17.2.4:
     resolution: {integrity: sha512-mudtfb4zRB4bVvdj0xRo+e6duH1csJRM8IukBqfTRvHotn9+LBXB8ynAidP9zHqoRC/fsllXgk4kCKlR21fIhw==}
@@ -3421,8 +3418,6 @@ snapshots:
       dequal: 2.0.3
 
   devtools-protocol@0.0.1568893: {}
-
-  devtools-protocol@0.0.1580600: {}
 
   dotenv@17.2.4: {}
 

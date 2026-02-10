@@ -212,6 +212,10 @@ export function resolveApiModel(modelValue: string): ModelName {
     if (normalized.includes('max')) {
       throw new InvalidArgumentError('gpt-5.1-codex-max is not available yet. OpenAI has not released the API.');
     }
+    // Check for 5.2-codex before defaulting to 5.1-codex
+    if (normalized.includes('5.2') || normalized.includes('5-2')) {
+      return 'gpt-5.2-codex';
+    }
     return 'gpt-5.1-codex';
   }
   if (normalized.includes('gemini')) {
@@ -242,6 +246,10 @@ export function inferModelFromLabel(modelValue: string): ModelName {
     return 'claude-4.1-opus';
   }
   if (normalized.includes('codex')) {
+    // Check for 5.2-codex before defaulting to 5.1-codex
+    if (normalized.includes('5.2') || normalized.includes('5-2')) {
+      return 'gpt-5.2-codex';
+    }
     return 'gpt-5.1-codex';
   }
   if (normalized.includes('gemini')) {
