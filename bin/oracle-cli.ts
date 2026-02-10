@@ -381,7 +381,7 @@ program
   )
   .option('--azure-endpoint <url>', 'Azure OpenAI Endpoint (e.g. https://resource.openai.azure.com/).')
   .option('--azure-deployment <name>', 'Azure OpenAI Deployment Name.')
-  .option('--azure-api-version <version>', 'Azure OpenAI API Version.')
+  .option('--azure-api-version <version>', 'Azure OpenAI API Version (default: 2025-04-01-preview; requires 2025-04-01-preview or newer for Responses API).')
   .addOption(new Option('--browser', '(deprecated) Use --engine browser instead.').default(false).hideHelp())
   .addOption(new Option('--browser-chrome-profile <name>', 'Chrome profile name/path for cookie reuse.').hideHelp())
   .addOption(new Option('--browser-chrome-path <path>', 'Explicit Chrome or Chromium executable path.').hideHelp())

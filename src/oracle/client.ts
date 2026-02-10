@@ -44,14 +44,19 @@ export function createDefaultClientFactory(): ClientFactory {
         ? options.httpTimeoutMs
         : 20 * 60 * 1000;
     if (options?.azure?.endpoint) {
-      instance = new AzureOpenAI({
-        apiKey: key,
-        endpoint: options.azure.endpoint,
-        apiVersion: options.azure.apiVersion,
-        deployment: options.azure.deployment,
+      // Azure Responses API requires using OpenAI client with /openai/v1 base URL
+      // NOT the AzureOpenAI client which uses the legacy API format
+      const azureBaseUrl = options.azure.endpoint.replace(/\/$/, '') + '/openai/v1';
+      instance = new OpenAI({
+        apiKey: 'dummy', // Required by SDK but we use api-key header instead
         timeout: httpTimeoutMs,
+        baseURL: azureBaseUrl,
+        defaultHeaders: {
+          ...defaultHeaders,
+          'api-key': key, // Azure uses api-key header, not Authorization Bearer
+        },
       });
-    } else {
+    } else{
       instance = new OpenAI({
         apiKey: key,
         timeout: httpTimeoutMs,

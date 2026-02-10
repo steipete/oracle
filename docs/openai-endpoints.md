@@ -14,7 +14,7 @@ To use Azure OpenAI, point Oracle at your Azure resource and supply the Azure ke
 ```bash
 export AZURE_OPENAI_ENDPOINT="https://your-resource-name.openai.azure.com/"
 export AZURE_OPENAI_API_KEY="your-azure-api-key"
-export AZURE_OPENAI_API_VERSION="2024-02-15-preview"
+export AZURE_OPENAI_API_VERSION="2025-04-01-preview"
 ```
 
 Key lookup for GPT-family models when an Azure endpoint is set:

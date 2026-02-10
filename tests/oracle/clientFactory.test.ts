@@ -91,7 +91,7 @@ describe('createDefaultClientFactory', () => {
     const defaultClient = factory('sk-test', { model: 'gpt-5.1' });
     const azureClient = factory('sk-azure', {
       model: 'gpt-5.1',
-      azure: { endpoint: 'https://example.azure.com', apiVersion: '2024-08-01-preview', deployment: 'gpt5' },
+      azure: { endpoint: 'https://example.azure.com', apiVersion: '2025-04-01-preview', deployment: 'gpt5' },
     });
 
     expect(defaultClient.responses).toMatchObject({
