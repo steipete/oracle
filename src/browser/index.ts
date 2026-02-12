@@ -1045,15 +1045,26 @@ async function maybeRecoverLongAssistantResponse({
   await delay(1500);
   let bestLength = capturedLength;
   let bestText = answerText;
-  for (let i = 0; i < 5; i++) {
+  // Thinking models (GPT-5.2 Thinking, o-series) can pause mid-stream for 10-30s.
+  // Use up to 15 iterations with increasing delays (total budget ~45s) to avoid truncation.
+  let pollDelay = 800;
+  let stableCount = 0;
+  for (let i = 0; i < 15; i++) {
     const laterSnapshot = await readAssistantSnapshot(runtime, baselineTurns ?? undefined).catch(() => null);
     const laterText = typeof laterSnapshot?.text === 'string' ? laterSnapshot.text.trim() : '';
     if (laterText.length > bestLength) {
       bestLength = laterText.length;
       bestText = laterText;
-      await delay(800); // More content appeared, keep waiting
+      stableCount = 0;
+      pollDelay = 800; // Reset delay on new content
+      await delay(pollDelay);
     } else {
-      break; // Stable, stop polling
+      stableCount++;
+      // Require 3 consecutive stable polls before declaring done.
+      // This handles thinking pauses where content stops temporarily.
+      if (stableCount >= 3) break;
+      pollDelay = Math.min(pollDelay * 1.5, 4000); // Back off up to 4s
+      await delay(pollDelay);
     }
   }
   if (bestLength > capturedLength) {
