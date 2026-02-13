@@ -68,7 +68,7 @@
     "@steipete/sweet-cookie": "^0.1.0",
     "chalk": "^5.6.2",
     "chrome-launcher": "^1.2.1",
-    "chrome-remote-interface": "^0.33.3",
+    "chrome-remote-interface": "^0.34.0",
     "clipboardy": "^5.2.1",
     "commander": "^14.0.3",
     "dotenv": "^17.2.4",
