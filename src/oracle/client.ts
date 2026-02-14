@@ -20,6 +20,28 @@ import { createGeminiClient } from './gemini.js';
 import { createClaudeClient } from './claude.js';
 import { isOpenRouterBaseUrl } from './modelResolver.js';
 
+/**
+ * Known native API base URLs that should still use their dedicated SDKs.
+ * Any other custom base URL is treated as an OpenAI-compatible proxy and
+ * all models are routed through the chat/completions adapter.
+ */
+const NATIVE_API_HOSTS = [
+  'api.openai.com',
+  'api.anthropic.com',
+  'generativelanguage.googleapis.com',
+  'api.x.ai',
+];
+
+function isCustomBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    const url = new URL(baseUrl);
+    return !NATIVE_API_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+  } catch {
+    return false;
+  }
+}
+
 export function createDefaultClientFactory(): ClientFactory {
   const customFactory = loadCustomClientFactory();
   if (customFactory) return customFactory;
@@ -28,10 +50,12 @@ export function createDefaultClientFactory(): ClientFactory {
     options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string; httpTimeoutMs?: number },
   ): ClientLike => {
     const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
+    const customProxy = isCustomBaseUrl(options?.baseUrl);
 
-    // When using OpenRouter, route ALL models through the OpenRouter adapter
-    // instead of native SDKs (which would reject the OpenRouter API key).
-    if (!openRouter) {
+    // When using any custom/proxy base URL (OpenRouter, LiteLLM, vLLM, Together, etc.),
+    // route ALL models through the OpenAI chat/completions adapter instead of native SDKs
+    // which would reject the proxy's API key.
+    if (!openRouter && !customProxy) {
       if (options?.model?.startsWith('gemini')) {
         // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
         return createGeminiClient(key, options.model, options.resolvedModelId);
@@ -65,7 +89,7 @@ export function createDefaultClientFactory(): ClientFactory {
       });
     }
 
-    if (openRouter) {
+    if (openRouter || customProxy) {
       return buildOpenRouterCompletionClient(instance);
     }
 
