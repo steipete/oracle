@@ -27,16 +27,21 @@ export function createDefaultClientFactory(): ClientFactory {
     key: string,
     options?: { baseUrl?: string; azure?: AzureOptions; model?: ModelName; resolvedModelId?: string; httpTimeoutMs?: number },
   ): ClientLike => {
-    if (options?.model?.startsWith('gemini')) {
-      // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
-      return createGeminiClient(key, options.model, options.resolvedModelId);
-    }
-    if (options?.model?.startsWith('claude')) {
-      return createClaudeClient(key, options.model, options.resolvedModelId, options.baseUrl);
+    const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
+
+    // When using OpenRouter, route ALL models through the OpenRouter adapter
+    // instead of native SDKs (which would reject the OpenRouter API key).
+    if (!openRouter) {
+      if (options?.model?.startsWith('gemini')) {
+        // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
+        return createGeminiClient(key, options.model, options.resolvedModelId);
+      }
+      if (options?.model?.startsWith('claude')) {
+        return createClaudeClient(key, options.model, options.resolvedModelId, options.baseUrl);
+      }
     }
 
     let instance: OpenAI;
-    const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
     const defaultHeaders: Record<string, string> | undefined = openRouter ? buildOpenRouterHeaders() : undefined;
 
     const httpTimeoutMs =
