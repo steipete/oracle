@@ -22,7 +22,6 @@ import {
   ensurePromptReady,
   installJavaScriptDialogAutoDismissal,
   ensureModelSelection,
-  submitPrompt,
   clearPromptComposer,
   waitForAssistantResponse,
   captureAssistantMarkdown,
@@ -52,6 +51,8 @@ import {
   writeChromePid,
   writeDevToolsActivePort,
 } from './profileState.js';
+import { runProviderSubmissionFlow } from './providerDomFlow.js';
+import { chatgptDomProvider } from './chatgptDomProvider.js';
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from './types.js';
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';
@@ -507,21 +508,25 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
       // Learned: return baselineTurns so assistant polling can ignore earlier content.
       const sendAttachmentNames = attachmentWaitTimedOut ? [] : attachmentNames;
-      const committedTurns = await submitPrompt(
-        {
-          runtime: Runtime,
-          input: Input,
-          attachmentNames: sendAttachmentNames,
-          baselineTurns: baselineTurns ?? undefined,
-          inputTimeoutMs: config.inputTimeoutMs ?? undefined,
-        },
-        prompt,
+      const providerState: Record<string, unknown> = {
+        runtime: Runtime,
+        input: Input,
         logger,
-      );
-      if (typeof committedTurns === 'number' && Number.isFinite(committedTurns)) {
-        if (baselineTurns === null || committedTurns > baselineTurns) {
-          baselineTurns = Math.max(0, committedTurns - 1);
-        }
+        timeoutMs: config.timeoutMs,
+        inputTimeoutMs: config.inputTimeoutMs ?? undefined,
+        baselineTurns: baselineTurns ?? undefined,
+        attachmentNames: sendAttachmentNames,
+      };
+      await runProviderSubmissionFlow(chatgptDomProvider, {
+        prompt,
+        evaluate: async () => undefined,
+        delay,
+        log: logger,
+        state: providerState,
+      });
+      const providerBaselineTurns = providerState.baselineTurns;
+      if (typeof providerBaselineTurns === 'number' && Number.isFinite(providerBaselineTurns)) {
+        baselineTurns = providerBaselineTurns;
       }
       if (attachmentNames.length > 0) {
         if (attachmentWaitTimedOut) {
@@ -1307,21 +1312,25 @@ async function runRemoteBrowserMode(
         logger('All attachments uploaded');
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
-      const committedTurns = await submitPrompt(
-        {
-          runtime: Runtime,
-          input: Input,
-          attachmentNames,
-          baselineTurns: baselineTurns ?? undefined,
-          inputTimeoutMs: config.inputTimeoutMs ?? undefined,
-        },
-        prompt,
+      const providerState: Record<string, unknown> = {
+        runtime: Runtime,
+        input: Input,
         logger,
-      );
-      if (typeof committedTurns === 'number' && Number.isFinite(committedTurns)) {
-        if (baselineTurns === null || committedTurns > baselineTurns) {
-          baselineTurns = Math.max(0, committedTurns - 1);
-        }
+        timeoutMs: config.timeoutMs,
+        inputTimeoutMs: config.inputTimeoutMs ?? undefined,
+        baselineTurns: baselineTurns ?? undefined,
+        attachmentNames,
+      };
+      await runProviderSubmissionFlow(chatgptDomProvider, {
+        prompt,
+        evaluate: async () => undefined,
+        delay,
+        log: logger,
+        state: providerState,
+      });
+      const providerBaselineTurns = providerState.baselineTurns;
+      if (typeof providerBaselineTurns === 'number' && Number.isFinite(providerBaselineTurns)) {
+        baselineTurns = providerBaselineTurns;
       }
       return { baselineTurns, baselineAssistantText };
     };

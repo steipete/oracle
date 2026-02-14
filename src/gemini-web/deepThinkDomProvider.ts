@@ -168,7 +168,7 @@ async function submitPrompt(ctx: ProviderDomFlowContext): Promise<void> {
   }
 }
 
-async function waitForResponse(ctx: ProviderDomFlowContext): Promise<string> {
+async function waitForResponse(ctx: ProviderDomFlowContext): Promise<{ text: string }> {
   ctx.log?.('[gemini-web] Waiting for Deep Think response (this may take a while)...');
   const responseTurnSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.responseTurn);
   const responseTextSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.responseText);
@@ -223,7 +223,7 @@ async function waitForResponse(ctx: ProviderDomFlowContext): Promise<string> {
   if (!responseText) {
     throw new Error('Deep Think timed out waiting for response (10 minutes).');
   }
-  return responseText;
+  return { text: responseText };
 }
 
 async function extractThoughts(ctx: ProviderDomFlowContext): Promise<string | null> {
