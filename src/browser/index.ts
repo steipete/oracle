@@ -52,7 +52,7 @@ import {
   writeDevToolsActivePort,
 } from './profileState.js';
 import { runProviderSubmissionFlow } from './providerDomFlow.js';
-import { chatgptDomProvider } from './chatgptDomProvider.js';
+import { chatgptDomProvider } from './providers/index.js';
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from './types.js';
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';

@@ -4,7 +4,7 @@ import { getCookies } from '@steipete/sweet-cookie';
 import { runProviderDomFlow } from '../browser/providerDomFlow.js';
 import { delay } from '../browser/utils.js';
 import { runGeminiWebWithFallback, saveFirstGeminiImageFromOutput } from './client.js';
-import { geminiDeepThinkDomProvider } from './deepThinkDomProvider.js';
+import { geminiDeepThinkDomProvider } from '../browser/providers/index.js';
 import type { GeminiWebModelId } from './client.js';
 import type { GeminiWebOptions, GeminiWebResponse } from './types.js';
 import { openGeminiBrowserSession } from './browserSessionManager.js';

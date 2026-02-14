@@ -1,8 +1,8 @@
-import type { BrowserLogger, ChromeClient } from './types.js';
-import type { ProviderDomAdapter, ProviderDomFlowContext } from './providerDomFlow.js';
-import { ensurePromptReady } from './actions/navigation.js';
-import { submitPrompt } from './actions/promptComposer.js';
-import { waitForAssistantResponse } from './actions/assistantResponse.js';
+import type { BrowserLogger, ChromeClient } from '../types.js';
+import type { ProviderDomAdapter, ProviderDomFlowContext } from '../providerDomFlow.js';
+import { ensurePromptReady } from '../actions/navigation.js';
+import { submitPrompt } from '../actions/promptComposer.js';
+import { waitForAssistantResponse } from '../actions/assistantResponse.js';
 
 interface ChatgptDomProviderState {
   runtime: ChromeClient['Runtime'];

@@ -1,5 +1,5 @@
-import type { ProviderDomAdapter, ProviderDomFlowContext } from '../browser/providerDomFlow.js';
-import { joinSelectors } from '../browser/providerDomFlow.js';
+import type { ProviderDomAdapter, ProviderDomFlowContext } from '../providerDomFlow.js';
+import { joinSelectors } from '../providerDomFlow.js';
 
 const UI_TIMEOUT_MS = 60_000;
 const RESPONSE_TIMEOUT_MS = 10 * 60_000;
