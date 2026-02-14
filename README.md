@@ -13,6 +13,38 @@
 
 Oracle bundles your prompt and files so another AI can answer with real context. It speaks GPT-5.4 Pro (default), GPT-5.4, GPT-5.1 Pro, GPT-5.1 Codex (API-only), GPT-5.1, GPT-5.2, Gemini 3 Pro, Claude Sonnet 4.5, Claude Opus 4.1, and more—and it can ask one or multiple models in a single run. Browser automation is available; use `--browser-model-strategy current` to keep the active ChatGPT model (or `ignore` to skip the picker). API remains the most reliable path, and `--copy` is an easy manual fallback.
 
+## Setting up (macOS Browser Mode)
+
+Browser mode lets you use GPT-5.2 Pro without any API keys — it automates your Chrome browser directly.
+
+### First-time login
+
+Run this once to create an automation profile and log into ChatGPT. The browser will stay open so you can complete the login:
+
+```bash
+oracle --engine browser --browser-manual-login \
+  --browser-keep-browser --browser-input-timeout 120000 \
+  -p "HI"
+```
+
+### Subsequent runs
+
+Once logged in, the automation profile is saved. Use this for all future runs:
+
+```bash
+oracle --engine browser --browser-manual-login \
+  --browser-auto-reattach-delay 5s \
+  --browser-auto-reattach-interval 3s \
+  --browser-auto-reattach-timeout 60s \
+  -p "your prompt"
+```
+
+> **Why these flags?**
+> - `--browser-manual-login` — Skips macOS Keychain cookie access (avoids repeated permission popups)
+> - `--browser-auto-reattach-*` — Reconnects when ChatGPT redirects mid-page-load (fixes "Inspected target navigated or closed" error)
+> - `--browser-keep-browser` — Keeps browser open for first-time login (not needed after)
+> - `--browser-input-timeout 120000` — Gives you 2 minutes to log in on first run
+
 ## Quick start
 
 Install globally: `npm install -g @steipete/oracle`
