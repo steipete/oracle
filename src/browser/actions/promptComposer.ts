@@ -36,16 +36,29 @@ export async function submitPrompt(
 
   await waitForDomReady(runtime, logger, deps.inputTimeoutMs ?? undefined);
   const encodedPrompt = JSON.stringify(prompt);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
+  const sendSelectorsLiteral = JSON.stringify(SEND_BUTTON_SELECTORS);
   const focusResult = await runtime.evaluate({
     expression: `(() => {
       ${buildClickDispatcher()}
-      const SELECTORS = ${JSON.stringify(INPUT_SELECTORS)};
+      const SELECTORS = ${inputSelectorsLiteral};
+      const SEND_SELECTORS = ${sendSelectorsLiteral};
       const isVisible = (node) => {
         if (!node || typeof node.getBoundingClientRect !== 'function') {
           return false;
         }
         const rect = node.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
+      };
+      const hasComposerSendButton = (node) => {
+        let current = node;
+        while (current && current !== document.body) {
+          if (SEND_SELECTORS.some((selector) => current.querySelector(selector))) {
+            return true;
+          }
+          current = current.parentElement;
+        }
+        return false;
       };
       const focusNode = (node) => {
         if (!node) {
@@ -75,7 +88,10 @@ export async function submitPrompt(
           candidates.push(node);
         }
       }
-      const preferred = candidates.find((node) => isVisible(node)) || candidates[0];
+      const preferred =
+        candidates.find((node) => isVisible(node) && hasComposerSendButton(node)) ||
+        candidates.find((node) => isVisible(node)) ||
+        candidates[0];
       if (preferred && focusNode(preferred)) {
         return { focused: true };
       }
@@ -101,7 +117,8 @@ export async function submitPrompt(
     expression: `(() => {
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
-      const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
+      const inputSelectors = ${inputSelectorsLiteral};
+      const sendSelectors = ${sendSelectorsLiteral};
       const readValue = (node) => {
         if (!node) return '';
         if (node instanceof HTMLTextAreaElement) return node.value ?? '';
@@ -112,10 +129,24 @@ export async function submitPrompt(
         const rect = node.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
       };
+      const hasComposerSendButton = (node) => {
+        let current = node;
+        while (current && current !== document.body) {
+          if (sendSelectors.some((selector) => current.querySelector(selector))) {
+            return true;
+          }
+          current = current.parentElement;
+        }
+        return false;
+      };
       const candidates = inputSelectors
         .map((selector) => document.querySelector(selector))
         .filter((node) => Boolean(node));
-      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+      const active =
+        candidates.find((node) => isVisible(node) && hasComposerSendButton(node)) ||
+        candidates.find((node) => isVisible(node)) ||
+        candidates[0] ||
+        null;
       return {
         editorText: editor?.innerText ?? '',
         fallbackValue: fallback?.value ?? '',
@@ -135,6 +166,23 @@ export async function submitPrompt(
     // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
     await runtime.evaluate({
       expression: `(() => {
+        const inputSelectors = ${inputSelectorsLiteral};
+        const candidates = inputSelectors
+          .map((selector) => document.querySelector(selector))
+          .filter((node) => Boolean(node));
+        for (const node of candidates) {
+          if (!node) continue;
+          if (node instanceof HTMLTextAreaElement) {
+            node.value = ${encodedPrompt};
+            node.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${encodedPrompt}, inputType: 'insertFromPaste' }));
+            node.dispatchEvent(new Event('change', { bubbles: true }));
+            continue;
+          }
+          if (node.isContentEditable || node.getAttribute?.('contenteditable') === 'true') {
+            node.textContent = ${encodedPrompt};
+            node.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${encodedPrompt}, inputType: 'insertFromPaste' }));
+          }
+        }
         const fallback = document.querySelector(${fallbackSelectorLiteral});
         if (fallback) {
           fallback.value = ${encodedPrompt};
@@ -156,7 +204,8 @@ export async function submitPrompt(
     expression: `(() => {
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
-      const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
+      const inputSelectors = ${inputSelectorsLiteral};
+      const sendSelectors = ${sendSelectorsLiteral};
       const readValue = (node) => {
         if (!node) return '';
         if (node instanceof HTMLTextAreaElement) return node.value ?? '';
@@ -167,10 +216,24 @@ export async function submitPrompt(
         const rect = node.getBoundingClientRect();
         return rect.width > 0 && rect.height > 0;
       };
+      const hasComposerSendButton = (node) => {
+        let current = node;
+        while (current && current !== document.body) {
+          if (sendSelectors.some((selector) => current.querySelector(selector))) {
+            return true;
+          }
+          current = current.parentElement;
+        }
+        return false;
+      };
       const candidates = inputSelectors
         .map((selector) => document.querySelector(selector))
         .filter((node) => Boolean(node));
-      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+      const active =
+        candidates.find((node) => isVisible(node) && hasComposerSendButton(node)) ||
+        candidates.find((node) => isVisible(node)) ||
+        candidates[0] ||
+        null;
       return {
         editorText: editor?.innerText ?? '',
         fallbackValue: fallback?.value ?? '',
@@ -511,10 +574,8 @@ async function verifyPromptCommitted(
     if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
       return typeof turnsCount === 'number' && Number.isFinite(turnsCount) ? turnsCount : null;
     }
-    const fallbackCommit =
-      info?.composerCleared &&
-      Boolean(info?.hasNewTurn) &&
-      ((info?.stopVisible ?? false) || info?.assistantVisible || info?.inConversation);
+    // Keep fallback commit strict: only trust it when ChatGPT is actively generating.
+    const fallbackCommit = info?.composerCleared && Boolean(info?.hasNewTurn) && Boolean(info?.stopVisible);
     if (fallbackCommit) {
       return typeof turnsCount === 'number' && Number.isFinite(turnsCount) ? turnsCount : null;
     }

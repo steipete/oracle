@@ -67,7 +67,6 @@ export const STOP_BUTTON_SELECTOR = '[data-testid="stop-button"]';
 export const SEND_BUTTON_SELECTORS = [
   'button[data-testid="send-button"]',
   'button[data-testid*="composer-send"]',
-  'form button[type="submit"]',
   'button[type="submit"][data-testid*="send"]',
   'button[aria-label*="Send"]',
 ];

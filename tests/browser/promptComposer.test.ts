@@ -66,4 +66,40 @@ describe('promptComposer', () => {
 
     await expect(promptComposer.verifyPromptCommitted(runtime as never, 'hello', 150)).resolves.toBe(1);
   });
+
+  test('does not treat assistant-visible fallback as committed when stop button is absent', async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi
+          .fn()
+          // Baseline read (turn count)
+          .mockResolvedValueOnce({ result: { value: 5 } })
+          // Polls (repeat)
+          .mockResolvedValue({
+            result: {
+              value: {
+                baseline: 5,
+                turnsCount: 6,
+                userMatched: false,
+                prefixMatched: false,
+                lastMatched: false,
+                hasNewTurn: true,
+                stopVisible: false,
+                assistantVisible: true,
+                composerCleared: true,
+                inConversation: true,
+              },
+            },
+          }),
+      } as unknown as { evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown> };
+
+      const promise = promptComposer.verifyPromptCommitted(runtime as never, 'hello', 150);
+      const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+      await vi.advanceTimersByTimeAsync(250);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
