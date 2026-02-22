@@ -1,7 +1,7 @@
 import type { BrowserModelStrategy } from './types.js';
 
 export const CHATGPT_URL = 'https://chatgpt.com/';
-export const DEFAULT_MODEL_TARGET = 'GPT-5.2 Pro';
+export const DEFAULT_MODEL_TARGET = 'GPT-5.3 Pro';
 export const DEFAULT_MODEL_STRATEGY: BrowserModelStrategy = 'select';
 export const COOKIE_URLS = ['https://chatgpt.com', 'https://chat.openai.com', 'https://atlas.openai.com'];
 

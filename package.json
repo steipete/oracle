@@ -1,6 +1,6 @@
 {
   "name": "@indykish/oracle",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "CLI wrapper around OpenAI Responses API with GPT-5.3 Pro, GPT-5.3, GPT-5.2, Gemini-3.5-Pro, Claude-4.6-Sonnet/Opus, and Grok-4.2 support.",
   "type": "module",
   "main": "dist/bin/oracle-cli.js",
@@ -40,7 +40,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/steipete/oracle.git"
+    "url": "git+https://github.com/indykish/oracle.git"
   },
   "engines": {
     "node": ">=22"
@@ -57,9 +57,9 @@
   "author": "",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/steipete/oracle/issues"
+    "url": "https://github.com/indykish/oracle/issues"
   },
-  "homepage": "https://github.com/steipete/oracle#readme",
+  "homepage": "https://github.com/indykish/oracle#readme",
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@google/genai": "^1.41.0",

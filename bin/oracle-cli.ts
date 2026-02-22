@@ -227,7 +227,7 @@ program.hook('preAction', (thisCommand) => {
 });
 program
   .name('oracle')
-  .description('One-shot GPT-5.2 Pro / GPT-5.2 / GPT-5.1 Codex tool for hard questions that benefit from large file context and server-side search.')
+  .description('One-shot Claude-4.6-Sonnet / Claude-4.6-Opus / GPT-5.3-Pro / GPT-5.3 tool for hard questions that benefit from large file context and server-side search.')
   .version(VERSION)
   .argument('[prompt]', 'Prompt text (shorthand for --prompt).')
   .option('-p, --prompt <text>', 'User prompt to send to the model.')

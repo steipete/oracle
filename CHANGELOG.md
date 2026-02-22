@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.9.2 — 2026-02-22
+
+### Fixed
+- CLI description now reflects Claude-4.6-Sonnet / Claude-4.6-Opus / GPT-5.3-Pro / GPT-5.3 as supported models (was stale GPT-5.2 text).
+- Browser default model target updated from GPT-5.2 Pro to GPT-5.3 Pro.
+- Package metadata (repository, bugs, homepage) now points to `indykish/oracle` fork.
+
 ## 0.9.1 — 2026-02-22
 
 ### Changed
