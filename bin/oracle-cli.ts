@@ -171,6 +171,8 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
   effectiveModelId?: string;
   writeOutputPath?: string;
   previousResponseId?: string;
+  followupSessionId?: string;
+  followupModel?: string;
 };
 
 interface RestartCommandOptions {
@@ -799,13 +801,18 @@ function resolveHeartbeatIntervalMs(seconds: number | undefined): number | undef
   return Math.round(seconds * 1000);
 }
 
-async function resolveFollowupResponseId(value: string, followupModel?: string): Promise<string> {
+interface FollowupResolution {
+  responseId: string;
+  sessionId?: string;
+}
+
+async function resolveFollowupReference(value: string, followupModel?: string): Promise<FollowupResolution> {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     throw new Error('--followup requires a session id or response id.');
   }
   if (trimmed.startsWith('resp_')) {
-    return trimmed;
+    return { responseId: trimmed };
   }
 
   // Treat as oracle session id (slug).
@@ -815,7 +822,7 @@ async function resolveFollowupResponseId(value: string, followupModel?: string):
   }
   const fromMetadata = extractResponseIdFromSession(meta, followupModel);
   if (fromMetadata) {
-    return fromMetadata;
+    return { responseId: fromMetadata, sessionId: meta.id };
   }
 
   // Fallback: scrape the log for a response id (covers older sessions / edge cases).
@@ -823,7 +830,7 @@ async function resolveFollowupResponseId(value: string, followupModel?: string):
   const matches = logText.match(/resp_[A-Za-z0-9]+/g) ?? [];
   const last = matches.length > 0 ? matches[matches.length - 1] : null;
   if (last) {
-    return last;
+    return { responseId: last, sessionId: meta.id };
   }
 
   throw new Error(
@@ -1197,7 +1204,10 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       if (normalizedMultiModels.length > 0) {
         throw new Error('--followup cannot be combined with --models.');
       }
-      resolvedOptions.previousResponseId = await resolveFollowupResponseId(options.followup, options.followupModel);
+      const followup = await resolveFollowupReference(options.followup, options.followupModel);
+      resolvedOptions.previousResponseId = followup.responseId;
+      resolvedOptions.followupSessionId = followup.sessionId;
+      resolvedOptions.followupModel = options.followupModel;
     }
     const runOptions = buildRunOptions(resolvedOptions, { preview: true, previewMode, baseUrl: resolvedBaseUrl });
     if (engine === 'browser') {
@@ -1255,7 +1265,10 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     if (normalizedMultiModels.length > 0) {
       throw new Error('--followup cannot be combined with --models.');
     }
-    resolvedOptions.previousResponseId = await resolveFollowupResponseId(options.followup, options.followupModel);
+    const followup = await resolveFollowupReference(options.followup, options.followupModel);
+    resolvedOptions.previousResponseId = followup.responseId;
+    resolvedOptions.followupSessionId = followup.sessionId;
+    resolvedOptions.followupModel = options.followupModel;
   }
 
   const duplicateBlocked = await shouldBlockDuplicatePrompt({
@@ -1360,6 +1373,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       ...baseRunOptions,
       mode: sessionMode,
       browserConfig,
+      followupSessionId: resolvedOptions.followupSessionId,
+      followupModel: resolvedOptions.followupModel,
       waitPreference,
       youtube: options.youtube,
       generateImage: options.generateImage,
@@ -1603,6 +1618,8 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
       ...runOptions,
       mode: sessionMode,
       browserConfig,
+      followupSessionId: storedOptions.followupSessionId,
+      followupModel: storedOptions.followupModel,
       waitPreference,
       youtube: storedOptions.youtube,
       generateImage: storedOptions.generateImage,

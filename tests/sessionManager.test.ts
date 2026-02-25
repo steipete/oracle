@@ -69,9 +69,12 @@ describe('session lifecycle', () => {
 	      {
 	        prompt: 'Inspect code',
 	        model: 'gpt-5.2-pro',
-	        file: ['notes.md'],
-	        maxInput: 123,
-	        system: 'SYS',
+        file: ['notes.md'],
+        previousResponseId: 'resp-parent-123',
+        followupSessionId: 'parent-session',
+        followupModel: 'gpt-5.1',
+        maxInput: 123,
+        system: 'SYS',
         maxOutput: 456,
         silent: false,
         filesReport: true,
@@ -82,6 +85,9 @@ describe('session lifecycle', () => {
 	    const baseDir = path.join(sessionModule.getSessionsDir(), metadata.id);
 	    const storedMeta = JSON.parse(await readFile(path.join(baseDir, 'meta.json'), 'utf8'));
 	    expect(storedMeta.options.file).toEqual(['notes.md']);
+      expect(storedMeta.options.previousResponseId).toBe('resp-parent-123');
+      expect(storedMeta.options.followupSessionId).toBe('parent-session');
+      expect(storedMeta.options.followupModel).toBe('gpt-5.1');
 	    await expect(readFile(path.join(baseDir, 'request.json'), 'utf8')).rejects.toThrow();
 	    const modelMeta = JSON.parse(await readFile(path.join(baseDir, 'models', 'gpt-5.2-pro.json'), 'utf8'));
 	    expect(modelMeta.status).toBe('pending');

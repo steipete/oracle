@@ -61,6 +61,33 @@ describe('sessionDisplay helpers', () => {
     log.mockRestore();
   }, 15_000);
 
+  it('shows follow-up lineage in status rows', async () => {
+    const parent = {
+      id: 'parent-session',
+      status: 'completed',
+      createdAt: '2025-11-20T00:00:00.000Z',
+      model: 'gpt-5.1',
+      options: { prompt: 'parent' },
+      response: { responseId: 'resp_parent_1234' },
+    };
+    const child = {
+      id: 'child-session',
+      status: 'completed',
+      createdAt: '2025-11-20T00:01:00.000Z',
+      model: 'gpt-5.1',
+      options: { prompt: 'child', previousResponseId: 'resp_parent_1234', followupSessionId: 'parent-session' },
+    };
+    mockSessionStore.listSessions.mockResolvedValue([child, parent]);
+    mockSessionStore.filterSessions.mockReturnValue({ entries: [child, parent], truncated: false, total: 2 });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { showStatus } = await import('../../src/cli/sessionDisplay.js');
+    await showStatus({ hours: 24, includeAll: false, limit: 5 });
+
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/child-session.*<- parent-session/));
+    log.mockRestore();
+  }, 15_000);
+
   it('formats metadata and completion summaries', async () => {
     const {
       formatResponseMetadata,

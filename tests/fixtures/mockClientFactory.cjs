@@ -34,12 +34,18 @@ class MockStream {
   abort() {}
 }
 
+let responseCounter = 0;
+
 function mockClientFactory() {
   return {
     responses: {
       stream: async (body) => {
+        if (process.env.ORACLE_TEST_REQUIRE_PREV === '1' && !body.previous_response_id) {
+          throw new Error('MISSING_PREVIOUS_RESPONSE_ID');
+        }
+        responseCounter += 1;
         const response = {
-          id: 'mock-response',
+          id: `resp_mock${Date.now()}${responseCounter}`,
           status: 'completed',
           usage: {
             input_tokens: 12,

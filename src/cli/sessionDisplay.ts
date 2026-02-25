@@ -14,6 +14,11 @@ import type { BrowserLogger } from '../browser/types.js';
 import { resumeBrowserSession } from '../browser/reattach.js';
 import { estimateTokenCount } from '../browser/utils.js';
 import { formatSessionTableHeader, formatSessionTableRow, resolveSessionCost } from './sessionTable.js';
+import {
+  abbreviateResponseId,
+  buildResponseOwnerIndex,
+  resolveSessionLineage,
+} from './sessionLineage.js';
 
 const isTty = (): boolean => Boolean(process.stdout.isTTY);
 const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
@@ -58,6 +63,7 @@ export async function showStatus({
   const { entries, truncated, total } = sessionStore.filterSessions(metas, { hours, includeAll, limit });
   const filteredEntries = modelFilter ? entries.filter((entry) => matchesModel(entry, modelFilter)) : entries;
   const richTty = process.stdout.isTTY && chalk.level > 0;
+  const responseOwners = buildResponseOwnerIndex(metas);
   if (!filteredEntries.length) {
     console.log(CLEANUP_TIP);
     if (showExamples) {
@@ -68,7 +74,9 @@ export async function showStatus({
   console.log(chalk.bold('Recent Sessions'));
   console.log(formatSessionTableHeader(richTty));
   for (const entry of filteredEntries) {
-    console.log(formatSessionTableRow(entry, { rich: richTty }));
+    const row = formatSessionTableRow(entry, { rich: richTty });
+    const lineage = formatStatusLineage(entry, responseOwners, richTty);
+    console.log(`${row}${lineage}`);
   }
   if (truncated) {
     const sessionsDir = sessionStore.sessionsDir();
@@ -204,6 +212,10 @@ export async function attachSession(sessionId: string, options?: AttachSessionOp
     const reattachLine = buildReattachLine(metadata);
     if (reattachLine) {
       console.log(chalk.blue(reattachLine));
+    }
+    const chainLine = await buildSessionChainLine(metadata);
+    if (chainLine) {
+      console.log(dim(`Chain: ${chainLine}`));
     }
     console.log(`Created: ${metadata.createdAt}`);
     console.log(`Status: ${metadata.status}`);
@@ -519,6 +531,41 @@ function matchesModel(entry: SessionMetadata, filter: string): boolean {
   const models =
     entry.models?.map((model) => model.model.toLowerCase()) ?? (entry.model ? [entry.model.toLowerCase()] : []);
   return models.includes(normalized);
+}
+
+function formatStatusLineage(
+  entry: SessionMetadata,
+  responseOwners: ReadonlyMap<string, string>,
+  rich: boolean,
+): string {
+  const lineage = resolveSessionLineage(entry, responseOwners);
+  if (!lineage) {
+    return '';
+  }
+  const parentLabel = lineage.parentSessionId
+    ? `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)})`
+    : abbreviateResponseId(lineage.parentResponseId);
+  const suffix = ` <- ${parentLabel}`;
+  return rich ? chalk.gray(suffix) : suffix;
+}
+
+async function buildSessionChainLine(metadata: SessionMetadata): Promise<string | null> {
+  const lineageWithoutLookup = resolveSessionLineage(metadata);
+  if (!lineageWithoutLookup) {
+    return `root -> ${metadata.id}`;
+  }
+  if (lineageWithoutLookup.parentSessionId) {
+    return `${lineageWithoutLookup.parentSessionId} (${abbreviateResponseId(lineageWithoutLookup.parentResponseId)}) -> ${
+      metadata.id
+    }`;
+  }
+  const sessions = await sessionStore.listSessions().catch(() => []);
+  const responseOwners = buildResponseOwnerIndex(sessions);
+  const lineage = resolveSessionLineage(metadata, responseOwners) ?? lineageWithoutLookup;
+  if (lineage.parentSessionId) {
+    return `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)}) -> ${metadata.id}`;
+  }
+  return `${abbreviateResponseId(lineage.parentResponseId)} -> ${metadata.id}`;
 }
 
 async function buildSessionLogForDisplay(

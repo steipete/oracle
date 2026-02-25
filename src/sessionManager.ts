@@ -95,6 +95,10 @@ export interface StoredRunOptions {
   models?: ModelName[];
   /** Responses API chaining (maps to `previous_response_id`). */
   previousResponseId?: string;
+  /** Optional session slug that provided the parent response when using `--followup <sessionId>`. */
+  followupSessionId?: string;
+  /** Optional model selector used with --followup-model for multi-model parent sessions. */
+  followupModel?: string;
   maxInput?: number;
   system?: string;
   maxOutput?: number;
@@ -407,6 +411,9 @@ export async function initializeSession(
       file: options.file ?? [],
       model: options.model,
       models: modelList,
+      previousResponseId: options.previousResponseId,
+      followupSessionId: options.followupSessionId,
+      followupModel: options.followupModel,
       effectiveModelId: options.effectiveModelId,
       maxInput: options.maxInput,
       system: options.system,

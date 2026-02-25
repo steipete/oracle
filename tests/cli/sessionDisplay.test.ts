@@ -156,6 +156,24 @@ describe('attachSession rendering', () => {
     readSessionRequestMock.mockReset();
   });
 
+  test('prints chain metadata for follow-up sessions', async () => {
+    const followupMeta: SessionMetadata = {
+      ...baseMeta,
+      options: {
+        previousResponseId: 'resp_parent_1234',
+        followupSessionId: 'parent-session',
+      },
+    } as SessionMetadata;
+    readSessionMetadataMock.mockResolvedValue(followupMeta);
+    readSessionLogMock.mockResolvedValue('Answer:\nchild output');
+    readSessionRequestMock.mockResolvedValue({ prompt: 'Prompt here' });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await attachSession('sess', { renderMarkdown: false });
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Chain: parent-session (resp_parent_1234) -> sess'));
+  });
+
 	  test('prints all model runs with status and tokens', async () => {
 	    const multiMeta: SessionMetadata = {
 	      ...baseMeta,

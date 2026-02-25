@@ -59,6 +59,74 @@ describe('oracle CLI integration', () => {
     await rm(oracleHome, { recursive: true, force: true });
   }, INTEGRATION_TIMEOUT);
 
+  test('persists followup lineage and reuses previous_response_id during --exec-session', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_NO_DETACH: '1',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    await execFileAsync(
+      process.execPath,
+      ['--import', 'tsx', CLI_ENTRY, '--prompt', 'Parent run', '--model', 'gpt-5.1'],
+      { env },
+    );
+
+    const sessionsDir = path.join(oracleHome, 'sessions');
+    const [parentId] = await readdir(sessionsDir);
+    expect(parentId).toBeTruthy();
+    const parentMeta = JSON.parse(await readFile(path.join(sessionsDir, parentId, 'meta.json'), 'utf8'));
+    const parentResponseId = String(parentMeta.response?.responseId ?? '');
+    expect(parentResponseId.startsWith('resp_')).toBe(true);
+
+    await execFileAsync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        CLI_ENTRY,
+        '--prompt',
+        'Child run',
+        '--model',
+        'gpt-5.1',
+        '--followup',
+        parentId,
+      ],
+      { env },
+    );
+
+    const allSessions = await readdir(sessionsDir);
+    expect(allSessions.length).toBe(2);
+    const childId = allSessions.find((id) => id !== parentId);
+    expect(childId).toBeTruthy();
+    const childMeta = JSON.parse(await readFile(path.join(sessionsDir, childId as string, 'meta.json'), 'utf8'));
+    expect(childMeta.options?.previousResponseId).toBe(parentResponseId);
+    expect(childMeta.options?.followupSessionId).toBe(parentId);
+
+    await execFileAsync(
+      process.execPath,
+      ['--import', 'tsx', CLI_ENTRY, '--exec-session', childId as string],
+      {
+        env: {
+          ...env,
+          // biome-ignore lint/style/useNamingConvention: env var name
+          ORACLE_TEST_REQUIRE_PREV: '1',
+        },
+      },
+    );
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
   test('rejects mixing --model and --models regardless of source', async () => {
     const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-multi-conflict-'));
     const env = {
