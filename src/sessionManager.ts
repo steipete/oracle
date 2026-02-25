@@ -93,6 +93,8 @@ export interface StoredRunOptions {
   file?: string[];
   model?: string;
   models?: ModelName[];
+  /** Responses API chaining (maps to `previous_response_id`). */
+  previousResponseId?: string;
   maxInput?: number;
   system?: string;
   maxOutput?: number;

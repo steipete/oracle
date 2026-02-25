@@ -251,6 +251,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     (options.model.startsWith('gemini')
       ? resolveGeminiModelId(options.model)
       : (modelConfig.apiModel ?? modelConfig.model));
+  if (!isPreview && options.previousResponseId) {
+    log(dim(`Continuing from response ${options.previousResponseId}`));
+  }
   const requestBody = buildRequestBody({
     modelConfig,
     systemPrompt,
@@ -258,7 +261,9 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     searchEnabled,
     maxOutputTokens: options.maxOutput,
     background: useBackground,
-    storeResponse: useBackground,
+    // Storing makes follow-ups possible (Responses API chaining relies on stored response state).
+    storeResponse: useBackground || Boolean(options.previousResponseId),
+    previousResponseId: options.previousResponseId,
   });
   const estimatedInputTokens = estimateRequestTokens(requestBody, modelConfig);
   const tokenLabel = formatTokenEstimate(

@@ -98,6 +98,8 @@ interface CliOptions extends OptionValues {
   apiKey?: string;
   session?: string;
   execSession?: string;
+  followup?: string;
+  followupModel?: string;
   notify?: boolean;
   notifySound?: boolean;
   renderMarkdown?: boolean;
@@ -168,6 +170,7 @@ type ResolvedCliOptions = Omit<CliOptions, 'model'> & {
   models?: ModelName[];
   effectiveModelId?: string;
   writeOutputPath?: string;
+  previousResponseId?: string;
 };
 
 interface RestartCommandOptions {
@@ -232,6 +235,14 @@ program
   .argument('[prompt]', 'Prompt text (shorthand for --prompt).')
   .option('-p, --prompt <text>', 'User prompt to send to the model.')
   .addOption(new Option('--message <text>', 'Alias for --prompt.').hideHelp())
+  .option(
+    '--followup <sessionId|responseId>',
+    'Continue an API run from a stored Responses API response id (resp_...) or from a stored oracle session id.',
+  )
+  .option(
+    '--followup-model <model>',
+    'When following up a multi-model session, choose which model response to continue from.',
+  )
   .option(
     '-f, --file <paths...>',
     'Files/directories or glob patterns to attach (prefix with !pattern to exclude). Files larger than 1 MB are rejected automatically.',
@@ -739,6 +750,7 @@ function buildRunOptions(options: ResolvedCliOptions, overrides: Partial<RunOrac
     prompt: options.prompt,
     model: options.model,
     models: overrides.models ?? options.models,
+    previousResponseId: overrides.previousResponseId ?? options.previousResponseId,
     effectiveModelId: overrides.effectiveModelId ?? options.effectiveModelId ?? options.model,
     file: overrides.file ?? options.file ?? [],
     slug: overrides.slug ?? options.slug,
@@ -787,12 +799,79 @@ function resolveHeartbeatIntervalMs(seconds: number | undefined): number | undef
   return Math.round(seconds * 1000);
 }
 
+async function resolveFollowupResponseId(value: string, followupModel?: string): Promise<string> {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error('--followup requires a session id or response id.');
+  }
+  if (trimmed.startsWith('resp_')) {
+    return trimmed;
+  }
+
+  // Treat as oracle session id (slug).
+  const meta = await sessionStore.readSession(trimmed);
+  if (!meta) {
+    throw new Error(`No session found with ID ${trimmed}`);
+  }
+  const fromMetadata = extractResponseIdFromSession(meta, followupModel);
+  if (fromMetadata) {
+    return fromMetadata;
+  }
+
+  // Fallback: scrape the log for a response id (covers older sessions / edge cases).
+  const logText = await sessionStore.readLog(trimmed).catch(() => '');
+  const matches = logText.match(/resp_[A-Za-z0-9]+/g) ?? [];
+  const last = matches.length > 0 ? matches[matches.length - 1] : null;
+  if (last) {
+    return last;
+  }
+
+  throw new Error(
+    `Session ${trimmed} does not contain a stored response id. Ensure the original run produced a Responses API response id (background/store helps).`,
+  );
+}
+
+function extractResponseIdFromSession(meta: SessionMetadata, followupModel?: string): string | null {
+  // Single-model sessions store response metadata at the session root.
+  const rootResponse = (meta as unknown as { response?: Record<string, unknown> | null }).response ?? null;
+  const rootResponseId =
+    (rootResponse?.responseId as string | undefined) ?? (rootResponse?.id as string | undefined);
+  if (rootResponseId && rootResponseId.startsWith('resp_')) {
+    return rootResponseId;
+  }
+
+  const runs = Array.isArray(meta.models) ? meta.models : [];
+  if (runs.length === 0) {
+    return null;
+  }
+  const pickRun = (): (typeof runs)[number] | null => {
+    if (followupModel) {
+      return runs.find((r) => r.model === followupModel) ?? null;
+    }
+    return runs.length === 1 ? runs[0] : null;
+  };
+  const chosen = pickRun();
+  if (!chosen) {
+    const models = runs.map((r) => r.model).join(', ');
+    throw new Error(
+      followupModel
+        ? `Session ${meta.id} has no model named ${followupModel}. Available: ${models}`
+        : `Session ${meta.id} has multiple model runs. Re-run with --followup-model. Available: ${models}`,
+    );
+  }
+  const runResponse = (chosen as unknown as { response?: Record<string, unknown> | null }).response ?? null;
+  const runResponseId =
+    (runResponse?.responseId as string | undefined) ?? (runResponse?.id as string | undefined);
+  return runResponseId && runResponseId.startsWith('resp_') ? runResponseId : null;
+}
+
 function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOptions {
   const stored = metadata.options ?? {};
   return {
     prompt: stored.prompt ?? '',
     model: (stored.model as ModelName) ?? DEFAULT_MODEL,
     models: stored.models as ModelName[] | undefined,
+    previousResponseId: stored.previousResponseId,
     effectiveModelId: stored.effectiveModelId ?? stored.model,
     file: stored.file ?? [],
     slug: stored.slug,
@@ -1111,6 +1190,15 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       options.prompt = `${options.prompt.trim()}\n${userConfig.promptSuffix}`;
     }
     resolvedOptions.prompt = options.prompt;
+    if (options.followup) {
+      if (engine !== 'api') {
+        throw new Error('--followup requires --engine api.');
+      }
+      if (normalizedMultiModels.length > 0) {
+        throw new Error('--followup cannot be combined with --models.');
+      }
+      resolvedOptions.previousResponseId = await resolveFollowupResponseId(options.followup, options.followupModel);
+    }
     const runOptions = buildRunOptions(resolvedOptions, { preview: true, previewMode, baseUrl: resolvedBaseUrl });
     if (engine === 'browser') {
       await runBrowserPreview(
@@ -1160,6 +1248,15 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     options.prompt = `${options.prompt.trim()}\n${userConfig.promptSuffix}`;
   }
   resolvedOptions.prompt = options.prompt;
+  if (options.followup) {
+    if (engine !== 'api') {
+      throw new Error('--followup requires --engine api.');
+    }
+    if (normalizedMultiModels.length > 0) {
+      throw new Error('--followup cannot be combined with --models.');
+    }
+    resolvedOptions.previousResponseId = await resolveFollowupResponseId(options.followup, options.followupModel);
+  }
 
   const duplicateBlocked = await shouldBlockDuplicatePrompt({
     prompt: resolvedOptions.prompt,

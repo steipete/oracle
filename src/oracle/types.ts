@@ -128,6 +128,14 @@ export interface RunOracleOptions {
   prompt: string;
   model: ModelName;
   models?: ModelName[];
+  /**
+   * Continue an OpenAI Responses API conversation by chaining from a prior response id.
+   * This maps to the Responses API field `previous_response_id`.
+   *
+   * Note: Responses API does not carry forward `instructions`, so callers must still
+   * send instructions each turn (Oracle does).
+   */
+  previousResponseId?: string;
   file?: string[];
   slug?: string;
   filesReport?: boolean;
@@ -220,6 +228,7 @@ export interface BuildRequestBodyParams {
   maxOutputTokens?: number;
   background?: boolean;
   storeResponse?: boolean;
+  previousResponseId?: string;
 }
 
 export interface ToolConfig {
@@ -228,6 +237,8 @@ export interface ToolConfig {
 
 export interface OracleRequestBody {
   model: string;
+  // biome-ignore lint/style/useNamingConvention: field name provided by OpenAI Responses API
+  previous_response_id?: string;
   instructions: string;
   input: Array<{
     role: 'user';

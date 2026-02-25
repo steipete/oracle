@@ -29,10 +29,12 @@ export function buildRequestBody({
   maxOutputTokens,
   background,
   storeResponse,
+  previousResponseId,
 }: BuildRequestBodyParams): OracleRequestBody {
   const searchToolType: ToolConfig['type'] = modelConfig.searchToolType ?? 'web_search_preview';
   return {
     model: modelConfig.apiModel ?? modelConfig.model,
+    previous_response_id: previousResponseId ? previousResponseId : undefined,
     instructions: systemPrompt,
     input: [
       {

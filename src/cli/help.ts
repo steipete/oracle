@@ -72,7 +72,7 @@ function renderHelpFooter(program: Command, colors: HelpColors): string {
     `${colors.bullet('•')} Spell out the project + platform + version requirements (repo name, target OS/toolchain versions, API dependencies) so Oracle doesn’t guess defaults.`,
     `${colors.bullet('•')} When comparing multiple repos/files, spell out each repo + path + role (e.g., “Project A SettingsView → apps/project-a/Sources/SettingsView.swift; Project B SettingsView → ../project-b/mac/...”) so the model knows exactly which file is which.`,
     `${colors.bullet('•')} Best results: 6–30 sentences plus key source files; very short prompts often yield generic answers.`,
-    `${colors.bullet('•')} Oracle is one-shot: it does not remember prior runs, so start fresh each time with full context.`,
+    `${colors.bullet('•')} Oracle is one-shot by default. For API runs, you can chain follow-ups by passing ${colors.accent('--followup <sessionId|responseId>')} (continues via Responses API previous_response_id).`,
     `${colors.bullet('•')} Run ${colors.accent('--files-report')} to inspect token spend before hitting the API.`,
     `${colors.bullet('•')} Non-preview runs spawn detached sessions (especially gpt-5.4-pro API). If the CLI times out, do not re-run — reattach with ${colors.accent('oracle session <slug>')} to resume/inspect the existing run.`,
     `${colors.bullet('•')} Set a memorable 3–5 word slug via ${colors.accent('--slug "<words>"')} to keep session IDs tidy.`,
