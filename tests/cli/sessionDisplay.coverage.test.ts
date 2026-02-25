@@ -84,7 +84,57 @@ describe('sessionDisplay helpers', () => {
     const { showStatus } = await import('../../src/cli/sessionDisplay.js');
     await showStatus({ hours: 24, includeAll: false, limit: 5 });
 
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/┬ parent-session/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/└─ child-session/));
+    log.mockRestore();
+  }, 15_000);
+
+  it('renders nested follow-up branches with stable tree connectors', async () => {
+    const parent = {
+      id: 'parent-session',
+      status: 'completed',
+      createdAt: '2025-11-20T00:00:00.000Z',
+      model: 'gpt-5.1',
+      options: { prompt: 'parent' },
+      response: { responseId: 'resp_parent_1234' },
+    };
+    const childA = {
+      id: 'child-a',
+      status: 'completed',
+      createdAt: '2025-11-20T00:01:00.000Z',
+      model: 'gpt-5.1',
+      options: { prompt: 'child-a', previousResponseId: 'resp_parent_1234', followupSessionId: 'parent-session' },
+      response: { responseId: 'resp_child_a_1234' },
+    };
+    const childB = {
+      id: 'child-b',
+      status: 'completed',
+      createdAt: '2025-11-20T00:02:00.000Z',
+      model: 'gpt-5.1',
+      options: { prompt: 'child-b', previousResponseId: 'resp_parent_1234', followupSessionId: 'parent-session' },
+    };
+    const grandchild = {
+      id: 'grandchild-a1',
+      status: 'completed',
+      createdAt: '2025-11-20T00:03:00.000Z',
+      model: 'gpt-5.1',
+      options: { prompt: 'grandchild', previousResponseId: 'resp_child_a_1234', followupSessionId: 'child-a' },
+    };
+    mockSessionStore.listSessions.mockResolvedValue([parent, childA, childB, grandchild]);
+    mockSessionStore.filterSessions.mockReturnValue({
+      entries: [parent, childA, childB, grandchild],
+      truncated: false,
+      total: 4,
+    });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { showStatus } = await import('../../src/cli/sessionDisplay.js');
+    await showStatus({ hours: 24, includeAll: false, limit: 10 });
+
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/┬ parent-session/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/├┬ child-a/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/│  └─ grandchild-a1/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/└─ child-b/));
     log.mockRestore();
   }, 15_000);
 
