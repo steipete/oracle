@@ -38,11 +38,21 @@ describe('shouldDetachSession', () => {
     expect(standard).toBe(false);
   });
 
-  test('allows detach for pro models when env permits', () => {
+  test('does not detach when wait preference is true, even for pro models', () => {
     const pro52 = shouldDetachSession({
       engine: 'api',
       model: 'gpt-5.2-pro',
       waitPreference: true,
+      disableDetachEnv: false,
+    });
+    expect(pro52).toBe(false);
+  });
+
+  test('allows detach for pro models when wait preference is false and env permits', () => {
+    const pro52 = shouldDetachSession({
+      engine: 'api',
+      model: 'gpt-5.2-pro',
+      waitPreference: false,
       disableDetachEnv: false,
     });
     expect(pro52).toBe(true);
