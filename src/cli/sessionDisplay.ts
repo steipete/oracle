@@ -578,7 +578,7 @@ function buildStatusTreeRows(
     }
     visited.add(entry.id);
     const children = childMap.get(entry.id) ?? [];
-    const nodeBranch = children.length > 0 ? (isLast ? '└┬ ' : '├┬ ') : isLast ? '└─ ' : '├─ ';
+    const nodeBranch = isLast ? '└─ ' : '├─ ';
     const prefix = `${ancestorHasMore.map((hasMore) => (hasMore ? '│  ' : '   ')).join('')}${nodeBranch}`;
     rows.push({ entry, displaySlug: `${prefix}${entry.id}` });
 
@@ -598,8 +598,7 @@ function buildStatusTreeRows(
         ? `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)})`
         : undefined;
     const children = childMap.get(entry.id) ?? [];
-    const displaySlug = children.length > 0 ? `┬ ${entry.id}` : entry.id;
-    rows.push({ entry, displaySlug, detachedParentLabel: hiddenParent });
+    rows.push({ entry, displaySlug: entry.id, detachedParentLabel: hiddenParent });
     children.forEach((child, index) => {
       walkChild(child, [], index === children.length - 1);
     });

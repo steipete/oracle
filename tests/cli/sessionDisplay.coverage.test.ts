@@ -84,7 +84,7 @@ describe('sessionDisplay helpers', () => {
     const { showStatus } = await import('../../src/cli/sessionDisplay.js');
     await showStatus({ hours: 24, includeAll: false, limit: 5 });
 
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/┬ parent-session/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/parent-session/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/└─ child-session/));
     log.mockRestore();
   }, 15_000);
@@ -131,8 +131,8 @@ describe('sessionDisplay helpers', () => {
     const { showStatus } = await import('../../src/cli/sessionDisplay.js');
     await showStatus({ hours: 24, includeAll: false, limit: 10 });
 
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/┬ parent-session/));
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/├┬ child-a/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/parent-session/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/├─ child-a/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/│  └─ grandchild-a1/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/└─ child-b/));
     log.mockRestore();
