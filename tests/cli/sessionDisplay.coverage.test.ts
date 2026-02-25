@@ -84,7 +84,7 @@ describe('sessionDisplay helpers', () => {
     const { showStatus } = await import('../../src/cli/sessionDisplay.js');
     await showStatus({ hours: 24, includeAll: false, limit: 5 });
 
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/child-session.*<- parent-session/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/└─ child-session/));
     log.mockRestore();
   }, 15_000);
 

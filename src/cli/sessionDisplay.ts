@@ -73,10 +73,16 @@ export async function showStatus({
   }
   console.log(chalk.bold('Recent Sessions'));
   console.log(formatSessionTableHeader(richTty));
-  for (const entry of filteredEntries) {
-    const row = formatSessionTableRow(entry, { rich: richTty });
-    const lineage = formatStatusLineage(entry, responseOwners, richTty);
-    console.log(`${row}${lineage}`);
+  const treeRows = buildStatusTreeRows(filteredEntries, responseOwners);
+  for (const row of treeRows) {
+    const line = formatSessionTableRow(row.entry, { rich: richTty, displaySlug: row.displaySlug });
+    const detachedParent =
+      row.detachedParentLabel != null
+        ? richTty
+          ? chalk.gray(` <- ${row.detachedParentLabel}`)
+          : ` <- ${row.detachedParentLabel}`
+        : '';
+    console.log(`${line}${detachedParent}`);
   }
   if (truncated) {
     const sessionsDir = sessionStore.sessionsDir();
@@ -533,20 +539,79 @@ function matchesModel(entry: SessionMetadata, filter: string): boolean {
   return models.includes(normalized);
 }
 
-function formatStatusLineage(
-  entry: SessionMetadata,
+interface StatusTreeRow {
+  entry: SessionMetadata;
+  displaySlug: string;
+  detachedParentLabel?: string;
+}
+
+function buildStatusTreeRows(
+  entries: SessionMetadata[],
   responseOwners: ReadonlyMap<string, string>,
-  rich: boolean,
-): string {
-  const lineage = resolveSessionLineage(entry, responseOwners);
-  if (!lineage) {
-    return '';
+): StatusTreeRow[] {
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+  const orderIndex = new Map(entries.map((entry, index) => [entry.id, index]));
+  const lineageById = new Map<string, ReturnType<typeof resolveSessionLineage>>();
+  const childMap = new Map<string, SessionMetadata[]>();
+
+  for (const entry of entries) {
+    const lineage = resolveSessionLineage(entry, responseOwners);
+    lineageById.set(entry.id, lineage);
+    const parentId = lineage?.parentSessionId;
+    if (parentId && parentId !== entry.id && entryById.has(parentId)) {
+      const siblings = childMap.get(parentId) ?? [];
+      siblings.push(entry);
+      childMap.set(parentId, siblings);
+    }
   }
-  const parentLabel = lineage.parentSessionId
-    ? `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)})`
-    : abbreviateResponseId(lineage.parentResponseId);
-  const suffix = ` <- ${parentLabel}`;
-  return rich ? chalk.gray(suffix) : suffix;
+
+  for (const siblings of childMap.values()) {
+    siblings.sort((a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0));
+  }
+
+  const rows: StatusTreeRow[] = [];
+  const visited = new Set<string>();
+
+  const walkChild = (entry: SessionMetadata, ancestorHasMore: boolean[], isLast: boolean): void => {
+    if (visited.has(entry.id)) {
+      return;
+    }
+    visited.add(entry.id);
+    const prefix = `${ancestorHasMore.map((hasMore) => (hasMore ? '│  ' : '   ')).join('')}${isLast ? '└─ ' : '├─ '}`;
+    rows.push({ entry, displaySlug: `${prefix}${entry.id}` });
+
+    const children = childMap.get(entry.id) ?? [];
+    children.forEach((child, index) => {
+      walkChild(child, [...ancestorHasMore, !isLast], index === children.length - 1);
+    });
+  };
+
+  const walkRoot = (entry: SessionMetadata): void => {
+    if (visited.has(entry.id)) {
+      return;
+    }
+    visited.add(entry.id);
+    const lineage = lineageById.get(entry.id);
+    const hiddenParent =
+      lineage?.parentSessionId && !entryById.has(lineage.parentSessionId)
+        ? `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)})`
+        : undefined;
+    rows.push({ entry, displaySlug: entry.id, detachedParentLabel: hiddenParent });
+
+    const children = childMap.get(entry.id) ?? [];
+    children.forEach((child, index) => {
+      walkChild(child, [], index === children.length - 1);
+    });
+  };
+
+  const roots = entries.filter((entry) => {
+    const parentId = lineageById.get(entry.id)?.parentSessionId;
+    return !(parentId && parentId !== entry.id && entryById.has(parentId));
+  });
+
+  roots.forEach((entry) => walkRoot(entry));
+  entries.forEach((entry) => walkRoot(entry));
+  return rows;
 }
 
 async function buildSessionChainLine(metadata: SessionMetadata): Promise<string | null> {

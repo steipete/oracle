@@ -14,6 +14,11 @@ export const TIMESTAMP_PAD = 19;
 export const CHARS_PAD = 5;
 export const COST_PAD = 7;
 
+interface FormatSessionTableRowOptions {
+  rich?: boolean;
+  displaySlug?: string;
+}
+
 export function formatSessionTableHeader(rich?: boolean): string {
   const header = `${'Status'.padEnd(STATUS_PAD)} ${'Model'.padEnd(MODEL_PAD)} ${'Mode'.padEnd(
     MODE_PAD,
@@ -21,7 +26,7 @@ export function formatSessionTableHeader(rich?: boolean): string {
   return dim(header, isRich(rich));
 }
 
-export function formatSessionTableRow(meta: SessionMetadata, options?: { rich?: boolean }): string {
+export function formatSessionTableRow(meta: SessionMetadata, options?: FormatSessionTableRowOptions): string {
   const rich = isRich(options?.rich);
   const status = colorStatus(meta.status ?? 'unknown', rich);
   const modelLabel = (meta.model ?? 'n/a').padEnd(MODEL_PAD);
@@ -36,7 +41,8 @@ export function formatSessionTableRow(meta: SessionMetadata, options?: { rich?: 
   const costValue = resolveSessionCost(meta);
   const costRaw = costValue != null ? formatCostTable(costValue) : `${''.padStart(COST_PAD - 1)}-`;
   const cost = rich ? chalk.gray(costRaw) : costRaw;
-  const slug = rich ? chalk.cyan(meta.id) : meta.id;
+  const slugValue = options?.displaySlug ?? meta.id;
+  const slug = rich ? chalk.cyan(slugValue) : slugValue;
   return `${status} ${model} ${mode} ${timestamp} ${chars} ${cost}  ${slug}`;
 }
 
