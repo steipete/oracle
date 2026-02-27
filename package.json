@@ -74,14 +74,14 @@
     "dotenv": "^17.3.1",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
-    "inquirer": "13.2.2",
+    "inquirer": "13.3.0",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
     "openai": "^6.21.0",
     "osc-progress": "^0.3.0",
     "qs": "^6.14.2",
-    "shiki": "^3.22.0",
+    "shiki": "^4.0.0",
     "toasted-notifier": "^10.1.0",
     "tokentally": "^0.1.1",
     "zod": "^4.3.6"
@@ -94,7 +94,7 @@
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.2.3",
     "@vitest/coverage-v8": "4.0.18",
-    "devtools-protocol": "0.0.1583009",
+    "devtools-protocol": "0.0.1591319",
     "es-toolkit": "^1.44.0",
     "esbuild": "^0.27.3",
     "puppeteer-core": "^24.37.3",
@@ -104,7 +104,7 @@
   },
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1583009"
+      "devtools-protocol": "0.0.1591319"
     },
     "onlyBuiltDependencies": [
       "@cdktf/node-pty-prebuilt-multiarch",
