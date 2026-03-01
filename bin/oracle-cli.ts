@@ -806,6 +806,59 @@ interface FollowupResolution {
   sessionId?: string;
 }
 
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const previous = new Array<number>(b.length + 1);
+  const current = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) {
+    previous[j] = j;
+  }
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + substitutionCost);
+    }
+    for (let j = 0; j <= b.length; j += 1) {
+      previous[j] = current[j];
+    }
+  }
+  return previous[b.length];
+}
+
+function scoreSessionSimilarity(input: string, candidate: string): number {
+  if (input === candidate) return 1;
+  if (candidate.startsWith(input) || input.startsWith(candidate)) return 0.95;
+  if (candidate.includes(input) || input.includes(candidate)) return 0.8;
+  const distance = levenshteinDistance(input, candidate);
+  const maxLength = Math.max(input.length, candidate.length);
+  if (maxLength === 0) return 0;
+  return Math.max(0, 1 - distance / maxLength);
+}
+
+async function suggestFollowupSessionIds(input: string, limit = 3): Promise<string[]> {
+  const normalizedInput = input.trim().toLowerCase();
+  if (!normalizedInput) return [];
+  const sessions = await sessionStore.listSessions().catch(() => []);
+  const seen = new Set<string>();
+  const ranked = sessions
+    .map((meta) => meta.id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    .filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .map((id) => ({ id, score: scoreSessionSimilarity(normalizedInput, id.toLowerCase()) }))
+    .filter((entry) => entry.score >= 0.45)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return ranked.map((entry) => entry.id);
+}
+
 async function resolveFollowupReference(value: string, followupModel?: string): Promise<FollowupResolution> {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
@@ -818,7 +871,12 @@ async function resolveFollowupReference(value: string, followupModel?: string): 
   // Treat as oracle session id (slug).
   const meta = await sessionStore.readSession(trimmed);
   if (!meta) {
-    throw new Error(`No session found with ID ${trimmed}`);
+    const suggestions = await suggestFollowupSessionIds(trimmed);
+    const suggestionText =
+      suggestions.length > 0 ? ` Did you mean: ${suggestions.map((id) => `"${id}"`).join(', ')}?` : '';
+    throw new Error(
+      `No session found with ID ${trimmed}.${suggestionText} Run "oracle status --hours 72 --limit 20" to list recent sessions.`,
+    );
   }
   const fromMetadata = extractResponseIdFromSession(meta, followupModel);
   if (fromMetadata) {

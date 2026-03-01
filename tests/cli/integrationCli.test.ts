@@ -171,6 +171,68 @@ describe('oracle CLI integration', () => {
     await rm(oracleHome, { recursive: true, force: true });
   }, INTEGRATION_TIMEOUT);
 
+  test('prints actionable guidance when --followup session id is missing', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-missing-id-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_NO_DETACH: '1',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    await execFileAsync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        CLI_ENTRY,
+        '--prompt',
+        'Parent run for followup suggestions',
+        '--model',
+        'gpt-5.1',
+        '--slug',
+        'release-readiness-audit',
+      ],
+      { env },
+    );
+
+    try {
+      await execFileAsync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          CLI_ENTRY,
+          '--prompt',
+          'Child with typo followup id',
+          '--model',
+          'gpt-5.1',
+          '--followup',
+          'release-readiness-audti',
+        ],
+        { env },
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/No session found with ID release-readiness-audti/i);
+      expect(stderr).toMatch(/Did you mean:\s+\"release-readiness-audit\"/i);
+      expect(stderr).toMatch(/oracle status --hours 72 --limit 20/i);
+    }
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
   test('requires --followup-model when parent session has multiple model runs', async () => {
     const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-multi-error-'));
     const env = {
