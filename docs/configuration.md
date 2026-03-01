@@ -92,6 +92,26 @@ Each invocation can optionally prune cached sessions before starting new work:
 
 Under the hood, pruning removes entire session directories (metadata + logs). The command-line cleanup command (`oracle session --clear`) still exists when you need to wipe everything manually.
 
+## Follow-up chaining
+
+`--followup` and `--followup-model` are CLI run flags (not persisted defaults in `config.json`).
+
+- `--followup <sessionId|responseId>` continues an API run from either a stored Oracle session id or a `resp_...` Responses API id.
+- For multi-model parent sessions, add `--followup-model <model>` to choose which parent model response to chain from.
+- If the session id is wrong, Oracle now prints actionable guidance and suggests close matches from local session history.
+
+Example:
+
+```bash
+oracle \
+  --engine api \
+  --model gpt-5.2-pro \
+  --followup release-readiness-audit \
+  --followup-model gpt-5.2-pro \
+  -p "Follow-up: revise the plan with these files." \
+  --file "src/**/*.ts"
+```
+
 ## API timeouts
 
 - `--timeout <seconds|auto>` controls the overall API deadline for a run.
