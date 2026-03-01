@@ -30,6 +30,12 @@ npx -y @steipete/oracle -p "Write a concise architecture note for the storage ad
 # Multi-model API run
 npx -y @steipete/oracle -p "Cross-check the data layer assumptions" --models gpt-5.1-pro,gemini-3-pro --file "src/**/*.ts"
 
+# Follow up from an existing session id
+npx -y @steipete/oracle --engine api --model gpt-5.2-pro --followup release-readiness-audit --followup-model gpt-5.2-pro -p "Re-evaluate with this new context" --file "src/**/*.ts"
+
+# Follow up directly from a Responses API id
+npx -y @steipete/oracle --engine api --model gpt-5.2-pro --followup resp_abc1234567890 -p "Continue from this response" --file docs/notes.md
+
 # Preview without spending tokens
 npx -y @steipete/oracle --dry-run summary -p "Check release notes" --file docs/release-notes.md
 
@@ -96,10 +102,41 @@ npx -y @steipete/oracle oracle-mcp
 - Multi-model API runs with aggregated cost/usage, including OpenRouter IDs alongside first-party models.
 - Render/copy bundles for manual paste into ChatGPT when automation is blocked.
 - GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
+- Follow-up API runs can continue from `--followup <sessionId|responseId>`; for multi-model parents, add `--followup-model <model>`.
 - Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs.
 - File safety: globs/excludes, size guards, `--files-report`.
 - Sessions you can replay (`oracle status`, `oracle session <id> --render`).
 - Session logs and bundles live in `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
+
+## Follow-up and lineage
+
+Use `--followup` to continue an existing API run with additional context/files:
+
+```bash
+oracle \
+  --engine api \
+  --model gpt-5.2-pro \
+  --followup <existing-session-id-or-resp_id> \
+  --followup-model gpt-5.2-pro \
+  --slug "my-followup-run" \
+  --wait \
+  -p "Follow-up: re-evaluate the previous recommendation with the attached files." \
+  --file "server/src/strategy/plan.ts" \
+  --file "server/src/strategy/executor.ts"
+```
+
+When the parent session used `--models`, `--followup-model` picks which model's response id to chain from.
+
+`oracle status` shows parent/child lineage in tree form:
+
+```text
+Recent Sessions
+Status    Model         Mode    Timestamp           Chars    Cost  Slug
+completed gpt-5.2-pro   api     03/01/2026 09:00 AM  1800  $2.110  architecture-review-parent
+completed gpt-5.2-pro   api     03/01/2026 09:14 AM  2200  $2.980  ├─ architecture-review-followup
+running   gpt-5.2-pro   api     03/01/2026 09:22 AM  1400       -  │  └─ architecture-review-implementation-pass
+pending   gpt-5.2-pro   api     03/01/2026 09:25 AM   900       -  └─ architecture-review-risk-check
+```
 
 ## Browser auto-reattach (long Pro runs)
 
@@ -128,6 +165,8 @@ oracle --engine browser \
 | `-e, --engine <api\|browser>` | Choose API or browser (browser is experimental). |
 | `-m, --model <name>` | Built-ins (`gpt-5.4-pro` default, `gpt-5.4`, `gpt-5.1-pro`, `gpt-5-pro`, `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.2`, `gpt-5.2-instant`, `gpt-5.2-pro`, `gemini-3-pro`, `claude-4.5-sonnet`, `claude-4.1-opus`) plus any OpenRouter id (e.g., `minimax/minimax-m2`, `openai/gpt-4o-mini`). |
 | `--models <list>` | Comma-separated API models (mix built-ins and OpenRouter ids) for multi-model runs. |
+| `--followup <sessionId\|responseId>` | Continue an API run from a stored oracle session or `resp_...` response id. |
+| `--followup-model <model>` | For multi-model parent sessions, choose which model response to continue from. |
 | `--base-url <url>` | Point API runs at LiteLLM/Azure/OpenRouter/etc. |
 | `--chatgpt-url <url>` | Target a ChatGPT workspace/folder (browser). |
 | `--browser-model-strategy <select\|current\|ignore>` | Control ChatGPT model selection in browser mode (current keeps the active model; ignore skips the picker). |
