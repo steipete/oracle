@@ -127,6 +127,169 @@ describe('oracle CLI integration', () => {
     await rm(oracleHome, { recursive: true, force: true });
   }, INTEGRATION_TIMEOUT);
 
+  test('accepts direct response ids in --followup and persists chain metadata', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-resp-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_NO_DETACH: '1',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+    const directResponseId = 'resp_direct_followup_12345';
+
+    await execFileAsync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        CLI_ENTRY,
+        '--prompt',
+        'Child from direct response id',
+        '--model',
+        'gpt-5.1',
+        '--followup',
+        directResponseId,
+      ],
+      { env },
+    );
+
+    const sessionsDir = path.join(oracleHome, 'sessions');
+    const [sessionId] = await readdir(sessionsDir);
+    expect(sessionId).toBeTruthy();
+    const metadata = JSON.parse(await readFile(path.join(sessionsDir, sessionId, 'meta.json'), 'utf8'));
+    expect(metadata.options?.previousResponseId).toBe(directResponseId);
+    expect(metadata.options?.followupSessionId).toBeUndefined();
+    expect(metadata.options?.followupModel).toBeUndefined();
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
+  test('requires --followup-model when parent session has multiple model runs', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-multi-error-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_NO_DETACH: '1',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    await execFileAsync(
+      process.execPath,
+      ['--import', 'tsx', CLI_ENTRY, '--prompt', 'Parent multi followup', '--models', 'gpt-5.1,gpt-5.2'],
+      { env },
+    );
+
+    const sessionsDir = path.join(oracleHome, 'sessions');
+    const [parentId] = await readdir(sessionsDir);
+    expect(parentId).toBeTruthy();
+
+    try {
+      await execFileAsync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          CLI_ENTRY,
+          '--prompt',
+          'Child missing followup model',
+          '--model',
+          'gpt-5.1',
+          '--followup',
+          parentId,
+        ],
+        { env },
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/multiple model runs/i);
+      expect(stderr).toMatch(/--followup-model/i);
+    }
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
+  test('uses --followup-model to continue from the selected parent model response', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-multi-select-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_NO_DETACH: '1',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    await execFileAsync(
+      process.execPath,
+      ['--import', 'tsx', CLI_ENTRY, '--prompt', 'Parent multi followup select', '--models', 'gpt-5.1,gpt-5.2'],
+      { env },
+    );
+
+    const sessionsDir = path.join(oracleHome, 'sessions');
+    const [parentId] = await readdir(sessionsDir);
+    expect(parentId).toBeTruthy();
+
+    const parentMeta = JSON.parse(await readFile(path.join(sessionsDir, parentId, 'meta.json'), 'utf8'));
+    const selectedRun = (
+      (parentMeta.models as Array<{ model: string; response?: { responseId?: string } }> | undefined) ?? []
+    ).find((run) => run.model === 'gpt-5.2');
+    const selectedResponseId = selectedRun?.response?.responseId;
+    expect(selectedResponseId).toBeTruthy();
+    expect(String(selectedResponseId).startsWith('resp_')).toBe(true);
+
+    await execFileAsync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        CLI_ENTRY,
+        '--prompt',
+        'Child with followup model select',
+        '--model',
+        'gpt-5.1',
+        '--followup',
+        parentId,
+        '--followup-model',
+        'gpt-5.2',
+      ],
+      { env },
+    );
+
+    const allSessions = await readdir(sessionsDir);
+    expect(allSessions.length).toBe(2);
+    const childId = allSessions.find((id) => id !== parentId);
+    expect(childId).toBeTruthy();
+    const childMeta = JSON.parse(await readFile(path.join(sessionsDir, childId as string, 'meta.json'), 'utf8'));
+    expect(childMeta.options?.previousResponseId).toBe(selectedResponseId);
+    expect(childMeta.options?.followupSessionId).toBe(parentId);
+    expect(childMeta.options?.followupModel).toBe('gpt-5.2');
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
   test('rejects mixing --model and --models regardless of source', async () => {
     const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-multi-conflict-'));
     const env = {
