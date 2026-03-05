@@ -1,6 +1,8 @@
 export type TokenizerFn = (input: unknown, options?: Record<string, unknown>) => number;
 
 export type KnownModelName =
+  | 'gpt-5.4'
+  | 'gpt-5.4-pro'
   | 'gpt-5.1-pro'
   | 'gpt-5-pro'
   | 'gpt-5.1'
@@ -16,7 +18,13 @@ export type KnownModelName =
 // ModelName now allows arbitrary strings so OpenRouter / custom IDs can pass through.
 export type ModelName = KnownModelName | (string & {});
 
-export type ProModelName = 'gpt-5.1-pro' | 'gpt-5-pro' | 'gpt-5.2-pro' | 'claude-4.5-sonnet' | 'claude-4.1-opus';
+export type ProModelName =
+  | 'gpt-5.4-pro'
+  | 'gpt-5.1-pro'
+  | 'gpt-5-pro'
+  | 'gpt-5.2-pro'
+  | 'claude-4.5-sonnet'
+  | 'claude-4.1-opus';
 
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 

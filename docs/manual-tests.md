@@ -198,7 +198,7 @@ Use this when you need to inspect the live ChatGPT composer (DOM state, markdown
    ```bash
    tmux new -d -s oracle-browser \\
      "pnpm run oracle -- --engine browser --browser-keep-browser \\
-       --model 'GPT-5.2 Pro' --prompt 'Debug via DevTools.'"
+       --model 'GPT-5.4 Pro' --prompt 'Debug via DevTools.'"
    ```
    Keeping the run in tmux prevents your shell from blocking and ensures Chrome stays open afterward.
 
@@ -248,9 +248,10 @@ These Vitest cases hit the real OpenAI API to exercise both transports:
    export ORACLE_LIVE_TEST=1
    pnpm vitest run tests/live/openai-live.test.ts
    ```
-2. The first test sends a `gpt-5.1-pro` prompt (API: `gpt-5.2-pro`) and expects the CLI to stay
-   in background mode until OpenAI finishes (up to 30 minutes). The second test
-   targets the standard GPT-5 (`gpt-5.1`) path with foreground streaming.
+2. The first two tests target the standard GPT-5 (`gpt-5.1` / `gpt-5.2`) foreground
+   streaming paths. The later background tests send `gpt-5.4-pro` and `gpt-5.2-pro`
+   prompts and expect the CLI to stay in background mode until OpenAI finishes
+   (up to 30 minutes).
 3. Watch the console for `Reconnected to OpenAI background response...` if
    you're debugging transport flakiness; the test will fail if the response
    status isn't `completed` or if the text doesn't contain the hard-coded

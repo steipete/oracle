@@ -289,10 +289,10 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     }
     if (
       !options.suppressHeader &&
-      modelConfig.model === 'gpt-5.1-pro' &&
-      effectiveModelId === 'gpt-5.2-pro'
+      (modelConfig.model === 'gpt-5.1-pro' || modelConfig.model === 'gpt-5.2-pro') &&
+      effectiveModelId === 'gpt-5.4-pro'
     ) {
-      log(dim('Note: `gpt-5.1-pro` is a stable CLI alias; OpenAI API uses `gpt-5.2-pro`.'));
+      log(dim(`Note: \`${modelConfig.model}\` is a stable CLI alias; OpenAI API uses \`gpt-5.4-pro\`.`));
     }
     if (baseUrl) {
       log(dim(`Base URL: ${formatBaseUrlForLog(baseUrl)}`));

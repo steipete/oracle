@@ -92,13 +92,15 @@ function buildModelSelectionExpression(targetModel: string, strategy: BrowserMod
       .map((token) => normalizeText(token))
       .filter(Boolean);
     const targetWords = normalizedTarget.split(' ').filter(Boolean);
-    const desiredVersion = normalizedTarget.includes('5 2')
-      ? '5-2'
-      : normalizedTarget.includes('5 1')
-        ? '5-1'
-        : normalizedTarget.includes('5 0')
-          ? '5-0'
-          : null;
+    const desiredVersion = normalizedTarget.includes('5 4')
+      ? '5-4'
+      : normalizedTarget.includes('5 2')
+        ? '5-2'
+        : normalizedTarget.includes('5 1')
+          ? '5-1'
+          : normalizedTarget.includes('5 0')
+            ? '5-0'
+            : null;
     const wantsPro = normalizedTarget.includes(' pro') || normalizedTarget.endsWith(' pro') || normalizedTokens.includes('pro');
     const wantsInstant = normalizedTarget.includes('instant');
     const wantsThinking = normalizedTarget.includes('thinking');
@@ -116,6 +118,7 @@ function buildModelSelectionExpression(targetModel: string, strategy: BrowserMod
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
       if (desiredVersion) {
+        if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
         if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
         if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;
         if (desiredVersion === '5-0' && !normalizedLabel.includes('5 0')) return false;
@@ -180,6 +183,12 @@ function buildModelSelectionExpression(targetModel: string, strategy: BrowserMod
             normalizedTestId.includes('gpt-5-2') ||
             normalizedTestId.includes('gpt-5.2') ||
             normalizedTestId.includes('gpt52');
+          const has54 =
+            normalizedTestId.includes('5-4') ||
+            normalizedTestId.includes('5.4') ||
+            normalizedTestId.includes('gpt-5-4') ||
+            normalizedTestId.includes('gpt-5.4') ||
+            normalizedTestId.includes('gpt54');
           const has51 =
             normalizedTestId.includes('5-1') ||
             normalizedTestId.includes('5.1') ||
@@ -192,7 +201,7 @@ function buildModelSelectionExpression(targetModel: string, strategy: BrowserMod
             normalizedTestId.includes('gpt-5-0') ||
             normalizedTestId.includes('gpt-5.0') ||
             normalizedTestId.includes('gpt50');
-          const candidateVersion = has52 ? '5-2' : has51 ? '5-1' : has50 ? '5-0' : null;
+          const candidateVersion = has54 ? '5-4' : has52 ? '5-2' : has51 ? '5-1' : has50 ? '5-0' : null;
           // If a candidate advertises a different version, ignore it entirely.
           if (candidateVersion && candidateVersion !== desiredVersion) {
             return 0;
@@ -399,6 +408,22 @@ function buildModelMatchersLiteral(targetModel: string): { labelTokens: string[]
   push(`chatgpt ${dotless}`, labelTokens);
   push(`gpt ${base}`, labelTokens);
   push(`gpt ${dotless}`, labelTokens);
+  // Numeric variations (5.4 ↔ 54 ↔ gpt-5-4)
+  if (base.includes('5.4') || base.includes('5-4') || base.includes('54')) {
+    push('5.4', labelTokens);
+    push('gpt-5.4', labelTokens);
+    push('gpt5.4', labelTokens);
+    push('gpt-5-4', labelTokens);
+    push('gpt5-4', labelTokens);
+    push('gpt54', labelTokens);
+    push('chatgpt 5.4', labelTokens);
+    if (!base.includes('pro')) {
+      testIdTokens.add('model-switcher-gpt-5-4');
+    }
+    testIdTokens.add('gpt-5-4');
+    testIdTokens.add('gpt5-4');
+    testIdTokens.add('gpt54');
+  }
   // Numeric variations (5.1 ↔ 51 ↔ gpt-5-1)
   if (base.includes('5.1') || base.includes('5-1') || base.includes('51')) {
     push('5.1', labelTokens);
@@ -461,6 +486,11 @@ function buildModelMatchersLiteral(targetModel: string): { labelTokens: string[]
     push('proresearch', labelTokens);
     push('research grade', labelTokens);
     push('advanced reasoning', labelTokens);
+    if (base.includes('5.4') || base.includes('5-4') || base.includes('54')) {
+      testIdTokens.add('gpt-5.4-pro');
+      testIdTokens.add('gpt-5-4-pro');
+      testIdTokens.add('gpt54pro');
+    }
     if (base.includes('5.1') || base.includes('5-1') || base.includes('51')) {
       testIdTokens.add('gpt-5.1-pro');
       testIdTokens.add('gpt-5-1-pro');

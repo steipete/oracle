@@ -18,7 +18,7 @@ If you’re running Gemini, also see `docs/gemini.md`.
 jq '.' ~/.oracle/cookies.json  # file must contain CookieParam[]
 oracle --engine browser \
   --browser-inline-cookies-file ~/.oracle/cookies.json \
-  --model "GPT-5.2 Pro" \
+  --model "GPT-5.4 Pro" \
   -p "Run the UI smoke" \
   --file "src/**/*.ts" --file "!src/**/*.test.ts"
 ```
@@ -40,7 +40,7 @@ You can pass the same payload inline (`--browser-inline-cookies '<json or base64
 2. **Automation stack** – code lives in `src/browserMode.ts` and is a lightly refactored version of the `oraclecheap` utility:
    - Launches Chrome via `chrome-launcher` and connects with `chrome-remote-interface`.
    - (Optional) copies cookies from the requested browser profile via Oracle’s built-in cookie reader (Keychain/DPAPI aware) so you stay signed in.
-   - Navigates to `chatgpt.com`, switches the model to the requested **GPT-5.2** variant (Auto/Thinking/Instant/Pro), pastes the prompt, waits for completion, and copies the markdown via the built-in “copy turn” button.
+   - Navigates to `chatgpt.com`, switches the model to the requested GPT-5.4 / GPT-5.2 variant, pastes the prompt, waits for completion, and copies the markdown via the built-in “copy turn” button.
    - Immediately probes `/backend-api/me` in the ChatGPT tab to verify the session is authenticated; if the endpoint returns 401/403 we abort early with a login-specific error instead of timing out waiting for the composer.
    - When `--file` inputs would push the pasted composer content over ~60k characters, we switch to uploading attachments (optionally bundled) and wait for ChatGPT to re-enable the send button before submitting the combined system+user prompt.
    - Cleans up the temporary profile unless `--browser-keep-browser` is passed.
@@ -68,7 +68,7 @@ You can pass the same payload inline (`--browser-inline-cookies '<json or base64
 - `--browser-inline-files`: alias for `--browser-attachments never` (forces inline paste; never uploads attachments).
 - `--browser-bundle-files`: bundle all resolved attachments into a single temp file before uploading (only used when uploads are enabled/selected).
 - sqlite bindings: automatic rebuilds now require `ORACLE_ALLOW_SQLITE_REBUILD=1`. Without it, the CLI logs instructions instead of running `pnpm rebuild` on your behalf.
-- `--model`: the same flag used for API runs is accepted, but the ChatGPT automation path only supports **GPT-5.2** variants (Auto/Thinking/Instant/Pro). Use `gpt-5.2`, `gpt-5.2-thinking`, `gpt-5.2-instant`, or `gpt-5.2-pro`. Other GPT families still require API mode.
+- `--model`: the same flag used for API runs is accepted, but the ChatGPT automation path supports GPT-5.4 and GPT-5.2 variants. Use `gpt-5.4-pro`, `gpt-5.4`, `gpt-5.2`, `gpt-5.2-thinking`, `gpt-5.2-instant`, or `gpt-5.2-pro`. Legacy Pro aliases still resolve to the latest Pro picker target.
 - Cookie sync is mandatory—if we can’t copy cookies from Chrome, the run exits early. Use the hidden `--browser-allow-cookie-errors` flag only when you’re intentionally running logged out (it skips the early exit but still warns).
 - Experimental cookie controls (hidden flags/env):
   - `--browser-cookie-names <comma-list>` or `ORACLE_BROWSER_COOKIE_NAMES`: allowlist which cookies to sync. Useful for “only NextAuth/Cloudflare, drop the rest.”
@@ -94,7 +94,7 @@ Use `--browser-manual-login` when cookie decrypt is blocked (e.g., Windows app-b
 oracle --engine browser \
   --browser-manual-login \
   --browser-keep-browser \
-  --model "GPT-5.2 Pro" \
+  --model "GPT-5.4 Pro" \
   -p "Say hi"
 ```
 
@@ -201,7 +201,7 @@ This mode is ideal when you have a macOS VM (or spare Mac mini) logged into Chat
 ## Limitations / Follow-Up Plan
 
 - **Attachment lifecycle** – in `auto` mode we prefer inlining files into the composer (fewer moving parts). When we do upload, each `--file` path is uploaded separately (or bundled) so ChatGPT can ingest filenames/content. The automation waits for uploads to finish (send button enabled, upload chips visible) before submitting. When inline paste is rejected by ChatGPT (too large), Oracle retries automatically with uploads.
-- **Model picker drift** – we rely on heuristics to pick GPT-5.2 variants. If OpenAI changes the DOM we need to refresh the selectors quickly. Consider snapshot tests or a small “self check” command.
+- **Model picker drift** – we rely on heuristics to pick GPT-5.4 / GPT-5.2 variants. If OpenAI changes the DOM we need to refresh the selectors quickly. Consider snapshot tests or a small “self check” command.
 - **Non-mac platforms** – window hiding uses AppleScript today; Linux/Windows just ignore the flag. We should detect platforms explicitly and document the behavior.
 - **Streaming UX** – browser runs cannot stream tokens, so we log a warning before launching Chrome. Investigate whether we can stream clipboard deltas via mutation observers for a closer UX.
 

@@ -4,7 +4,7 @@ import { runOracle } from '@src/oracle.ts';
 import { MockClient, MockStream, buildResponse } from './helpers.ts';
 
 describe('runOracle request payload', () => {
-  test('maps gpt-5.1-pro alias to gpt-5.2-pro API model', async () => {
+  test('maps gpt-5.1-pro alias to gpt-5.4-pro API model', async () => {
     const stream = new MockStream([], buildResponse());
     const client = new MockClient(stream);
     const logs: string[] = [];
@@ -20,10 +20,32 @@ describe('runOracle request payload', () => {
         log: (msg: string) => logs.push(msg),
       },
     );
-    expect(client.lastRequest?.model).toBe('gpt-5.2-pro');
-    expect(logs.join('\n')).toContain('(API: gpt-5.2-pro)');
+    expect(client.lastRequest?.model).toBe('gpt-5.4-pro');
+    expect(logs.join('\n')).toContain('(API: gpt-5.4-pro)');
     expect(logs.join('\n')).toContain('gpt-5.1-pro');
-    expect(logs.join('\n')).toContain('OpenAI API uses `gpt-5.2-pro`');
+    expect(logs.join('\n')).toContain('OpenAI API uses `gpt-5.4-pro`');
+  });
+
+  test('maps gpt-5.2-pro alias to gpt-5.4-pro API model', async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const logs: string[] = [];
+    await runOracle(
+      {
+        prompt: 'Alias check',
+        model: 'gpt-5.2-pro',
+        background: false,
+      },
+      {
+        apiKey: 'sk-test',
+        client,
+        log: (msg: string) => logs.push(msg),
+      },
+    );
+    expect(client.lastRequest?.model).toBe('gpt-5.4-pro');
+    expect(logs.join('\n')).toContain('(API: gpt-5.4-pro)');
+    expect(logs.join('\n')).toContain('gpt-5.2-pro');
+    expect(logs.join('\n')).toContain('OpenAI API uses `gpt-5.4-pro`');
   });
 
   test('search enabled by default', async () => {

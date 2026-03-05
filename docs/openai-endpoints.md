@@ -51,10 +51,10 @@ Or via `config.json`:
 
 Oracle keeps a stable CLI-facing model set, but some names are aliases for the concrete API model ids it sends:
 
-- `gpt-5.1-pro` → `gpt-5.2-pro` (API)
+- `gpt-5.1-pro`, `gpt-5.2-pro` → `gpt-5.4-pro` (API)
 
 Notes:
-- `gpt-5.1-pro` is a **CLI alias** for “the current Pro API model” — OpenAI’s API uses `gpt-5.2-pro`.
+- `gpt-5.1-pro` and `gpt-5.2-pro` are **CLI aliases** for “the current Pro API model” — OpenAI’s API uses `gpt-5.4-pro`.
 - If you want the classic Pro tier explicitly, use `gpt-5-pro`.
 
 ### Browser engine vs API base URLs

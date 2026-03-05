@@ -65,9 +65,9 @@ describe('api key logging', () => {
     );
 
     const combined = logs.join('\n');
-    expect(combined).toContain('Calling gpt-5.1-pro (API: gpt-5.2-pro)');
-    expect(combined).toContain('Resolved model: gpt-5.1-pro → gpt-5.2-pro');
-    expect(combined).toContain('Note: `gpt-5.1-pro` is a stable CLI alias; OpenAI API uses `gpt-5.2-pro`');
+    expect(combined).toContain('Calling gpt-5.1-pro (API: gpt-5.4-pro)');
+    expect(combined).toContain('Resolved model: gpt-5.1-pro → gpt-5.4-pro');
+    expect(combined).toContain('Note: `gpt-5.1-pro` is a stable CLI alias; OpenAI API uses `gpt-5.4-pro`');
 
     const headerIndex = logs.findIndex((line) => line.includes('Calling gpt-5.1-pro'));
     const noteIndex = logs.findIndex((line) => line.includes('stable CLI alias'));
@@ -145,7 +145,7 @@ describe('api key logging', () => {
     );
 
     const combined = logs.join('\n');
-    expect(combined).toContain('Using apiKey option=sk-s****1234 for model gpt-5.1-pro (API: gpt-5.2-pro)');
+    expect(combined).toContain('Using apiKey option=sk-s****1234 for model gpt-5.1-pro (API: gpt-5.4-pro)');
     expect(combined).not.toContain('supersecret');
   });
 
