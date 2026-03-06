@@ -18,11 +18,12 @@ const DEFAULT_CHROME_PROFILE = 'Default';
 // The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
+  ['gpt-5.4-pro', 'GPT-5.4 Pro'],
   ['gpt-5.2-thinking', 'GPT-5.2 Thinking'],
   ['gpt-5.2-instant', 'GPT-5.2 Instant'],
   ['gpt-5.2-pro', 'GPT-5.2 Pro'],
-  ['gpt-5.1-pro', 'GPT-5.2 Pro'],
-  ['gpt-5-pro', 'GPT-5.2 Pro'],
+  ['gpt-5.1-pro', 'GPT-5.4 Pro'],
+  ['gpt-5-pro', 'GPT-5.4 Pro'],
   // Base models last (least specific)
   ['gpt-5.2', 'GPT-5.2'],       // Selects "Auto" in ChatGPT UI
   ['gpt-5.1', 'GPT-5.2'],       // Legacy alias → Auto
@@ -74,7 +75,7 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
 
   // Pro variants: always resolve to the latest Pro model in ChatGPT.
   if (normalized === 'gpt-5-pro' || normalized === 'gpt-5.1-pro' || normalized.endsWith('-pro')) {
-    return 'gpt-5.2-pro';
+    return 'gpt-5.4-pro';
   }
 
   // Explicit model variants: keep as-is (they have their own browser labels)
@@ -125,7 +126,7 @@ export async function buildBrowserConfig(options: BrowserFlagOptions): Promise<B
 
   if (modelStrategy === 'select' && url && isTemporaryChatUrl(url) && /\bpro\b/i.test(desiredModel ?? '')) {
     throw new Error(
-      'Temporary Chat mode does not expose Pro models in the ChatGPT model picker. ' +
+        'Temporary Chat mode does not expose Pro models in the ChatGPT model picker. ' +
         'Remove "temporary-chat=true" from --chatgpt-url (or omit --chatgpt-url), or use a non-Pro model (e.g. --model gpt-5.2).',
     );
   }

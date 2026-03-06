@@ -17,11 +17,11 @@ class FakeApiError extends Error {
 }
 
 describe('toTransportError', () => {
-  test('maps gpt-5.2-pro model_not_found to model-unavailable with guidance', () => {
+  test('maps gpt-5.4-pro model_not_found to model-unavailable with guidance', () => {
     const apiError = new FakeApiError('The requested model does not exist', 'model_not_found');
-    const transport = toTransportError(apiError, 'gpt-5.2-pro');
+    const transport = toTransportError(apiError, 'gpt-5.4-pro');
     expect(transport.reason).toBe('model-unavailable');
-    expect(transport.message).toContain('gpt-5.2-pro');
+    expect(transport.message).toContain('gpt-5.4-pro');
     expect(transport.message).toContain('gpt-5-pro');
   });
 

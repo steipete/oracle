@@ -23,6 +23,13 @@ describe('browser model selection matchers', () => {
     expect(testIdTokens.some((t) => t.includes('model-switcher-gpt-5.2-pro'))).toBe(true);
   });
 
+  it('includes pro + 5.4 tokens for gpt-5.4-pro', () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest('gpt-5.4-pro');
+    expect(labelTokens.some((t) => t.includes('pro'))).toBe(true);
+    expect(labelTokens.some((t) => t.includes('5.4') || t.includes('5-4'))).toBe(true);
+    expect(testIdTokens.some((t) => t.includes('gpt-5.4-pro') || t.includes('gpt-5-4-pro'))).toBe(true);
+  });
+
   it('includes pro + 5.2 tokens for gpt-5.2-pro', () => {
     const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest('gpt-5.2-pro');
     expect(labelTokens.some((t) => t.includes('pro'))).toBe(true);

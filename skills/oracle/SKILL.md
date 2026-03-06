@@ -7,20 +7,20 @@ description: Use the @steipete/oracle CLI to bundle a prompt plus the right file
 
 Oracle bundles your prompt + selected files into one “one-shot” request so another model can answer with real repo context (API or browser automation). Treat outputs as advisory: verify against the codebase + tests.
 
-## Main use case (browser, GPT‑5.2 Pro)
+## Main use case (browser, GPT‑5.4 Pro)
 
-Default workflow here: `--engine browser` with GPT‑5.2 Pro in ChatGPT. This is the “human in the loop” path: it can take ~10 minutes to ~1 hour; expect a stored session you can reattach to.
+Default workflow here: `--engine browser` with GPT‑5.4 Pro in ChatGPT. This is the “human in the loop” path: it can take ~10 minutes to ~1 hour; expect a stored session you can reattach to.
 
 Recommended defaults:
 - Engine: browser (`--engine browser`)
-- Model: GPT‑5.2 Pro (either `--model gpt-5.2-pro` or a ChatGPT picker label like `--model "5.2 Pro"`)
+- Model: GPT‑5.4 Pro (either `--model gpt-5.4-pro` or a ChatGPT picker label like `--model "5.4 Pro"`)
 - Attachments: directories/globs + excludes; avoid secrets.
 
 ## Golden path (fast + reliable)
 
 1. Pick a tight file set (fewest files that still contain the truth).
 2. Preview what you’re about to send (`--dry-run` + `--files-report` when needed).
-3. Run in browser mode for the usual GPT‑5.2 Pro ChatGPT workflow; use API only when you explicitly want it.
+3. Run in browser mode for the usual GPT‑5.4 Pro ChatGPT workflow; use API only when you explicitly want it.
 4. If the run detaches/timeouts: reattach to the stored session (don’t re-run).
 
 ## Commands (preferred)
@@ -36,7 +36,7 @@ Recommended defaults:
   - `npx -y @steipete/oracle --dry-run summary --files-report -p "<task>" --file "src/**"`
 
 - Browser run (main path; long-running is normal):
-  - `npx -y @steipete/oracle --engine browser --model gpt-5.2-pro -p "<task>" --file "src/**"`
+  - `npx -y @steipete/oracle --engine browser --model gpt-5.4-pro -p "<task>" --file "src/**"`
 
 - Manual paste fallback (assemble bundle, copy to clipboard):
   - `npx -y @steipete/oracle --render --copy -p "<task>" --file "src/**"`
@@ -81,7 +81,7 @@ Recommended defaults:
 ## Sessions + slugs (don’t lose work)
 
 - Stored under `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
-- Runs may detach or take a long time (browser + GPT‑5.2 Pro often does). If the CLI times out: don’t re-run; reattach.
+- Runs may detach or take a long time (browser + GPT‑5.4 Pro often does). If the CLI times out: don’t re-run; reattach.
   - List: `oracle status --hours 72`
   - Attach: `oracle session <id> --render`
 - Use `--slug "<3-5 words>"` to keep session IDs readable.

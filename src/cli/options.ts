@@ -202,6 +202,9 @@ export function resolveApiModel(modelValue: string): ModelName {
   if (normalized.includes('5-pro') && !normalized.includes('5.1')) {
     return 'gpt-5-pro';
   }
+  if (normalized.includes('5.4') && normalized.includes('pro')) {
+    return 'gpt-5.4-pro';
+  }
   if (normalized.includes('5.2') && normalized.includes('pro')) {
     return 'gpt-5.2-pro';
   }
@@ -218,7 +221,7 @@ export function resolveApiModel(modelValue: string): ModelName {
     return 'gemini-3-pro';
   }
   if (normalized.includes('pro')) {
-    return 'gpt-5.2-pro';
+    return 'gpt-5.4-pro';
   }
   // Passthrough for custom/OpenRouter model IDs.
   return normalized as ModelName;
@@ -250,6 +253,9 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (normalized.includes('classic')) {
     return 'gpt-5-pro';
   }
+  if ((normalized.includes('5.4') || normalized.includes('5_4')) && normalized.includes('pro')) {
+    return 'gpt-5.4-pro';
+  }
   if ((normalized.includes('5.2') || normalized.includes('5_2')) && normalized.includes('pro')) {
     return 'gpt-5.2-pro';
   }
@@ -275,7 +281,7 @@ export function inferModelFromLabel(modelValue: string): ModelName {
     return 'gpt-5.1-pro';
   }
   if (normalized.includes('pro')) {
-    return 'gpt-5.2-pro';
+    return 'gpt-5.4-pro';
   }
   if (normalized.includes('5.1') || normalized.includes('5_1')) {
     return 'gpt-5.1';

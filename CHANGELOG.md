@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- OpenAI: switch the default Pro target from `gpt-5.2-pro` to `gpt-5.4-pro`, update the `gpt-5.1-pro` alias to resolve to `gpt-5.4-pro`, and map browser Pro selection to ChatGPT `GPT-5.4 Pro`.
+
 ## 0.8.7 — Unreleased
 
 ## 0.8.6 — 2026-02-09
