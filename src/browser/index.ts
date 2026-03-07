@@ -1624,12 +1624,13 @@ export async function maybeReuseRunningChromeForTest(
   return maybeReuseRunningChrome(userDataDir, logger, options);
 }
 
-function isWebSocketClosureError(error: Error): boolean {
+export function isWebSocketClosureError(error: Error): boolean {
   const message = error.message.toLowerCase();
   return (
     message.includes('websocket connection closed') ||
     message.includes('websocket is closed') ||
     message.includes('websocket error') ||
+    message.includes('inspected target navigated or closed') ||
     message.includes('target closed')
   );
 }
