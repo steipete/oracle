@@ -13,6 +13,7 @@ import {
 import * as attachments from '../../src/browser/actions/attachments.js';
 import * as attachmentDataTransfer from '../../src/browser/actions/attachmentDataTransfer.js';
 import type { ChromeClient } from '../../src/browser/types.js';
+import { BrowserAutomationError } from '../../src/oracle/errors.js';
 
 const logger = vi.fn();
 
@@ -154,6 +155,22 @@ describe('ensureNotBlocked', () => {
         .mockResolvedValueOnce({ result: { value: false } }),
     } as unknown as ChromeClient['Runtime'];
     await expect(ensureNotBlocked(runtime, false, logger)).resolves.toBeUndefined();
+  });
+
+  test('throws structured browser error when headful cloudflare is detected', async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: 'Just a moment...' } }),
+    } as unknown as ChromeClient['Runtime'];
+    try {
+      await ensureNotBlocked(runtime, false, logger);
+      throw new Error('expected ensureNotBlocked to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BrowserAutomationError);
+      expect((error as BrowserAutomationError).details).toMatchObject({
+        stage: 'cloudflare-challenge',
+        headless: false,
+      });
+    }
   });
 });
 

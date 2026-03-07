@@ -872,6 +872,48 @@ describe('performSessionRun', () => {
     expect(logLines).toContain('Assistant response timed out; keeping session running for reattach.');
   });
 
+  test('records runtime and guidance when cloudflare challenge is detected', async () => {
+    const automationError = new BrowserAutomationError(
+      'Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun.',
+      {
+        stage: 'cloudflare-challenge',
+        runtime: { chromePort: 9222, chromeHost: '127.0.0.1', userDataDir: '/tmp/oracle-browser-profile' },
+        reuseProfileHint:
+          'oracle --engine browser --browser-manual-login --browser-manual-login-profile-dir "/tmp/oracle-browser-profile"',
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: 'browser',
+        browserConfig: { chromePath: null },
+        cwd: '/tmp',
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow('Cloudflare challenge detected');
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: 'error',
+      browser: expect.objectContaining({
+        config: expect.any(Object),
+        runtime: expect.objectContaining({ chromePort: 9222, userDataDir: '/tmp/oracle-browser-profile' }),
+      }),
+      error: expect.objectContaining({
+        category: 'browser-automation',
+        details: expect.objectContaining({ stage: 'cloudflare-challenge' }),
+      }),
+    });
+    const logLines = log.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logLines).toContain('Cloudflare challenge detected; browser left running so you can complete the check.');
+    expect(logLines).toContain('Reuse this browser profile with: oracle --engine browser --browser-manual-login');
+  });
+
   test('auto-reattaches after assistant timeout when configured', async () => {
     const automationError = new BrowserAutomationError('assistant timed out', {
       stage: 'assistant-timeout',

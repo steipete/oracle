@@ -403,6 +403,9 @@ export async function performSessionRun({
       userError?.category === 'browser-automation' && (userError.details as { stage?: string } | undefined)?.stage === 'connection-lost';
     const assistantTimeout =
       userError?.category === 'browser-automation' && (userError.details as { stage?: string } | undefined)?.stage === 'assistant-timeout';
+    const cloudflareChallenge =
+      userError?.category === 'browser-automation' &&
+      (userError.details as { stage?: string } | undefined)?.stage === 'cloudflare-challenge';
     if (connectionLost && mode === 'browser') {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)?.runtime;
       log(dim('Chrome disconnected before completion; keeping session running for reattach.'));
@@ -462,6 +465,13 @@ export async function performSessionRun({
       log(dim(`Reattach later with: oracle session ${sessionMeta.id}`));
       return;
     }
+    if (cloudflareChallenge && mode === 'browser') {
+      const details = userError.details as { reuseProfileHint?: string } | undefined;
+      log(dim('Cloudflare challenge detected; browser left running so you can complete the check.'));
+      if (details?.reuseProfileHint) {
+        log(dim(`Reuse this browser profile with: ${details.reuseProfileHint}`));
+      }
+    }
     if (userError) {
       log(dim(`User error (${userError.category}): ${userError.message}`));
     }
@@ -475,12 +485,19 @@ export async function performSessionRun({
     if (transportLine) {
       log(dim(`Transport: ${transportLine}`));
     }
+    const browserRuntime =
+      mode === 'browser' ? (userError?.details as { runtime?: BrowserRuntimeMetadata } | undefined)?.runtime : undefined;
     await sessionStore.updateSession(sessionMeta.id, {
       status: 'error',
       completedAt: new Date().toISOString(),
       errorMessage: message,
       mode,
-      browser: browserConfig ? { config: browserConfig } : undefined,
+      browser: browserConfig
+        ? {
+            config: browserConfig,
+            runtime: browserRuntime ?? undefined,
+          }
+        : undefined,
       response: responseMetadata,
       transport: transportMetadata,
       error: userError

@@ -6,6 +6,7 @@ import {
 } from '../constants.js';
 import { delay } from '../utils.js';
 import { logDomFailure } from '../domDebug.js';
+import { BrowserAutomationError } from '../../oracle/errors.js';
 
 export function installJavaScriptDialogAutoDismissal(
   Page: ChromeClient['Page'],
@@ -180,7 +181,7 @@ export async function ensureNotBlocked(Runtime: ChromeClient['Runtime'], headles
       ? 'Cloudflare challenge detected in headless mode. Re-run with --headful so you can solve the challenge.'
       : 'Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun.';
     logger('Cloudflare anti-bot page detected');
-    throw new Error(message);
+    throw new BrowserAutomationError(message, { stage: 'cloudflare-challenge', headless });
   }
 }
 

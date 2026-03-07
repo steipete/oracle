@@ -57,6 +57,19 @@ export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } fro
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from './constants.js';
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from './utils.js';
 
+function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
+  if (!(error instanceof BrowserAutomationError)) return false;
+  return (error.details as { stage?: string } | undefined)?.stage === 'cloudflare-challenge';
+}
+
+function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolean {
+  return !headless && isCloudflareChallengeError(error);
+}
+
+export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
+  return shouldPreserveBrowserOnError(error, headless);
+}
+
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
   if (!promptText) {
@@ -189,6 +202,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
   let appliedCookies = 0;
+  let preserveBrowserOnError = false;
 
   try {
     try {
@@ -854,6 +868,33 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     stopThinkingMonitor?.();
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
+    if (shouldPreserveBrowserOnError(normalizedError, config.headless)) {
+      preserveBrowserOnError = true;
+      const runtime = {
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
+      const reuseProfileHint =
+        `oracle --engine browser --browser-manual-login ` +
+        `--browser-manual-login-profile-dir ${JSON.stringify(userDataDir)}`;
+      await emitRuntimeHint();
+      logger('Cloudflare challenge detected; leaving browser open so you can complete the check.');
+      logger(`Reuse this browser profile with: ${reuseProfileHint}`);
+      throw new BrowserAutomationError(
+        'Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun.',
+        {
+          stage: 'cloudflare-challenge',
+          runtime,
+          reuseProfileHint,
+        },
+        normalizedError,
+      );
+    }
     if (!socketClosed) {
       logger(`Failed to complete ChatGPT run: ${normalizedError.message}`);
       if ((config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === '1') && normalizedError.stack) {
@@ -898,7 +939,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     removeDialogHandler?.();
     removeTerminationHooks?.();
-    if (!effectiveKeepBrowser) {
+    const keepBrowserOpen = effectiveKeepBrowser || preserveBrowserOnError;
+    if (!keepBrowserOpen) {
       if (!connectionClosedUnexpectedly) {
         try {
           await chrome.kill();
