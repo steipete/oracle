@@ -44,6 +44,16 @@ const GEMINI_STREAM_GENERATE_URL =
   'https://gemini.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate';
 const GEMINI_UPLOAD_URL = 'https://content-push.googleapis.com/upload';
 const GEMINI_UPLOAD_PUSH_ID = 'feeds/mcudyrk2a4khkz';
+const GEMINI_UPLOAD_MIME_TYPES: Record<string, string> = {
+  '.bmp': 'image/bmp',
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+};
 
 function getNestedValue<T>(value: unknown, pathParts: Array<string | number>, fallback: T): T {
   let current: unknown = value;
@@ -170,18 +180,7 @@ async function uploadGeminiFile(filePath: string, signal?: AbortSignal): Promise
   const absPath = path.resolve(process.cwd(), filePath);
   const data = await readFile(absPath);
   const fileName = path.basename(absPath);
-
-  const ext = path.extname(absPath).toLowerCase();
-  const mimeTypes: Record<string, string> = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.bmp': 'image/bmp',
-    '.svg': 'image/svg+xml',
-  };
-  const mimeType = mimeTypes[ext] || 'application/octet-stream';
+  const mimeType = GEMINI_UPLOAD_MIME_TYPES[path.extname(absPath).toLowerCase()] ?? 'application/octet-stream';
 
   const form = new FormData();
   form.append('file', new Blob([data], { type: mimeType }), fileName);
