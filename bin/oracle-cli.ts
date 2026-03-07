@@ -278,7 +278,7 @@ program
   .addOption(
     new Option(
       '--models <models>',
-      'Comma-separated API model list to query in parallel (e.g., "gpt-5.2-pro,gemini-3-pro").',
+      'Comma-separated API model list to query in parallel (e.g., "gpt-5.4-pro,gemini-3-pro").',
     )
       .argParser(collectModelList)
       .default([]),

@@ -181,6 +181,9 @@ export function resolveApiModel(modelValue: string): ModelName {
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
   }
+  if (normalized.includes('/')) {
+    return normalized as ModelName;
+  }
   if (normalized.includes('grok')) {
     return 'grok-4.1';
   }
@@ -236,6 +239,9 @@ export function inferModelFromLabel(modelValue: string): ModelName {
     return DEFAULT_MODEL;
   }
   if (normalized in MODEL_CONFIGS) {
+    return normalized as ModelName;
+  }
+  if (normalized.includes('/')) {
     return normalized as ModelName;
   }
   if (normalized.includes('grok')) {

@@ -183,6 +183,9 @@ describe('resolveApiModel', () => {
 
   test('passes through unknown names (OpenRouter/custom)', () => {
     expect(resolveApiModel('instant')).toBe('instant');
+    expect(resolveApiModel('openai/gpt-5.4')).toBe('openai/gpt-5.4');
+    expect(resolveApiModel('anthropic/claude-sonnet-4.5')).toBe('anthropic/claude-sonnet-4.5');
+    expect(resolveApiModel('google/gemini-2.5-pro')).toBe('google/gemini-2.5-pro');
   });
 });
 
@@ -194,6 +197,11 @@ describe('inferModelFromLabel', () => {
     expect(inferModelFromLabel('gpt-5-pro')).toBe('gpt-5-pro');
     expect(inferModelFromLabel('gpt-5.1')).toBe('gpt-5.1');
     expect(inferModelFromLabel('gpt-5.1-codex')).toBe('gpt-5.1-codex');
+  });
+
+  test('preserves provider-qualified ids instead of remapping them to built-ins', () => {
+    expect(inferModelFromLabel('openai/gpt-5.4')).toBe('openai/gpt-5.4');
+    expect(inferModelFromLabel('anthropic/claude-sonnet-4.5')).toBe('anthropic/claude-sonnet-4.5');
   });
 
   test('infers 5.4 variants', () => {

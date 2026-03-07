@@ -96,7 +96,7 @@ Under the hood, pruning removes entire session directories (metadata + logs). Th
 
 - `--timeout <seconds|auto>` controls the overall API deadline for a run.
 - `--http-timeout <ms|s|m|h>` overrides the HTTP client timeout for API requests (default 20m).
-- Defaults: `auto` = 60 m for `gpt-5.1-pro`; non-pro API models use `120s` if you don’t set a value.
+- Defaults: `auto` = 60 m for `gpt-5.4-pro` (and CLI aliases that resolve to it); non-pro API models use `120s` if you don’t set a value.
 - Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.
 
 ## Zombie/session staleness
