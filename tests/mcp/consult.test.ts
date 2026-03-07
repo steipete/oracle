@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SessionModelRun } from '../../src/sessionStore.js';
-import { summarizeModelRunsForConsult } from '../../src/mcp/tools/consult.ts';
+import { buildConsultBrowserConfig, summarizeModelRunsForConsult } from '../../src/mcp/tools/consult.ts';
 
 describe('summarizeModelRunsForConsult', () => {
 	  test('maps per-model metadata into consult summaries', () => {
@@ -30,5 +30,65 @@ describe('summarizeModelRunsForConsult', () => {
   test('returns undefined for empty lists', () => {
     expect(summarizeModelRunsForConsult([])).toBeUndefined();
     expect(summarizeModelRunsForConsult(undefined)).toBeUndefined();
+  });
+
+  test('merges browser defaults from config for consult runs', () => {
+    const config = buildConsultBrowserConfig({
+      userConfig: {
+        browser: {
+          chatgptUrl: 'https://chatgpt.com/g/g-p-foo/project',
+          debugPort: 9224,
+          keepBrowser: true,
+          manualLogin: true,
+          manualLoginProfileDir: '/tmp/oracle-profile',
+          thinkingTime: 'extended',
+        },
+      },
+      env: {},
+      runModel: 'gpt-5.1',
+      inputModel: 'gpt-5.1',
+    });
+
+    expect(config).toMatchObject({
+      chatgptUrl: 'https://chatgpt.com/g/g-p-foo/project',
+      url: 'https://chatgpt.com/g/g-p-foo/project',
+      debugPort: 9224,
+      keepBrowser: true,
+      manualLogin: true,
+      manualLoginProfileDir: '/tmp/oracle-profile',
+      thinkingTime: 'extended',
+      desiredModel: 'GPT-5.2',
+      cookieSync: false,
+    });
+  });
+
+  test('lets explicit consult inputs override config defaults', () => {
+    const config = buildConsultBrowserConfig({
+      userConfig: {
+        browser: {
+          keepBrowser: false,
+          manualLogin: false,
+          manualLoginProfileDir: '/tmp/config-profile',
+          thinkingTime: 'light',
+        },
+      },
+      env: {
+        ORACLE_BROWSER_PROFILE_DIR: '/tmp/env-profile',
+      },
+      runModel: 'claude-3.7-sonnet',
+      inputModel: 'claude-3.7-sonnet',
+      browserModelLabel: 'Claude Sonnet',
+      browserKeepBrowser: true,
+      browserThinkingTime: 'heavy',
+    });
+
+    expect(config).toMatchObject({
+      keepBrowser: true,
+      manualLogin: true,
+      manualLoginProfileDir: '/tmp/env-profile',
+      thinkingTime: 'heavy',
+      desiredModel: 'Claude Sonnet',
+      cookieSync: false,
+    });
   });
 });

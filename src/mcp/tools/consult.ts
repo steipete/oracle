@@ -23,7 +23,7 @@ async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<
 import { performSessionRun } from '../../cli/sessionRunner.js';
 import { CHATGPT_URL } from '../../browser/constants.js';
 import { consultInputSchema } from '../types.js';
-import { loadUserConfig } from '../../config.js';
+import { loadUserConfig, type UserConfig } from '../../config.js';
 import { resolveNotificationSettings } from '../../cli/notifier.js';
 import { mapModelToBrowserLabel, resolveBrowserModelLabel } from '../../cli/browserConfig.js';
 
@@ -159,6 +159,49 @@ export function summarizeModelRunsForConsult(
   });
 }
 
+export function buildConsultBrowserConfig({
+  userConfig,
+  env,
+  runModel,
+  inputModel,
+  browserModelLabel,
+  browserThinkingTime,
+  browserKeepBrowser,
+}: {
+  userConfig: UserConfig;
+  env: Record<string, string | undefined>;
+  runModel: string;
+  inputModel?: string;
+  browserModelLabel?: string;
+  browserThinkingTime?: 'light' | 'standard' | 'extended' | 'heavy';
+  browserKeepBrowser?: boolean;
+}): BrowserSessionConfig {
+  const configuredBrowser = userConfig.browser ?? {};
+  const envProfileDir = (env.ORACLE_BROWSER_PROFILE_DIR ?? '').trim();
+  const hasProfileDir = envProfileDir.length > 0;
+  const preferredLabel = (browserModelLabel ?? inputModel)?.trim();
+  const isChatGptModel = runModel.startsWith('gpt-') && !runModel.includes('codex');
+  const desiredModelLabel = isChatGptModel
+    ? mapModelToBrowserLabel(runModel)
+    : resolveBrowserModelLabel(preferredLabel, runModel);
+  const configuredUrl = configuredBrowser.chatgptUrl ?? configuredBrowser.url ?? CHATGPT_URL;
+  const manualLogin = hasProfileDir ? true : configuredBrowser.manualLogin ?? false;
+
+  return {
+    ...configuredBrowser,
+    url: configuredUrl,
+    chatgptUrl: configuredUrl,
+    cookieSync: !manualLogin,
+    headless: configuredBrowser.headless ?? false,
+    hideWindow: configuredBrowser.hideWindow ?? false,
+    keepBrowser: browserKeepBrowser ?? configuredBrowser.keepBrowser ?? false,
+    manualLogin,
+    manualLoginProfileDir: manualLogin ? ((envProfileDir || configuredBrowser.manualLoginProfileDir) ?? null) : null,
+    thinkingTime: browserThinkingTime ?? configuredBrowser.thinkingTime,
+    desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
+  };
+}
+
 export function registerConsultTool(server: McpServer): void {
   server.registerTool(
     'consult',
@@ -227,27 +270,15 @@ export function registerConsultTool(server: McpServer): void {
 
       let browserConfig: BrowserSessionConfig | undefined;
       if (resolvedEngine === 'browser') {
-        const envProfileDir = (process.env.ORACLE_BROWSER_PROFILE_DIR ?? '').trim();
-        const hasProfileDir = envProfileDir.length > 0;
-        const preferredLabel = (browserModelLabel ?? model)?.trim();
-        const isChatGptModel = runOptions.model.startsWith('gpt-') && !runOptions.model.includes('codex');
-        const desiredModelLabel = isChatGptModel
-          ? mapModelToBrowserLabel(runOptions.model)
-          : resolveBrowserModelLabel(preferredLabel, runOptions.model);
-        const configuredUrl = userConfig.browser?.chatgptUrl ?? userConfig.browser?.url ?? undefined;
-        // Default to manual-login when a persistent profile dir is provided (common for Codex/Claude).
-        const manualLogin = hasProfileDir;
-        browserConfig = {
-          url: configuredUrl ?? CHATGPT_URL,
-          cookieSync: !manualLogin,
-          headless: false,
-          hideWindow: false,
-          keepBrowser: browserKeepBrowser ?? false,
-          manualLogin,
-          manualLoginProfileDir: manualLogin ? envProfileDir : null,
-          thinkingTime: browserThinkingTime,
-          desiredModel: desiredModelLabel || mapModelToBrowserLabel(runOptions.model),
-        };
+        browserConfig = buildConsultBrowserConfig({
+          userConfig,
+          env: process.env,
+          runModel: runOptions.model,
+          inputModel: model,
+          browserModelLabel,
+          browserThinkingTime,
+          browserKeepBrowser,
+        });
       }
 
       const notifications = resolveNotificationSettings({
