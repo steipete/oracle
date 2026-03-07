@@ -214,6 +214,10 @@ async function runGeminiDeepThinkViaBrowser(
       evaluate,
       delay,
       log,
+      state: {
+        inputTimeoutMs: browserConfig?.inputTimeoutMs,
+        timeoutMs: browserConfig?.timeoutMs,
+      },
     });
 
     log?.(`[gemini-web] Deep Think response received (${domResult.text.length} chars).`);

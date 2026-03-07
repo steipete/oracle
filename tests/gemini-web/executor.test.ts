@@ -7,6 +7,7 @@ const {
   launchChrome,
   connectWithNewTab,
   closeTab,
+  killChrome,
   resolveBrowserConfig,
   readDevToolsPort,
   writeDevToolsActivePort,
@@ -18,6 +19,7 @@ const {
   launchChrome: vi.fn(),
   connectWithNewTab: vi.fn(),
   closeTab: vi.fn(async () => undefined),
+  killChrome: vi.fn(async () => undefined),
   resolveBrowserConfig: vi.fn((input: unknown) => input),
   readDevToolsPort: vi.fn(async () => null),
   writeDevToolsActivePort: vi.fn(async () => undefined),
@@ -95,11 +97,12 @@ describe('gemini-web executor', () => {
     cleanupStaleProfileState.mockClear();
     verifyDevToolsReachable.mockReset();
     delay.mockClear();
+    killChrome.mockClear();
 
     launchChrome.mockResolvedValue({
       port: 9222,
       pid: 12345,
-      kill: vi.fn(async () => undefined),
+      kill: killChrome,
     });
     const runtimeEvaluate = vi.fn(async ({ expression }: { expression?: string }) => {
       const source = String(expression ?? '');
@@ -315,5 +318,19 @@ describe('gemini-web executor', () => {
         files: ['/tmp/attach.txt'],
       }),
     );
+  });
+
+  it('keeps the launched browser alive when Deep Think uses the keep-browser default', async () => {
+    const { createGeminiWebExecutor } = await import('../../src/gemini-web/executor.js');
+    const exec = createGeminiWebExecutor({});
+    await exec({
+      prompt: 'hello',
+      attachments: [],
+      config: { desiredModel: 'gemini-3-deep-think' },
+      log: () => {},
+    });
+
+    expect(closeTab).not.toHaveBeenCalled();
+    expect(killChrome).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,11 @@ import { joinSelectors } from '../providerDomFlow.js';
 const UI_TIMEOUT_MS = 60_000;
 const RESPONSE_TIMEOUT_MS = 10 * 60_000;
 
+interface GeminiDomProviderState {
+  inputTimeoutMs?: number;
+  timeoutMs?: number;
+}
+
 export const GEMINI_DEEP_THINK_SELECTORS = {
   input: ['rich-textarea .ql-editor', '[role="textbox"][aria-label*="prompt" i]', 'div[contenteditable="true"]'],
   sendButton: ['button.send-button', 'button[aria-label="Send message"]'],
@@ -31,10 +36,24 @@ function asSelectorLiteral(selectors: readonly string[]): string {
   return JSON.stringify(joinSelectors(selectors));
 }
 
+function readTimeouts(ctx: ProviderDomFlowContext): { uiTimeoutMs: number; responseTimeoutMs: number } {
+  const state = ctx.state as GeminiDomProviderState | undefined;
+  const uiTimeoutMs =
+    typeof state?.inputTimeoutMs === 'number' && Number.isFinite(state.inputTimeoutMs)
+      ? Math.max(1_000, state.inputTimeoutMs)
+      : UI_TIMEOUT_MS;
+  const responseTimeoutMs =
+    typeof state?.timeoutMs === 'number' && Number.isFinite(state.timeoutMs)
+      ? Math.max(1_000, state.timeoutMs)
+      : RESPONSE_TIMEOUT_MS;
+  return { uiTimeoutMs, responseTimeoutMs };
+}
+
 async function waitForUi(ctx: ProviderDomFlowContext): Promise<void> {
   ctx.log?.('[gemini-web] Waiting for Gemini UI to load...');
   const inputSelector = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.input);
-  const uiDeadline = Date.now() + UI_TIMEOUT_MS;
+  const { uiTimeoutMs } = readTimeouts(ctx);
+  const uiDeadline = Date.now() + uiTimeoutMs;
   let uiReady = false;
   let sawLoginRedirect = false;
 
@@ -174,7 +193,8 @@ async function waitForResponse(ctx: ProviderDomFlowContext): Promise<{ text: str
   const responseTextSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.responseText);
   const responseCompleteSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.responseComplete);
   const spinnerSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.spinner);
-  const responseDeadline = Date.now() + RESPONSE_TIMEOUT_MS;
+  const { responseTimeoutMs } = readTimeouts(ctx);
+  const responseDeadline = Date.now() + responseTimeoutMs;
   let lastLog = 0;
   let responseText = '';
 
@@ -221,7 +241,7 @@ async function waitForResponse(ctx: ProviderDomFlowContext): Promise<{ text: str
   }
 
   if (!responseText) {
-    throw new Error('Deep Think timed out waiting for response (10 minutes).');
+    throw new Error(`Deep Think timed out waiting for response (${Math.ceil(responseTimeoutMs / 1000)} seconds).`);
   }
   return { text: responseText };
 }

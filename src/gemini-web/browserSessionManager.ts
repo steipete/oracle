@@ -41,6 +41,7 @@ export async function openGeminiBrowserSession(
     manualLoginProfileDir: profileDir,
     keepBrowser: browserConfig?.keepBrowser ?? keepBrowserDefault,
   });
+  const keepBrowser = Boolean(resolvedConfig.keepBrowser);
 
   let port = await readDevToolsPort(profileDir);
   let launchedChrome: Awaited<ReturnType<typeof launchChrome>> | null = null;
@@ -73,7 +74,7 @@ export async function openGeminiBrowserSession(
   const targetId = connection.targetId;
 
   const close = async (): Promise<void> => {
-    if (browserConfig?.keepBrowser) {
+    if (keepBrowser) {
       try { await client.close(); } catch { /* ignore */ }
       return;
     }

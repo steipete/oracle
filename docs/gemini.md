@@ -34,6 +34,11 @@ Examples:
 # Text run
 oracle --engine browser --model gemini-3-pro --prompt "Say OK."
 
+# Deep Think browser run (manual-login profile recommended on macOS)
+oracle --engine browser --browser-manual-login \
+  --model gemini-3-deep-think \
+  --prompt "Think carefully, then answer in one paragraph."
+
 # Generate an image (writes an output file)
 oracle --engine browser --model gemini-3-pro \
   --prompt "a cute robot holding a banana" \
@@ -49,6 +54,7 @@ Notes:
 - If your logged-in Gemini account can’t access “Pro”, Oracle will auto-fallback to a supported model for web runs (and logs the fallback in verbose mode).
 - This path runs fully in Node/TypeScript (no Python/venv dependency).
 - `--browser-model-strategy` only affects ChatGPT automation; Gemini web always uses the explicit Gemini model ID.
+- `gemini-3-deep-think` is browser-only for now. `--engine api` rejects it instead of silently falling back to regular Gemini Pro.
 
 ## Implementation details
 

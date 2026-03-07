@@ -181,6 +181,11 @@ describe('resolveApiModel', () => {
     expect(() => resolveApiModel('gpt-5.1-codex-max')).toThrow('gpt-5.1-codex-max is not available yet');
   });
 
+  test('rejects Gemini deep-think aliases in API mode', () => {
+    expect(() => resolveApiModel('gemini-3-deep-think')).toThrow('Gemini Deep Think is browser-only today');
+    expect(() => resolveApiModel('Gemini Deep Think')).toThrow('Gemini Deep Think is browser-only today');
+  });
+
   test('passes through unknown names (OpenRouter/custom)', () => {
     expect(resolveApiModel('instant')).toBe('instant');
     expect(resolveApiModel('openai/gpt-5.4')).toBe('openai/gpt-5.4');
