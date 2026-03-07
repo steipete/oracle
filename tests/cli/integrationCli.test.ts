@@ -171,6 +171,123 @@ describe('oracle CLI integration', () => {
     await rm(oracleHome, { recursive: true, force: true });
   }, INTEGRATION_TIMEOUT);
 
+  test('rejects --followup for Gemini API runs', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-gemini-unsupported-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      GEMINI_API_KEY: 'gk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    try {
+      await execFileAsync(
+        process.execPath,
+        ['--import', 'tsx', CLI_ENTRY, '--prompt', 'Gemini followup', '--model', 'gemini-3-pro', '--followup', 'resp_parent_1234'],
+        { env },
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/only supported for OpenAI Responses API runs/i);
+      expect(stderr).toMatch(/gemini-3-pro/i);
+    }
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
+  test('rejects --followup for Claude API runs', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-claude-unsupported-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ANTHROPIC_API_KEY: 'ak-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    try {
+      await execFileAsync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          CLI_ENTRY,
+          '--prompt',
+          'Claude followup',
+          '--model',
+          'claude-4.5-sonnet',
+          '--followup',
+          'resp_parent_1234',
+        ],
+        { env },
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/only supported for OpenAI Responses API runs/i);
+      expect(stderr).toMatch(/claude-4.5-sonnet/i);
+    }
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
+  test('rejects --followup for custom --base-url providers', async () => {
+    const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-baseurl-unsupported-'));
+    const env = {
+      ...process.env,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENAI_API_KEY: 'sk-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_HOME_DIR: oracleHome,
+      // biome-ignore lint/style/useNamingConvention: env var name
+      OPENROUTER_API_KEY: 'or-integration',
+      // biome-ignore lint/style/useNamingConvention: env var name
+      ORACLE_DISABLE_KEYTAR: '1',
+    };
+
+    try {
+      await execFileAsync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          CLI_ENTRY,
+          '--prompt',
+          'OpenRouter followup',
+          '--model',
+          'gpt-5.1',
+          '--base-url',
+          'https://openrouter.ai/api/v1',
+          '--followup',
+          'resp_parent_1234',
+        ],
+        { env },
+      );
+      throw new Error('Expected oracle CLI to fail but it succeeded.');
+    } catch (error) {
+      const stderr =
+        error && typeof error === 'object' && error !== null && 'stderr' in error
+          ? String((error as { stderr?: unknown }).stderr ?? '')
+          : '';
+      expect(stderr).toMatch(/default OpenAI Responses API or Azure OpenAI Responses/i);
+      expect(stderr).toMatch(/Custom --base-url providers are not supported/i);
+    }
+
+    await rm(oracleHome, { recursive: true, force: true });
+  }, INTEGRATION_TIMEOUT);
+
   test('prints actionable guidance when --followup session id is missing', async () => {
     const oracleHome = await mkdtemp(path.join(os.tmpdir(), 'oracle-followup-missing-id-'));
     const env = {
@@ -226,7 +343,7 @@ describe('oracle CLI integration', () => {
           ? String((error as { stderr?: unknown }).stderr ?? '')
           : '';
       expect(stderr).toMatch(/No session found with ID release-readiness-audti/i);
-      expect(stderr).toMatch(/Did you mean:\s+\"release-readiness-audit\"/i);
+      expect(stderr).toMatch(/Did you mean:\s+"release-readiness-audit"/i);
       expect(stderr).toMatch(/oracle status --hours 72 --limit 20/i);
     }
 

@@ -10,6 +10,7 @@
 - Gemini web: include upload MIME metadata so image attachments keep working for image analysis, with regression coverage for image and non-image payloads. (#104) — thanks @DK625.
 - API: route Gemini and Claude through chat/completions-compatible proxies when `--base-url` targets OpenRouter or another OpenAI-style endpoint, and keep explicit Claude base URLs from being overwritten by env defaults. (#95) — thanks @thesobercoder.
 - MCP: let `consult` inherit browser defaults from `~/.oracle/config.json` while still honoring explicit tool-call overrides. (#109) — thanks @doodaaatimmy-creator.
+- CLI: scope `--followup` to the OpenAI/Azure Responses path so Gemini, Claude, and custom `--base-url` adapters fail fast instead of silently starting a fresh run. (#105) — thanks @cheulyop.
 
 ### Changed
 - OpenAI: switch the default Pro target from `gpt-5.2-pro` to `gpt-5.4-pro`, add explicit `gpt-5.4` support, roll `gpt-5.1-pro` and `gpt-5.2-pro` forward to `gpt-5.4-pro`, keep provider-qualified custom ids intact, and map browser default Pro selection to ChatGPT `GPT-5.4 Pro` (#107, thanks @jameskraus).

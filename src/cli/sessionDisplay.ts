@@ -609,8 +609,12 @@ function buildStatusTreeRows(
     return !(parentId && parentId !== entry.id && entryById.has(parentId));
   });
 
-  roots.forEach((entry) => walkRoot(entry));
-  entries.forEach((entry) => walkRoot(entry));
+  roots.forEach((entry) => {
+    walkRoot(entry);
+  });
+  entries.forEach((entry) => {
+    walkRoot(entry);
+  });
   return rows;
 }
 

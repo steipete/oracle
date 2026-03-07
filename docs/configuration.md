@@ -96,8 +96,9 @@ Under the hood, pruning removes entire session directories (metadata + logs). Th
 
 `--followup` and `--followup-model` are CLI run flags (not persisted defaults in `config.json`).
 
-- `--followup <sessionId|responseId>` continues an API run from either a stored Oracle session id or a `resp_...` Responses API id.
-- For multi-model parent sessions, add `--followup-model <model>` to choose which parent model response to chain from.
+- `--followup <sessionId|responseId>` continues an OpenAI/Azure Responses API run from either a stored Oracle session id or a `resp_...` Responses API id.
+- For multi-model OpenAI/Azure parent sessions, add `--followup-model <model>` to choose which parent model response to chain from.
+- Gemini/Claude API runs and custom `--base-url` providers are intentionally excluded because Oracle cannot preserve `previous_response_id` through those adapters.
 - If the session id is wrong, Oracle now prints actionable guidance and suggests close matches from local session history.
 
 Example:

@@ -237,7 +237,6 @@ export interface ToolConfig {
 
 export interface OracleRequestBody {
   model: string;
-  // biome-ignore lint/style/useNamingConvention: field name provided by OpenAI Responses API
   previous_response_id?: string;
   instructions: string;
   input: Array<{

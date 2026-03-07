@@ -239,7 +239,7 @@ program
   .addOption(new Option('--message <text>', 'Alias for --prompt.').hideHelp())
   .option(
     '--followup <sessionId|responseId>',
-    'Continue an API run from a stored Responses API response id (resp_...) or from a stored oracle session id.',
+    'Continue an OpenAI/Azure Responses API run from a stored response id (resp_...) or from a stored oracle session id.',
   )
   .option(
     '--followup-model <model>',
@@ -806,6 +806,32 @@ interface FollowupResolution {
   sessionId?: string;
 }
 
+function assertFollowupSupported({
+  engine,
+  model,
+  baseUrl,
+  azureEndpoint,
+}: {
+  engine: EngineMode;
+  model: ModelName;
+  baseUrl?: string;
+  azureEndpoint?: string;
+}): void {
+  if (engine !== 'api') {
+    throw new Error('--followup requires --engine api.');
+  }
+  if (model.startsWith('gemini') || model.startsWith('claude')) {
+    throw new Error(
+      `--followup is only supported for OpenAI Responses API runs. Model ${model} uses a provider client without previous_response_id support.`,
+    );
+  }
+  if (baseUrl && !azureEndpoint) {
+    throw new Error(
+      '--followup is only supported for the default OpenAI Responses API or Azure OpenAI Responses. Custom --base-url providers are not supported.',
+    );
+  }
+}
+
 function levenshteinDistance(a: string, b: string): number {
   if (a === b) return 0;
   if (a.length === 0) return b.length;
@@ -1256,9 +1282,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
     resolvedOptions.prompt = options.prompt;
     if (options.followup) {
-      if (engine !== 'api') {
-        throw new Error('--followup requires --engine api.');
-      }
+      assertFollowupSupported({
+        engine,
+        model: resolvedModel,
+        baseUrl: resolvedBaseUrl,
+        azureEndpoint: resolvedOptions.azure?.endpoint,
+      });
       if (normalizedMultiModels.length > 0) {
         throw new Error('--followup cannot be combined with --models.');
       }
@@ -1317,9 +1346,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   resolvedOptions.prompt = options.prompt;
   if (options.followup) {
-    if (engine !== 'api') {
-      throw new Error('--followup requires --engine api.');
-    }
+    assertFollowupSupported({
+      engine,
+      model: resolvedModel,
+      baseUrl: resolvedBaseUrl,
+      azureEndpoint: resolvedOptions.azure?.endpoint,
+    });
     if (normalizedMultiModels.length > 0) {
       throw new Error('--followup cannot be combined with --models.');
     }

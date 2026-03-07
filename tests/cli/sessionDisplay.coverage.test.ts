@@ -133,7 +133,7 @@ describe('sessionDisplay helpers', () => {
 
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/parent-session/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/├─ child-a/));
-    expect(log).toHaveBeenCalledWith(expect.stringMatching(/│  └─ grandchild-a1/));
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/│ {2}└─ grandchild-a1/));
     expect(log).toHaveBeenCalledWith(expect.stringMatching(/└─ child-b/));
     log.mockRestore();
   }, 15_000);
