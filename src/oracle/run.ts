@@ -268,6 +268,7 @@ export async function runOracle(options: RunOracleOptions, deps: RunOracleDeps =
     storeResponse: useBackground || Boolean(options.previousResponseId),
     previousResponseId: options.previousResponseId,
   });
+  requestBody.model = effectiveModelId;
   const estimatedInputTokens = estimateRequestTokens(requestBody, modelConfig);
   const tokenLabel = formatTokenEstimate(
     estimatedInputTokens,
