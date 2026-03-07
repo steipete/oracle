@@ -7,6 +7,7 @@
 ### Fixed
 - Browser: leave headful Chrome/profile state running when a Cloudflare anti-bot challenge interrupts browser mode, and record reuse guidance in the saved session metadata. (#111) — thanks @WinnCook.
 - Browser: keep manual-login sessions reattachable when Chrome disconnects with the DevTools "Inspected target navigated or closed" error. (#110) — thanks @WinnCook.
+- Gemini web: add Deep Think DOM automation for browser/manual-login runs, keep Deep Think browser-only, and honor configured browser timeouts/profile reuse semantics. (#97) — thanks @kanlanc.
 - Gemini web: include upload MIME metadata so image attachments keep working for image analysis, with regression coverage for image and non-image payloads. (#104) — thanks @DK625.
 - API: route Gemini and Claude through chat/completions-compatible proxies when `--base-url` targets OpenRouter or another OpenAI-style endpoint, and keep explicit Claude base URLs from being overwritten by env defaults. (#95) — thanks @thesobercoder.
 - MCP: let `consult` inherit browser defaults from `~/.oracle/config.json` while still honoring explicit tool-call overrides. (#109) — thanks @doodaaatimmy-creator.
