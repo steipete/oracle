@@ -239,7 +239,7 @@ export async function waitForDeepResearchCompletion(
  * Extracts the Deep Research result using existing assistant response
  * extraction logic (readAssistantSnapshot + captureAssistantMarkdown).
  */
-async function extractDeepResearchResult(
+export async function extractDeepResearchResult(
   Runtime: ChromeClient["Runtime"],
   logger: BrowserLogger,
 ): Promise<{
@@ -268,6 +268,60 @@ async function extractDeepResearchResult(
     "Deep Research completed but failed to extract the response text.",
     { stage: "deep-research-extract", code: "extraction-failed" },
   );
+}
+
+/**
+ * Quick status check for Deep Research — used during reattach to determine
+ * whether research has completed, is still in progress, or is in an unknown state.
+ */
+export async function checkDeepResearchStatus(
+  Runtime: ChromeClient["Runtime"],
+  _logger: BrowserLogger,
+): Promise<{
+  completed: boolean;
+  inProgress: boolean;
+  hasIframe: boolean;
+  textLength: number;
+}> {
+  const finishedSelector = JSON.stringify(FINISHED_ACTIONS_SELECTOR);
+  const stopSelector = JSON.stringify(STOP_BUTTON_SELECTOR);
+
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const finished = Boolean(document.querySelector(${finishedSelector}));
+      const stopVisible = Boolean(document.querySelector(${stopSelector}));
+      const iframes = Array.from(document.querySelectorAll('iframe')).filter(f => {
+        const rect = f.getBoundingClientRect();
+        return rect.width > 200 && rect.height > 200;
+      });
+      const turns = document.querySelectorAll('[data-message-author-role="assistant"]');
+      const lastTurn = turns[turns.length - 1];
+      const textLength = (lastTurn?.textContent || '').length;
+      return {
+        completed: finished,
+        inProgress: stopVisible || iframes.length > 0,
+        hasIframe: iframes.length > 0,
+        textLength,
+      };
+    })()`,
+    returnByValue: true,
+  });
+
+  const val = result?.value as
+    | {
+        completed?: boolean;
+        inProgress?: boolean;
+        hasIframe?: boolean;
+        textLength?: number;
+      }
+    | undefined;
+
+  return {
+    completed: val?.completed ?? false,
+    inProgress: val?.inProgress ?? false,
+    hasIframe: val?.hasIframe ?? false,
+    textLength: val?.textLength ?? 0,
+  };
 }
 
 // ---------------------------------------------------------------------------

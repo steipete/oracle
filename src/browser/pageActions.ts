@@ -27,4 +27,6 @@ export {
   activateDeepResearch,
   waitForResearchPlanAutoConfirm,
   waitForDeepResearchCompletion,
+  checkDeepResearchStatus,
+  extractDeepResearchResult,
 } from "./actions/deepResearch.js";

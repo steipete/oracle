@@ -10,7 +10,11 @@ import {
   ensureNotBlocked,
   ensureLoggedIn,
   ensurePromptReady,
+  checkDeepResearchStatus,
+  waitForDeepResearchCompletion,
+  extractDeepResearchResult,
 } from "./pageActions.js";
+import { DEEP_RESEARCH_DEFAULT_TIMEOUT_MS } from "./constants.js";
 import type { BrowserLogger, ChromeClient } from "./types.js";
 import { launchChrome, connectToChrome, hideChromeWindow } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
@@ -127,6 +131,48 @@ export async function resumeBrowserSession(
       "Reattach target did not respond",
     );
     await ensureConversationOpen();
+
+    // Deep Research reattach: check status and either extract or resume monitoring
+    if (config?.deepResearch) {
+      const deepResearchTimeout = config.timeoutMs ?? DEEP_RESEARCH_DEFAULT_TIMEOUT_MS;
+      const status = await checkDeepResearchStatus(Runtime, logger);
+
+      if (status.completed) {
+        logger("Deep Research already completed, extracting result...");
+        const drResult = await extractDeepResearchResult(Runtime, logger);
+        if (client && typeof client.close === "function") {
+          try {
+            await client.close();
+          } catch {
+            // ignore
+          }
+        }
+        return { answerText: drResult.text, answerMarkdown: drResult.text };
+      }
+
+      if (status.inProgress) {
+        logger(
+          `Deep Research still in progress, resuming monitoring (timeout: ${Math.round(deepResearchTimeout / 60_000)}min)...`,
+        );
+        const drResult = await waitForDeepResearchCompletion(
+          Runtime,
+          logger,
+          deepResearchTimeout,
+        );
+        if (client && typeof client.close === "function") {
+          try {
+            await client.close();
+          } catch {
+            // ignore
+          }
+        }
+        return { answerText: drResult.text, answerMarkdown: drResult.text };
+      }
+
+      // Neither completed nor in-progress — fall through to normal response waiting
+      logger("Deep Research status unclear, falling back to normal response extraction...");
+    }
+
     const minTurnIndex = await readConversationTurnIndex(Runtime, logger);
     const promptEcho = buildPromptEchoMatcher(deps.promptPreview);
     const answer = await withTimeout(
@@ -242,6 +288,50 @@ async function resumeBrowserSessionViaNewChrome(
       throw new Error("Unable to locate prior ChatGPT conversation in sidebar.");
     }
     await waitForLocationChange(Runtime, 15_000);
+  }
+
+  // Deep Research reattach via new Chrome
+  if (config?.deepResearch) {
+    const deepResearchTimeout = resolved.timeoutMs ?? DEEP_RESEARCH_DEFAULT_TIMEOUT_MS;
+    const status = await checkDeepResearchStatus(Runtime, logger);
+
+    let drResult: { text: string } | undefined;
+    if (status.completed) {
+      logger("Deep Research already completed, extracting result...");
+      drResult = await extractDeepResearchResult(Runtime, logger);
+    } else if (status.inProgress) {
+      logger(
+        `Deep Research still in progress, resuming monitoring (timeout: ${Math.round(deepResearchTimeout / 60_000)}min)...`,
+      );
+      drResult = await waitForDeepResearchCompletion(Runtime, logger, deepResearchTimeout);
+    } else {
+      logger("Deep Research status unclear, falling back to normal response extraction...");
+    }
+
+    if (drResult) {
+      if (client && typeof client.close === "function") {
+        try {
+          await client.close();
+        } catch {
+          // ignore
+        }
+      }
+      if (!resolved.keepBrowser) {
+        try {
+          await chrome.kill();
+        } catch {
+          // ignore
+        }
+        if (manualLogin) {
+          await cleanupStaleProfileState(userDataDir, logger, {
+            lockRemovalMode: "never",
+          }).catch(() => undefined);
+        } else {
+          await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+        }
+      }
+      return { answerText: drResult.text, answerMarkdown: drResult.text };
+    }
   }
 
   const waitForResponse = deps.waitForAssistantResponse ?? waitForAssistantResponse;

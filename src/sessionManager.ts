@@ -851,6 +851,11 @@ function resolveZombieMaxAgeMs(meta: SessionMetadata): number {
         maxAgeMs = timeoutMs;
       }
     }
+    // Deep Research sessions run 5-30+ minutes; extend zombie threshold
+    if (meta.browser?.config?.deepResearch) {
+      const deepResearchMinMs = 2_400_000; // 40 minutes — matches DEEP_RESEARCH_DEFAULT_TIMEOUT_MS
+      maxAgeMs = Math.max(maxAgeMs, deepResearchMinMs);
+    }
   }
   return maxAgeMs;
 }
