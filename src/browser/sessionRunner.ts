@@ -88,7 +88,10 @@ export async function runBrowserSessionExecution(
   automationLogger.sessionLog = runOptions.verbose ? log : () => {};
 
   log(headerLine);
-  log(chalk.dim("This run can take up to an hour (usually ~10 minutes)."));
+  const timingHint = browserConfig.deepResearch
+    ? "This Deep Research run can take 5-30 minutes."
+    : "This run can take up to an hour (usually ~10 minutes).";
+  log(chalk.dim(timingHint));
   if (runOptions.verbose) {
     log(chalk.dim("Chrome automation does not stream output; this may take a minute..."));
   }

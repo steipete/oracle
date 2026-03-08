@@ -259,3 +259,64 @@ These Vitest cases hit the real OpenAI API to exercise both transports:
 
 Skip these unless you're intentionally validating the production API; they are
 fully gated behind `ORACLE_LIVE_TEST=1` to avoid accidental CI runs.
+
+## Deep Research (Browser)
+
+### Prerequisites
+- Chrome signed into ChatGPT (Plus or Pro)
+- Oracle installed globally or via npx
+
+### Test 1: Basic Deep Research
+```bash
+oracle --deep-research -p "Summarize the top 3 AI agent frameworks in 2026" -v
+```
+
+Expected:
+- Activates Deep Research pill in composer
+- Submits prompt
+- Research plan appears (cross-origin iframe)
+- Auto-confirms after ~60 seconds
+- Research runs for 5-15 minutes
+- Final report extracted as markdown
+
+### Test 2: Deep Research with file context
+```bash
+oracle --deep-research -p "Analyze this project architecture" --file "src/**/*.ts" -v
+```
+
+Expected:
+- Files uploaded first
+- Deep Research activated after upload
+- Prompt includes file context
+
+### Test 3: Reattach to interrupted Deep Research
+```bash
+# Start, then Ctrl+C during research
+oracle --deep-research -p "Comprehensive market analysis" --timeout 2m -v
+# Reattach
+oracle session <slug>
+```
+
+Expected:
+- Session saved with deepResearch flag
+- Reattach detects Deep Research in progress
+- Monitors until completion or timeout
+
+### Test 4: Error - Deep Research unavailable
+```bash
+# Test with a free-tier account
+oracle --deep-research -p "Test query" -v
+```
+
+Expected:
+- Clear error message about subscription requirement
+- Lists available dropdown options
+
+### Test 5: Custom timeout
+```bash
+oracle --deep-research --timeout 60m -p "Very detailed research topic" -v
+```
+
+Expected:
+- Timeout set to 60 minutes
+- Session does not expire prematurely

@@ -23,3 +23,10 @@ export {
   buildMarkdownFallbackExtractorForTest,
   buildCopyExpressionForTest,
 } from "./actions/assistantResponse.js";
+export {
+  activateDeepResearch,
+  waitForResearchPlanAutoConfirm,
+  waitForDeepResearchCompletion,
+  checkDeepResearchStatus,
+  extractDeepResearchResult,
+} from "./actions/deepResearch.js";
