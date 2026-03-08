@@ -40,6 +40,11 @@ import {
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
 import { ensureThinkingTime } from "./actions/thinkingTime.js";
+import {
+  activateDeepResearch,
+  waitForResearchPlanAutoConfirm,
+  waitForDeepResearchCompletion,
+} from "./actions/deepResearch.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
 import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from "./constants.js";
@@ -467,9 +472,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     } else if (modelStrategy === "ignore") {
       logger("Model picker: skipped (strategy=ignore)");
     }
-    // Handle thinking time selection if specified
+    // Handle thinking time selection if specified (skip for Deep Research)
+    const deepResearch = config.deepResearch ?? false;
     const thinkingTime = config.thinkingTime;
-    if (thinkingTime) {
+    if (thinkingTime && !deepResearch) {
       await raceWithDisconnect(
         withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
           retries: 2,
@@ -482,6 +488,26 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             }
           },
         }),
+      );
+    }
+    // Handle Deep Research activation if specified
+    if (deepResearch) {
+      await raceWithDisconnect(
+        withRetries(() => activateDeepResearch(Runtime, Input, logger), {
+          retries: 2,
+          delayMs: 500,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
+        }),
+      );
+      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+      logger(
+        `Prompt textarea ready (after Deep Research activation, ${promptText.length.toLocaleString()} chars queued)`,
       );
     }
     const profileLockTimeoutMs = manualLogin ? (config.profileLockTimeoutMs ?? 0) : 0;
@@ -626,6 +652,58 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     } finally {
       await releaseProfileLockIfHeld();
     }
+
+    // Deep Research flow: auto-confirm + monitor completion, then return early
+    if (deepResearch) {
+      await raceWithDisconnect(waitForResearchPlanAutoConfirm(Runtime, logger));
+      try {
+        const researchResult = await raceWithDisconnect(
+          waitForDeepResearchCompletion(Runtime, logger, config.timeoutMs),
+        );
+        await updateConversationHint("post-deep-research", 15_000);
+        runStatus = "complete";
+        const durationMs = Date.now() - startedAt;
+        const tokens = estimateTokenCount(researchResult.text);
+        return {
+          answerText: researchResult.text,
+          answerMarkdown: researchResult.text,
+          answerHtml: researchResult.html,
+          tookMs: durationMs,
+          answerTokens: tokens,
+          answerChars: researchResult.text.length,
+          chromePid: chrome.pid,
+          chromePort: chrome.port,
+          chromeHost,
+          userDataDir,
+          chromeTargetId: lastTargetId,
+          tabUrl: lastUrl,
+          controllerPid: process.pid,
+        };
+      } catch (error) {
+        await updateConversationHint("deep-research-timeout", 15_000).catch(() => false);
+        await captureRuntimeSnapshot().catch(() => undefined);
+        const runtime = {
+          chromePid: chrome.pid,
+          chromePort: chrome.port,
+          chromeHost,
+          userDataDir,
+          chromeTargetId: lastTargetId,
+          tabUrl: lastUrl,
+          conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+          controllerPid: process.pid,
+        };
+        if (error instanceof BrowserAutomationError) {
+          throw new BrowserAutomationError(error.message, {
+            ...(error.details as object),
+            stage: "deep-research-timeout",
+            runtime,
+            deepResearch: true,
+          }, error);
+        }
+        throw error;
+      }
+    }
+
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
     const normalizeForComparison = (text: string): string =>
