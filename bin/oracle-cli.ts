@@ -142,6 +142,7 @@ interface CliOptions extends OptionValues {
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  deepResearch?: boolean;
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;
   browserInlineFiles?: boolean;
@@ -591,6 +592,13 @@ program
     )
       .choices(["light", "standard", "extended", "heavy"])
       .hideHelp(),
+  )
+  .option(
+    "--deep-research",
+    "Use ChatGPT Deep Research mode (browser engine only). " +
+      "Activates autonomous web research that takes 5-30 minutes. " +
+      "Requires ChatGPT Plus or Pro subscription.",
+    false,
   )
   .addOption(
     new Option(
@@ -1326,6 +1334,17 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   if (optionUsesDefault("baseUrl") && userConfig.apiBaseUrl) {
     options.baseUrl = userConfig.apiBaseUrl;
+  }
+
+  // --deep-research implies browser engine and validates constraints
+  if (options.deepResearch) {
+    if (engine !== "browser" && preferredEngine === "api") {
+      throw new Error("--deep-research requires --engine browser.");
+    }
+    engine = "browser";
+    if (options.models && options.models.length > 0) {
+      throw new Error("--deep-research cannot be combined with --models (multi-model runs).");
+    }
   }
 
   if (remoteHost && engine !== "browser") {

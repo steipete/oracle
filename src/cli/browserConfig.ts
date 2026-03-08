@@ -66,6 +66,8 @@ export interface BrowserFlagOptions {
   browserManualLoginProfileDir?: string | null;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
+  /** Enable ChatGPT Deep Research mode. */
+  deepResearch?: boolean;
   browserModelLabel?: string;
   browserModelStrategy?: BrowserModelStrategy;
   browserAllowCookieErrors?: boolean;
@@ -113,8 +115,9 @@ export async function buildBrowserConfig(
   const isChatGptModel = baseModel.startsWith("gpt-") && !baseModel.includes("codex");
   const shouldUseOverride =
     !isChatGptModel && normalizedOverride.length > 0 && normalizedOverride !== baseModel;
-  const modelStrategy =
-    normalizeBrowserModelStrategy(options.browserModelStrategy) ?? DEFAULT_MODEL_STRATEGY;
+  const modelStrategy = options.deepResearch
+    ? "ignore"
+    : (normalizeBrowserModelStrategy(options.browserModelStrategy) ?? DEFAULT_MODEL_STRATEGY);
   const cookieNames = parseCookieNames(
     options.browserCookieNames ?? process.env.ORACLE_BROWSER_COOKIE_NAMES,
   );
@@ -206,6 +209,7 @@ export async function buildBrowserConfig(
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
     thinkingTime: options.browserThinkingTime,
+    deepResearch: options.deepResearch ?? undefined,
   };
 }
 

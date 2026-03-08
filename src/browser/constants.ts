@@ -81,5 +81,16 @@ export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR = '[data-testid="model-switcher-dropdown-button"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
 // Action buttons that only appear once a turn has finished rendering.
+// Deep Research selectors and constants
+export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
+export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";
+export const DEEP_RESEARCH_PILL_LABEL = "Deep research";
+/** Polling interval for Deep Research completion (5 seconds). */
+export const DEEP_RESEARCH_POLL_INTERVAL_MS = 5_000;
+/** Auto-confirm wait time (countdown ~60s + 10s safety margin). */
+export const DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS = 70_000;
+/** Default timeout for Deep Research completion (40 minutes). */
+export const DEEP_RESEARCH_DEFAULT_TIMEOUT_MS = 2_400_000;
+
 export const FINISHED_ACTIONS_SELECTOR =
   'button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';

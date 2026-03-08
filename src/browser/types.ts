@@ -59,6 +59,8 @@ export interface BrowserAutomationConfig {
   manualLoginCookieSync?: boolean;
   /** Thinking time intensity level for Thinking/Pro models: light, standard, extended, heavy */
   thinkingTime?: ThinkingTimeLevel;
+  /** Enable ChatGPT Deep Research mode (browser engine only). */
+  deepResearch?: boolean;
 }
 
 export interface BrowserRunOptions {
@@ -73,6 +75,8 @@ export interface BrowserRunOptions {
   log?: BrowserLogger;
   heartbeatIntervalMs?: number;
   verbose?: boolean;
+  /** Whether this is a Deep Research run (affects timeouts and response detection). */
+  deepResearch?: boolean;
   /** Optional hook to persist runtime info (port/url/target) as soon as Chrome is ready. */
   runtimeHintCb?: (hint: BrowserRuntimeMetadata) => void | Promise<void>;
 }
@@ -102,6 +106,7 @@ export type ResolvedBrowserConfig = Required<
     | "desiredModel"
     | "remoteChrome"
     | "thinkingTime"
+    | "deepResearch"
     | "modelStrategy"
   >
 > & {
@@ -111,6 +116,7 @@ export type ResolvedBrowserConfig = Required<
   desiredModel?: string | null;
   modelStrategy?: BrowserModelStrategy;
   thinkingTime?: ThinkingTimeLevel;
+  deepResearch?: boolean;
   debugPort?: number | null;
   inlineCookiesSource?: string | null;
   remoteChrome?: { host: string; port: number } | null;

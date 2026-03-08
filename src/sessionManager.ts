@@ -57,6 +57,8 @@ export interface BrowserSessionConfig {
   manualLoginCookieSync?: boolean;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   thinkingTime?: ThinkingTimeLevel;
+  /** Enable ChatGPT Deep Research mode. */
+  deepResearch?: boolean;
 }
 
 export interface BrowserRuntimeMetadata {

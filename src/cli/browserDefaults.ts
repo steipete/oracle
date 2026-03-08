@@ -25,6 +25,7 @@ export interface BrowserDefaultsOptions {
   browserKeepBrowser?: boolean;
   browserModelStrategy?: BrowserModelStrategy;
   browserThinkingTime?: ThinkingTimeLevel;
+  deepResearch?: boolean;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
 }
@@ -112,6 +113,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset("browserThinkingTime") && browser.thinkingTime !== undefined) {
     options.browserThinkingTime = browser.thinkingTime;
+  }
+  if (isUnset("deepResearch") && browser.deepResearch !== undefined) {
+    options.deepResearch = browser.deepResearch;
   }
   if (isUnset("browserManualLogin") && browser.manualLogin !== undefined) {
     options.browserManualLogin = browser.manualLogin;
