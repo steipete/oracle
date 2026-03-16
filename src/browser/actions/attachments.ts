@@ -1711,12 +1711,88 @@ export async function waitForUserTurnAttachments(
     options.expectedConversationId.trim().length > 0
       ? options.expectedConversationId.trim()
       : null;
+  const expression = buildUserTurnAttachmentExpression({
+    minTurnIndex,
+    expectedPromptPrefix,
+    expectedConversationId,
+  });
+
+  const deadline = Date.now() + timeoutMs;
+  let sawAttachmentUi = false;
+  while (Date.now() < deadline) {
+    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
+    const value = result?.value as
+      | {
+          ok?: boolean;
+          text?: string;
+          attrs?: string[];
+          fileCount?: number;
+          hasAttachmentUi?: boolean;
+          attachmentUiCount?: number;
+          promptMatches?: boolean;
+          turnIndex?: number;
+          conversationMismatch?: boolean;
+        }
+      | undefined;
+    if (!value?.ok) {
+      if (value?.conversationMismatch && logger?.verbose) {
+        logger("User-turn attachment verification ignored mismatched conversation.");
+      }
+      await delay(200);
+      continue;
+    }
+    if (value.hasAttachmentUi) {
+      sawAttachmentUi = true;
+    }
+    const haystack = [value.text ?? "", ...(value.attrs ?? [])].join("\n");
+    const fileCount = typeof value.fileCount === "number" ? value.fileCount : 0;
+    const attachmentUiCount =
+      typeof value.attachmentUiCount === "number" ? value.attachmentUiCount : 0;
+    const promptMatches = expectedPromptPrefix ? value.promptMatches !== false : true;
+    const fileCountSatisfied =
+      fileCount >= expectedNormalized.length && expectedNormalized.length > 0;
+    const attachmentUiSatisfied =
+      attachmentUiCount >= expectedNormalized.length && expectedNormalized.length > 0;
+    const missing = expectedNormalized.filter((expected) => {
+      const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
+      const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
+      const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
+      if (haystack.includes(normalizedExpected)) return false;
+      if (expectedNoExt.length >= 6 && haystack.includes(expectedNoExt)) return false;
+      return true;
+    });
+    if (promptMatches && (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied)) {
+      return true;
+    }
+    await delay(250);
+  }
+
+  if (!sawAttachmentUi) {
+    logger?.("Sent user message did not expose attachment UI; skipping attachment verification.");
+    return false;
+  }
+
+  logger?.("Sent user message did not show expected attachment names in time.");
+  await logDomFailure(Runtime, logger ?? (() => {}), "attachment-missing-user-turn");
+  throw new Error("Attachment was not present on the sent user message.");
+}
+
+function buildUserTurnAttachmentExpression(options: {
+  minTurnIndex: number | null;
+  expectedPromptPrefix: string;
+  expectedConversationId: string | null;
+}): string {
   const conversationSelectorLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
-  const expression = `(() => {
+  const minTurnLiteral = options.minTurnIndex === null ? "null" : String(options.minTurnIndex);
+  const expectedPromptLiteral = JSON.stringify(options.expectedPromptPrefix);
+  const expectedConversationLiteral = options.expectedConversationId
+    ? JSON.stringify(options.expectedConversationId)
+    : "null";
+  return `(() => {
     const CONVERSATION_SELECTOR = ${conversationSelectorLiteral};
-    const MIN_TURN_INDEX = ${minTurnIndex === null ? "null" : minTurnIndex};
-    const EXPECTED_PROMPT_PREFIX = ${JSON.stringify(expectedPromptPrefix)};
-    const EXPECTED_CONVERSATION_ID = ${expectedConversationId ? JSON.stringify(expectedConversationId) : "null"};
+    const MIN_TURN_INDEX = ${minTurnLiteral};
+    const EXPECTED_PROMPT_PREFIX = ${expectedPromptLiteral};
+    const EXPECTED_CONVERSATION_ID = ${expectedConversationLiteral};
     const currentHref = typeof location === 'object' && location.href ? location.href : '';
     const currentConversationId = currentHref.match(/\\/c\\/([a-zA-Z0-9-]+)/)?.[1] ?? null;
     if (
@@ -1737,10 +1813,12 @@ export async function waitForUserTurnAttachments(
     const lastUser = eligibleTurns[eligibleTurns.length - 1];
     if (!lastUser) return { ok: false };
     const text = (lastUser.node.innerText || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    const textPrefix = text.slice(0, Math.min(text.length, EXPECTED_PROMPT_PREFIX.length));
     const promptMatches =
       !EXPECTED_PROMPT_PREFIX ||
-      text.includes(EXPECTED_PROMPT_PREFIX) ||
-      EXPECTED_PROMPT_PREFIX.includes(text.slice(0, Math.min(text.length, EXPECTED_PROMPT_PREFIX.length)));
+      (text.length > 0 &&
+        (text.includes(EXPECTED_PROMPT_PREFIX) ||
+          (textPrefix.length > 0 && EXPECTED_PROMPT_PREFIX.includes(textPrefix))));
     const attrs = Array.from(lastUser.node.querySelectorAll('[aria-label],[title]')).map((el) => {
       const aria = el.getAttribute('aria-label') || '';
       const title = el.getAttribute('title') || '';
@@ -1803,65 +1881,25 @@ export async function waitForUserTurnAttachments(
       turnIndex: lastUser.index,
     };
   })()`;
+}
 
-  const deadline = Date.now() + timeoutMs;
-  let sawAttachmentUi = false;
-  while (Date.now() < deadline) {
-    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
-    const value = result?.value as
-      | {
-          ok?: boolean;
-          text?: string;
-          attrs?: string[];
-          fileCount?: number;
-          hasAttachmentUi?: boolean;
-          attachmentUiCount?: number;
-          promptMatches?: boolean;
-          turnIndex?: number;
-          conversationMismatch?: boolean;
-        }
-      | undefined;
-    if (!value?.ok) {
-      if (value?.conversationMismatch && logger?.verbose) {
-        logger("User-turn attachment verification ignored mismatched conversation.");
-      }
-      await delay(200);
-      continue;
-    }
-    if (value.hasAttachmentUi) {
-      sawAttachmentUi = true;
-    }
-    const haystack = [value.text ?? "", ...(value.attrs ?? [])].join("\n");
-    const fileCount = typeof value.fileCount === "number" ? value.fileCount : 0;
-    const attachmentUiCount =
-      typeof value.attachmentUiCount === "number" ? value.attachmentUiCount : 0;
-    const promptMatches = expectedPromptPrefix ? value.promptMatches !== false : true;
-    const fileCountSatisfied =
-      fileCount >= expectedNormalized.length && expectedNormalized.length > 0;
-    const attachmentUiSatisfied =
-      attachmentUiCount >= expectedNormalized.length && expectedNormalized.length > 0;
-    const missing = expectedNormalized.filter((expected) => {
-      const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-      const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
-      const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
-      if (haystack.includes(normalizedExpected)) return false;
-      if (expectedNoExt.length >= 6 && haystack.includes(expectedNoExt)) return false;
-      return true;
-    });
-    if (promptMatches && (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied)) {
-      return true;
-    }
-    await delay(250);
-  }
-
-  if (!sawAttachmentUi) {
-    logger?.("Sent user message did not expose attachment UI; skipping attachment verification.");
-    return false;
-  }
-
-  logger?.("Sent user message did not show expected attachment names in time.");
-  await logDomFailure(Runtime, logger ?? (() => {}), "attachment-missing-user-turn");
-  throw new Error("Attachment was not present on the sent user message.");
+export function buildUserTurnAttachmentExpressionForTest(options?: {
+  minTurnIndex?: number | null;
+  expectedPromptPrefix?: string;
+  expectedConversationId?: string | null;
+}): string {
+  return buildUserTurnAttachmentExpression({
+    minTurnIndex:
+      typeof options?.minTurnIndex === "number" && Number.isFinite(options.minTurnIndex)
+        ? Math.max(0, Math.floor(options.minTurnIndex))
+        : null,
+    expectedPromptPrefix: options?.expectedPromptPrefix ?? "",
+    expectedConversationId:
+      typeof options?.expectedConversationId === "string" &&
+      options.expectedConversationId.trim().length > 0
+        ? options.expectedConversationId.trim()
+        : null,
+  });
 }
 
 export async function waitForAttachmentVisible(
