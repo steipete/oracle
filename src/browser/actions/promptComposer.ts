@@ -20,6 +20,250 @@ const ENTER_KEY_EVENT = {
   nativeVirtualKeyCode: 13,
 } as const;
 const ENTER_KEY_TEXT = "\r";
+const PROMPT_TRUNCATION_CHECK_THRESHOLD = 20_000;
+const PROMPT_TRUNCATION_TOLERANCE = 500;
+const COMPOSER_HEALTH_SENTINEL = "__oracle_healthcheck__";
+
+interface ComposerSnapshot {
+  editorText: string;
+  fallbackValue: string;
+  activeValue: string;
+  activeExists: boolean;
+  activeVisible: boolean;
+  activeDisabled: boolean;
+  activeReadOnly: boolean;
+  activeTagName: string;
+  activeRole: string;
+  href: string;
+}
+
+interface ComposerHealthState {
+  healthy: boolean;
+  reason?: string;
+  activeExists: boolean;
+  activeVisible: boolean;
+  activeDisabled: boolean;
+  activeReadOnly: boolean;
+  activeTagName: string;
+  activeRole: string;
+  href: string;
+}
+
+function normalizeComposerSnapshot(
+  value: Partial<ComposerSnapshot> | undefined,
+): ComposerSnapshot {
+  return {
+    editorText: typeof value?.editorText === "string" ? value.editorText : "",
+    fallbackValue: typeof value?.fallbackValue === "string" ? value.fallbackValue : "",
+    activeValue: typeof value?.activeValue === "string" ? value.activeValue : "",
+    activeExists: Boolean(value?.activeExists),
+    activeVisible: Boolean(value?.activeVisible),
+    activeDisabled: Boolean(value?.activeDisabled),
+    activeReadOnly: Boolean(value?.activeReadOnly),
+    activeTagName: typeof value?.activeTagName === "string" ? value.activeTagName : "",
+    activeRole: typeof value?.activeRole === "string" ? value.activeRole : "",
+    href: typeof value?.href === "string" ? value.href : "",
+  };
+}
+
+function buildComposerSnapshotExpression(): string {
+  return `(() => {
+    const editor = document.querySelector(${JSON.stringify(PROMPT_PRIMARY_SELECTOR)});
+    const fallback = document.querySelector(${JSON.stringify(PROMPT_FALLBACK_SELECTOR)});
+    const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
+    const readValue = (node) => {
+      if (!node) return '';
+      if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+      return node.innerText ?? '';
+    };
+    const isVisible = (node) => {
+      if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const candidates = inputSelectors
+      .map((selector) => document.querySelector(selector))
+      .filter((node) => Boolean(node));
+    const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+    return {
+      editorText: editor?.innerText ?? '',
+      fallbackValue: fallback instanceof HTMLTextAreaElement ? fallback.value ?? '' : '',
+      activeValue: active ? readValue(active) : '',
+      activeExists: Boolean(active),
+      activeVisible: isVisible(active),
+      activeDisabled: Boolean(
+        active &&
+          (((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) &&
+            active.disabled) ||
+            active.getAttribute?.('aria-disabled') === 'true' ||
+            active.getAttribute?.('disabled') !== null),
+      ),
+      activeReadOnly: Boolean(
+        active &&
+          (((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) &&
+            active.readOnly) ||
+            active.getAttribute?.('readonly') !== null ||
+            active.getAttribute?.('contenteditable') === 'false'),
+      ),
+      activeTagName: active?.tagName?.toLowerCase?.() ?? '',
+      activeRole: active?.getAttribute?.('role') ?? '',
+      href: typeof location === 'object' && location.href ? location.href : '',
+    };
+  })()`;
+}
+
+async function readComposerSnapshot(
+  runtime: ChromeClient["Runtime"],
+): Promise<ComposerSnapshot> {
+  const result = await runtime.evaluate({
+    expression: buildComposerSnapshotExpression(),
+    returnByValue: true,
+  });
+  return normalizeComposerSnapshot(result.result?.value as Partial<ComposerSnapshot> | undefined);
+}
+
+async function ensureComposerHealthy(
+  runtime: ChromeClient["Runtime"],
+  logger: BrowserLogger,
+): Promise<void> {
+  const result = await runtime.evaluate({
+    expression: `(() => {
+      ${buildClickDispatcher()}
+      const selectors = ${JSON.stringify(INPUT_SELECTORS)};
+      const sentinel = ${JSON.stringify(COMPOSER_HEALTH_SENTINEL)};
+      const isVisible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+        return node.innerText ?? '';
+      };
+      const candidates = selectors
+        .map((selector) => document.querySelector(selector))
+        .filter((node) => Boolean(node));
+      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+      const href = typeof location === 'object' && location.href ? location.href : '';
+      if (!active) {
+        return {
+          healthy: false,
+          reason: 'missing-active-input',
+          activeExists: false,
+          activeVisible: false,
+          activeDisabled: false,
+          activeReadOnly: false,
+          activeTagName: '',
+          activeRole: '',
+          href,
+        };
+      }
+      dispatchClickSequence(active);
+      if (typeof active.focus === 'function') {
+        active.focus();
+      }
+      const activeDisabled =
+        ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) &&
+          active.disabled) ||
+        active.getAttribute?.('aria-disabled') === 'true' ||
+        active.getAttribute?.('disabled') !== null;
+      const activeReadOnly =
+        ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) &&
+          active.readOnly) ||
+        active.getAttribute?.('readonly') !== null ||
+        active.getAttribute?.('contenteditable') === 'false';
+      if (activeDisabled || activeReadOnly) {
+        return {
+          healthy: false,
+          reason: activeDisabled ? 'active-input-disabled' : 'active-input-readonly',
+          activeExists: true,
+          activeVisible: isVisible(active),
+          activeDisabled: Boolean(activeDisabled),
+          activeReadOnly: Boolean(activeReadOnly),
+          activeTagName: active.tagName?.toLowerCase?.() ?? '',
+          activeRole: active.getAttribute?.('role') ?? '',
+          href,
+        };
+      }
+      const before = readValue(active);
+      const probe = before + sentinel;
+      let after = before;
+      try {
+        if (active instanceof HTMLTextAreaElement) {
+          active.value = probe;
+          active.dispatchEvent(new InputEvent('input', { bubbles: true, data: sentinel, inputType: 'insertText' }));
+          active.dispatchEvent(new Event('change', { bubbles: true }));
+          after = active.value ?? '';
+          active.value = before;
+          active.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
+          active.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          active.textContent = probe;
+          active.dispatchEvent(new InputEvent('input', { bubbles: true, data: sentinel, inputType: 'insertText' }));
+          after = readValue(active);
+          active.textContent = before;
+          active.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
+        }
+      } catch (error) {
+        return {
+          healthy: false,
+          reason: error instanceof Error ? error.message : String(error),
+          activeExists: true,
+          activeVisible: isVisible(active),
+          activeDisabled: Boolean(activeDisabled),
+          activeReadOnly: Boolean(activeReadOnly),
+          activeTagName: active.tagName?.toLowerCase?.() ?? '',
+          activeRole: active.getAttribute?.('role') ?? '',
+          href,
+        };
+      }
+      return {
+        healthy: typeof after === 'string' && after.includes(sentinel),
+        reason:
+          typeof after === 'string' && after.includes(sentinel)
+            ? ''
+            : 'active-input-roundtrip-failed',
+        activeExists: true,
+        activeVisible: isVisible(active),
+        activeDisabled: Boolean(activeDisabled),
+        activeReadOnly: Boolean(activeReadOnly),
+        activeTagName: active.tagName?.toLowerCase?.() ?? '',
+        activeRole: active.getAttribute?.('role') ?? '',
+        href,
+      };
+    })()`,
+    returnByValue: true,
+    awaitPromise: true,
+  });
+  const state = result.result?.value as ComposerHealthState | undefined;
+  if (state?.healthy) {
+    return;
+  }
+  await logDomFailure(runtime, logger, "dead-composer");
+  throw new BrowserAutomationError("ChatGPT composer is present but not accepting input.", {
+    stage: "submit-prompt",
+    code: "dead-composer",
+    composerState: {
+      reason: state?.reason ?? "unknown",
+      activeExists: Boolean(state?.activeExists),
+      activeVisible: Boolean(state?.activeVisible),
+      activeDisabled: Boolean(state?.activeDisabled),
+      activeReadOnly: Boolean(state?.activeReadOnly),
+      activeTagName: state?.activeTagName ?? "",
+      activeRole: state?.activeRole ?? "",
+      href: state?.href ?? "",
+    },
+  });
+}
+
+function isPromptTooLarge(promptLength: number, observedLength: number): boolean {
+  return (
+    promptLength >= PROMPT_TRUNCATION_CHECK_THRESHOLD &&
+    observedLength > 0 &&
+    observedLength < promptLength - PROMPT_TRUNCATION_TOLERANCE
+  );
+}
 
 export async function submitPrompt(
   deps: {
@@ -35,6 +279,7 @@ export async function submitPrompt(
   const { runtime, input } = deps;
 
   await waitForDomReady(runtime, logger, deps.inputTimeoutMs ?? undefined);
+  await ensureComposerHealthy(runtime, logger);
   const encodedPrompt = JSON.stringify(prompt);
   const focusResult = await runtime.evaluate({
     expression: `(() => {
@@ -97,42 +342,14 @@ export async function submitPrompt(
 
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
   const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
-  const verification = await runtime.evaluate({
-    expression: `(() => {
-      const editor = document.querySelector(${primarySelectorLiteral});
-      const fallback = document.querySelector(${fallbackSelectorLiteral});
-      const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
-      const readValue = (node) => {
-        if (!node) return '';
-        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
-        return node.innerText ?? '';
-      };
-      const isVisible = (node) => {
-        if (!node || typeof node.getBoundingClientRect !== 'function') return false;
-        const rect = node.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      };
-      const candidates = inputSelectors
-        .map((selector) => document.querySelector(selector))
-        .filter((node) => Boolean(node));
-      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
-      return {
-        editorText: editor?.innerText ?? '',
-        fallbackValue: fallback?.value ?? '',
-        activeValue: active ? readValue(active) : '',
-      };
-    })()`,
-    returnByValue: true,
-  });
-
-  const editorTextRaw = verification.result?.value?.editorText ?? "";
-  const fallbackValueRaw = verification.result?.value?.fallbackValue ?? "";
-  const activeValueRaw = verification.result?.value?.activeValue ?? "";
-  const editorTextTrimmed = editorTextRaw?.trim?.() ?? "";
-  const fallbackValueTrimmed = fallbackValueRaw?.trim?.() ?? "";
-  const activeValueTrimmed = activeValueRaw?.trim?.() ?? "";
+  const verification = await readComposerSnapshot(runtime);
+  const editorTextTrimmed = verification.editorText.trim();
+  const fallbackValueTrimmed = verification.fallbackValue.trim();
+  const activeValueTrimmed = verification.activeValue.trim();
+  let usedDirectDomWrite = false;
   if (!editorTextTrimmed && !fallbackValueTrimmed && !activeValueTrimmed) {
     // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
+    usedDirectDomWrite = true;
     await runtime.evaluate({
       expression: `(() => {
         const fallback = document.querySelector(${fallbackSelectorLiteral});
@@ -152,42 +369,26 @@ export async function submitPrompt(
   }
 
   const promptLength = prompt.length;
-  const postVerification = await runtime.evaluate({
-    expression: `(() => {
-      const editor = document.querySelector(${primarySelectorLiteral});
-      const fallback = document.querySelector(${fallbackSelectorLiteral});
-      const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
-      const readValue = (node) => {
-        if (!node) return '';
-        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
-        return node.innerText ?? '';
-      };
-      const isVisible = (node) => {
-        if (!node || typeof node.getBoundingClientRect !== 'function') return false;
-        const rect = node.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      };
-      const candidates = inputSelectors
-        .map((selector) => document.querySelector(selector))
-        .filter((node) => Boolean(node));
-      const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
-      return {
-        editorText: editor?.innerText ?? '',
-        fallbackValue: fallback?.value ?? '',
-        activeValue: active ? readValue(active) : '',
-      };
-    })()`,
-    returnByValue: true,
-  });
-  const observedEditor = postVerification.result?.value?.editorText ?? "";
-  const observedFallback = postVerification.result?.value?.fallbackValue ?? "";
-  const observedActive = postVerification.result?.value?.activeValue ?? "";
+  const postVerification = await readComposerSnapshot(runtime);
+  const observedEditor = postVerification.editorText;
+  const observedFallback = postVerification.fallbackValue;
+  const observedActive = postVerification.activeValue;
   const observedLength = Math.max(
     observedEditor.length,
     observedFallback.length,
     observedActive.length,
   );
-  if (promptLength >= 50_000 && observedLength > 0 && observedLength < promptLength - 2_000) {
+  const trustedObservedLength = usedDirectDomWrite ? observedActive.length : observedLength;
+  if (usedDirectDomWrite && trustedObservedLength === 0 && observedLength > 0) {
+    await logDomFailure(runtime, logger, "dead-composer");
+    throw new BrowserAutomationError("Prompt text only reached the DOM fallback, not the active composer.", {
+      stage: "submit-prompt",
+      code: "dead-composer",
+      promptLength,
+      composerState: postVerification,
+    });
+  }
+  if (isPromptTooLarge(promptLength, trustedObservedLength)) {
     // Learned: very large prompts can truncate silently; fail fast so we can fall back to file uploads.
     await logDomFailure(runtime, logger, "prompt-too-large");
     throw new BrowserAutomationError(
@@ -196,7 +397,9 @@ export async function submitPrompt(
         stage: "submit-prompt",
         code: "prompt-too-large",
         promptLength,
-        observedLength,
+        observedLength: trustedObservedLength,
+        usedDirectDomWrite,
+        composerState: postVerification,
       },
     );
   }
@@ -472,7 +675,7 @@ async function verifyPromptCommitted(
 	    const prefixMatched =
 	      normalizedPromptPrefix.length > 30 &&
 	      normalizedTurns.some((text) => text.includes(normalizedPromptPrefix));
-		    const lastTurn = normalizedTurns[normalizedTurns.length - 1] ?? '';
+	    const lastTurn = normalizedTurns[normalizedTurns.length - 1] ?? '';
 		    const lastMatched =
 		      normalizedPrompt.length > 0 &&
 		      (lastTurn.includes(normalizedPrompt) ||
@@ -487,12 +690,28 @@ async function verifyPromptCommitted(
 	    // Learned: composer clearing + stop button or assistant presence is a reliable fallback signal.
       const editorValue = editor?.innerText ?? '';
       const fallbackValue = fallback?.value ?? '';
-      const activeEmpty =
-        activeInputs.length === 0 ? null : activeInputs.every((node) => !String(readValue(node)).trim());
-      const composerCleared = activeEmpty ?? !(String(editorValue).trim() || String(fallbackValue).trim());
-      const href = typeof location === 'object' && location.href ? location.href : '';
-      const inConversation = /\\/c\\//.test(href);
-		    return {
+	      const activeEmpty =
+	        activeInputs.length === 0 ? null : activeInputs.every((node) => !String(readValue(node)).trim());
+	      const composerCleared = activeEmpty ?? !(String(editorValue).trim() || String(fallbackValue).trim());
+	      const activeInput = activeInputs[0] ?? null;
+	      const activeInputValue = activeInput ? String(readValue(activeInput)) : '';
+	      const activeInputDisabled = Boolean(
+	        activeInput &&
+	          (((activeInput instanceof HTMLInputElement || activeInput instanceof HTMLTextAreaElement) &&
+	            activeInput.disabled) ||
+	            activeInput.getAttribute?.('aria-disabled') === 'true' ||
+	            activeInput.getAttribute?.('disabled') !== null)
+	      );
+	      const activeInputReadOnly = Boolean(
+	        activeInput &&
+	          (((activeInput instanceof HTMLInputElement || activeInput instanceof HTMLTextAreaElement) &&
+	            activeInput.readOnly) ||
+	            activeInput.getAttribute?.('readonly') !== null ||
+	            activeInput.getAttribute?.('contenteditable') === 'false')
+	      );
+	      const href = typeof location === 'object' && location.href ? location.href : '';
+	      const inConversation = /\\/c\\//.test(href);
+			    return {
         baseline,
 	      userMatched,
 	      prefixMatched,
@@ -500,12 +719,19 @@ async function verifyPromptCommitted(
 	      hasNewTurn,
 	      stopVisible,
       assistantVisible,
-      composerCleared,
-      inConversation,
-      href,
-      fallbackValue,
-      editorValue,
-      lastTurn,
+	      composerCleared,
+	      inConversation,
+	      href,
+	      activeInputExists: Boolean(activeInput),
+	      activeInputVisible: Boolean(activeInput && isVisible(activeInput)),
+	      activeInputDisabled,
+	      activeInputReadOnly,
+	      activeInputValueLength: activeInputValue.length,
+	      activeInputTagName: activeInput?.tagName?.toLowerCase?.() ?? '',
+	      activeInputRole: activeInput?.getAttribute?.('role') ?? '',
+	      fallbackValue,
+	      editorValue,
+	      lastTurn,
       turnsCount: normalizedTurns.length,
     };
   })()`;
@@ -522,6 +748,14 @@ async function verifyPromptCommitted(
       assistantVisible?: boolean;
       composerCleared?: boolean;
       inConversation?: boolean;
+      href?: string;
+      activeInputExists?: boolean;
+      activeInputVisible?: boolean;
+      activeInputDisabled?: boolean;
+      activeInputReadOnly?: boolean;
+      activeInputValueLength?: number;
+      activeInputTagName?: string;
+      activeInputRole?: string;
       turnsCount?: number;
     };
     const turnsCount = (result.value as { turnsCount?: number } | undefined)?.turnsCount;
@@ -551,7 +785,57 @@ async function verifyPromptCommitted(
     );
     await logDomFailure(Runtime, logger, "prompt-commit");
   }
-  if (prompt.trim().length >= 50_000) {
+  const finalStateResult = await Runtime.evaluate({
+    expression: script,
+    returnByValue: true,
+  }).catch(() => null);
+  const finalState = (finalStateResult?.result?.value ?? {}) as {
+    href?: string;
+    turnsCount?: number;
+    composerCleared?: boolean;
+    stopVisible?: boolean;
+    assistantVisible?: boolean;
+    hasNewTurn?: boolean;
+    activeInputExists?: boolean;
+    activeInputVisible?: boolean;
+    activeInputDisabled?: boolean;
+    activeInputReadOnly?: boolean;
+    activeInputValueLength?: number;
+    activeInputTagName?: string;
+    activeInputRole?: string;
+  };
+  const composerState = {
+    href: typeof finalState.href === "string" ? finalState.href : "",
+    turnsCount:
+      typeof finalState.turnsCount === "number" && Number.isFinite(finalState.turnsCount)
+        ? finalState.turnsCount
+        : null,
+    composerCleared: Boolean(finalState.composerCleared),
+    stopVisible: Boolean(finalState.stopVisible),
+    assistantVisible: Boolean(finalState.assistantVisible),
+    hasNewTurn: Boolean(finalState.hasNewTurn),
+    activeInputExists: Boolean(finalState.activeInputExists),
+    activeInputVisible: Boolean(finalState.activeInputVisible),
+    activeInputDisabled: Boolean(finalState.activeInputDisabled),
+    activeInputReadOnly: Boolean(finalState.activeInputReadOnly),
+    activeInputValueLength:
+      typeof finalState.activeInputValueLength === "number" &&
+      Number.isFinite(finalState.activeInputValueLength)
+        ? finalState.activeInputValueLength
+        : 0,
+    activeInputTagName: finalState.activeInputTagName ?? "",
+    activeInputRole: finalState.activeInputRole ?? "",
+  };
+  const likelyDeadComposer =
+    composerState.activeInputExists &&
+    (!composerState.activeInputVisible ||
+      composerState.activeInputDisabled ||
+      composerState.activeInputReadOnly ||
+      (!composerState.hasNewTurn &&
+        !composerState.stopVisible &&
+        !composerState.assistantVisible &&
+        !composerState.composerCleared));
+  if (prompt.trim().length >= PROMPT_TRUNCATION_CHECK_THRESHOLD) {
     throw new BrowserAutomationError(
       "Prompt did not appear in conversation before timeout (likely too large).",
       {
@@ -559,13 +843,30 @@ async function verifyPromptCommitted(
         code: "prompt-too-large",
         promptLength: prompt.trim().length,
         timeoutMs,
+        composerState,
       },
     );
   }
-  throw new Error("Prompt did not appear in conversation before timeout (send may have failed)");
+  if (likelyDeadComposer) {
+    throw new BrowserAutomationError("Prompt did not appear because the ChatGPT composer is unresponsive.", {
+      stage: "submit-prompt",
+      code: "dead-composer",
+      timeoutMs,
+      composerState,
+    });
+  }
+  throw new BrowserAutomationError("Prompt did not appear in conversation before timeout (send may have failed).", {
+    stage: "submit-prompt",
+    code: "prompt-commit-timeout",
+    timeoutMs,
+    composerState,
+  });
 }
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  ensureComposerHealthy,
+  readComposerSnapshot,
+  isPromptTooLarge,
   verifyPromptCommitted,
 };

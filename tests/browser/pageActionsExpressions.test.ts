@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   buildAssistantExtractorForTest,
+  buildAssistantSnapshotExpressionForTest,
   buildConversationDebugExpressionForTest,
   buildMarkdownFallbackExtractorForTest,
   buildCopyExpressionForTest,
@@ -20,6 +21,13 @@ describe("browser automation expressions", () => {
   test("conversation debug expression references conversation selector", () => {
     const expression = buildConversationDebugExpressionForTest();
     expect(expression).toContain(JSON.stringify(CONVERSATION_TURN_SELECTOR));
+  });
+
+  test("assistant snapshot expression guards against conversation drift", () => {
+    const expression = buildAssistantSnapshotExpressionForTest(4, "conv-123");
+    expect(expression).toContain('const EXPECTED_CONVERSATION_ID = "conv-123"');
+    expect(expression).toContain("currentConversationId !== EXPECTED_CONVERSATION_ID");
+    expect(expression).toContain("return null;");
   });
 
   test("markdown fallback filters user turns and respects assistant indicators", () => {

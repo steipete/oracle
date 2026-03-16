@@ -1688,25 +1688,60 @@ export async function waitForUserTurnAttachments(
   expectedNames: string[],
   timeoutMs: number,
   logger?: BrowserLogger,
+  options?: {
+    minTurnIndex?: number;
+    expectedPrompt?: string;
+    expectedConversationId?: string;
+  },
 ): Promise<boolean> {
   if (!expectedNames || expectedNames.length === 0) {
     return true;
   }
 
   const expectedNormalized = expectedNames.map((name) => name.toLowerCase());
+  const minTurnIndex =
+    typeof options?.minTurnIndex === "number" && Number.isFinite(options.minTurnIndex)
+      ? Math.max(0, Math.floor(options.minTurnIndex))
+      : null;
+  const expectedPromptPrefix = options?.expectedPrompt
+    ? options.expectedPrompt.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 80)
+    : "";
+  const expectedConversationId =
+    typeof options?.expectedConversationId === "string" &&
+    options.expectedConversationId.trim().length > 0
+      ? options.expectedConversationId.trim()
+      : null;
   const conversationSelectorLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const expression = `(() => {
     const CONVERSATION_SELECTOR = ${conversationSelectorLiteral};
+    const MIN_TURN_INDEX = ${minTurnIndex === null ? "null" : minTurnIndex};
+    const EXPECTED_PROMPT_PREFIX = ${JSON.stringify(expectedPromptPrefix)};
+    const EXPECTED_CONVERSATION_ID = ${expectedConversationId ? JSON.stringify(expectedConversationId) : "null"};
+    const currentHref = typeof location === 'object' && location.href ? location.href : '';
+    const currentConversationId = currentHref.match(/\\/c\\/([a-zA-Z0-9-]+)/)?.[1] ?? null;
+    if (
+      EXPECTED_CONVERSATION_ID &&
+      currentConversationId &&
+      currentConversationId !== EXPECTED_CONVERSATION_ID
+    ) {
+      return { ok: false, conversationMismatch: true };
+    }
     const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
-    const userTurns = turns.filter((node) => {
+    const userTurns = turns.map((node, index) => ({ node, index })).filter(({ node }) => {
       const attr = (node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (attr === 'user') return true;
       return Boolean(node.querySelector('[data-message-author-role="user"]'));
     });
-    const lastUser = userTurns[userTurns.length - 1];
+    const eligibleTurns =
+      MIN_TURN_INDEX === null ? userTurns : userTurns.filter(({ index }) => index >= MIN_TURN_INDEX);
+    const lastUser = eligibleTurns[eligibleTurns.length - 1];
     if (!lastUser) return { ok: false };
-    const text = (lastUser.innerText || '').toLowerCase();
-    const attrs = Array.from(lastUser.querySelectorAll('[aria-label],[title]')).map((el) => {
+    const text = (lastUser.node.innerText || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    const promptMatches =
+      !EXPECTED_PROMPT_PREFIX ||
+      text.includes(EXPECTED_PROMPT_PREFIX) ||
+      EXPECTED_PROMPT_PREFIX.includes(text.slice(0, Math.min(text.length, EXPECTED_PROMPT_PREFIX.length)));
+    const attrs = Array.from(lastUser.node.querySelectorAll('[aria-label],[title]')).map((el) => {
       const aria = el.getAttribute('aria-label') || '';
       const title = el.getAttribute('title') || '';
       return (aria + ' ' + title).trim().toLowerCase();
@@ -1720,11 +1755,11 @@ export async function waitForUserTurnAttachments(
       '[title*="file"]',
       '[title*="attachment"]',
     ];
-    const attachmentUiCount = lastUser.querySelectorAll(attachmentSelectors.join(',')).length;
+    const attachmentUiCount = lastUser.node.querySelectorAll(attachmentSelectors.join(',')).length;
     const hasAttachmentUi =
       attachmentUiCount > 0 || attrs.some((attr) => attr.includes('file') || attr.includes('attachment'));
     const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
-    const fileCountNodes = Array.from(lastUser.querySelectorAll('button,span,div,[aria-label],[title]'));
+    const fileCountNodes = Array.from(lastUser.node.querySelectorAll('button,span,div,[aria-label],[title]'));
     let fileCount = 0;
     for (const node of fileCountNodes) {
       if (!(node instanceof HTMLElement)) continue;
@@ -1757,7 +1792,16 @@ export async function waitForUserTurnAttachments(
         }
       }
     }
-    return { ok: true, text, attrs, fileCount, hasAttachmentUi, attachmentUiCount };
+    return {
+      ok: true,
+      text,
+      attrs,
+      fileCount,
+      hasAttachmentUi,
+      attachmentUiCount,
+      promptMatches,
+      turnIndex: lastUser.index,
+    };
   })()`;
 
   const deadline = Date.now() + timeoutMs;
@@ -1772,9 +1816,15 @@ export async function waitForUserTurnAttachments(
           fileCount?: number;
           hasAttachmentUi?: boolean;
           attachmentUiCount?: number;
+          promptMatches?: boolean;
+          turnIndex?: number;
+          conversationMismatch?: boolean;
         }
       | undefined;
     if (!value?.ok) {
+      if (value?.conversationMismatch && logger?.verbose) {
+        logger("User-turn attachment verification ignored mismatched conversation.");
+      }
       await delay(200);
       continue;
     }
@@ -1785,6 +1835,7 @@ export async function waitForUserTurnAttachments(
     const fileCount = typeof value.fileCount === "number" ? value.fileCount : 0;
     const attachmentUiCount =
       typeof value.attachmentUiCount === "number" ? value.attachmentUiCount : 0;
+    const promptMatches = expectedPromptPrefix ? value.promptMatches !== false : true;
     const fileCountSatisfied =
       fileCount >= expectedNormalized.length && expectedNormalized.length > 0;
     const attachmentUiSatisfied =
@@ -1797,7 +1848,7 @@ export async function waitForUserTurnAttachments(
       if (expectedNoExt.length >= 6 && haystack.includes(expectedNoExt)) return false;
       return true;
     });
-    if (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied) {
+    if (promptMatches && (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied)) {
       return true;
     }
     await delay(250);

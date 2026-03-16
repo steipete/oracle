@@ -20,21 +20,25 @@ const DEFAULT_BROWSER_INPUT_TIMEOUT_MS = 60_000;
 const DEFAULT_BROWSER_RECHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_BROWSER_AUTO_REATTACH_TIMEOUT_MS = 120_000;
 const DEFAULT_CHROME_PROFILE = "Default";
+const CURRENT_PRO_BROWSER_LABEL = "GPT-5.4 Pro";
+const CURRENT_THINKING_BROWSER_LABEL = "Thinking 5.4";
+const CURRENT_INSTANT_BROWSER_LABEL = "Instant 5.3";
+const CURRENT_AUTO_BROWSER_LABEL = "Auto";
 
 // Ordered array: most specific models first to ensure correct selection.
 // The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
-  ["gpt-5.4-pro", "GPT-5.4 Pro"],
-  ["gpt-5.2-thinking", "GPT-5.2 Thinking"],
-  ["gpt-5.2-instant", "GPT-5.2 Instant"],
-  ["gpt-5.2-pro", "GPT-5.4 Pro"],
-  ["gpt-5.1-pro", "GPT-5.4 Pro"],
-  ["gpt-5-pro", "GPT-5.4 Pro"],
+  ["gpt-5.4-pro", CURRENT_PRO_BROWSER_LABEL],
+  ["gpt-5.2-thinking", CURRENT_THINKING_BROWSER_LABEL],
+  ["gpt-5.2-instant", CURRENT_INSTANT_BROWSER_LABEL],
+  ["gpt-5.2-pro", CURRENT_PRO_BROWSER_LABEL],
+  ["gpt-5.1-pro", CURRENT_PRO_BROWSER_LABEL],
+  ["gpt-5-pro", CURRENT_PRO_BROWSER_LABEL],
   // Base models last (least specific)
-  ["gpt-5.4", "Thinking 5.4"],
-  ["gpt-5.2", "GPT-5.2"], // Selects "Auto" in ChatGPT UI
-  ["gpt-5.1", "GPT-5.2"], // Legacy alias → Auto
+  ["gpt-5.4", CURRENT_THINKING_BROWSER_LABEL],
+  ["gpt-5.2", CURRENT_AUTO_BROWSER_LABEL],
+  ["gpt-5.1", CURRENT_AUTO_BROWSER_LABEL],
   ["gemini-3-pro", "Gemini 3 Pro"],
   ["gemini-3-pro-deep-think", "gemini-3-deep-think"],
 ];
@@ -87,7 +91,7 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
   }
 
   // Pro variants: resolve to the latest Pro model in ChatGPT.
-  if (normalized === "gpt-5-pro" || normalized === "gpt-5.1-pro" || normalized === "gpt-5.2-pro") {
+  if (/^gpt-5(?:\.\d+)?-pro$/.test(normalized)) {
     return "gpt-5.4-pro";
   }
 
@@ -96,7 +100,7 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
     return normalized;
   }
 
-  // Legacy aliases: map to base GPT-5.2 (Auto)
+  // Legacy aliases: map to base GPT-5.2 browser target (Auto)
   if (normalized === "gpt-5.1") {
     return "gpt-5.2";
   }
@@ -150,7 +154,7 @@ export async function buildBrowserConfig(
   ) {
     throw new Error(
       "Temporary Chat mode does not expose Pro models in the ChatGPT model picker. " +
-        'Remove "temporary-chat=true" from --chatgpt-url (or omit --chatgpt-url), or use a non-Pro model (e.g. --model gpt-5.2).',
+        'Remove "temporary-chat=true" from --chatgpt-url (or omit --chatgpt-url), or use a non-Pro model (e.g. --model gpt-5.2-instant).',
     );
   }
 
@@ -229,10 +233,26 @@ export function mapModelToBrowserLabel(model: ModelName): string {
   return DEFAULT_MODEL_TARGET;
 }
 
+function normalizeBrowserLabelValue(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function isCurrentProBrowserTarget(value: string): boolean {
+  const normalized = normalizeBrowserLabelValue(value);
+  return (
+    /^gpt 5(?: \d+)? pro$/.test(normalized) ||
+    /^chatgpt 5(?: \d+)? pro$/.test(normalized) ||
+    /^pro 5(?: \d+)?$/.test(normalized)
+  );
+}
+
 export function resolveBrowserModelLabel(input: string | undefined, model: ModelName): string {
   const trimmed = input?.trim?.() ?? "";
   if (!trimmed) {
     return mapModelToBrowserLabel(model);
+  }
+  if (isCurrentProBrowserTarget(trimmed)) {
+    return CURRENT_PRO_BROWSER_LABEL;
   }
   const normalizedInput = trimmed.toLowerCase();
   if (normalizedInput === model.toLowerCase()) {
