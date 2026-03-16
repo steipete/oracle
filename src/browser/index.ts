@@ -84,6 +84,74 @@ function hasBrowserErrorCode(error: unknown, code: string): boolean {
   );
 }
 
+type BrowserSubmissionResult = {
+  baselineTurns: number | null;
+  baselineAssistantText: string | null;
+};
+
+type BrowserSubmissionFallback = {
+  prompt: string;
+  attachments: BrowserAttachment[];
+};
+
+async function runSubmissionWithRecovery({
+  prompt,
+  attachments,
+  fallbackSubmission,
+  submit,
+  reloadPromptComposer,
+  prepareFallbackSubmission,
+  logger,
+}: {
+  prompt: string;
+  attachments: BrowserAttachment[];
+  fallbackSubmission?: BrowserSubmissionFallback;
+  submit: (prompt: string, attachments: BrowserAttachment[]) => Promise<BrowserSubmissionResult>;
+  reloadPromptComposer: () => Promise<void>;
+  prepareFallbackSubmission: () => Promise<void>;
+  logger: BrowserLogger;
+}): Promise<BrowserSubmissionResult> {
+  let currentPrompt = prompt;
+  let currentAttachments = attachments;
+  let retriedDeadComposer = false;
+  let usedFallbackSubmission = false;
+
+  while (true) {
+    try {
+      return await submit(currentPrompt, currentAttachments);
+    } catch (error) {
+      const isPromptTooLarge = hasBrowserErrorCode(error, "prompt-too-large");
+      const isDeadComposer = hasBrowserErrorCode(error, "dead-composer");
+      if (isDeadComposer && !retriedDeadComposer) {
+        retriedDeadComposer = true;
+        await reloadPromptComposer();
+        continue;
+      }
+      if (fallbackSubmission && !usedFallbackSubmission && isPromptTooLarge) {
+        usedFallbackSubmission = true;
+        logger("[browser] Inline prompt too large; retrying with file uploads.");
+        await prepareFallbackSubmission();
+        currentPrompt = fallbackSubmission.prompt;
+        currentAttachments = fallbackSubmission.attachments;
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+export async function runSubmissionWithRecoveryForTest(args: {
+  prompt: string;
+  attachments: BrowserAttachment[];
+  fallbackSubmission?: BrowserSubmissionFallback;
+  submit: (prompt: string, attachments: BrowserAttachment[]) => Promise<BrowserSubmissionResult>;
+  reloadPromptComposer: () => Promise<void>;
+  prepareFallbackSubmission: () => Promise<void>;
+  logger: BrowserLogger;
+}): Promise<BrowserSubmissionResult> {
+  return runSubmissionWithRecovery(args);
+}
+
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
   if (!promptText) {
@@ -647,7 +715,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             },
           );
           if (!verified) {
-            logger("Sent user message did not expose attachment UI after upload; continuing.");
+            throw new Error("Sent user message did not expose attachment UI after upload.");
           } else {
             logger("Verified attachments present on sent user message");
           }
@@ -668,34 +736,21 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     let baselineAssistantText: string | null = null;
     await acquireProfileLockIfNeeded();
     try {
-      let retriedDeadComposer = false;
-      try {
-        const submission = await raceWithDisconnect(submitOnce(promptText, attachments));
-        baselineTurns = submission.baselineTurns;
-        baselineAssistantText = submission.baselineAssistantText;
-      } catch (error) {
-        const isPromptTooLarge = hasBrowserErrorCode(error, "prompt-too-large");
-        const isDeadComposer = hasBrowserErrorCode(error, "dead-composer");
-        if (isDeadComposer && !retriedDeadComposer) {
-          retriedDeadComposer = true;
-          await reloadPromptComposer();
-          const submission = await raceWithDisconnect(submitOnce(promptText, attachments));
-          baselineTurns = submission.baselineTurns;
-          baselineAssistantText = submission.baselineAssistantText;
-        } else if (fallbackSubmission && isPromptTooLarge) {
-          // Learned: when prompts truncate, retry with file uploads so the UI receives the full content.
-          logger("[browser] Inline prompt too large; retrying with file uploads.");
+      const submission = await runSubmissionWithRecovery({
+        prompt: promptText,
+        attachments,
+        fallbackSubmission,
+        submit: (submissionPrompt, submissionAttachments) =>
+          raceWithDisconnect(submitOnce(submissionPrompt, submissionAttachments)),
+        reloadPromptComposer,
+        prepareFallbackSubmission: async () => {
           await raceWithDisconnect(clearPromptComposer(Runtime, logger));
           await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
-          const submission = await raceWithDisconnect(
-            submitOnce(fallbackSubmission.prompt, fallbackSubmission.attachments),
-          );
-          baselineTurns = submission.baselineTurns;
-          baselineAssistantText = submission.baselineAssistantText;
-        } else {
-          throw error;
-        }
-      }
+        },
+        logger,
+      });
+      baselineTurns = submission.baselineTurns;
+      baselineAssistantText = submission.baselineAssistantText;
     } finally {
       await releaseProfileLockIfHeld();
     }
@@ -1611,34 +1666,21 @@ async function runRemoteBrowserMode(
 
     let baselineTurns: number | null = null;
     let baselineAssistantText: string | null = null;
-    let retriedDeadComposer = false;
-    try {
-      const submission = await raceWithDisconnect(submitOnce(promptText, attachments));
-      baselineTurns = submission.baselineTurns;
-      baselineAssistantText = submission.baselineAssistantText;
-    } catch (error) {
-      const isPromptTooLarge = hasBrowserErrorCode(error, "prompt-too-large");
-      const isDeadComposer = hasBrowserErrorCode(error, "dead-composer");
-      if (isDeadComposer && !retriedDeadComposer) {
-        retriedDeadComposer = true;
-        await reloadPromptComposer();
-        const submission = await raceWithDisconnect(submitOnce(promptText, attachments));
-        baselineTurns = submission.baselineTurns;
-        baselineAssistantText = submission.baselineAssistantText;
-      } else if (options.fallbackSubmission && isPromptTooLarge) {
-        logger("[browser] Inline prompt too large; retrying with file uploads.");
+    const submission = await runSubmissionWithRecovery({
+      prompt: promptText,
+      attachments,
+      fallbackSubmission: options.fallbackSubmission,
+      submit: (submissionPrompt, submissionAttachments) =>
+        raceWithDisconnect(submitOnce(submissionPrompt, submissionAttachments)),
+      reloadPromptComposer,
+      prepareFallbackSubmission: async () => {
         await raceWithDisconnect(clearPromptComposer(Runtime, logger));
         await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
-        const submission = await raceWithDisconnect(submitOnce(
-          options.fallbackSubmission.prompt,
-          options.fallbackSubmission.attachments,
-        ));
-        baselineTurns = submission.baselineTurns;
-        baselineAssistantText = submission.baselineAssistantText;
-      } else {
-        throw error;
-      }
-    }
+      },
+      logger,
+    });
+    baselineTurns = submission.baselineTurns;
+    baselineAssistantText = submission.baselineAssistantText;
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
     const normalizeForComparison = (text: string): string =>
