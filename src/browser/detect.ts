@@ -1,7 +1,26 @@
 import fs from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Launcher } from "chrome-launcher";
+
+export type AttachRunningBrowserFamily = "chrome" | "chromium" | "edge" | "brave";
+
+export interface AttachRunningProfileRoot {
+  family: AttachRunningBrowserFamily;
+  root: string;
+}
+
+export interface DevToolsActivePortInfo {
+  port: number;
+  browserWSEndpoint: string;
+  path: string;
+}
+
+export interface DevToolsActivePortCandidate extends DevToolsActivePortInfo {
+  profileRoot: string;
+  mtimeMs: number;
+}
 
 export async function detectChromeBinary(): Promise<{ path: string | null }> {
   const envPath = (process.env.CHROME_PATH ?? "").trim();
@@ -17,7 +36,7 @@ export async function detectChromeBinary(): Promise<{ path: string | null }> {
     return { path: launcherDetected };
   }
 
-  const candidates = platformChromeCandidates();
+  const candidates = platformChromeCandidates(process.platform, os.homedir());
   for (const candidate of candidates.absolutePaths) {
     if (await isExecutable(candidate)) {
       return { path: candidate };
@@ -42,9 +61,9 @@ export async function detectChromeCookieDb({
     return null;
   }
 
-  const roots = platformProfileRoots();
+  const roots = resolveAttachRunningProfileRoots();
   for (const root of roots) {
-    const dir = path.join(root, profileName);
+    const dir = path.join(root.root, profileName);
     const direct = path.join(dir, "Cookies");
     if (await isFile(direct)) return direct;
     const network = path.join(dir, "Network", "Cookies");
@@ -54,8 +73,195 @@ export async function detectChromeCookieDb({
   return null;
 }
 
-function platformChromeCandidates(): { absolutePaths: string[]; binaryNames: string[] } {
-  if (process.platform === "linux") {
+export function resolveAttachRunningProfileRoots(
+  platform = process.platform,
+  homeDir = os.homedir(),
+): AttachRunningProfileRoot[] {
+  if (platform === "darwin") {
+    return [
+      {
+        family: "chrome",
+        root: path.join(homeDir, "Library", "Application Support", "Google", "Chrome"),
+      },
+      {
+        family: "chromium",
+        root: path.join(homeDir, "Library", "Application Support", "Chromium"),
+      },
+      {
+        family: "edge",
+        root: path.join(homeDir, "Library", "Application Support", "Microsoft Edge"),
+      },
+      {
+        family: "brave",
+        root: path.join(
+          homeDir,
+          "Library",
+          "Application Support",
+          "BraveSoftware",
+          "Brave-Browser",
+        ),
+      },
+    ];
+  }
+  if (platform === "linux") {
+    return [
+      { family: "chrome", root: path.join(homeDir, ".config", "google-chrome") },
+      { family: "chromium", root: path.join(homeDir, ".config", "chromium") },
+      { family: "edge", root: path.join(homeDir, ".config", "microsoft-edge") },
+      {
+        family: "brave",
+        root: path.join(homeDir, ".config", "BraveSoftware", "Brave-Browser"),
+      },
+      { family: "chromium", root: path.join(homeDir, "snap", "chromium", "common", "chromium") },
+      { family: "chromium", root: path.join(homeDir, "snap", "chromium", "current", "chromium") },
+    ];
+  }
+  if (platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA ?? path.join(homeDir, "AppData", "Local");
+    return [
+      {
+        family: "chrome",
+        root: path.join(localAppData, "Google", "Chrome", "User Data"),
+      },
+      {
+        family: "chromium",
+        root: path.join(localAppData, "Chromium", "User Data"),
+      },
+      {
+        family: "edge",
+        root: path.join(localAppData, "Microsoft", "Edge", "User Data"),
+      },
+      {
+        family: "brave",
+        root: path.join(localAppData, "BraveSoftware", "Brave-Browser", "User Data"),
+      },
+    ];
+  }
+  return [];
+}
+
+export function resolveDevToolsActivePortDiscoveryRoots(
+  platform = process.platform,
+  homeDir = os.homedir(),
+): string[] {
+  if (platform === "darwin") {
+    return [path.join(homeDir, "Library", "Application Support")];
+  }
+  if (platform === "linux") {
+    return [path.join(homeDir, ".config"), path.join(homeDir, "snap")];
+  }
+  if (platform === "win32") {
+    return [process.env.LOCALAPPDATA ?? path.join(homeDir, "AppData", "Local")];
+  }
+  return [];
+}
+
+export function inferAttachRunningBrowserFamily(
+  chromePath?: string | null,
+): AttachRunningBrowserFamily | null {
+  const normalized = chromePath?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("microsoft edge") || normalized.includes("msedge")) {
+    return "edge";
+  }
+  if (normalized.includes("brave")) {
+    return "brave";
+  }
+  if (normalized.includes("chromium")) {
+    return "chromium";
+  }
+  if (normalized.includes("chrome")) {
+    return "chrome";
+  }
+  return null;
+}
+
+export function parseDevToolsActivePort(
+  raw: string,
+  options: {
+    host?: string;
+  } = {},
+): { port: number; browserWSEndpoint: string } {
+  const host = formatWebSocketHost(options.host ?? "127.0.0.1");
+  const [rawPort, rawBrowserPath] = raw.split(/\r?\n/u);
+  const port = Number.parseInt(rawPort?.trim() ?? "", 10);
+  if (!Number.isFinite(port) || port <= 0 || port > 65_535) {
+    throw new Error("DevToolsActivePort did not contain a valid port.");
+  }
+  const browserPath = rawBrowserPath?.trim() || "/devtools/browser";
+  const normalizedPath = browserPath.startsWith("/") ? browserPath : `/${browserPath}`;
+  return {
+    port,
+    browserWSEndpoint: `ws://${host}:${port}${normalizedPath}`,
+  };
+}
+
+export async function readDevToolsActivePortInfo(
+  profileRoot: string,
+  options: {
+    host?: string;
+  } = {},
+): Promise<DevToolsActivePortInfo | null> {
+  const candidates = [
+    path.join(profileRoot, "DevToolsActivePort"),
+    path.join(profileRoot, "Default", "DevToolsActivePort"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const raw = await fs.readFile(candidate, "utf8");
+      const parsed = parseDevToolsActivePort(raw, options);
+      return { ...parsed, path: candidate };
+    } catch {
+      // ignore missing/unreadable candidates
+    }
+  }
+  return null;
+}
+
+export async function discoverDevToolsActivePortCandidates(
+  options: {
+    host?: string;
+    platform?: NodeJS.Platform;
+    homeDir?: string;
+    maxDepth?: number;
+  } = {},
+): Promise<DevToolsActivePortCandidate[]> {
+  const { host, platform = process.platform, homeDir = os.homedir(), maxDepth = 6 } = options;
+  const roots = resolveDevToolsActivePortDiscoveryRoots(platform, homeDir);
+  const candidates: DevToolsActivePortCandidate[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const root of roots) {
+    await walkForDevToolsActivePort(root, maxDepth, async (candidatePath, stat) => {
+      if (seenPaths.has(candidatePath)) {
+        return;
+      }
+      seenPaths.add(candidatePath);
+      try {
+        const raw = await fs.readFile(candidatePath, "utf8");
+        const parsed = parseDevToolsActivePort(raw, { host });
+        candidates.push({
+          ...parsed,
+          path: candidatePath,
+          profileRoot: deriveDevToolsProfileRoot(candidatePath),
+          mtimeMs: Number(stat.mtimeMs),
+        });
+      } catch {
+        // ignore unreadable or malformed DevToolsActivePort files
+      }
+    });
+  }
+
+  return candidates;
+}
+
+function platformChromeCandidates(
+  platform = process.platform,
+  homeDir = os.homedir(),
+): { absolutePaths: string[]; binaryNames: string[] } {
+  if (platform === "linux") {
     return {
       binaryNames: [
         "google-chrome",
@@ -84,7 +290,7 @@ function platformChromeCandidates(): { absolutePaths: string[]; binaryNames: str
       ],
     };
   }
-  if (process.platform === "darwin") {
+  if (platform === "darwin") {
     return {
       binaryNames: [],
       absolutePaths: [
@@ -95,10 +301,10 @@ function platformChromeCandidates(): { absolutePaths: string[]; binaryNames: str
       ],
     };
   }
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
     const programFilesX86 = process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)";
-    const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local");
+    const localAppData = process.env.LOCALAPPDATA ?? path.join(homeDir, "AppData", "Local");
     return {
       binaryNames: [],
       absolutePaths: [
@@ -111,32 +317,6 @@ function platformChromeCandidates(): { absolutePaths: string[]; binaryNames: str
     };
   }
   return { binaryNames: [], absolutePaths: [] };
-}
-
-function platformProfileRoots(): string[] {
-  const home = os.homedir();
-  if (process.platform === "darwin") {
-    return [
-      path.join(home, "Library", "Application Support", "Google", "Chrome"),
-      path.join(home, "Library", "Application Support", "Chromium"),
-      path.join(home, "Library", "Application Support", "Microsoft Edge"),
-      path.join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser"),
-    ];
-  }
-  if (process.platform === "linux") {
-    return [
-      path.join(home, ".config", "google-chrome"),
-      path.join(home, ".config", "google-chrome-beta"),
-      path.join(home, ".config", "google-chrome-unstable"),
-      path.join(home, ".config", "chromium"),
-      path.join(home, ".config", "microsoft-edge"),
-      path.join(home, ".config", "BraveSoftware", "Brave-Browser"),
-      // Snap Chromium profiles
-      path.join(home, "snap", "chromium", "common", "chromium"),
-      path.join(home, "snap", "chromium", "current", "chromium"),
-    ];
-  }
-  return [];
 }
 
 async function isExecutable(candidate: string): Promise<boolean> {
@@ -172,4 +352,60 @@ async function findOnPath(names: string[]): Promise<string | null> {
     }
   }
   return null;
+}
+
+function deriveDevToolsProfileRoot(activePortPath: string): string {
+  const parentDir = path.dirname(activePortPath);
+  if (path.basename(parentDir).toLowerCase() === "default") {
+    return path.dirname(parentDir);
+  }
+  return parentDir;
+}
+
+function formatWebSocketHost(host: string): string {
+  if (host.includes(":") && !host.startsWith("[") && !host.endsWith("]")) {
+    return `[${host}]`;
+  }
+  return host;
+}
+
+async function walkForDevToolsActivePort(
+  root: string,
+  maxDepth: number,
+  onFile: (candidatePath: string, stat: Stats) => Promise<void>,
+): Promise<void> {
+  const stack: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(current.dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const candidatePath = path.join(current.dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        continue;
+      }
+      if (entry.isFile()) {
+        if (entry.name !== "DevToolsActivePort") {
+          continue;
+        }
+        try {
+          const stat = await fs.stat(candidatePath);
+          await onFile(candidatePath, stat);
+        } catch {
+          // ignore unreadable candidates
+        }
+        continue;
+      }
+      if (entry.isDirectory() && current.depth < maxDepth) {
+        stack.push({ dir: candidatePath, depth: current.depth + 1 });
+      }
+    }
+  }
 }

@@ -43,6 +43,7 @@ export interface BrowserFlagOptions {
   browserChromeProfile?: string;
   browserChromePath?: string;
   browserCookiePath?: string;
+  browserAttachRunning?: boolean;
   chatgptUrl?: string;
   browserUrl?: string;
   browserTimeout?: string;
@@ -133,6 +134,11 @@ export async function buildBrowserConfig(
   if (options.remoteChrome) {
     remoteChrome = parseRemoteChromeTarget(options.remoteChrome);
   }
+  const attachRunning = options.browserAttachRunning === true;
+  validateAttachRunningOptions(options, {
+    attachRunning,
+    hasInlineCookies: Boolean(inline?.cookies),
+  });
   const rawUrl = options.chatgptUrl ?? options.browserUrl;
   const url = rawUrl ? normalizeChatgptUrl(rawUrl, CHATGPT_URL) : undefined;
 
@@ -158,6 +164,7 @@ export async function buildBrowserConfig(
     chromeProfile: options.browserChromeProfile ?? DEFAULT_CHROME_PROFILE,
     chromePath: options.browserChromePath ?? null,
     chromeCookiePath: options.browserCookiePath ?? null,
+    attachRunning,
     url,
     debugPort: selectBrowserPort(options),
     timeoutMs: options.browserTimeout
@@ -207,6 +214,40 @@ export async function buildBrowserConfig(
     remoteChrome,
     thinkingTime: options.browserThinkingTime,
   };
+}
+
+function validateAttachRunningOptions(
+  options: BrowserFlagOptions,
+  {
+    attachRunning,
+    hasInlineCookies,
+  }: {
+    attachRunning: boolean;
+    hasInlineCookies: boolean;
+  },
+): void {
+  if (!attachRunning) {
+    return;
+  }
+  const conflicts = [
+    options.browserChromeProfile ? "--browser-chrome-profile" : null,
+    options.browserCookiePath ? "--browser-cookie-path" : null,
+    options.browserNoCookieSync ? "--browser-no-cookie-sync" : null,
+    options.browserHideWindow ? "--browser-hide-window" : null,
+    options.browserKeepBrowser ? "--browser-keep-browser" : null,
+    options.browserManualLogin ? "--browser-manual-login" : null,
+    options.browserManualLoginProfileDir ? "--browser-manual-login-profile-dir" : null,
+    hasInlineCookies ? "--browser-inline-cookies/--browser-inline-cookies-file" : null,
+    options.browserPort != null || options.browserDebugPort != null
+      ? "--browser-port/--browser-debug-port"
+      : null,
+  ].filter((value): value is string => Boolean(value));
+
+  if (conflicts.length > 0) {
+    throw new Error(
+      `--browser-attach-running cannot be combined with ${conflicts.join(", ")} because attach mode reuses an already-running browser instead of launching and configuring its own Chrome instance.`,
+    );
+  }
 }
 
 function selectBrowserPort(options: BrowserFlagOptions): number | null {
