@@ -67,7 +67,7 @@
     "dotenv": "^17.3.1",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
-    "inquirer": "13.3.0",
+    "inquirer": "13.3.2",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
@@ -85,11 +85,11 @@
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.3.5",
-    "@vitest/coverage-v8": "4.0.18",
-    "devtools-protocol": "0.0.1595872",
+    "@vitest/coverage-v8": "4.1.0",
+    "devtools-protocol": "0.0.1602427",
     "es-toolkit": "^1.45.1",
     "esbuild": "^0.27.3",
-    "oxfmt": "0.36.0",
+    "oxfmt": "0.41.0",
     "oxlint": "^1.51.0",
     "puppeteer-core": "^24.38.0",
     "tsx": "^4.21.0",
@@ -110,7 +110,7 @@
   "packageManager": "pnpm@10.23.0+sha512.21c4e5698002ade97e4efe8b8b4a89a8de3c85a37919f957e7a0f30f38fbc5bbdd05980ffe29179b2fb6e6e691242e098d945d1601772cad0fef5fb6411e2a4b",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1595872"
+      "devtools-protocol": "0.0.1602427"
     },
     "onlyBuiltDependencies": [
       "@cdktf/node-pty-prebuilt-multiarch",
