@@ -15,7 +15,7 @@ Oracle bundles your prompt and files so another AI can answer with real context.
 
 ## Setting up (macOS Browser Mode)
 
-Browser mode lets you use GPT-5.2 Pro without any API keys — it automates your Chrome browser directly.
+Browser mode lets you use GPT-5.4 Pro without any API keys — it automates your Chrome browser directly.
 
 ### First-time login
 
