@@ -1,4 +1,5 @@
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
+import { normalizeBrowserModelLabel } from "./modelLabels.js";
 import { normalizeBrowserModelStrategy } from "./modelStrategy.js";
 import type { BrowserAutomationConfig, ResolvedBrowserConfig } from "./types.js";
 import { isTemporaryChatUrl, normalizeChatgptUrl } from "./utils.js";
@@ -53,8 +54,9 @@ export function resolveBrowserConfig(
     rawUrl ?? DEFAULT_BROWSER_CONFIG.url,
     DEFAULT_BROWSER_CONFIG.url,
   );
-  const desiredModel =
-    config?.desiredModel ?? DEFAULT_BROWSER_CONFIG.desiredModel ?? DEFAULT_MODEL_TARGET;
+  const desiredModel = normalizeBrowserModelLabel(
+    config?.desiredModel ?? DEFAULT_BROWSER_CONFIG.desiredModel ?? DEFAULT_MODEL_TARGET,
+  );
   const modelStrategy =
     normalizeBrowserModelStrategy(config?.modelStrategy) ??
     DEFAULT_BROWSER_CONFIG.modelStrategy ??

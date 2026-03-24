@@ -18,6 +18,14 @@ describe("browser model selection matchers", () => {
     );
   });
 
+  it("treats Extended Pro as a GPT-5.4 Pro alias", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("Extended Pro");
+    expect(labelTokens.some((t) => t.includes("5.4") || t.includes("5-4"))).toBe(true);
+    expect(testIdTokens.some((t) => t.includes("gpt-5.4-pro") || t.includes("gpt-5-4-pro"))).toBe(
+      true,
+    );
+  });
+
   it("includes rich tokens for gpt-5.1", () => {
     const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.1");
     expectContains(labelTokens, "gpt-5.1");
@@ -69,5 +77,17 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const closeMenu = () =>");
     expect(expression).toContain("key: 'Escape'");
     expect(expression).toContain("closeMenu();");
+  });
+
+  it("reads the composer model pill when the dropdown button label is generic", () => {
+    const expression = buildModelSelectionExpressionForTest("Extended Pro");
+    expect(expression).toContain("composer-footer-actions");
+    expect(expression).toContain("COMPOSER_MODEL_PILL_SELECTOR");
+    expect(expression).toContain("aria-haspopup");
+  });
+
+  it("detects the current ChatGPT selected-option trailing svg markup", () => {
+    const expression = buildModelSelectionExpressionForTest("Extended Pro");
+    expect(expression).toContain(".trailing svg use[href], .trailing svg");
   });
 });

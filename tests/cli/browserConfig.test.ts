@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { buildBrowserConfig, resolveBrowserModelLabel } from "../../src/cli/browserConfig.js";
+import {
+  buildBrowserConfig,
+  resolveBrowserModelLabel,
+  resolveCliBrowserModelSelection,
+} from "../../src/cli/browserConfig.js";
 
 describe("buildBrowserConfig", () => {
   test("uses defaults when optional flags omitted", async () => {
@@ -225,5 +229,14 @@ describe("resolveBrowserModelLabel", () => {
     expect(resolveBrowserModelLabel("  ChatGPT 5.1 Thinking ", "gpt-5.1")).toBe(
       "ChatGPT 5.1 Thinking",
     );
+  });
+});
+
+describe("resolveCliBrowserModelSelection", () => {
+  test("normalizes legacy Pro aliases before oracle sends them to the browser", () => {
+    expect(resolveCliBrowserModelSelection("gpt-5.2-pro")).toEqual({
+      model: "gpt-5.4-pro",
+      desiredModel: "Extended Pro",
+    });
   });
 });

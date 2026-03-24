@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Browser: normalize CLI browser-model aliases and direct `desiredModel` config inputs to current ChatGPT picker labels, treat `Extended Pro` as the GPT-5.4 Pro browser-selection alias, and use the current ChatGPT selected-model DOM markers so Pro runs do not get stuck reopening the model switcher.
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed

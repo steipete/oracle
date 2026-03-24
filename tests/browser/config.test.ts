@@ -36,7 +36,21 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.debug).toBe(true);
   });
 
-  test("rejects temporary chat URLs when desiredModel is Pro", () => {
+  test("normalizes legacy and raw Pro labels before sending them to the browser", () => {
+    expect(
+      resolveBrowserConfig({
+        desiredModel: "GPT-5.2 Pro",
+      }).desiredModel,
+    ).toBe("Extended Pro");
+
+    expect(
+      resolveBrowserConfig({
+        desiredModel: "gpt-5.4-pro",
+      }).desiredModel,
+    ).toBe("Extended Pro");
+  });
+
+  test("rejects temporary chat URLs when desiredModel normalizes to Pro", () => {
     expect(() =>
       resolveBrowserConfig({
         url: "https://chatgpt.com/?temporary-chat=true",

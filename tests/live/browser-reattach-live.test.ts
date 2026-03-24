@@ -82,7 +82,7 @@ function createLogger(): BrowserLogger {
                   chromeProfile: "Default",
                   url: projectUrl,
                   keepBrowser: true,
-                  desiredModel: "GPT-5.2 Pro",
+                  desiredModel: "Extended Pro",
                   timeoutMs: 1_200_000,
                 },
                 log,

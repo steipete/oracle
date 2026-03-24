@@ -51,7 +51,11 @@ import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
 import { shouldDetachSession } from "../src/cli/detach.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
-import { buildBrowserConfig, resolveBrowserModelLabel } from "../src/cli/browserConfig.js";
+import {
+  buildBrowserConfig,
+  resolveBrowserModelLabel,
+  resolveCliBrowserModelSelection,
+} from "../src/cli/browserConfig.js";
 import { performSessionRun } from "../src/cli/sessionRunner.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
@@ -1362,10 +1366,16 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     : [];
   const cliModelArg =
     normalizeModelOption(options.model) || (multiModelProvided ? "" : DEFAULT_MODEL);
+  const browserModelSelection =
+    !multiModelProvided && engine === "browser"
+      ? resolveCliBrowserModelSelection(cliModelArg)
+      : undefined;
   const resolvedModelCandidate: ModelName = multiModelProvided
     ? normalizedMultiModels[0]
-    : engine === "browser"
-      ? inferModelFromLabel(cliModelArg || DEFAULT_MODEL)
+    : browserModelSelection
+      ? browserModelSelection.model
+      : engine === "browser"
+        ? inferModelFromLabel(cliModelArg || DEFAULT_MODEL)
       : resolveApiModel(cliModelArg || DEFAULT_MODEL);
   const primaryModelCandidate = normalizedMultiModels[0] ?? resolvedModelCandidate;
   const isGemini = primaryModelCandidate.startsWith("gemini");
@@ -1635,7 +1645,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   const sessionMode: SessionMode = engine === "browser" ? "browser" : "api";
   const browserModelLabelOverride =
-    sessionMode === "browser" ? resolveBrowserModelLabel(cliModelArg, resolvedModel) : undefined;
+    sessionMode === "browser"
+      ? (browserModelSelection?.desiredModel ?? resolveBrowserModelLabel(cliModelArg, resolvedModel))
+      : undefined;
   const browserConfig =
     sessionMode === "browser"
       ? await buildBrowserConfig({

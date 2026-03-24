@@ -2,15 +2,118 @@ import { describe, expect, test } from "vitest";
 import { mkdtemp, writeFile, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
+import { createRemoteServer } from "../../src/remote/server.js";
+import type { BrowserRunResult } from "../../src/browserMode.js";
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
 const CLIENT_FACTORY = path.join(process.cwd(), "tests", "fixtures", "mockClientFactory.cjs");
 const INTEGRATION_TIMEOUT = process.platform === "win32" ? 60000 : 30000;
+const CAN_LISTEN_LOCALHOST =
+  spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `
+      const net = require('net');
+      const s = net.createServer();
+      s.on('error', () => process.exit(1));
+      s.listen(0, '127.0.0.1', () => s.close(() => process.exit(0)));
+    `,
+    ],
+    { stdio: "ignore" },
+  ).status === 0;
 
 describe("oracle CLI integration", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "sends Extended Pro to the remote browser executor for Pro defaults and aliases",
+    async () => {
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async (options) => {
+            capturedConfigs.push((options.config ?? {}) as Record<string, unknown>);
+            const result: BrowserRunResult = {
+              answerText: "ok",
+              answerMarkdown: "ok",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+            };
+            return result;
+          },
+        },
+      );
+
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const cases: Array<{ name: string; modelArgs: string[] }> = [
+        { name: "default", modelArgs: [] },
+        { name: "gpt-5.2-pro", modelArgs: ["--model", "gpt-5.2-pro"] },
+        { name: "GPT-5.2 Pro", modelArgs: ["--model", "GPT-5.2 Pro"] },
+        { name: "ChatGPT Pro", modelArgs: ["--model", "ChatGPT Pro"] },
+        { name: "Pro", modelArgs: ["--model", "Pro"] },
+      ];
+
+      try {
+        for (const testCase of cases) {
+          const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-browser-model-"));
+          try {
+            const env = {
+              ...process.env,
+              // biome-ignore lint/style/useNamingConvention: env var name
+              ORACLE_HOME_DIR: oracleHome,
+              // biome-ignore lint/style/useNamingConvention: env var name
+              ORACLE_NO_DETACH: "1",
+              // biome-ignore lint/style/useNamingConvention: env var name
+              ORACLE_DISABLE_KEYTAR: "1",
+            };
+
+            await execFileAsync(
+              process.execPath,
+              [
+                "--import",
+                "tsx",
+                CLI_ENTRY,
+                "--engine",
+                "browser",
+                "--remote-host",
+                `127.0.0.1:${server.port}`,
+                "--remote-token",
+                "secret",
+                "--wait",
+                "--prompt",
+                `Browser model integration ${testCase.name}`,
+                ...testCase.modelArgs,
+              ],
+              { env },
+            );
+
+            const lastConfig = capturedConfigs.at(-1);
+            expect(lastConfig, testCase.name).toMatchObject({
+              desiredModel: "Extended Pro",
+            });
+
+            const sessionsDir = path.join(oracleHome, "sessions");
+            const [sessionId] = await readdir(sessionsDir);
+            const metadata = JSON.parse(
+              await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+            );
+            expect(metadata.options?.browserConfig?.desiredModel, testCase.name).toBe(
+              "Extended Pro",
+            );
+          } finally {
+            await rm(oracleHome, { recursive: true, force: true });
+          }
+        }
+      } finally {
+        await server.close();
+      }
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
   test(
     "stores session metadata using stubbed client factory",
     async () => {

@@ -79,6 +79,8 @@ export const SEND_BUTTON_SELECTORS = [
 ];
 export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR = '[data-testid="model-switcher-dropdown-button"]';
+export const COMPOSER_MODEL_PILL_SELECTOR =
+  '[data-testid="composer-footer-actions"] button[aria-haspopup="menu"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
 // Action buttons that only appear once a turn has finished rendering.
 export const FINISHED_ACTIONS_SELECTOR =

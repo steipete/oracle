@@ -1,5 +1,6 @@
 import type { ChromeClient, BrowserLogger, BrowserModelStrategy } from "../types.js";
 import {
+  COMPOSER_MODEL_PILL_SELECTOR,
   MENU_CONTAINER_SELECTOR,
   MENU_ITEM_SELECTOR,
   MODEL_BUTTON_SELECTOR,
@@ -73,10 +74,12 @@ function buildModelSelectionExpression(
   const strategyLiteral = JSON.stringify(strategy);
   const menuContainerLiteral = JSON.stringify(MENU_CONTAINER_SELECTOR);
   const menuItemLiteral = JSON.stringify(MENU_ITEM_SELECTOR);
+  const composerModelPillLiteral = JSON.stringify(COMPOSER_MODEL_PILL_SELECTOR);
   return `(() => {
     ${buildClickDispatcher()}
     // Capture the selectors and matcher literals up front so the browser expression stays pure.
     const BUTTON_SELECTOR = '${MODEL_BUTTON_SELECTOR}';
+    const COMPOSER_MODEL_PILL_SELECTOR = ${composerModelPillLiteral};
     const LABEL_TOKENS = ${labelLiteral};
     const TEST_IDS = ${idLiteral};
     const PRIMARY_LABEL = ${primaryLabelLiteral};
@@ -100,13 +103,14 @@ function buildModelSelectionExpression(
       .map((token) => normalizeText(token))
       .filter(Boolean);
     const targetWords = normalizedTarget.split(' ').filter(Boolean);
-    const desiredVersion = normalizedTarget.includes('5 4')
+    const versionSource = [normalizedTarget, ...normalizedTokens].join(' ');
+    const desiredVersion = versionSource.includes('5 4')
       ? '5-4'
-      : normalizedTarget.includes('5 2')
+      : versionSource.includes('5 2')
         ? '5-2'
-        : normalizedTarget.includes('5 1')
+        : versionSource.includes('5 1')
           ? '5-1'
-          : normalizedTarget.includes('5 0')
+          : versionSource.includes('5 0')
             ? '5-0'
             : null;
     const wantsPro = normalizedTarget.includes(' pro') || normalizedTarget.endsWith(' pro') || normalizedTokens.includes('pro');
@@ -139,12 +143,23 @@ function buildModelSelectionExpression(
     };
 
     const getButtonLabel = () => (button.textContent ?? '').trim();
+    const getComposerModelLabel = () => {
+      const composerButton = document.querySelector(COMPOSER_MODEL_PILL_SELECTOR);
+      return (composerButton?.textContent ?? '').trim();
+    };
+    const getCurrentSelectionLabel = () => getComposerModelLabel() || getButtonLabel();
     if (MODEL_STRATEGY === 'current') {
-      return { status: 'already-selected', label: getButtonLabel() };
+      return { status: 'already-selected', label: getCurrentSelectionLabel() };
     }
     const buttonMatchesTarget = () => {
-      const normalizedLabel = normalizeText(getButtonLabel());
+      const normalizedLabel = normalizeText(getCurrentSelectionLabel());
       if (!normalizedLabel) return false;
+      if (
+        normalizedTarget &&
+        (normalizedLabel === normalizedTarget || normalizedLabel.includes(normalizedTarget))
+      ) {
+        return true;
+      }
       if (desiredVersion) {
         if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
         if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
@@ -162,7 +177,7 @@ function buildModelSelectionExpression(
     };
 
     if (buttonMatchesTarget()) {
-      return { status: 'already-selected', label: getButtonLabel() };
+      return { status: 'already-selected', label: getCurrentSelectionLabel() };
     }
 
     let lastPointerClick = 0;
@@ -190,6 +205,9 @@ function buildModelSelectionExpression(
         return true;
       }
       if (node.querySelector('[data-testid*="check"], [role="img"][data-icon="check"], svg[data-icon="check"]')) {
+        return true;
+      }
+      if (node.querySelector('.trailing svg use[href], .trailing svg')) {
         return true;
       }
       return false;
@@ -376,7 +394,7 @@ function buildModelSelectionExpression(
         if (match) {
           if (optionIsSelected(match.node)) {
             closeMenu();
-            resolve({ status: 'already-selected', label: getButtonLabel() || match.label });
+            resolve({ status: 'already-selected', label: getCurrentSelectionLabel() || match.label });
             return;
           }
           dispatchClickSequence(match.node);
@@ -391,7 +409,7 @@ function buildModelSelectionExpression(
           setTimeout(() => {
             if (buttonMatchesTarget()) {
               closeMenu();
-              resolve({ status: 'switched', label: getButtonLabel() || match.label });
+              resolve({ status: 'switched', label: getCurrentSelectionLabel() || match.label });
               return;
             }
             attempt();
@@ -441,6 +459,20 @@ function buildModelMatchersLiteral(targetModel: string): {
   push(`chatgpt ${dotless}`, labelTokens);
   push(`gpt ${base}`, labelTokens);
   push(`gpt ${dotless}`, labelTokens);
+  // ChatGPT's current 5.4 Pro picker label is "Extended Pro"; expand it to versioned GPT-5.4 Pro tokens.
+  if (base.includes("extended") && base.includes("pro")) {
+    push("5.4", labelTokens);
+    push("gpt-5.4", labelTokens);
+    push("gpt 5.4 pro", labelTokens);
+    push("gpt-5.4-pro", labelTokens);
+    push("gpt-5-4-pro", labelTokens);
+    push("gpt54pro", labelTokens);
+    push("chatgpt 5.4 pro", labelTokens);
+    testIdTokens.add("model-switcher-gpt-5-4-pro");
+    testIdTokens.add("gpt-5.4-pro");
+    testIdTokens.add("gpt-5-4-pro");
+    testIdTokens.add("gpt54pro");
+  }
   // Numeric variations (5.4 ↔ 54 ↔ gpt-5-4)
   if (base.includes("5.4") || base.includes("5-4") || base.includes("54")) {
     push("5.4", labelTokens);
