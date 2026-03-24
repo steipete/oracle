@@ -1,6 +1,6 @@
 {
   "name": "@steipete/oracle",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "CLI wrapper around OpenAI Responses API with GPT-5.4 Pro, GPT-5.4, GPT-5.2, GPT-5.1, and GPT-5.1 Codex high reasoning modes.",
   "keywords": [],
   "homepage": "https://github.com/steipete/oracle#readme",
@@ -109,12 +109,12 @@
   },
   "packageManager": "pnpm@10.23.0+sha512.21c4e5698002ade97e4efe8b8b4a89a8de3c85a37919f957e7a0f30f38fbc5bbdd05980ffe29179b2fb6e6e691242e098d945d1601772cad0fef5fb6411e2a4b",
   "pnpm": {
-    "overrides": {
-      "devtools-protocol": "0.0.1595872"
-    },
     "onlyBuiltDependencies": [
       "@cdktf/node-pty-prebuilt-multiarch",
       "esbuild"
     ]
+  },
+  "overrides": {
+    "devtools-protocol": "0.0.1595872"
   }
 }
