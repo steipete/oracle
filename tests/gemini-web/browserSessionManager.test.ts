@@ -128,4 +128,31 @@ describe("openGeminiBrowserSession", () => {
 
     await session.close();
   });
+
+  it("ignores blank ORACLE_BROWSER_PROFILE_DIR values", async () => {
+    process.env.ORACLE_BROWSER_PROFILE_DIR = "   ";
+
+    const { openGeminiBrowserSession } = await import(
+      "../../src/gemini-web/browserSessionManager.js"
+    );
+
+    const session = await openGeminiBrowserSession({
+      browserConfig: {},
+      keepBrowserDefault: false,
+      purpose: "test blank env profile",
+      log: () => {},
+    });
+
+    const expectedDefault = path.join(os.homedir(), ".oracle", "browser-profile");
+    expect(session.profileDir).toBe(expectedDefault);
+    expect(launchChrome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        manualLogin: true,
+      }),
+      expectedDefault,
+      expect.any(Function),
+    );
+
+    await session.close();
+  });
 });
