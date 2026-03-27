@@ -20,6 +20,7 @@ export interface BrowserSessionConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
+  browserTabRef?: string | null;
   chatgptUrl?: string | null;
   url?: string;
   timeoutMs?: number;
@@ -71,9 +72,26 @@ export interface BrowserRuntimeMetadata {
   controllerPid?: number;
 }
 
+export type BrowserHarvestState = "running" | "completed" | "stalled" | "detached";
+
+export interface BrowserHarvestMetadata {
+  targetId?: string;
+  url?: string;
+  conversationId?: string;
+  harvestedAt?: string;
+  assistantHash?: string;
+  state?: BrowserHarvestState;
+  stopExists?: boolean;
+  sendExists?: boolean;
+  assistantCount?: number;
+  currentModelLabel?: string;
+  lastAssistantSnippet?: string;
+}
+
 export interface BrowserMetadata {
   config?: BrowserSessionConfig;
   runtime?: BrowserRuntimeMetadata;
+  harvest?: BrowserHarvestMetadata;
 }
 
 export interface SessionResponseMetadata {

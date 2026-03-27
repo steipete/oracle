@@ -12,11 +12,13 @@ export const COOKIE_URLS = [
 export const INPUT_SELECTORS = [
   'textarea[data-id="prompt-textarea"]',
   'textarea[placeholder*="Send a message"]',
+  'textarea[aria-label="Chat with ChatGPT"]',
   'textarea[aria-label="Message ChatGPT"]',
   "textarea:not([disabled])",
   'textarea[name="prompt-textarea"]',
   "#prompt-textarea",
   ".ProseMirror",
+  '[contenteditable="true"][role="textbox"]',
   '[contenteditable="true"][data-virtualkeyboard="true"]',
 ];
 

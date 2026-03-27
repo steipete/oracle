@@ -16,7 +16,31 @@ function createCommandWithOptions(options: StatusOptions): Command {
   if (options.clean !== undefined) {
     command.setOptionValueWithSource("clean", options.clean, "cli");
   }
+  if (options.harvest !== undefined) {
+    command.setOptionValueWithSource("harvest", options.harvest, "cli");
+  }
+  if (options.live !== undefined) {
+    command.setOptionValueWithSource("live", options.live, "cli");
+  }
+  if (options.writeOutput !== undefined) {
+    command.setOptionValueWithSource("writeOutput", options.writeOutput, "cli");
+  }
+  if (options.browserTab !== undefined) {
+    command.setOptionValueWithSource("browserTab", options.browserTab, "cli");
+  }
   return command;
+}
+
+function createDeps() {
+  return {
+    showStatus: vi.fn(),
+    attachSession: vi.fn(),
+    harvestSessionBrowserOutput: vi.fn(),
+    liveTailSessionBrowserOutput: vi.fn(),
+    usesDefaultStatusFilters: vi.fn(),
+    deleteSessionsOlderThan: vi.fn(),
+    getSessionPaths: vi.fn(),
+  };
 }
 
 describe("handleSessionCommand", () => {
@@ -27,15 +51,10 @@ describe("handleSessionCommand", () => {
 
   test("lists sessions when no id provided", async () => {
     const command = createCommandWithOptions({ hours: 12, limit: 5, all: false });
-    const showStatus = vi.fn();
-    await handleSessionCommand(undefined, command, {
-      showStatus,
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn().mockReturnValue(true),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
-    expect(showStatus).toHaveBeenCalledWith({
+    const deps = createDeps();
+    deps.usesDefaultStatusFilters.mockReturnValue(true);
+    await handleSessionCommand(undefined, command, deps);
+    expect(deps.showStatus).toHaveBeenCalledWith({
       hours: 12,
       includeAll: false,
       limit: 5,
@@ -45,15 +64,9 @@ describe("handleSessionCommand", () => {
 
   test("attaches when id provided", async () => {
     const command = createCommandWithOptions({ hours: 24, limit: 10, all: false });
-    const attachSession = vi.fn();
-    await handleSessionCommand("abc", command, {
-      showStatus: vi.fn(),
-      attachSession,
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
-    expect(attachSession).toHaveBeenCalledWith(
+    const deps = createDeps();
+    await handleSessionCommand("abc", command, deps);
+    expect(deps.attachSession).toHaveBeenCalledWith(
       "abc",
       expect.objectContaining({ renderMarkdown: false }),
     );
@@ -64,22 +77,15 @@ describe("handleSessionCommand", () => {
     // Simulate passing a root-only flag (preview) that the session handler should ignore.
     command.setOptionValueWithSource("preview", true, "cli");
 
-    const attachSession = vi.fn();
-    const showStatus = vi.fn();
+    const deps = createDeps();
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    await handleSessionCommand("swiftui-menubarextra-on-macos-15", command, {
-      showStatus,
-      attachSession,
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
+    await handleSessionCommand("swiftui-menubarextra-on-macos-15", command, deps);
 
-    expect(attachSession).toHaveBeenCalledWith(
+    expect(deps.attachSession).toHaveBeenCalledWith(
       "swiftui-menubarextra-on-macos-15",
       expect.objectContaining({ renderMarkdown: false }),
     );
-    expect(showStatus).not.toHaveBeenCalled();
+    expect(deps.showStatus).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith("Ignoring flags on session attach: preview");
     expect(process.exitCode).toBeUndefined();
   });
@@ -92,22 +98,17 @@ describe("handleSessionCommand", () => {
       path: true,
     } as StatusOptions);
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    const getSessionPaths = vi.fn().mockResolvedValue({
+    const deps = createDeps();
+    deps.getSessionPaths.mockResolvedValue({
       dir: "/tmp/.oracle/sessions/abc",
       metadata: "/tmp/.oracle/sessions/abc/meta.json",
       request: "/tmp/.oracle/sessions/abc/request.json",
       log: "/tmp/.oracle/sessions/abc/output.log",
     });
 
-    await handleSessionCommand("abc", command, {
-      showStatus: vi.fn(),
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths,
-    });
+    await handleSessionCommand("abc", command, deps);
 
-    expect(getSessionPaths).toHaveBeenCalledWith("abc");
+    expect(deps.getSessionPaths).toHaveBeenCalledWith("abc");
     expect(logSpy).toHaveBeenCalledWith("Session dir: /tmp/.oracle/sessions/abc");
     expect(logSpy).toHaveBeenCalledWith("Metadata: /tmp/.oracle/sessions/abc/meta.json");
     expect(logSpy).toHaveBeenCalledWith("Request: /tmp/.oracle/sessions/abc/request.json");
@@ -124,13 +125,7 @@ describe("handleSessionCommand", () => {
     } as StatusOptions);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-    await handleSessionCommand(undefined, command, {
-      showStatus: vi.fn(),
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
+    await handleSessionCommand(undefined, command, createDeps());
 
     expect(errorSpy).toHaveBeenCalledWith("The --path flag requires a session ID.");
     expect(process.exitCode).toBe(1);
@@ -144,17 +139,9 @@ describe("handleSessionCommand", () => {
       path: true,
     } as StatusOptions);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const getSessionPaths = vi
-      .fn()
-      .mockRejectedValue(new Error('Session "abc" is missing: meta.json'));
-
-    await handleSessionCommand("abc", command, {
-      showStatus: vi.fn(),
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths,
-    });
+    const deps = createDeps();
+    deps.getSessionPaths.mockRejectedValue(new Error('Session "abc" is missing: meta.json'));
+    await handleSessionCommand("abc", command, deps);
 
     expect(errorSpy).toHaveBeenCalledWith('Session "abc" is missing: meta.json');
     expect(process.exitCode).toBe(1);
@@ -164,16 +151,10 @@ describe("handleSessionCommand", () => {
     const command = createCommandWithOptions({ hours: 24, limit: 10, all: false });
     command.setOptionValueWithSource("render", true, "cli");
 
-    const attachSession = vi.fn();
+    const deps = createDeps();
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    await handleSessionCommand("abc", command, {
-      showStatus: vi.fn(),
-      attachSession,
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
-    expect(attachSession).toHaveBeenCalledWith(
+    await handleSessionCommand("abc", command, deps);
+    expect(deps.attachSession).toHaveBeenCalledWith(
       "abc",
       expect.objectContaining({ renderMarkdown: true }),
     );
@@ -182,15 +163,10 @@ describe("handleSessionCommand", () => {
 
   test("forces infinite range when --all set", async () => {
     const command = createCommandWithOptions({ hours: 1, limit: 25, all: true });
-    const showStatus = vi.fn();
-    await handleSessionCommand(undefined, command, {
-      showStatus,
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn().mockReturnValue(false),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
-    expect(showStatus).toHaveBeenCalledWith({
+    const deps = createDeps();
+    deps.usesDefaultStatusFilters.mockReturnValue(false);
+    await handleSessionCommand(undefined, command, deps);
+    expect(deps.showStatus).toHaveBeenCalledWith({
       hours: Infinity,
       includeAll: true,
       limit: 25,
@@ -200,16 +176,11 @@ describe("handleSessionCommand", () => {
 
   test("clears sessions when --clear is provided", async () => {
     const command = createCommandWithOptions({ hours: 6, limit: 5, all: false, clear: true });
-    const deleteSessionsOlderThan = vi.fn().mockResolvedValue({ deleted: 3, remaining: 2 });
+    const deps = createDeps();
+    deps.deleteSessionsOlderThan.mockResolvedValue({ deleted: 3, remaining: 2 });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    await handleSessionCommand(undefined, command, {
-      showStatus: vi.fn(),
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan,
-      getSessionPaths: vi.fn(),
-    });
-    expect(deleteSessionsOlderThan).toHaveBeenCalledWith({ hours: 6, includeAll: false });
+    await handleSessionCommand(undefined, command, deps);
+    expect(deps.deleteSessionsOlderThan).toHaveBeenCalledWith({ hours: 6, includeAll: false });
     expect(logSpy).toHaveBeenCalledWith(
       'Deleted 3 sessions (sessions older than 6h). 2 sessions remain.\nRun "oracle session --clear --all" to delete everything.',
     );
@@ -218,16 +189,80 @@ describe("handleSessionCommand", () => {
   test('rejects slug-style "clear" ids with guidance', async () => {
     const command = createCommandWithOptions({ hours: 24, limit: 10, all: false });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await handleSessionCommand("clear", command, {
-      showStatus: vi.fn(),
-      attachSession: vi.fn(),
-      usesDefaultStatusFilters: vi.fn(),
-      deleteSessionsOlderThan: vi.fn(),
-      getSessionPaths: vi.fn(),
-    });
+    await handleSessionCommand("clear", command, createDeps());
     expect(errorSpy).toHaveBeenCalledWith(
       'Session cleanup now uses --clear. Run "oracle session --clear --hours <n>" instead.',
     );
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("harvests browser output when requested", async () => {
+    const command = createCommandWithOptions({
+      hours: 24,
+      limit: 10,
+      all: false,
+      harvest: true,
+      writeOutput: "/tmp/out.md",
+      browserTab: "current",
+    } as StatusOptions);
+    const deps = createDeps();
+
+    await handleSessionCommand("abc", command, deps);
+
+    expect(deps.harvestSessionBrowserOutput).toHaveBeenCalledWith("abc", {
+      writeOutputPath: "/tmp/out.md",
+      browserTabRef: "current",
+    });
+    expect(deps.liveTailSessionBrowserOutput).not.toHaveBeenCalled();
+  });
+
+  test("tails browser output when requested", async () => {
+    const command = createCommandWithOptions({
+      hours: 24,
+      limit: 10,
+      all: false,
+      live: true,
+      browserTab: "tab-123",
+    } as StatusOptions);
+    const deps = createDeps();
+
+    await handleSessionCommand("abc", command, deps);
+
+    expect(deps.liveTailSessionBrowserOutput).toHaveBeenCalledWith("abc", {
+      writeOutputPath: undefined,
+      browserTabRef: "tab-123",
+    });
+    expect(deps.harvestSessionBrowserOutput).not.toHaveBeenCalled();
+  });
+
+  test("rejects combining --harvest and --live", async () => {
+    const command = createCommandWithOptions({
+      hours: 24,
+      limit: 10,
+      all: false,
+      harvest: true,
+      live: true,
+    } as StatusOptions);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await handleSessionCommand("abc", command, createDeps());
+
+    expect(errorSpy).toHaveBeenCalledWith("Cannot combine --harvest and --live. Choose one.");
+    expect(process.exitCode).toBe(1);
+  });
+
+  test("rejects --write-output without --harvest or --live", async () => {
+    const command = createCommandWithOptions({
+      hours: 24,
+      limit: 10,
+      all: false,
+      writeOutput: "/tmp/out.md",
+    } as StatusOptions);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await handleSessionCommand("abc", command, createDeps());
+
+    expect(errorSpy).toHaveBeenCalledWith("The --write-output flag requires --harvest or --live.");
     expect(process.exitCode).toBe(1);
   });
 });
