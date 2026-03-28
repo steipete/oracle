@@ -219,7 +219,9 @@ const MODEL_JSON_EXTENSION = ".json";
 const MODEL_LOG_EXTENSION = ".log";
 const MAX_STATUS_LIMIT = 1000;
 const ZOMBIE_MAX_AGE_MS = 60 * 60 * 1000; // 60 minutes
-const CHROME_RUNTIME_TIMEOUT_MS = 250;
+const CHROME_RUNTIME_TIMEOUT_MS = 1000;
+const CHROME_RUNTIME_RETRIES = 2;
+const CHROME_RUNTIME_RETRY_DELAY_MS = 100;
 const DEFAULT_SLUG = "session";
 const MAX_SLUG_WORDS = 5;
 const MIN_CUSTOM_SLUG_WORDS = 3;
@@ -904,30 +906,47 @@ function isProcessAlive(pid?: number): boolean {
   }
 }
 
-async function isPortOpen(host: string, port: number): Promise<boolean> {
+async function isPortOpen(
+  host: string,
+  port: number,
+  retries = CHROME_RUNTIME_RETRIES,
+): Promise<boolean> {
   if (!port || port <= 0 || port > 65535) {
     return false;
   }
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host, port });
-    let settled = false;
-    const cleanup = (result: boolean) => {
-      if (settled) return;
-      settled = true;
-      socket.removeAllListeners();
-      socket.end();
-      socket.destroy();
-      socket.unref();
-      resolve(result);
-    };
-    const timer = setTimeout(() => cleanup(false), CHROME_RUNTIME_TIMEOUT_MS);
-    socket.once("connect", () => {
-      clearTimeout(timer);
-      cleanup(true);
+
+  const attempt = (): Promise<boolean> =>
+    new Promise((resolve) => {
+      const socket = net.createConnection({ host, port });
+      let settled = false;
+      const cleanup = (result: boolean) => {
+        if (settled) return;
+        settled = true;
+        socket.removeAllListeners();
+        socket.end();
+        socket.destroy();
+        socket.unref();
+        resolve(result);
+      };
+      const timer = setTimeout(() => cleanup(false), CHROME_RUNTIME_TIMEOUT_MS);
+      socket.once("connect", () => {
+        clearTimeout(timer);
+        cleanup(true);
+      });
+      socket.once("error", () => {
+        clearTimeout(timer);
+        cleanup(false);
+      });
     });
-    socket.once("error", () => {
-      clearTimeout(timer);
-      cleanup(false);
-    });
-  });
+
+  for (let i = 0; i <= retries; i++) {
+    const result = await attempt();
+    if (result) {
+      return true;
+    }
+    if (i < retries) {
+      await wait(CHROME_RUNTIME_RETRY_DELAY_MS);
+    }
+  }
+  return false;
 }
