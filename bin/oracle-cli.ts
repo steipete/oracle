@@ -934,6 +934,7 @@ function buildRunOptions(
     model: options.model,
     models: overrides.models ?? options.models,
     previousResponseId: overrides.previousResponseId ?? options.previousResponseId,
+    followupSessionId: overrides.followupSessionId ?? options.followupSessionId,
     effectiveModelId: overrides.effectiveModelId ?? options.effectiveModelId ?? options.model,
     file: overrides.file ?? options.file ?? [],
     maxFileSizeBytes: overrides.maxFileSizeBytes ?? options.maxFileSizeBytes,
@@ -1003,8 +1004,11 @@ function assertFollowupSupported({
   baseUrl?: string;
   azureEndpoint?: string;
 }): void {
+  if (engine === "browser") {
+    return;
+  }
   if (engine !== "api") {
-    throw new Error("--followup requires --engine api.");
+    throw new Error("--followup requires --engine api or --engine browser.");
   }
   if (model.startsWith("gemini") || model.startsWith("claude")) {
     throw new Error(
@@ -1016,6 +1020,24 @@ function assertFollowupSupported({
       "--followup is only supported for the default OpenAI Responses API or Azure OpenAI Responses. Custom --base-url providers are not supported.",
     );
   }
+}
+
+async function resolveBrowserFollowupSessionId(reference: string): Promise<string> {
+  const trimmed = reference.trim();
+  if (!trimmed) {
+    throw new Error("--followup requires a session id.");
+  }
+  if (/^resp_/i.test(trimmed)) {
+    throw new Error("Browser follow-up requires an oracle session id, not a response id.");
+  }
+  const meta = await sessionStore.readSession(trimmed);
+  if (!meta) {
+    throw new Error(`No stored oracle session found for ${trimmed}.`);
+  }
+  if (meta.mode !== "browser") {
+    throw new Error(`Session ${trimmed} is not a browser session.`);
+  }
+  return meta.id;
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -1163,6 +1185,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     model: (stored.model as ModelName) ?? DEFAULT_MODEL,
     models: stored.models as ModelName[] | undefined,
     previousResponseId: stored.previousResponseId,
+    followupSessionId: stored.followupSessionId,
     effectiveModelId: stored.effectiveModelId ?? stored.model,
     file: stored.file ?? [],
     maxFileSizeBytes: stored.maxFileSizeBytes,
@@ -1524,6 +1547,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       if (normalizedMultiModels.length > 0) {
         throw new Error("--followup cannot be combined with --models.");
       }
+      if (engine === "browser") {
+        throw new Error("Browser follow-up is not available with --dry-run/preview.");
+      }
       const followup = await resolveFollowupReference(options.followup, options.followupModel);
       resolvedOptions.previousResponseId = followup.responseId;
       resolvedOptions.followupSessionId = followup.sessionId;
@@ -1592,10 +1618,14 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     if (normalizedMultiModels.length > 0) {
       throw new Error("--followup cannot be combined with --models.");
     }
-    const followup = await resolveFollowupReference(options.followup, options.followupModel);
-    resolvedOptions.previousResponseId = followup.responseId;
-    resolvedOptions.followupSessionId = followup.sessionId;
-    resolvedOptions.followupModel = options.followupModel;
+    if (engine === "browser") {
+      resolvedOptions.followupSessionId = await resolveBrowserFollowupSessionId(options.followup);
+    } else {
+      const followup = await resolveFollowupReference(options.followup, options.followupModel);
+      resolvedOptions.previousResponseId = followup.responseId;
+      resolvedOptions.followupSessionId = followup.sessionId;
+      resolvedOptions.followupModel = options.followupModel;
+    }
   }
 
   const duplicateBlocked = await shouldBlockDuplicatePrompt({

@@ -137,6 +137,7 @@ export interface RunOracleOptions {
    * send instructions each turn (Oracle does).
    */
   previousResponseId?: string;
+  followupSessionId?: string;
   file?: string[];
   /** Override the per-file attachment size guard (bytes). */
   maxFileSizeBytes?: number;

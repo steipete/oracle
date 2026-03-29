@@ -18,6 +18,7 @@ import {
 } from "../oracle.js";
 import {
   runBrowserSessionExecution,
+  continueBrowserSessionExecution,
   type BrowserSessionRunnerDeps,
 } from "../browser/sessionRunner.js";
 import { renderMarkdownAnsi } from "./markdownRenderer.js";
@@ -110,10 +111,26 @@ export async function performSessionRun({
           });
         },
       };
-      const result = await runBrowserSessionExecution(
-        { runOptions, browserConfig, cwd, log },
-        runnerDeps,
-      );
+      const parentSessionId = sessionMeta.options?.followupSessionId?.trim();
+      const parentSession =
+        parentSessionId && parentSessionId !== sessionMeta.id
+          ? await sessionStore.readSession(parentSessionId)
+          : null;
+      if (parentSessionId && parentSessionId !== sessionMeta.id) {
+        if (!parentSession) {
+          throw new Error(`Browser follow-up parent session ${parentSessionId} could not be found.`);
+        }
+        if ((parentSession.mode ?? parentSession.options?.mode) !== "browser") {
+          throw new Error(`Session ${parentSessionId} is not a browser session.`);
+        }
+      }
+      const result =
+        parentSession
+          ? await continueBrowserSessionExecution(
+              { runOptions, browserConfig, cwd, log, parentSession },
+              runnerDeps,
+            )
+          : await runBrowserSessionExecution({ runOptions, browserConfig, cwd, log }, runnerDeps);
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "completed",
@@ -498,11 +515,13 @@ export async function performSessionRun({
     }
     if (cloudflareChallenge && mode === "browser") {
       const details = userError.details as { reuseProfileHint?: string } | undefined;
-      log(
-        dim("Cloudflare challenge detected; browser left running so you can complete the check."),
-      );
       if (details?.reuseProfileHint) {
+        log(
+          dim("Cloudflare challenge detected; browser left running so you can complete the check."),
+        );
         log(dim(`Reuse this browser profile with: ${details.reuseProfileHint}`));
+      } else {
+        log(dim("Cloudflare challenge detected in true headless mode; no reusable browser was left running."));
       }
     }
     if (userError) {

@@ -62,7 +62,7 @@ describe("buildBrowserConfig", () => {
       profileLockTimeoutMs: 120_000,
       cookieSyncWaitMs: 4_000,
       cookieSync: false,
-      headless: undefined,
+      headless: true,
       hideWindow: true,
       keepBrowser: true,
       desiredModel: "GPT-5.2",

@@ -1,5 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
-import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
+import {
+  continueBrowserSession,
+  resumeBrowserSession,
+  __test__,
+} from "../../src/browser/reattach.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
 
 type FakeTarget = { targetId?: string; type?: string; url?: string };
@@ -14,6 +18,8 @@ type FakeClient = {
   };
   // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
   DOM: { enable: () => void };
+  // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+  Input: Record<string, never>;
   close: () => Promise<void> | void;
 };
 
@@ -48,6 +54,8 @@ describe("resumeBrowserSession", () => {
           Runtime: { enable: vi.fn(), evaluate },
           // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
           DOM: { enable: vi.fn() },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Input: {},
           close: vi.fn(async () => {}),
         }) satisfies FakeClient,
     ) as unknown as (options?: unknown) => Promise<ChromeClient>;
@@ -110,6 +118,78 @@ describe("resumeBrowserSession", () => {
     expect(result.answerText).toBe("fallback");
     expect(recoverSession).toHaveBeenCalled();
   });
+
+  test("continues an existing chrome conversation with a new prompt", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+      conversationId: "abc",
+    };
+    const listTargets = vi.fn(
+      async () =>
+        [
+          { targetId: "target-1", type: "page", url: runtime.tabUrl },
+          { targetId: "target-2", type: "page", url: "about:blank" },
+        ] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(
+      async () =>
+        ({
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Runtime: { enable: vi.fn(), evaluate },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          DOM: { enable: vi.fn() },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Input: {},
+          close: vi.fn(async () => {}),
+        }) satisfies FakeClient,
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const ensurePromptReady = vi.fn(async () => {});
+    const clearPromptComposer = vi.fn(async () => {});
+    const submitPrompt = vi.fn(async () => 3);
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "supervisor response",
+      html: "",
+      meta: { messageId: "m2", turnId: "conversation-turn-2" },
+    }));
+    const captureAssistantMarkdown = vi.fn(async () => "supervisor markdown");
+    const logger = vi.fn() as BrowserLogger;
+    logger.verbose = true;
+
+    const result = await continueBrowserSession(
+      runtime,
+      { timeoutMs: 2_000, inputTimeoutMs: 1_000 },
+      logger,
+      { prompt: "Follow up on the implementation." },
+      {
+        listTargets,
+        connect,
+        ensurePromptReady,
+        clearPromptComposer,
+        submitPrompt,
+        waitForAssistantResponse,
+        captureAssistantMarkdown,
+      },
+    );
+
+    expect(ensurePromptReady).toHaveBeenCalled();
+    expect(clearPromptComposer).toHaveBeenCalled();
+    expect(submitPrompt).toHaveBeenCalled();
+    expect(waitForAssistantResponse).toHaveBeenCalled();
+    expect(result.answerMarkdown).toBe("supervisor markdown");
+    expect(result.runtime?.conversationId).toBe("abc");
+  });
 });
 
 describe("reattach helpers", () => {
@@ -117,6 +197,7 @@ describe("reattach helpers", () => {
     pickTarget,
     extractConversationIdFromUrl,
     buildConversationUrl,
+    mergeRuntimeMetadata,
     openConversationFromSidebar,
   } = __test__;
   type EvaluateParams = { expression: string };
@@ -137,6 +218,33 @@ describe("reattach helpers", () => {
     expect(buildConversationUrl({ conversationId: "abc" }, "https://chatgpt.com/")).toBe(
       "https://chatgpt.com/c/abc",
     );
+  });
+
+  test("mergeRuntimeMetadata refreshes runtime hints after relaunch", () => {
+    expect(
+      mergeRuntimeMetadata(
+        {
+          chromePid: 11,
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          userDataDir: "/tmp/old",
+          tabUrl: "https://chatgpt.com/c/old",
+        },
+        {
+          chromePid: 22,
+          chromePort: 9333,
+          userDataDir: "/tmp/new",
+          tabUrl: "https://chatgpt.com/c/new",
+          controllerPid: 44,
+        },
+      ),
+    ).toMatchObject({
+      chromePid: 22,
+      chromePort: 9333,
+      userDataDir: "/tmp/new",
+      conversationId: "new",
+      controllerPid: 44,
+    });
   });
 
   test("pickTarget prefers chromeTargetId, then tabUrl, then first page", () => {

@@ -1,7 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import type { RunOracleOptions } from "../../src/oracle.js";
-import type { BrowserSessionConfig } from "../../src/sessionStore.js";
-import { runBrowserSessionExecution } from "../../src/browser/sessionRunner.js";
+import { BrowserAutomationError } from "../../src/oracle/errors.js";
+import type { BrowserSessionConfig, SessionMetadata } from "../../src/sessionStore.js";
+import {
+  runBrowserSessionExecution,
+  continueBrowserSessionExecution,
+} from "../../src/browser/sessionRunner.js";
 
 const baseRunOptions: RunOracleOptions = {
   prompt: "Hello world",
@@ -378,5 +382,115 @@ describe("runBrowserSessionExecution", () => {
     );
     expect(result.answerText).toBe("gemini response");
     expect(executeBrowser).toHaveBeenCalled();
+  });
+});
+
+describe("continueBrowserSessionExecution", () => {
+  test("continues a stored browser session with inline prompt text", async () => {
+    const log = vi.fn();
+    const parentSession: SessionMetadata = {
+      id: "parent",
+      createdAt: "2025-01-01T00:00:00Z",
+      status: "completed",
+      mode: "browser",
+      options: {},
+      browser: {
+        config: {},
+        runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+      },
+    };
+    const continueBrowser = vi.fn(async () => ({
+      answerText: "continued",
+      answerMarkdown: "continued",
+      tookMs: 321,
+      answerTokens: 9,
+      runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+    }));
+    const persistRuntimeHint = vi.fn();
+
+    const result = await continueBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+        parentSession,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 42,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "never",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        continueBrowser,
+        persistRuntimeHint,
+      },
+    );
+
+    expect(continueBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({ chromePort: 9222 }),
+      baseConfig,
+      expect.any(Function),
+      expect.objectContaining({ prompt: "prompt", attachments: [] }),
+      expect.any(Object),
+    );
+    expect(persistRuntimeHint).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      usage: { inputTokens: 42, outputTokens: 9, totalTokens: 51 },
+      elapsedMs: 321,
+      answerText: "continued",
+    });
+  });
+
+  test("wraps generic followup failures as BrowserAutomationError", async () => {
+    const parentSession: SessionMetadata = {
+      id: "parent",
+      createdAt: "2025-01-01T00:00:00Z",
+      status: "completed",
+      mode: "browser",
+      options: {},
+      browser: {
+        config: {},
+        runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+      },
+    };
+
+    await expect(
+      continueBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+          parentSession,
+        },
+        {
+          assemblePrompt: async () => ({
+            markdown: "prompt",
+            composerText: "prompt",
+            estimatedInputTokens: 42,
+            attachments: [],
+            inlineFileCount: 0,
+            tokenEstimateIncludesInlineFiles: false,
+            attachmentsPolicy: "never",
+            attachmentMode: "inline",
+            fallback: null,
+          }),
+          continueBrowser: async () => {
+            throw new Error("chrome disappeared");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "BrowserAutomationError",
+      message: "chrome disappeared",
+      details: { stage: "continue-browser" },
+    } satisfies Partial<BrowserAutomationError>);
   });
 });

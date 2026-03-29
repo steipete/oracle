@@ -19,6 +19,7 @@ vi.mock("../../src/oracle/multiModelRunner.ts", () => ({
 
 vi.mock("../../src/browser/sessionRunner.ts", () => ({
   runBrowserSessionExecution: vi.fn(),
+  continueBrowserSessionExecution: vi.fn(),
 }));
 
 vi.mock("../../src/browser/reattach.ts", () => ({
@@ -65,7 +66,10 @@ import {
   type MultiModelRunSummary,
 } from "../../src/oracle/multiModelRunner.ts";
 import type { OracleResponse, RunOracleResult } from "../../src/oracle.ts";
-import { runBrowserSessionExecution } from "../../src/browser/sessionRunner.ts";
+import {
+  runBrowserSessionExecution,
+  continueBrowserSessionExecution,
+} from "../../src/browser/sessionRunner.ts";
 import { sendSessionNotification } from "../../src/cli/notifier.ts";
 import { getCliVersion } from "../../src/version.ts";
 import { deriveModelOutputPath } from "../../src/cli/sessionRunner.ts";
@@ -748,6 +752,72 @@ describe("performSessionRun", () => {
       "gpt-5.2-pro",
       expect.objectContaining({ status: "completed" }),
     );
+  });
+
+  test("continues browser followups from a stored browser parent session", async () => {
+    const parentSession: SessionMetadata = {
+      ...baseSessionMeta,
+      id: "parent-browser",
+      mode: "browser",
+      browser: {
+        config: { chromePath: null },
+        runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+      },
+    };
+    sessionStoreMock.readSession.mockResolvedValue(parentSession);
+    vi.mocked(continueBrowserSessionExecution).mockResolvedValue({
+      usage: { inputTokens: 11, outputTokens: 7, reasoningTokens: 0, totalTokens: 18 },
+      elapsedMs: 900,
+      runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+      answerText: "continued",
+    });
+
+    await performSessionRun({
+      sessionMeta: {
+        ...baseSessionMeta,
+        mode: "browser",
+        options: { followupSessionId: "parent-browser" },
+      },
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    expect(vi.mocked(continueBrowserSessionExecution)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentSession: expect.objectContaining({ id: "parent-browser" }),
+      }),
+      expect.any(Object),
+    );
+    expect(vi.mocked(runBrowserSessionExecution)).not.toHaveBeenCalled();
+  });
+
+  test("fails fast when browser followup parent session is missing", async () => {
+    sessionStoreMock.readSession.mockResolvedValue(null);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: {
+          ...baseSessionMeta,
+          mode: "browser",
+          options: { followupSessionId: "missing-parent" },
+        },
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("Browser follow-up parent session missing-parent could not be found.");
+
+    expect(vi.mocked(continueBrowserSessionExecution)).not.toHaveBeenCalled();
+    expect(vi.mocked(runBrowserSessionExecution)).not.toHaveBeenCalled();
   });
 
   test("writes browser answers to disk when writeOutputPath provided", async () => {

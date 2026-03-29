@@ -2,12 +2,18 @@ import chalk from "chalk";
 import type { RunOracleOptions } from "../oracle.js";
 import { formatTokenCount } from "../oracle/runUtils.js";
 import { formatFinishLine } from "../oracle/finishLine.js";
-import type { BrowserSessionConfig, BrowserRuntimeMetadata } from "../sessionStore.js";
+import type {
+  BrowserSessionConfig,
+  BrowserRuntimeMetadata,
+  SessionMetadata,
+} from "../sessionStore.js";
 import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
 import type { BrowserLogger } from "./types.js";
+import { estimateTokenCount } from "./utils.js";
+import { continueBrowserSession } from "./reattach.js";
 
 export interface BrowserExecutionResult {
   usage: {
@@ -31,7 +37,12 @@ interface RunBrowserSessionArgs {
 export interface BrowserSessionRunnerDeps {
   assemblePrompt?: typeof assembleBrowserPrompt;
   executeBrowser?: typeof runBrowserMode;
+  continueBrowser?: typeof continueBrowserSession;
   persistRuntimeHint?: (runtime: BrowserRuntimeMetadata) => Promise<void> | void;
+}
+
+interface ContinueBrowserSessionArgs extends RunBrowserSessionArgs {
+  parentSession: SessionMetadata;
 }
 
 export async function runBrowserSessionExecution(
@@ -170,5 +181,100 @@ export async function runBrowserSessionExecution(
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     answerText,
+  };
+}
+
+export async function continueBrowserSessionExecution(
+  { runOptions, browserConfig, cwd, log, parentSession }: ContinueBrowserSessionArgs,
+  deps: BrowserSessionRunnerDeps = {},
+): Promise<BrowserExecutionResult> {
+  const assemblePrompt = deps.assemblePrompt ?? assembleBrowserPrompt;
+  const continueBrowser = deps.continueBrowser ?? continueBrowserSession;
+  const promptArtifacts = await assemblePrompt(runOptions, { cwd });
+  if (promptArtifacts.attachments.length > 0 || promptArtifacts.fallback?.attachments.length) {
+    throw new BrowserAutomationError(
+      "Browser followups do not support file uploads yet. Re-run with inline context only.",
+      { stage: "browser-followup-attachments" },
+    );
+  }
+  const runtime = parentSession.browser?.runtime;
+  if (!runtime) {
+    throw new BrowserAutomationError(
+      `Session ${parentSession.id} is missing browser runtime metadata; cannot continue.`,
+      { stage: "browser-followup-runtime-missing" },
+    );
+  }
+  log(
+    `Continuing browser session (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens.`,
+  );
+  log(chalk.dim(`Reusing browser conversation from session ${parentSession.id}.`));
+  const logger: BrowserLogger = ((message?: string) => {
+    if (typeof message === "string" && runOptions.verbose) {
+      log(message);
+    }
+  }) as BrowserLogger;
+  logger.verbose = Boolean(runOptions.verbose);
+  logger.sessionLog = runOptions.verbose ? log : () => {};
+  const startedAt = Date.now();
+  let result;
+  try {
+    result = await continueBrowser(
+      runtime,
+      browserConfig,
+      logger,
+      { prompt: promptArtifacts.composerText, attachments: promptArtifacts.attachments },
+      deps,
+    );
+  } catch (error) {
+    if (error instanceof BrowserAutomationError) {
+      throw error;
+    }
+    const message =
+      error instanceof Error ? error.message : "Browser follow-up automation failed.";
+    throw new BrowserAutomationError(message, { stage: "continue-browser" }, error);
+  }
+  if (result.runtime) {
+    await deps.persistRuntimeHint?.(result.runtime);
+  }
+  const outputTokens =
+    result.answerTokens ?? estimateTokenCount(result.answerMarkdown || result.answerText || "");
+  const elapsedMs = result.tookMs ?? Date.now() - startedAt;
+  const usage = {
+    inputTokens: promptArtifacts.estimatedInputTokens,
+    outputTokens,
+    reasoningTokens: 0,
+    totalTokens: promptArtifacts.estimatedInputTokens + outputTokens,
+  };
+  if (!runOptions.silent) {
+    log(chalk.bold("Answer:"));
+    log(result.answerMarkdown || result.answerText || chalk.dim("(no text output)"));
+    log("");
+  }
+  const tokensPart = [
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.reasoningTokens,
+    usage.totalTokens,
+  ]
+    .map((value) => formatTokenCount(value))
+    .join("/");
+  const { line1, line2 } = formatFinishLine({
+    elapsedMs,
+    model: `${runOptions.model}[browser-followup]`,
+    tokensPart: `↑${tokensPart.split("/")[0]} ↓${tokensPart.split("/")[1]} ↻${tokensPart.split("/")[2]} Δ${tokensPart.split("/")[3]}`,
+    detailParts: [
+      runOptions.file && runOptions.file.length > 0 ? `files=${runOptions.file.length}` : null,
+      `followup=${parentSession.id}`,
+    ],
+  });
+  log(chalk.blue(line1));
+  if (line2) {
+    log(chalk.dim(line2));
+  }
+  return {
+    usage,
+    elapsedMs,
+    runtime: result.runtime ?? runtime,
+    answerText: result.answerMarkdown || result.answerText || "",
   };
 }
