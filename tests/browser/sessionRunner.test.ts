@@ -448,6 +448,73 @@ describe("continueBrowserSessionExecution", () => {
     });
   });
 
+  test("passes follow-up attachments and fallback submission through", async () => {
+    const log = vi.fn();
+    const parentSession: SessionMetadata = {
+      id: "parent",
+      createdAt: "2025-01-01T00:00:00Z",
+      status: "completed",
+      mode: "browser",
+      options: {},
+      browser: {
+        config: {},
+        runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+      },
+    };
+    const continueBrowser = vi.fn(async () => ({
+      answerText: "continued",
+      answerMarkdown: "continued",
+      tookMs: 321,
+      answerTokens: 9,
+      runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/abc" },
+    }));
+
+    await continueBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: true },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+        parentSession,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 42,
+          attachments: [{ path: "/repo/context.zip", displayPath: "context.zip", sizeBytes: 4 }],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "always",
+          attachmentMode: "upload",
+          fallback: {
+            composerText: "fallback prompt",
+            attachments: [
+              { path: "/repo/fallback.zip", displayPath: "fallback.zip", sizeBytes: 4 },
+            ],
+            bundled: null,
+          },
+        }),
+        continueBrowser,
+      },
+    );
+
+    expect(continueBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({ chromePort: 9222 }),
+      baseConfig,
+      expect.any(Function),
+      {
+        prompt: "prompt",
+        attachments: [expect.objectContaining({ displayPath: "context.zip" })],
+        fallbackSubmission: {
+          prompt: "fallback prompt",
+          attachments: [expect.objectContaining({ displayPath: "fallback.zip" })],
+        },
+      },
+      expect.any(Object),
+    );
+  });
+
   test("wraps generic followup failures as BrowserAutomationError", async () => {
     const parentSession: SessionMetadata = {
       id: "parent",

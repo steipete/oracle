@@ -1,4 +1,6 @@
 import path from "node:path";
+import fs from "node:fs/promises";
+import os from "node:os";
 import { describe, expect, test } from "vitest";
 import { assembleBrowserPrompt } from "../../src/browser/prompt.js";
 import { DEFAULT_SYSTEM_PROMPT, type MODEL_CONFIGS } from "../../src/oracle.js";
@@ -212,5 +214,27 @@ describe("assembleBrowserPrompt", () => {
       originalCount: 11,
       bundlePath: result.attachments[0]?.displayPath,
     });
+  });
+
+  test("treats zip files as browser attachments instead of inline text", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-prompt-"));
+    const zipPath = path.join(tempDir, "context.zip");
+    await fs.writeFile(zipPath, Buffer.from("PK\x03\x04"));
+
+    const result = await assembleBrowserPrompt(
+      buildOptions({ file: [zipPath], browserAttachments: "always" }),
+      {
+        cwd: tempDir,
+        readFilesImpl: async (paths) => {
+          expect(paths).toEqual([]);
+          return [];
+        },
+      },
+    );
+
+    expect(result.attachments).toEqual([
+      expect.objectContaining({ path: zipPath, displayPath: "context.zip" }),
+    ]);
+    expect(result.composerText).toBe("Explain the bug");
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import { BrowserAutomationError } from "../../src/oracle/errors.js";
 import {
   continueBrowserSession,
   resumeBrowserSession,
@@ -189,6 +190,193 @@ describe("resumeBrowserSession", () => {
     expect(waitForAssistantResponse).toHaveBeenCalled();
     expect(result.answerMarkdown).toBe("supervisor markdown");
     expect(result.runtime?.conversationId).toBe("abc");
+  });
+
+  test("uploads attachments during follow-up prompts", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+      conversationId: "abc",
+    };
+    const listTargets = vi.fn(
+      async () =>
+        [
+          { targetId: "target-1", type: "page", url: runtime.tabUrl },
+          { targetId: "target-2", type: "page", url: "about:blank" },
+        ] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(
+      async () =>
+        ({
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Runtime: { enable: vi.fn(), evaluate },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          DOM: { enable: vi.fn() },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Input: {},
+          close: vi.fn(async () => {}),
+        }) satisfies FakeClient,
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const ensurePromptReady = vi.fn(async () => {});
+    const clearPromptComposer = vi.fn(async () => {});
+    const clearComposerAttachments = vi.fn(async () => {});
+    const uploadAttachmentFile = vi.fn(async () => true);
+    const waitForAttachmentCompletion = vi.fn(async () => {});
+    const waitForUserTurnAttachments = vi.fn(async () => true);
+    const submitPrompt = vi.fn(async () => 3);
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "supervisor response",
+      html: "",
+      meta: { messageId: "m2", turnId: "conversation-turn-2" },
+    }));
+    const captureAssistantMarkdown = vi.fn(async () => "supervisor markdown");
+    const logger = vi.fn() as BrowserLogger;
+    logger.verbose = true;
+
+    const result = await continueBrowserSession(
+      runtime,
+      { timeoutMs: 2_000, inputTimeoutMs: 1_000 },
+      logger,
+      {
+        prompt: "Review these files.",
+        attachments: [{ path: "/tmp/context.zip", displayPath: "context.zip", sizeBytes: 4 }],
+      },
+      {
+        listTargets,
+        connect,
+        ensurePromptReady,
+        clearPromptComposer,
+        clearComposerAttachments,
+        uploadAttachmentFile,
+        waitForAttachmentCompletion,
+        waitForUserTurnAttachments,
+        submitPrompt,
+        waitForAssistantResponse,
+        captureAssistantMarkdown,
+      },
+    );
+
+    expect(clearComposerAttachments).toHaveBeenCalled();
+    expect(uploadAttachmentFile).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ displayPath: "context.zip" }),
+      logger,
+      { expectedCount: 1 },
+    );
+    expect(waitForAttachmentCompletion).toHaveBeenCalled();
+    expect(waitForUserTurnAttachments).toHaveBeenCalledWith(
+      expect.anything(),
+      ["context.zip"],
+      20_000,
+      logger,
+    );
+    expect(submitPrompt).toHaveBeenCalled();
+    expect(result.answerMarkdown).toBe("supervisor markdown");
+  });
+
+  test("retries follow-up with uploaded attachments when inline prompt is too large", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+      conversationId: "abc",
+    };
+    const listTargets = vi.fn(
+      async () =>
+        [{ targetId: "target-1", type: "page", url: runtime.tabUrl }] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(
+      async () =>
+        ({
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Runtime: { enable: vi.fn(), evaluate },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          DOM: { enable: vi.fn() },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Input: {},
+          close: vi.fn(async () => {}),
+        }) satisfies FakeClient,
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const ensurePromptReady = vi.fn(async () => {});
+    const clearPromptComposer = vi.fn(async () => {});
+    const clearComposerAttachments = vi.fn(async () => {});
+    const uploadAttachmentFile = vi.fn(async () => true);
+    const waitForAttachmentCompletion = vi.fn(async () => {});
+    const waitForUserTurnAttachments = vi.fn(async () => true);
+    const submitPrompt = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new BrowserAutomationError("too large", { code: "prompt-too-large", stage: "submit" }),
+      )
+      .mockResolvedValueOnce(3);
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "retry response",
+      html: "",
+      meta: { messageId: "m3", turnId: "conversation-turn-3" },
+    }));
+    const captureAssistantMarkdown = vi.fn(async () => "retry markdown");
+    const logger = vi.fn() as BrowserLogger;
+    logger.verbose = true;
+
+    const result = await continueBrowserSession(
+      runtime,
+      { timeoutMs: 2_000, inputTimeoutMs: 1_000 },
+      logger,
+      {
+        prompt: "Huge inline context",
+        fallbackSubmission: {
+          prompt: "Fallback with uploads",
+          attachments: [{ path: "/tmp/fallback.zip", displayPath: "fallback.zip", sizeBytes: 4 }],
+        },
+      },
+      {
+        listTargets,
+        connect,
+        ensurePromptReady,
+        clearPromptComposer,
+        clearComposerAttachments,
+        uploadAttachmentFile,
+        waitForAttachmentCompletion,
+        waitForUserTurnAttachments,
+        submitPrompt,
+        waitForAssistantResponse,
+        captureAssistantMarkdown,
+      },
+    );
+
+    expect(submitPrompt).toHaveBeenCalledTimes(2);
+    expect(uploadAttachmentFile).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ displayPath: "fallback.zip" }),
+      logger,
+      { expectedCount: 1 },
+    );
+    const loggerCalls = (logger as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(loggerCalls.some((call) => String(call[0]).includes("retrying with file uploads"))).toBe(
+      true,
+    );
+    expect(result.answerMarkdown).toBe("retry markdown");
   });
 });
 

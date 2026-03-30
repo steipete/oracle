@@ -118,19 +118,20 @@ export async function performSessionRun({
           : null;
       if (parentSessionId && parentSessionId !== sessionMeta.id) {
         if (!parentSession) {
-          throw new Error(`Browser follow-up parent session ${parentSessionId} could not be found.`);
+          throw new Error(
+            `Browser follow-up parent session ${parentSessionId} could not be found.`,
+          );
         }
         if ((parentSession.mode ?? parentSession.options?.mode) !== "browser") {
           throw new Error(`Session ${parentSessionId} is not a browser session.`);
         }
       }
-      const result =
-        parentSession
-          ? await continueBrowserSessionExecution(
-              { runOptions, browserConfig, cwd, log, parentSession },
-              runnerDeps,
-            )
-          : await runBrowserSessionExecution({ runOptions, browserConfig, cwd, log }, runnerDeps);
+      const result = parentSession
+        ? await continueBrowserSessionExecution(
+            { runOptions, browserConfig, cwd, log, parentSession },
+            runnerDeps,
+          )
+        : await runBrowserSessionExecution({ runOptions, browserConfig, cwd, log }, runnerDeps);
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "completed",
@@ -521,7 +522,11 @@ export async function performSessionRun({
         );
         log(dim(`Reuse this browser profile with: ${details.reuseProfileHint}`));
       } else {
-        log(dim("Cloudflare challenge detected in true headless mode; no reusable browser was left running."));
+        log(
+          dim(
+            "Cloudflare challenge detected in true headless mode; no reusable browser was left running.",
+          ),
+        );
       }
     }
     if (userError) {

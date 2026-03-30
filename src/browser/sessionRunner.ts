@@ -13,7 +13,7 @@ import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
 import type { BrowserLogger } from "./types.js";
 import { estimateTokenCount } from "./utils.js";
-import { continueBrowserSession } from "./reattach.js";
+import { continueBrowserSession, type ReattachDeps } from "./reattach.js";
 
 export interface BrowserExecutionResult {
   usage: {
@@ -34,7 +34,7 @@ interface RunBrowserSessionArgs {
   log: (message?: string) => void;
 }
 
-export interface BrowserSessionRunnerDeps {
+export interface BrowserSessionRunnerDeps extends ReattachDeps {
   assemblePrompt?: typeof assembleBrowserPrompt;
   executeBrowser?: typeof runBrowserMode;
   continueBrowser?: typeof continueBrowserSession;
@@ -191,10 +191,40 @@ export async function continueBrowserSessionExecution(
   const assemblePrompt = deps.assemblePrompt ?? assembleBrowserPrompt;
   const continueBrowser = deps.continueBrowser ?? continueBrowserSession;
   const promptArtifacts = await assemblePrompt(runOptions, { cwd });
-  if (promptArtifacts.attachments.length > 0 || promptArtifacts.fallback?.attachments.length) {
-    throw new BrowserAutomationError(
-      "Browser followups do not support file uploads yet. Re-run with inline context only.",
-      { stage: "browser-followup-attachments" },
+  if (runOptions.verbose) {
+    log(
+      chalk.dim(
+        `[verbose] Browser config: ${JSON.stringify({
+          ...browserConfig,
+        })}`,
+      ),
+    );
+    log(chalk.dim(`[verbose] Browser prompt length: ${promptArtifacts.composerText.length} chars`));
+    if (promptArtifacts.attachments.length > 0) {
+      const attachmentList = promptArtifacts.attachments
+        .map((attachment) => attachment.displayPath)
+        .join(", ");
+      log(chalk.dim(`[verbose] Browser follow-up attachments: ${attachmentList}`));
+      if (promptArtifacts.bundled) {
+        log(
+          chalk.yellow(
+            `[browser] Bundled ${promptArtifacts.bundled.originalCount} files into ${promptArtifacts.bundled.bundlePath}.`,
+          ),
+        );
+      }
+    } else if (
+      runOptions.file &&
+      runOptions.file.length > 0 &&
+      promptArtifacts.attachmentMode === "inline"
+    ) {
+      log(chalk.dim("[verbose] Browser follow-up will paste file contents inline (no uploads)."));
+    }
+  }
+  if (promptArtifacts.bundled) {
+    log(
+      chalk.dim(
+        `Packed ${promptArtifacts.bundled.originalCount} files into 1 bundle (contents counted in token estimate).`,
+      ),
     );
   }
   const runtime = parentSession.browser?.runtime;
@@ -209,9 +239,10 @@ export async function continueBrowserSessionExecution(
   );
   log(chalk.dim(`Reusing browser conversation from session ${parentSession.id}.`));
   const logger: BrowserLogger = ((message?: string) => {
-    if (typeof message === "string" && runOptions.verbose) {
-      log(message);
-    }
+    if (typeof message !== "string") return;
+    const shouldAlwaysPrint = message.startsWith("[browser] ") && /fallback|retry/i.test(message);
+    if (!runOptions.verbose && !shouldAlwaysPrint) return;
+    log(message);
   }) as BrowserLogger;
   logger.verbose = Boolean(runOptions.verbose);
   logger.sessionLog = runOptions.verbose ? log : () => {};
@@ -222,15 +253,23 @@ export async function continueBrowserSessionExecution(
       runtime,
       browserConfig,
       logger,
-      { prompt: promptArtifacts.composerText, attachments: promptArtifacts.attachments },
+      {
+        prompt: promptArtifacts.composerText,
+        attachments: promptArtifacts.attachments,
+        fallbackSubmission: promptArtifacts.fallback
+          ? {
+              prompt: promptArtifacts.fallback.composerText,
+              attachments: promptArtifacts.fallback.attachments,
+            }
+          : undefined,
+      },
       deps,
     );
   } catch (error) {
     if (error instanceof BrowserAutomationError) {
       throw error;
     }
-    const message =
-      error instanceof Error ? error.message : "Browser follow-up automation failed.";
+    const message = error instanceof Error ? error.message : "Browser follow-up automation failed.";
     throw new BrowserAutomationError(message, { stage: "continue-browser" }, error);
   }
   if (result.runtime) {

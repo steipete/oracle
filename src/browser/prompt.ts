@@ -39,6 +39,14 @@ const MEDIA_EXTENSIONS = new Set([
   ".heic",
   ".heif",
   ".pdf",
+  ".zip",
+  ".tar",
+  ".tgz",
+  ".gz",
+  ".bz2",
+  ".xz",
+  ".7z",
+  ".rar",
 ]);
 
 export function isMediaFile(filePath: string): boolean {
