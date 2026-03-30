@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mkdtemp, writeFile, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
@@ -9,6 +9,16 @@ const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
 const CLIENT_FACTORY = path.join(process.cwd(), "tests", "fixtures", "mockClientFactory.cjs");
 const INTEGRATION_TIMEOUT = process.platform === "win32" ? 60000 : 30000;
+
+async function writeBrowserSessionMeta(
+  oracleHome: string,
+  sessionId: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  const sessionDir = path.join(oracleHome, "sessions", sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(path.join(sessionDir, "meta.json"), JSON.stringify(metadata, null, 2), "utf8");
+}
 
 describe("oracle CLI integration", () => {
   test(
@@ -190,6 +200,56 @@ describe("oracle CLI integration", () => {
   );
 
   test(
+    "accepts uppercase response ids in --followup and persists chain metadata",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-followup-resp-upper-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+      const directResponseId = "RESP_direct_followup_12345";
+
+      await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--prompt",
+          "Child from uppercase response id",
+          "--model",
+          "gpt-5.1",
+          "--followup",
+          directResponseId,
+        ],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      expect(sessionId).toBeTruthy();
+      const metadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(metadata.options?.previousResponseId).toBe(directResponseId);
+      expect(metadata.options?.followupSessionId).toBeUndefined();
+      expect(metadata.options?.followupModel).toBeUndefined();
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "rejects --followup for Gemini API runs",
     async () => {
       const oracleHome = await mkdtemp(
@@ -277,6 +337,227 @@ describe("oracle CLI integration", () => {
         expect(stderr).toMatch(/only supported for OpenAI Responses API runs/i);
         expect(stderr).toMatch(/claude-4.5-sonnet/i);
       }
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects response ids for browser follow-ups",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-browser-followup-resp-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--engine",
+            "browser",
+            "--prompt",
+            "Browser followup",
+            "--model",
+            "gpt-5.4-pro",
+            "--followup",
+            "resp_parent_1234",
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/Browser follow-up requires an oracle session id/i);
+      }
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects legacy browser sessions that are missing runtime metadata before creating a child session",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-browser-followup-legacy-"));
+      const parentId = "legacy-browser-parent";
+      await writeBrowserSessionMeta(oracleHome, parentId, {
+        id: parentId,
+        createdAt: "2025-01-01T00:00:00Z",
+        status: "completed",
+        model: "gpt-5.4-pro",
+        options: {
+          mode: "browser",
+          model: "gpt-5.4-pro",
+        },
+      });
+
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--engine",
+            "browser",
+            "--prompt",
+            "Browser followup",
+            "--model",
+            "gpt-5.4-pro",
+            "--followup",
+            parentId,
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/missing browser runtime metadata/i);
+        expect(stderr).not.toMatch(/is not a browser session/i);
+      }
+
+      const sessionIds = await readdir(path.join(oracleHome, "sessions"));
+      expect(sessionIds).toEqual([parentId]);
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects --followup-model for browser follow-ups",
+    async () => {
+      const oracleHome = await mkdtemp(
+        path.join(os.tmpdir(), "oracle-browser-followup-model-error-"),
+      );
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--engine",
+            "browser",
+            "--prompt",
+            "Browser followup",
+            "--model",
+            "gpt-5.4-pro",
+            "--followup",
+            "browser-parent-session",
+            "--followup-model",
+            "gpt-5.4-pro",
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/--followup-model is only supported for API follow-ups/i);
+      }
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects Gemini browser follow-ups before creating a child session",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-browser-followup-gemini-"));
+      const parentId = "browser-parent";
+      await writeBrowserSessionMeta(oracleHome, parentId, {
+        id: parentId,
+        createdAt: "2025-01-01T00:00:00Z",
+        status: "completed",
+        mode: "browser",
+        model: "gpt-5.4-pro",
+        browser: {
+          runtime: {
+            chromePort: 9222,
+            chromeHost: "127.0.0.1",
+            tabUrl: "https://chatgpt.com/c/abc",
+          },
+        },
+        options: {
+          mode: "browser",
+          model: "gpt-5.4-pro",
+        },
+      });
+
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--engine",
+            "browser",
+            "--prompt",
+            "Browser followup",
+            "--model",
+            "gemini-3-pro",
+            "--followup",
+            parentId,
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(
+          /Browser follow-up currently supports ChatGPT\/GPT browser sessions only/i,
+        );
+      }
+
+      const sessionIds = await readdir(path.join(oracleHome, "sessions"));
+      expect(sessionIds).toEqual([parentId]);
 
       await rm(oracleHome, { recursive: true, force: true });
     },

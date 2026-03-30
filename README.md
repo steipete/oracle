@@ -141,6 +141,7 @@ npx -y @steipete/oracle oracle-mcp
 - Render/copy bundles for manual paste into ChatGPT when automation is blocked.
 - GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
 - OpenAI/Azure follow-up API runs can continue from `--followup <sessionId|responseId>`; for multi-model parents, add `--followup-model <model>`.
+- Browser follow-ups can continue a stored ChatGPT/GPT browser session via `--followup <sessionId>`. Browser follow-up does not accept `resp_...` ids and does not support Gemini browser sessions yet.
 - Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs.
 - File safety: globs/excludes, size guards, `--files-report`.
 - Sessions you can replay (`oracle status`, `oracle session <id> --render`).
@@ -164,6 +165,16 @@ oracle \
 ```
 
 When the parent session used `--models`, `--followup-model` picks which model's response id to chain from.
+
+Browser follow-up uses the stored browser session metadata instead of Responses API ids. Older browser sessions that predate runtime metadata cannot be continued:
+
+```bash
+oracle --engine browser --model gpt-5.4-pro \
+  --followup <existing-browser-session-id> \
+  --prompt "Continue with these new files" \
+  --file docs/context.zip
+```
+
 Custom `--base-url` providers plus Gemini/Claude API runs are excluded here because they do not preserve `previous_response_id` in Oracle.
 
 `oracle status` shows parent/child lineage in tree form:
@@ -205,8 +216,8 @@ oracle --engine browser \
 | `-e, --engine <api\|browser>`                                   | Choose API or browser (browser is experimental).                                                                                                                                                                                                                                                                |
 | `-m, --model <name>`                                            | Built-ins (`gpt-5.4-pro` default, `gpt-5.4`, `gpt-5.1-pro`, `gpt-5-pro`, `gpt-5.1`, `gpt-5.1-codex`, `gpt-5.2`, `gpt-5.2-instant`, `gpt-5.2-pro`, `gemini-3.1-pro` API-only, `gemini-3-pro`, `claude-4.5-sonnet`, `claude-4.1-opus`) plus any OpenRouter id (e.g., `minimax/minimax-m2`, `openai/gpt-4o-mini`). |
 | `--models <list>`                                               | Comma-separated API models (mix built-ins and OpenRouter ids) for multi-model runs.                                                                                                                                                                                                                             |
-| `--followup <sessionId\|responseId>`                            | Continue an OpenAI/Azure Responses API run from a stored oracle session or `resp_...` response id.                                                                                                                                                                                                              |
-| `--followup-model <model>`                                      | For multi-model OpenAI/Azure parent sessions, choose which model response to continue from.                                                                                                                                                                                                                     |
+| `--followup <sessionId\|responseId>`                            | Continue an existing run. API mode accepts a stored oracle session or `resp_...` response id; browser mode accepts a stored ChatGPT/GPT browser session id only.                                                                                                                                                |
+| `--followup-model <model>`                                      | API only: for multi-model OpenAI/Azure parent sessions, choose which model response to continue from.                                                                                                                                                                                                           |
 | `--base-url <url>`                                              | Point API runs at LiteLLM/Azure/OpenRouter/etc.                                                                                                                                                                                                                                                                 |
 | `--chatgpt-url <url>`                                           | Target a ChatGPT workspace/folder (browser).                                                                                                                                                                                                                                                                    |
 | `--browser-model-strategy <select\|current\|ignore>`            | Control ChatGPT model selection in browser mode (current keeps the active model; ignore skips the picker).                                                                                                                                                                                                      |

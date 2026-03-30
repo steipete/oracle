@@ -19,6 +19,7 @@ function buildOptions(overrides: Partial<RunOracleOptions> = {}): RunOracleOptio
     prompt: overrides.prompt ?? "Explain the bug",
     model: overrides.model ?? "gpt-5.2-pro",
     file: overrides.file ?? ["a.txt"],
+    maxFileSizeBytes: overrides.maxFileSizeBytes,
     system: overrides.system,
     browserAttachments: overrides.browserAttachments ?? "auto",
     browserInlineFiles: overrides.browserInlineFiles,
@@ -225,10 +226,6 @@ describe("assembleBrowserPrompt", () => {
       buildOptions({ file: [zipPath], browserAttachments: "always" }),
       {
         cwd: tempDir,
-        readFilesImpl: async (paths) => {
-          expect(paths).toEqual([]);
-          return [];
-        },
       },
     );
 
@@ -236,5 +233,97 @@ describe("assembleBrowserPrompt", () => {
       expect.objectContaining({ path: zipPath, displayPath: "context.zip" }),
     ]);
     expect(result.composerText).toBe("Explain the bug");
+  });
+
+  test("treats zip files discovered through a directory input as browser attachments", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-prompt-dir-"));
+    await fs.mkdir(path.join(tempDir, "docs"));
+    const textPath = path.join(tempDir, "docs", "notes.md");
+    const zipPath = path.join(tempDir, "docs", "context.zip");
+    await fs.writeFile(textPath, "hello from markdown", "utf8");
+    await fs.writeFile(zipPath, Buffer.from("PK\x03\x04"));
+
+    const result = await assembleBrowserPrompt(
+      buildOptions({ file: ["docs"], browserAttachments: "auto" }),
+      {
+        cwd: tempDir,
+      },
+    );
+
+    expect(result.composerText).toContain("### File: docs/notes.md");
+    expect(result.attachments).toEqual([
+      expect.objectContaining({ path: zipPath, displayPath: "docs/context.zip" }),
+    ]);
+  });
+
+  test("treats zip files discovered through glob inputs as browser attachments", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-prompt-glob-"));
+    const zipPath = path.join(tempDir, "context.zip");
+    await fs.writeFile(zipPath, Buffer.from("PK\x03\x04"));
+
+    const result = await assembleBrowserPrompt(
+      buildOptions({ file: ["*.zip"], browserAttachments: "always" }),
+      {
+        cwd: tempDir,
+      },
+    );
+
+    expect(result.attachments).toEqual([
+      expect.objectContaining({ path: zipPath, displayPath: "context.zip" }),
+    ]);
+  });
+
+  test("applies maxFileSizeBytes guard to zip attachments", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-prompt-limit-"));
+    const zipPath = path.join(tempDir, "context.zip");
+    await fs.writeFile(zipPath, Buffer.alloc(2048, 1));
+
+    await expect(
+      assembleBrowserPrompt(
+        buildOptions({ file: [zipPath], browserAttachments: "always", maxFileSizeBytes: 1024 }),
+        {
+          cwd: tempDir,
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "FileValidationError",
+    });
+  });
+
+  test("applies maxFileSizeBytes guard to text attachments", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-prompt-text-limit-"));
+    const textPath = path.join(tempDir, "context.md");
+    await fs.writeFile(textPath, "x".repeat(2048), "utf8");
+
+    await expect(
+      assembleBrowserPrompt(buildOptions({ file: [textPath], maxFileSizeBytes: 1024 }), {
+        cwd: tempDir,
+      }),
+    ).rejects.toMatchObject({
+      name: "FileValidationError",
+    });
+  });
+
+  test("applies maxFileSizeBytes guard to generated bundles", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-prompt-bundle-limit-"));
+    const fileNames = Array.from({ length: 11 }, (_, index) => `file${index + 1}.txt`);
+    await Promise.all(
+      fileNames.map((fileName) =>
+        fs.writeFile(path.join(tempDir, fileName), `payload-${fileName}-${"x".repeat(48)}`, "utf8"),
+      ),
+    );
+
+    await expect(
+      assembleBrowserPrompt(
+        buildOptions({
+          file: fileNames,
+          browserAttachments: "always",
+          maxFileSizeBytes: 256,
+        }),
+        { cwd: tempDir },
+      ),
+    ).rejects.toMatchObject({
+      name: "FileValidationError",
+    });
   });
 });

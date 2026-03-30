@@ -3,16 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import type { RunOracleOptions } from "../oracle.js";
 import {
+  FileValidationError,
   readFiles,
   createFileSections,
   MODEL_CONFIGS,
   TOKENIZER_OPTIONS,
   formatFileSection,
 } from "../oracle.js";
+import { DEFAULT_MAX_FILE_SIZE_BYTES } from "../oracle/files.js";
 import { isKnownModel } from "../oracle/modelResolver.js";
 import { buildPromptMarkdown } from "../oracle/promptAssembly.js";
 import type { BrowserAttachment } from "./types.js";
 import { buildAttachmentPlan } from "./policies.js";
+import { formatBytes } from "./utils.js";
 
 const DEFAULT_BROWSER_INLINE_CHAR_BUDGET = 60_000;
 
@@ -77,30 +80,85 @@ interface AssemblePromptDeps {
   tokenizeImpl?: (typeof MODEL_CONFIGS)["gpt-5.1"]["tokenizer"];
 }
 
+async function resolveBrowserInputFiles(
+  filePaths: string[],
+  cwd: string,
+  maxFileSizeBytes: number,
+  readFilesFn: typeof readFiles,
+) {
+  const resolved = await readFilesFn(filePaths, {
+    cwd,
+    maxFileSizeBytes,
+    readContents: false,
+  });
+  const resolvedPaths = resolved.map((file) => file.path);
+  const textPaths = resolvedPaths.filter((filePath) => !isMediaFile(filePath));
+  const mediaPaths = resolvedPaths.filter((filePath) => isMediaFile(filePath));
+  const files = textPaths.length > 0 ? await readFilesFn(textPaths, { cwd, maxFileSizeBytes }) : [];
+  const mediaAttachments: BrowserAttachment[] = [];
+  for (const resolvedPath of mediaPaths) {
+    const stats = await fs.stat(resolvedPath);
+    mediaAttachments.push({
+      path: resolvedPath,
+      displayPath: path.relative(cwd, resolvedPath) || path.basename(resolvedPath),
+      sizeBytes: stats.size,
+    });
+  }
+  return { files, mediaAttachments };
+}
+
+async function createBundleAttachment(
+  sections: ReturnType<typeof createFileSections>,
+  maxFileSizeBytes: number,
+) {
+  const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
+  const bundlePath = path.join(bundleDir, "attachments-bundle.txt");
+  const bundleLines: string[] = [];
+  sections.forEach((section) => {
+    bundleLines.push(formatFileSection(section.displayPath, section.content).trimEnd());
+    bundleLines.push("");
+  });
+  const bundleText = `${bundleLines
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd()}\n`;
+  const sizeBytes = Buffer.byteLength(bundleText, "utf8");
+  if (maxFileSizeBytes && sizeBytes > maxFileSizeBytes) {
+    throw new FileValidationError(
+      `The following files exceed the ${formatBytes(maxFileSizeBytes)} limit:\n- attachments-bundle.txt (${formatBytes(sizeBytes)})`,
+      {
+        files: ["attachments-bundle.txt"],
+        limitBytes: maxFileSizeBytes,
+      },
+    );
+  }
+  await fs.writeFile(bundlePath, bundleText, "utf8");
+  return {
+    text: bundleText,
+    attachment: {
+      path: bundlePath,
+      displayPath: bundlePath,
+      sizeBytes,
+    } satisfies BrowserAttachment,
+    bundled: { originalCount: sections.length, bundlePath },
+  };
+}
+
 export async function assembleBrowserPrompt(
   runOptions: RunOracleOptions,
   deps: AssemblePromptDeps = {},
 ): Promise<BrowserPromptArtifacts> {
   const cwd = deps.cwd ?? process.cwd();
   const readFilesFn = deps.readFilesImpl ?? readFiles;
+  const maxFileSizeBytes = runOptions.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
 
   const allFilePaths = runOptions.file ?? [];
-  const textFilePaths = allFilePaths.filter((f) => !isMediaFile(f));
-  const mediaFilePaths = allFilePaths.filter((f) => isMediaFile(f));
-
-  const mediaAttachments: BrowserAttachment[] = await Promise.all(
-    mediaFilePaths.map(async (filePath) => {
-      const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
-      const stats = await fs.stat(resolvedPath);
-      return {
-        path: resolvedPath,
-        displayPath: path.relative(cwd, resolvedPath) || path.basename(resolvedPath),
-        sizeBytes: stats.size,
-      };
-    }),
+  const { files, mediaAttachments } = await resolveBrowserInputFiles(
+    allFilePaths,
+    cwd,
+    maxFileSizeBytes,
+    readFilesFn,
   );
-
-  const files = await readFilesFn(textFilePaths, { cwd });
   const basePrompt = (runOptions.prompt ?? "").trim();
   const userPrompt = basePrompt;
   const systemPrompt = runOptions.system?.trim() || "";
@@ -147,26 +205,12 @@ export async function assembleBrowserPrompt(
   let bundleText: string | null = null;
   let bundled: { originalCount: number; bundlePath: string } | null = null;
   if (shouldBundle) {
-    const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
-    const bundlePath = path.join(bundleDir, "attachments-bundle.txt");
-    const bundleLines: string[] = [];
-    sections.forEach((section) => {
-      bundleLines.push(formatFileSection(section.displayPath, section.content).trimEnd());
-      bundleLines.push("");
-    });
-    bundleText = `${bundleLines
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trimEnd()}\n`;
-    await fs.writeFile(bundlePath, bundleText, "utf8");
+    const bundle = await createBundleAttachment(sections, maxFileSizeBytes);
+    bundleText = bundle.text;
     attachments.length = 0;
-    attachments.push({
-      path: bundlePath,
-      displayPath: bundlePath,
-      sizeBytes: Buffer.byteLength(bundleText, "utf8"),
-    });
+    attachments.push(bundle.attachment);
     attachments.push(...mediaAttachments);
-    bundled = { originalCount: sections.length, bundlePath };
+    bundled = bundle.bundled;
   }
 
   const inlineFileCount = selectedPlan.inlineFileCount;
@@ -209,26 +253,11 @@ export async function assembleBrowserPrompt(
     const fallbackAttachments = [...uploadPlan.attachments, ...mediaAttachments];
     let fallbackBundled: { originalCount: number; bundlePath: string } | null = null;
     if (uploadPlan.shouldBundle) {
-      const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
-      const bundlePath = path.join(bundleDir, "attachments-bundle.txt");
-      const bundleLines: string[] = [];
-      sections.forEach((section) => {
-        bundleLines.push(formatFileSection(section.displayPath, section.content).trimEnd());
-        bundleLines.push("");
-      });
-      const fallbackBundleText = `${bundleLines
-        .join("\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trimEnd()}\n`;
-      await fs.writeFile(bundlePath, fallbackBundleText, "utf8");
+      const bundle = await createBundleAttachment(sections, maxFileSizeBytes);
       fallbackAttachments.length = 0;
-      fallbackAttachments.push({
-        path: bundlePath,
-        displayPath: bundlePath,
-        sizeBytes: Buffer.byteLength(fallbackBundleText, "utf8"),
-      });
+      fallbackAttachments.push(bundle.attachment);
       fallbackAttachments.push(...mediaAttachments);
-      fallbackBundled = { originalCount: sections.length, bundlePath };
+      fallbackBundled = bundle.bundled;
     }
     fallback = {
       composerText: fallbackComposerText,

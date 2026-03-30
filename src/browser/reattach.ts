@@ -10,6 +10,7 @@ import {
   ensureNotBlocked,
   ensureLoggedIn,
   ensurePromptReady,
+  ensureModelSelection,
   clearPromptComposer,
   submitPrompt,
   clearComposerAttachments,
@@ -21,9 +22,10 @@ import type { BrowserAttachment, BrowserLogger, ChromeClient } from "./types.js"
 import { launchChrome, connectToChrome, hideChromeWindow } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
 import { syncCookies } from "./cookies.js";
-import { CHATGPT_URL } from "./constants.js";
+import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
 import { cleanupStaleProfileState } from "./profileState.js";
+import { ensureThinkingTime } from "./actions/thinkingTime.js";
 import {
   pickTarget,
   extractConversationIdFromUrl,
@@ -38,7 +40,7 @@ import {
   alignPromptEchoMarkdown,
   type TargetInfoLite,
 } from "./reattachHelpers.js";
-import { delay, estimateTokenCount } from "./utils.js";
+import { delay, estimateTokenCount, withRetries } from "./utils.js";
 
 export interface ReattachDeps {
   listTargets?: () => Promise<TargetInfoLite[]>;
@@ -46,6 +48,8 @@ export interface ReattachDeps {
   waitForAssistantResponse?: typeof waitForAssistantResponse;
   captureAssistantMarkdown?: typeof captureAssistantMarkdown;
   ensurePromptReady?: typeof ensurePromptReady;
+  ensureModelSelection?: typeof ensureModelSelection;
+  ensureThinkingTime?: typeof ensureThinkingTime;
   clearPromptComposer?: typeof clearPromptComposer;
   submitPrompt?: typeof submitPrompt;
   clearComposerAttachments?: typeof clearComposerAttachments;
@@ -118,6 +122,26 @@ async function closeClient(client: ChromeClient | null | undefined): Promise<voi
   }
 }
 
+async function cleanupReopenedChromeLaunch(
+  chrome: { kill?: () => Promise<void> | void },
+  userDataDir: string,
+  manualLogin: boolean,
+  logger: BrowserLogger,
+): Promise<void> {
+  try {
+    await chrome.kill?.();
+  } catch {
+    // ignore kill failures
+  }
+  if (manualLogin) {
+    await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "never" }).catch(
+      () => undefined,
+    );
+  } else {
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 async function ensureConversationOpenForRuntime(
   Runtime: ChromeClient["Runtime"],
   runtime: BrowserRuntimeMetadata,
@@ -186,6 +210,51 @@ async function captureConversationResponse(
   };
 }
 
+async function applyConversationSettings(
+  Runtime: ChromeClient["Runtime"],
+  logger: BrowserLogger,
+  config: BrowserSessionConfig | undefined,
+  deps: ReattachDeps,
+): Promise<void> {
+  const ensurePromptReadyForFollowup = deps.ensurePromptReady ?? ensurePromptReady;
+  const ensureModel = deps.ensureModelSelection ?? ensureModelSelection;
+  const ensureThinking = deps.ensureThinkingTime ?? ensureThinkingTime;
+  const modelStrategy = config?.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
+  if (config?.desiredModel && modelStrategy !== "ignore") {
+    await withRetries(
+      () => ensureModel(Runtime, config.desiredModel as string, logger, modelStrategy),
+      {
+        retries: 2,
+        delayMs: 300,
+        onRetry: (attempt, error) => {
+          if (logger.verbose) {
+            logger(
+              `[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        },
+      },
+    );
+    await ensurePromptReadyForFollowup(Runtime, config.inputTimeoutMs ?? 60_000, logger);
+  } else if (modelStrategy === "ignore") {
+    logger("Model picker: skipped (strategy=ignore)");
+  }
+  const thinkingTime = config?.thinkingTime;
+  if (thinkingTime) {
+    await withRetries(() => ensureThinking(Runtime, thinkingTime, logger), {
+      retries: 2,
+      delayMs: 300,
+      onRetry: (attempt, error) => {
+        if (logger.verbose) {
+          logger(
+            `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      },
+    });
+  }
+}
+
 async function submitFollowupPrompt(
   Runtime: ChromeClient["Runtime"],
   DOM: ChromeClient["DOM"] | undefined,
@@ -194,7 +263,7 @@ async function submitFollowupPrompt(
   options: ContinueBrowserSessionOptions,
   config: BrowserSessionConfig | undefined,
   deps: ReattachDeps,
-): Promise<void> {
+): Promise<string> {
   const ensurePromptReadyForFollowup = deps.ensurePromptReady ?? ensurePromptReady;
   const clearComposer = deps.clearPromptComposer ?? clearPromptComposer;
   const submit = deps.submitPrompt ?? submitPrompt;
@@ -203,80 +272,99 @@ async function submitFollowupPrompt(
   const waitForAttachments = deps.waitForAttachmentCompletion ?? waitForAttachmentCompletion;
   const waitForSentAttachments = deps.waitForUserTurnAttachments ?? waitForUserTurnAttachments;
   const submitOnce = async (prompt: string, attachments: BrowserAttachment[] = []) => {
-    await ensurePromptReadyForFollowup(Runtime, config?.inputTimeoutMs ?? 60_000, logger);
-    await clearComposer(Runtime, logger);
-    const attachmentNames = attachments.map((attachment) => path.basename(attachment.path));
-    let attachmentWaitTimedOut = false;
-    let inputOnlyAttachments = false;
-    if (attachments.length > 0) {
-      if (!DOM) {
-        throw new Error("Chrome DOM domain unavailable while uploading attachments.");
-      }
-      await clearAttachments(Runtime, 5_000, logger);
-      for (let attachmentIndex = 0; attachmentIndex < attachments.length; attachmentIndex += 1) {
-        const attachment = attachments[attachmentIndex];
-        logger(`Uploading attachment: ${attachment.displayPath}`);
-        const uiConfirmed = await uploadAttachment(
-          { runtime: Runtime, dom: DOM, input: Input },
-          attachment,
-          logger,
-          { expectedCount: attachmentIndex + 1 },
-        );
-        if (!uiConfirmed) {
-          inputOnlyAttachments = true;
+    let promptSubmitted = false;
+    try {
+      await ensurePromptReadyForFollowup(Runtime, config?.inputTimeoutMs ?? 60_000, logger);
+      await clearComposer(Runtime, logger);
+      const attachmentNames = attachments.map((attachment) => path.basename(attachment.path));
+      let attachmentWaitTimedOut = false;
+      let inputOnlyAttachments = false;
+      if (attachments.length > 0) {
+        if (!DOM) {
+          throw new Error("Chrome DOM domain unavailable while uploading attachments.");
         }
-        await delay(500);
-      }
-      const baseTimeout = config?.inputTimeoutMs ?? 30_000;
-      const perFileTimeout = 20_000;
-      const waitBudget = Math.max(baseTimeout, 45_000) + (attachments.length - 1) * perFileTimeout;
-      try {
-        await waitForAttachments(Runtime, waitBudget, attachmentNames, logger);
-        logger("All attachments uploaded");
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/Attachments did not finish uploading before timeout/i.test(message)) {
-          attachmentWaitTimedOut = true;
-          logger(
-            `[browser] Attachment upload timed out after ${Math.round(waitBudget / 1000)}s; continuing without confirmation.`,
+        await clearAttachments(Runtime, 5_000, logger);
+        for (let attachmentIndex = 0; attachmentIndex < attachments.length; attachmentIndex += 1) {
+          const attachment = attachments[attachmentIndex];
+          logger(`Uploading attachment: ${attachment.displayPath}`);
+          const uiConfirmed = await uploadAttachment(
+            { runtime: Runtime, dom: DOM, input: Input },
+            attachment,
+            logger,
+            { expectedCount: attachmentIndex + 1 },
           );
-        } else {
-          throw error;
+          if (!uiConfirmed) {
+            inputOnlyAttachments = true;
+          }
+          await delay(500);
+        }
+        const baseTimeout = config?.inputTimeoutMs ?? 30_000;
+        const perFileTimeout = 20_000;
+        const waitBudget =
+          Math.max(baseTimeout, 45_000) + (attachments.length - 1) * perFileTimeout;
+        try {
+          await waitForAttachments(Runtime, waitBudget, attachmentNames, logger);
+          logger("All attachments uploaded");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (/Attachments did not finish uploading before timeout/i.test(message)) {
+            attachmentWaitTimedOut = true;
+            logger(
+              `[browser] Attachment upload timed out after ${Math.round(waitBudget / 1000)}s; continuing without confirmation.`,
+            );
+          } else {
+            throw error;
+          }
         }
       }
-    }
-    const baselineTurns = await readConversationTurnIndex(Runtime, logger);
-    await submit(
-      {
-        runtime: Runtime,
-        input: Input,
-        baselineTurns: baselineTurns ?? undefined,
-        inputTimeoutMs: config?.inputTimeoutMs ?? undefined,
-      },
-      prompt,
-      logger,
-    );
-    if (attachmentNames.length === 0) {
-      return;
-    }
-    if (attachmentWaitTimedOut) {
-      logger("Attachment confirmation timed out; skipping user-turn attachment verification.");
-      return;
-    }
-    if (inputOnlyAttachments) {
-      logger(
-        "Attachment UI did not render before send; skipping user-turn attachment verification.",
+      const baselineTurns = await readConversationTurnIndex(Runtime, logger);
+      await submit(
+        {
+          runtime: Runtime,
+          input: Input,
+          baselineTurns: baselineTurns ?? undefined,
+          inputTimeoutMs: config?.inputTimeoutMs ?? undefined,
+        },
+        prompt,
+        logger,
       );
-      return;
+      promptSubmitted = true;
+      if (attachmentNames.length === 0) {
+        return;
+      }
+      if (attachmentWaitTimedOut) {
+        logger("Attachment confirmation timed out; skipping user-turn attachment verification.");
+        return;
+      }
+      if (inputOnlyAttachments) {
+        logger(
+          "Attachment UI did not render before send; skipping user-turn attachment verification.",
+        );
+        return;
+      }
+      const verified = await waitForSentAttachments(Runtime, attachmentNames, 20_000, logger);
+      if (!verified) {
+        throw new Error("Sent user message did not expose attachment UI after upload.");
+      }
+      logger("Verified attachments present on sent user message");
+    } catch (error) {
+      if (promptSubmitted) {
+        throw new BrowserAutomationError(
+          error instanceof Error ? error.message : "Follow-up verification failed after send.",
+          {
+            stage: "followup-post-submit",
+            promptSubmitted: true,
+            submittedPrompt: prompt,
+          },
+          error,
+        );
+      }
+      throw error;
     }
-    const verified = await waitForSentAttachments(Runtime, attachmentNames, 20_000, logger);
-    if (!verified) {
-      throw new Error("Sent user message did not expose attachment UI after upload.");
-    }
-    logger("Verified attachments present on sent user message");
   };
   try {
     await submitOnce(options.prompt, options.attachments ?? []);
+    return options.prompt;
   } catch (error) {
     const isPromptTooLarge =
       error instanceof BrowserAutomationError &&
@@ -284,7 +372,7 @@ async function submitFollowupPrompt(
     if (options.fallbackSubmission && isPromptTooLarge) {
       logger("[browser] Inline prompt too large; retrying with file uploads.");
       await submitOnce(options.fallbackSubmission.prompt, options.fallbackSubmission.attachments);
-      return;
+      return options.fallbackSubmission.prompt;
     }
     throw error;
   }
@@ -506,6 +594,9 @@ export async function continueBrowserSession(
 
   const host = runtime.chromeHost ?? "127.0.0.1";
   let client: ChromeClient | null = null;
+  let targetId: string | undefined;
+  let promptSubmitted = false;
+  let submittedPromptPreview = prompt;
   try {
     const listTargets =
       deps.listTargets ??
@@ -516,6 +607,7 @@ export async function continueBrowserSession(
     const connect = deps.connect ?? ((options?: unknown) => CDP(options as CDP.Options));
     const targetList = (await listTargets()) as TargetInfoLite[];
     const target = pickTarget(targetList, runtime);
+    targetId = target?.targetId;
     client = (await connect({
       host,
       port: runtime.chromePort,
@@ -537,8 +629,24 @@ export async function continueBrowserSession(
       "Follow-up target did not respond",
     );
     await ensureConversationOpenForRuntime(Runtime, runtime, deps.promptPreview);
-    await submitFollowupPrompt(Runtime, DOM, Input, logger, options, config, deps);
-    const result = await captureConversationResponse(Runtime, logger, deps, timeoutMs, prompt);
+    await applyConversationSettings(Runtime, logger, config, deps);
+    submittedPromptPreview = await submitFollowupPrompt(
+      Runtime,
+      DOM,
+      Input,
+      logger,
+      options,
+      config,
+      deps,
+    );
+    promptSubmitted = true;
+    const result = await captureConversationResponse(
+      Runtime,
+      logger,
+      deps,
+      timeoutMs,
+      submittedPromptPreview,
+    );
     const href = await readCurrentHref(Runtime);
     await closeClient(client);
 
@@ -553,10 +661,37 @@ export async function continueBrowserSession(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await closeClient(client);
+    const postSubmitDetails =
+      error instanceof BrowserAutomationError
+        ? (error.details as { promptSubmitted?: boolean; submittedPrompt?: string } | undefined)
+        : undefined;
+    const errorPromptSubmitted = postSubmitDetails?.promptSubmitted === true;
+    if (postSubmitDetails?.submittedPrompt) {
+      submittedPromptPreview = postSubmitDetails.submittedPrompt;
+    }
+    if (promptSubmitted || errorPromptSubmitted) {
+      const { recoverSession: _recoverSession, ...resumeDeps } = deps;
+      logger(
+        `Existing Chrome follow-up lost DevTools after sending the prompt (${message}); reopening browser to resume without resending.`,
+      );
+      return resumeBrowserSession(
+        mergeRuntimeMetadata(runtime, {
+          chromeHost: host,
+          chromePort: runtime.chromePort,
+          chromeTargetId: targetId,
+        }),
+        config,
+        logger,
+        {
+          ...resumeDeps,
+          promptPreview: submittedPromptPreview,
+        },
+      );
+    }
     logger(
       `Existing Chrome follow-up failed (${message}); reopening browser to continue the session.`,
     );
-    await closeClient(client);
     return recoverSession(runtime, config);
   }
 }
@@ -621,42 +756,89 @@ async function continueBrowserSessionViaNewChrome(
     await ensureConversationOpenForRuntime(Runtime, runtime, deps.promptPreview);
   }
 
-  await submitFollowupPrompt(Runtime, DOM, Input, logger, options, resolved, deps);
-  const result = await captureConversationResponse(
-    Runtime,
-    logger,
-    deps,
-    resolved.timeoutMs ?? 120_000,
-    options.prompt,
-  );
+  await applyConversationSettings(Runtime, logger, resolved, deps);
+  let submittedPrompt: string;
+  try {
+    submittedPrompt = await submitFollowupPrompt(
+      Runtime,
+      DOM,
+      Input,
+      logger,
+      options,
+      resolved,
+      deps,
+    );
+  } catch (error) {
+    const postSubmitDetails =
+      error instanceof BrowserAutomationError
+        ? (error.details as { promptSubmitted?: boolean; submittedPrompt?: string } | undefined)
+        : undefined;
+    const promptWasSubmitted = postSubmitDetails?.promptSubmitted === true;
+    if (!promptWasSubmitted) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    logger(
+      `[browser] Follow-up submission completed but verification failed (${message}); continuing to observe the response without resending.`,
+    );
+    submittedPrompt = postSubmitDetails?.submittedPrompt ?? options.prompt;
+  }
+  const launchedRuntime = mergeRuntimeMetadata(runtime, {
+    chromePid: chrome.pid,
+    chromeHost,
+    chromePort: chrome.port,
+    tabUrl: conversationUrl || runtime.tabUrl,
+    userDataDir,
+    controllerPid: process.pid,
+  });
+  let result: ReattachResult;
+  let resumedAfterObservationFailure = false;
+  try {
+    result = await captureConversationResponse(
+      Runtime,
+      logger,
+      deps,
+      resolved.timeoutMs ?? 120_000,
+      submittedPrompt,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    resumedAfterObservationFailure = true;
+    await closeClient(client);
+    logger(
+      `[browser] Follow-up observation failed after send (${message}); reattaching without resending.`,
+    );
+    try {
+      result = await resumeBrowserSession(launchedRuntime, resolved, logger, {
+        ...deps,
+        promptPreview: submittedPrompt,
+      });
+    } finally {
+      if (!resolved.keepBrowser) {
+        await cleanupReopenedChromeLaunch(chrome, userDataDir, manualLogin, logger);
+      }
+    }
+  }
+  if (resumedAfterObservationFailure) {
+    return {
+      ...result,
+      runtime: result.runtime ?? launchedRuntime,
+    };
+  }
   const href = await readCurrentHref(Runtime);
   await closeClient(client);
 
   if (!resolved.keepBrowser) {
-    try {
-      await chrome.kill();
-    } catch {
-      // ignore
-    }
-    if (manualLogin) {
-      await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "never" }).catch(
-        () => undefined,
-      );
-    } else {
-      await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
-    }
+    await cleanupReopenedChromeLaunch(chrome, userDataDir, manualLogin, logger);
   }
 
   return {
     ...result,
-    runtime: mergeRuntimeMetadata(runtime, {
-      chromePid: chrome.pid,
-      chromeHost,
-      chromePort: chrome.port,
-      tabUrl: href || conversationUrl || runtime.tabUrl,
-      userDataDir,
-      controllerPid: process.pid,
-    }),
+    runtime:
+      result.runtime ??
+      mergeRuntimeMetadata(launchedRuntime, {
+        tabUrl: href || conversationUrl || runtime.tabUrl,
+      }),
   };
 }
 

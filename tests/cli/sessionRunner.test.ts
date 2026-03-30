@@ -820,6 +820,43 @@ describe("performSessionRun", () => {
     expect(vi.mocked(runBrowserSessionExecution)).not.toHaveBeenCalled();
   });
 
+  test("fails fast when browser followup parent session is a Gemini browser run", async () => {
+    const parentSession: SessionMetadata = {
+      ...baseSessionMeta,
+      id: "parent-gemini",
+      mode: "browser",
+      model: "gemini-3-pro",
+      browser: {
+        config: { chromePath: null },
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://gemini.google.com/app",
+        },
+      },
+    };
+    sessionStoreMock.readSession.mockResolvedValue(parentSession);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: {
+          ...baseSessionMeta,
+          mode: "browser",
+          options: { followupSessionId: "parent-gemini" },
+        },
+        runOptions: { ...baseRunOptions, model: "gemini-3-pro" as const },
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("Browser follow-up currently supports ChatGPT/GPT browser sessions only.");
+
+    expect(vi.mocked(continueBrowserSessionExecution)).not.toHaveBeenCalled();
+  });
+
   test("writes browser answers to disk when writeOutputPath provided", async () => {
     vi.mocked(runBrowserSessionExecution).mockResolvedValue({
       usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 0, totalTokens: 15 },

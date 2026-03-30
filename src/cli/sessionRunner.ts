@@ -125,6 +125,15 @@ export async function performSessionRun({
         if ((parentSession.mode ?? parentSession.options?.mode) !== "browser") {
           throw new Error(`Session ${parentSessionId} is not a browser session.`);
         }
+        const parentModel = String(
+          parentSession.model ?? parentSession.options?.model ?? "",
+        ).toLowerCase();
+        const requestedModel = String(runOptions.model ?? sessionMeta.model ?? "").toLowerCase();
+        if (parentModel.startsWith("gemini") || requestedModel.startsWith("gemini")) {
+          throw new Error(
+            "Browser follow-up currently supports ChatGPT/GPT browser sessions only.",
+          );
+        }
       }
       const result = parentSession
         ? await continueBrowserSessionExecution(

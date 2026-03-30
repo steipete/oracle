@@ -254,11 +254,11 @@ program
   .addOption(new Option("--message <text>", "Alias for --prompt.").hideHelp())
   .option(
     "--followup <sessionId|responseId>",
-    "Continue an OpenAI/Azure Responses API run from a stored response id (resp_...) or from a stored oracle session id.",
+    "Continue an existing run. API mode accepts a stored response id (resp_...) or oracle session id; browser mode accepts a stored browser session id only.",
   )
   .option(
     "--followup-model <model>",
-    "When following up a multi-model session, choose which model response to continue from.",
+    "API only: when following up a multi-model session, choose which model response to continue from.",
   )
   .option(
     "-f, --file <paths...>",
@@ -1034,8 +1034,17 @@ async function resolveBrowserFollowupSessionId(reference: string): Promise<strin
   if (!meta) {
     throw new Error(`No stored oracle session found for ${trimmed}.`);
   }
-  if (meta.mode !== "browser") {
+  if ((meta.mode ?? meta.options?.mode) !== "browser") {
     throw new Error(`Session ${trimmed} is not a browser session.`);
+  }
+  if (!meta.browser?.runtime) {
+    throw new Error(
+      `Session ${trimmed} is missing browser runtime metadata and cannot be continued. Re-run the parent browser session with a current Oracle build.`,
+    );
+  }
+  const model = String(meta.model ?? meta.options?.model ?? "").toLowerCase();
+  if (model.startsWith("gemini")) {
+    throw new Error("Browser follow-up currently supports ChatGPT/GPT browser sessions only.");
   }
   return meta.id;
 }
@@ -1105,7 +1114,7 @@ async function resolveFollowupReference(
   if (trimmed.length === 0) {
     throw new Error("--followup requires a session id or response id.");
   }
-  if (trimmed.startsWith("resp_")) {
+  if (/^resp_/i.test(trimmed)) {
     return { responseId: trimmed };
   }
 
@@ -1619,7 +1628,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       throw new Error("--followup cannot be combined with --models.");
     }
     if (engine === "browser") {
+      if (options.followupModel) {
+        throw new Error("--followup-model is only supported for API follow-ups.");
+      }
       resolvedOptions.followupSessionId = await resolveBrowserFollowupSessionId(options.followup);
+      if (resolvedModel.startsWith("gemini")) {
+        throw new Error("Browser follow-up currently supports ChatGPT/GPT browser sessions only.");
+      }
     } else {
       const followup = await resolveFollowupReference(options.followup, options.followupModel);
       resolvedOptions.previousResponseId = followup.responseId;
