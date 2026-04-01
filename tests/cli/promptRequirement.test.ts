@@ -26,4 +26,9 @@ describe("shouldRequirePrompt", () => {
     const requires = shouldRequirePrompt(["--session", "abc123"], { session: "abc123" });
     expect(requires).toBe(false);
   });
+
+  test("allows project sources runs without prompt", () => {
+    const requires = shouldRequirePrompt(["--project-sources", "add"], { projectSources: "add" });
+    expect(requires).toBe(false);
+  });
 });

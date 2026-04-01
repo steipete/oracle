@@ -3,6 +3,7 @@ interface PromptCheckOptions {
   session?: string;
   execSession?: string;
   status?: boolean;
+  projectSources?: string;
   debugHelp?: boolean;
   renderMarkdown?: boolean;
   preview?: boolean | string;
@@ -21,6 +22,7 @@ export function shouldRequirePrompt(rawArgs: string[], options: PromptCheckOptio
     options.session ||
     options.execSession ||
     options.status ||
+    options.projectSources ||
     options.debugHelp ||
     firstArg === "status" ||
     firstArg === "session",

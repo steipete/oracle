@@ -18,6 +18,21 @@ export interface BrowserAttachment {
   sizeBytes?: number;
 }
 
+export type BrowserProjectSourcesOperation = "add" | "delete" | "replace" | "sync";
+
+export interface BrowserProjectSourcesRequest {
+  operation: BrowserProjectSourcesOperation;
+  deleteNames?: string[];
+}
+
+export interface BrowserProjectSourcesResult {
+  operation: BrowserProjectSourcesOperation;
+  beforeNames: string[];
+  afterNames: string[];
+  addedNames: string[];
+  deletedNames: string[];
+}
+
 export interface BrowserAutomationConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
@@ -64,6 +79,7 @@ export interface BrowserAutomationConfig {
 export interface BrowserRunOptions {
   prompt: string;
   attachments?: BrowserAttachment[];
+  projectSources?: BrowserProjectSourcesRequest;
   /**
    * Optional secondary submission to try if the initial prompt is rejected by ChatGPT
    * (e.g. inline file paste exceeds composer limits). Intended for auto inline->upload fallback.
@@ -81,6 +97,7 @@ export interface BrowserRunResult {
   answerText: string;
   answerMarkdown: string;
   answerHtml?: string;
+  projectSources?: BrowserProjectSourcesResult;
   tookMs: number;
   answerTokens: number;
   answerChars: number;

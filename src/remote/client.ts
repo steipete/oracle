@@ -20,6 +20,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
     const payload: RemoteRunPayload = {
       prompt: options.prompt,
       attachments: await serializeAttachments(options.attachments ?? []),
+      projectSources: options.projectSources,
       browserConfig: options.config ?? {},
       options: {
         heartbeatIntervalMs: options.heartbeatIntervalMs,

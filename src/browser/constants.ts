@@ -80,6 +80,28 @@ export const SEND_BUTTON_SELECTORS = [
 export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR = '[data-testid="model-switcher-dropdown-button"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
+export const PROJECT_SOURCES_ADD_BUTTON_SELECTORS = [
+  'button[data-testid="project-add-source-button"]',
+  'button[data-testid="project-sources-add-button"]',
+  'button[id*="add-source"]',
+  '[role="tabpanel"][id*="-content-sources"] button',
+  '[role="tabpanel"][id$="-content-sources"] button',
+];
+export const PROJECT_SOURCES_PANEL_SELECTORS = [
+  '[role="tabpanel"][id*="-content-sources"]',
+  '[role="tabpanel"][id$="-content-sources"]',
+  '[data-testid*="content-sources"]',
+];
+export const PROJECT_SOURCES_FILE_ROW_SELECTORS = [
+  'div[class*="group/file-row"]',
+];
+export const PROJECT_SOURCES_DIALOG_SELECTOR =
+  '[data-testid="modal-project-add-source-dialog"], #modal-project-add-source-dialog, [role="dialog"]';
+export const PROJECT_SOURCES_UPLOAD_INPUT_SELECTOR = 'input[type="file"]';
+export const PROJECT_SOURCES_UPLOAD_ANYWAY_BUTTON_SELECTORS = [
+  "button",
+  '[role="button"]',
+];
 // Action buttons that only appear once a turn has finished rendering.
 export const FINISHED_ACTIONS_SELECTOR =
   'button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';
