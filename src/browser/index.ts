@@ -64,6 +64,15 @@ export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } fro
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from "./utils.js";
 
+function redactBrowserConfigForDebugLog(config: Record<string, unknown>): Record<string, unknown> {
+  const redacted = { ...config };
+  if (Array.isArray(config.inlineCookies)) {
+    redacted.inlineCookies = `[redacted:${config.inlineCookies.length} cookies]`;
+    redacted.inlineCookieCount = config.inlineCookies.length;
+  }
+  return redacted;
+}
+
 function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
   if (!(error instanceof BrowserAutomationError)) return false;
   return (error.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
@@ -122,7 +131,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   if (config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") {
     logger(
       `[browser-mode] config: ${JSON.stringify({
-        ...config,
+        ...redactBrowserConfigForDebugLog(config),
         promptLength: promptText.length,
       })}`,
     );
