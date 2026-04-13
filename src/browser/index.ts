@@ -2145,7 +2145,25 @@ async function resolveUserDataBaseDir(): Promise<string> {
       }
     }
   }
-  return os.tmpdir();
+
+  const tmpDir = os.tmpdir();
+  if (process.platform === "linux") {
+    const homeDir = os.homedir();
+    const relativeToHome =
+      homeDir && tmpDir.startsWith(homeDir + path.sep) ? tmpDir.slice(homeDir.length + 1) : "";
+    const firstSegment = relativeToHome.split(path.sep, 1)[0];
+    const isHiddenHomeTmp = Boolean(firstSegment?.startsWith("."));
+    if (isHiddenHomeTmp) {
+      try {
+        await mkdir("/tmp", { recursive: true });
+        return "/tmp";
+      } catch {
+        // Fall back to the inherited tmpdir if /tmp is unavailable.
+      }
+    }
+  }
+
+  return tmpDir;
 }
 
 function buildThinkingStatusExpression(): string {
