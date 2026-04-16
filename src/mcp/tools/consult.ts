@@ -203,20 +203,33 @@ export function buildConsultBrowserConfig({
   };
 }
 
-export function registerConsultTool(server: McpServer): void {
+export interface ConsultToolOptions {
+  toolHint?: string;
+}
+
+export function registerConsultTool(server: McpServer, options?: ConsultToolOptions): void {
+  const baseDescription =
+    'Run a one-shot Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. For browser-based image/file uploads, set `browserAttachments:"always"`. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).';
+  const hint = options?.toolHint?.trim();
+  const description = hint ? `${hint}\n\n${baseDescription}` : baseDescription;
+
   server.registerTool(
     "consult",
     {
       title: "Run an oracle session",
-      description:
-        'Run a one-shot Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. For browser-based image/file uploads, set `browserAttachments:"always"`. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
+      description,
       // Cast to any to satisfy SDK typings across differing Zod versions.
       inputSchema: consultInputShape,
       outputSchema: consultOutputShape,
     },
     async (input: unknown) => {
       const textContent = (text: string) => [{ type: "text" as const, text }];
-      const {
+      const parsed = consultInputSchema.parse(input);
+      const { config: userConfig } = await loadUserConfig();
+      const policy = userConfig.mcp ?? {};
+
+      // --- MCP policy enforcement ---
+      let {
         prompt,
         files,
         model,
@@ -229,8 +242,39 @@ export function registerConsultTool(server: McpServer): void {
         browserThinkingTime,
         browserKeepBrowser,
         slug,
-      } = consultInputSchema.parse(input);
-      const { config: userConfig } = await loadUserConfig();
+      } = parsed;
+
+      // Enforce thinking time allowlist.
+      if (browserThinkingTime && policy.allowedThinkingTimes?.length) {
+        if (!policy.allowedThinkingTimes.includes(browserThinkingTime)) {
+          const fallback = policy.thinkingTimeFallback;
+          if (fallback) {
+            browserThinkingTime = fallback;
+          } else {
+            return {
+              isError: true,
+              content: textContent(
+                `Policy violation: browserThinkingTime "${browserThinkingTime}" is not allowed. Allowed values: ${policy.allowedThinkingTimes.join(", ")}.`,
+              ),
+            };
+          }
+        }
+      }
+
+      // Enforce default model.
+      if (policy.defaultModel && !model && (!models || models.length === 0)) {
+        model = policy.defaultModel;
+      }
+
+      // Enforce max files.
+      if (policy.maxFiles != null && files && files.length > policy.maxFiles) {
+        return {
+          isError: true,
+          content: textContent(
+            `Policy violation: ${files.length} files attached but maxFiles is ${policy.maxFiles}. Reduce the file list.`,
+          ),
+        };
+      }
       const { runOptions, resolvedEngine } = mapConsultToRunOptions({
         prompt,
         files: files ?? [],
