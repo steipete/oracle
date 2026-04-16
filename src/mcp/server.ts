@@ -40,7 +40,7 @@ export async function startMcpServer(): Promise<void> {
   await closed;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("oracle-mcp")) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   startMcpServer().catch((error) => {
     console.error("Failed to start oracle-mcp:", error);
     process.exitCode = 1;
