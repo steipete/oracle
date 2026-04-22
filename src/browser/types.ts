@@ -61,6 +61,26 @@ export interface BrowserAutomationConfig {
   thinkingTime?: ThinkingTimeLevel;
 }
 
+export interface BrowserGeneratedImage {
+  url: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  fileId?: string;
+}
+
+export interface SavedBrowserImage {
+  path: string;
+  url: string;
+  finalUrl?: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  fileId?: string;
+  contentType?: string;
+  sizeBytes?: number;
+}
+
 export interface BrowserRunOptions {
   prompt: string;
   attachments?: BrowserAttachment[];
@@ -73,6 +93,8 @@ export interface BrowserRunOptions {
   log?: BrowserLogger;
   heartbeatIntervalMs?: number;
   verbose?: boolean;
+  generateImagePath?: string;
+  outputPath?: string;
   /** Optional hook to persist runtime info (port/url/target) as soon as Chrome is ready. */
   runtimeHintCb?: (hint: BrowserRuntimeMetadata) => void | Promise<void>;
 }
@@ -81,6 +103,8 @@ export interface BrowserRunResult {
   answerText: string;
   answerMarkdown: string;
   answerHtml?: string;
+  generatedImages?: BrowserGeneratedImage[];
+  savedImages?: SavedBrowserImage[];
   tookMs: number;
   answerTokens: number;
   answerChars: number;
@@ -90,6 +114,7 @@ export interface BrowserRunResult {
   userDataDir?: string;
   chromeTargetId?: string;
   tabUrl?: string;
+  conversationId?: string;
   controllerPid?: number;
 }
 

@@ -108,6 +108,8 @@ export async function runBrowserSessionExecution(
       log: automationLogger,
       heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
       verbose: runOptions.verbose,
+      generateImagePath: runOptions.generateImage,
+      outputPath: runOptions.outputPath,
       runtimeHintCb: async (runtime) => {
         await persistRuntimeHint({
           ...runtime,
@@ -167,6 +169,9 @@ export async function runBrowserSessionExecution(
       chromePort: browserResult.chromePort,
       chromeHost: browserResult.chromeHost,
       userDataDir: browserResult.userDataDir,
+      chromeTargetId: browserResult.chromeTargetId,
+      tabUrl: browserResult.tabUrl,
+      conversationId: browserResult.conversationId,
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     answerText,

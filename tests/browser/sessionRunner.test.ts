@@ -29,11 +29,17 @@ describe("runBrowserSessionExecution", () => {
         tookMs: 1000,
         answerTokens: 12,
         answerChars: 20,
+        chromeTargetId: "t-1",
+        tabUrl: "https://chatgpt.com/c/foo",
       };
     });
     const result = await runBrowserSessionExecution(
       {
-        runOptions: baseRunOptions,
+        runOptions: {
+          ...baseRunOptions,
+          generateImage: "/tmp/generated.png",
+          outputPath: "/tmp/output.png",
+        },
         browserConfig: baseConfig,
         cwd: "/repo",
         log,
@@ -60,9 +66,19 @@ describe("runBrowserSessionExecution", () => {
       reasoningTokens: 0,
       totalTokens: 54,
     });
-    expect(result.runtime).toMatchObject({ chromePid: undefined });
+    expect(result.runtime).toMatchObject({
+      chromePid: undefined,
+      chromeTargetId: "t-1",
+      tabUrl: "https://chatgpt.com/c/foo",
+    });
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
+    );
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generateImagePath: "/tmp/generated.png",
+        outputPath: "/tmp/output.png",
+      }),
     );
     expect(log).toHaveBeenCalled();
   });

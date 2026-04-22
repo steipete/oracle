@@ -59,6 +59,7 @@ import {
 } from "./profileState.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
+import { readAssistantGeneratedImages, saveChatGptGeneratedImages } from "./chatgptImages.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -75,6 +76,95 @@ function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolea
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+async function maybePersistChatGptGeneratedImages(params: {
+  Runtime: ChromeClient["Runtime"];
+  Network: ChromeClient["Network"];
+  logger: BrowserLogger;
+  baselineTurns?: number | null;
+  generateImagePath?: string;
+  outputPath?: string;
+  answerText: string;
+  waitTimeoutMs?: number;
+}): Promise<{
+  generatedImages: Awaited<ReturnType<typeof readAssistantGeneratedImages>>;
+  savedImages: Awaited<ReturnType<typeof saveChatGptGeneratedImages>>["savedImages"];
+  imageCount: number;
+  markdownSuffix: string;
+  answerText: string;
+}> {
+  const targetPath = params.generateImagePath ?? params.outputPath;
+  let generatedImages = await readAssistantGeneratedImages(
+    params.Runtime,
+    params.baselineTurns ?? undefined,
+  ).catch(() => []);
+  let latestAnswerText = params.answerText;
+
+  if (targetPath && generatedImages.length === 0) {
+    const deadline = Date.now() + Math.max(15_000, params.waitTimeoutMs ?? 180_000);
+    let stableCycles = 0;
+    while (Date.now() < deadline) {
+      await delay(1500);
+      generatedImages = await readAssistantGeneratedImages(
+        params.Runtime,
+        params.baselineTurns ?? undefined,
+      ).catch(() => []);
+      if (generatedImages.length > 0) {
+        break;
+      }
+      const latestSnapshot = await readAssistantSnapshot(
+        params.Runtime,
+        params.baselineTurns ?? undefined,
+      ).catch(() => null);
+      const snapshotText =
+        typeof latestSnapshot?.text === "string" ? latestSnapshot.text.trim() : "";
+      if (snapshotText && snapshotText !== latestAnswerText) {
+        latestAnswerText = snapshotText;
+        stableCycles = 0;
+      } else {
+        stableCycles += 1;
+      }
+      if (latestAnswerText.length >= 24 && stableCycles >= 4) {
+        break;
+      }
+    }
+  }
+
+  const imageCount = generatedImages.length;
+  if (!targetPath || imageCount === 0) {
+    return {
+      generatedImages,
+      savedImages: [],
+      imageCount,
+      markdownSuffix: imageCount > 0 ? `\n\n*Generated ${imageCount} image(s).*` : "",
+      answerText: latestAnswerText,
+    };
+  }
+  const saved = await saveChatGptGeneratedImages({
+    Network: params.Network,
+    images: generatedImages,
+    outputPath: targetPath,
+    logger: params.logger,
+  });
+  if (!saved.saved) {
+    const errorDetail = saved.errors.length > 0 ? `\n${saved.errors.join("\n")}` : "";
+    throw new Error(
+      `No images generated. Response text did not include downloadable image bytes.${errorDetail}`,
+    );
+  }
+  const primaryPath = saved.savedImages[0]?.path ?? targetPath;
+  const suffix =
+    saved.savedImages.length > 1
+      ? `\n\n*Generated ${saved.imageCount} image(s). Saved ${saved.savedImages.length} file(s) starting at: ${primaryPath}*`
+      : `\n\n*Generated ${saved.imageCount} image(s). Saved to: ${primaryPath}*`;
+  return {
+    generatedImages,
+    savedImages: saved.savedImages,
+    imageCount: saved.imageCount,
+    markdownSuffix: suffix,
+    answerText: latestAnswerText,
+  };
 }
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
@@ -587,9 +677,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             logger,
           );
           if (!verified) {
-            throw new Error("Sent user message did not expose attachment UI after upload.");
+            if (options.generateImagePath || options.outputPath) {
+              logger(
+                "Attachment UI did not render on the sent user message; continuing because image-output mode is enabled.",
+              );
+            } else {
+              throw new Error("Sent user message did not expose attachment UI after upload.");
+            }
+          } else {
+            logger("Verified attachments present on sent user message");
           }
-          logger("Verified attachments present on sent user message");
         }
       }
       // Reattach needs a /c/ URL; ChatGPT can update it late, so poll in the background.
@@ -919,6 +1016,23 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     stopThinkingMonitor?.();
     runStatus = "complete";
+    const imageArtifacts = await maybePersistChatGptGeneratedImages({
+      Runtime,
+      Network,
+      logger,
+      baselineTurns,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: Math.min(config.timeoutMs, 180_000),
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if ((options.generateImagePath || options.outputPath) && imageArtifacts.imageCount === 0) {
+      throw new Error(`No images generated. Response text:\n${answerText || "(empty response)"}`);
+    }
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -926,6 +1040,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       answerText,
       answerMarkdown,
       answerHtml: answerHtml.length > 0 ? answerHtml : undefined,
+      generatedImages: imageArtifacts.generatedImages,
+      savedImages: imageArtifacts.savedImages,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -935,6 +1051,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       userDataDir,
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -1704,6 +1821,23 @@ async function runRemoteBrowserMode(
     }
     stopThinkingMonitor?.();
 
+    const imageArtifacts = await maybePersistChatGptGeneratedImages({
+      Runtime,
+      Network,
+      logger,
+      baselineTurns,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: Math.min(config.timeoutMs, 180_000),
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if ((options.generateImagePath || options.outputPath) && imageArtifacts.imageCount === 0) {
+      throw new Error(`No images generated. Response text:\n${answerText || "(empty response)"}`);
+    }
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -1712,6 +1846,8 @@ async function runRemoteBrowserMode(
       answerText,
       answerMarkdown,
       answerHtml: answerHtml.length > 0 ? answerHtml : undefined,
+      generatedImages: imageArtifacts.generatedImages,
+      savedImages: imageArtifacts.savedImages,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -1721,6 +1857,7 @@ async function runRemoteBrowserMode(
       userDataDir: undefined,
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       controllerPid: process.pid,
     };
   } catch (error) {

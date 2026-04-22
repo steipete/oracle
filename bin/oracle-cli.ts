@@ -642,19 +642,19 @@ program
   .addOption(
     new Option(
       "--generate-image <file>",
-      "Generate image and save to file (Gemini web/cookie mode only; requires gemini.google.com Chrome cookies).",
+      "Generate image and save to file. Supports Gemini web/cookie mode and ChatGPT browser mode when the assistant returns downloadable image artifacts.",
     ),
   )
   .addOption(
     new Option(
       "--edit-image <file>",
-      "Edit existing image (use with --output, Gemini web/cookie mode only).",
+      "Edit existing image (use with --output, Gemini web/cookie mode only). For ChatGPT browser mode, attach source images with --file and use --generate-image for the output path.",
     ),
   )
   .addOption(
     new Option(
       "--output <file>",
-      "Output file path for image operations (Gemini web/cookie mode only).",
+      "Output file path for image operations. Gemini uses it for edit flows; ChatGPT browser mode also honors it as an image-save target when downloadable images are returned.",
     ),
   )
   .addOption(
@@ -966,6 +966,8 @@ function buildRunOptions(
     background: overrides.background ?? undefined,
     renderPlain: overrides.renderPlain ?? options.renderPlain ?? false,
     writeOutputPath: overrides.writeOutputPath ?? options.writeOutputPath,
+    generateImage: overrides.generateImage ?? options.generateImage,
+    outputPath: overrides.outputPath ?? options.output,
   };
 }
 
@@ -1191,6 +1193,8 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     background: stored.background,
     renderPlain: stored.renderPlain,
     writeOutputPath: stored.writeOutputPath,
+    generateImage: stored.generateImage,
+    outputPath: stored.outputPath,
   };
 }
 

@@ -373,12 +373,15 @@ function sanitizeResult(result: BrowserRunResult): BrowserRunResult {
     answerText: result.answerText,
     answerMarkdown: result.answerMarkdown,
     answerHtml: result.answerHtml,
+    generatedImages: result.generatedImages,
+    savedImages: result.savedImages,
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,
     chromePid: undefined,
     chromePort: undefined,
     userDataDir: undefined,
+    conversationId: result.conversationId,
   };
 }
 

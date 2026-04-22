@@ -11,6 +11,7 @@ import {
   ensureLoggedIn,
   ensurePromptReady,
 } from "./pageActions.js";
+import { readAssistantGeneratedImages, saveChatGptGeneratedImages } from "./chatgptImages.js";
 import type { BrowserLogger, ChromeClient } from "./types.js";
 import { launchChrome, connectToChrome, hideChromeWindow } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
@@ -42,11 +43,59 @@ export interface ReattachDeps {
     config: BrowserSessionConfig | undefined,
   ) => Promise<ReattachResult>;
   promptPreview?: string;
+  generateImagePath?: string;
+  outputPath?: string;
 }
 
 export interface ReattachResult {
   answerText: string;
   answerMarkdown: string;
+}
+
+async function maybeSaveReattachedImages(params: {
+  Runtime: ChromeClient["Runtime"];
+  Network: ChromeClient["Network"];
+  logger: BrowserLogger;
+  minTurnIndex?: number | null;
+  generateImagePath?: string;
+  outputPath?: string;
+  answerText: string;
+  answerMarkdown: string;
+}): Promise<{ answerText: string; answerMarkdown: string }> {
+  const targetPath = params.generateImagePath ?? params.outputPath;
+  if (!targetPath) {
+    return { answerText: params.answerText, answerMarkdown: params.answerMarkdown };
+  }
+  const images = await readAssistantGeneratedImages(
+    params.Runtime,
+    params.minTurnIndex ?? undefined,
+  ).catch(() => []);
+  if (!images.length) {
+    throw new Error(
+      `No images generated. Response text:\n${params.answerText || "(empty response)"}`,
+    );
+  }
+  const saved = await saveChatGptGeneratedImages({
+    Network: params.Network,
+    images,
+    outputPath: targetPath,
+    logger: params.logger,
+  });
+  if (!saved.saved) {
+    const detail = saved.errors.length > 0 ? `\n${saved.errors.join("\n")}` : "";
+    throw new Error(
+      `No images generated. Response text:\n${params.answerText || "(empty response)"}${detail}`,
+    );
+  }
+  const primaryPath = saved.savedImages[0]?.path ?? targetPath;
+  const suffix =
+    saved.savedImages.length > 1
+      ? `\n\n*Generated ${saved.imageCount} image(s). Saved ${saved.savedImages.length} file(s) starting at: ${primaryPath}*`
+      : `\n\n*Generated ${saved.imageCount} image(s). Saved to: ${primaryPath}*`;
+  return {
+    answerText: params.answerText,
+    answerMarkdown: `${params.answerMarkdown}${suffix}`,
+  };
 }
 
 export async function resumeBrowserSession(
@@ -81,9 +130,12 @@ export async function resumeBrowserSession(
       port: runtime.chromePort,
       target: target?.targetId,
     })) as unknown as ChromeClient;
-    const { Runtime, DOM } = client;
+    const { Runtime, DOM, Network } = client;
     if (Runtime?.enable) {
       await Runtime.enable();
+    }
+    if (Network?.enable) {
+      await Network.enable({});
     }
     if (DOM && typeof DOM.enable === "function") {
       await DOM.enable();
@@ -149,6 +201,16 @@ export async function resumeBrowserSession(
         "Reattach markdown capture timed out",
       )) ?? recovered.text;
     const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
+    const withImages = await maybeSaveReattachedImages({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex,
+      generateImagePath: deps.generateImagePath,
+      outputPath: deps.outputPath,
+      answerText: aligned.answerText,
+      answerMarkdown: aligned.answerMarkdown,
+    });
 
     if (client && typeof client.close === "function") {
       try {
@@ -158,7 +220,7 @@ export async function resumeBrowserSession(
       }
     }
 
-    return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
+    return { answerText: withImages.answerText, answerMarkdown: withImages.answerMarkdown };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger(
@@ -189,6 +251,9 @@ async function resumeBrowserSessionViaNewChrome(
 
   if (Runtime?.enable) {
     await Runtime.enable();
+  }
+  if (Network?.enable) {
+    await Network.enable({});
   }
   if (DOM && typeof DOM.enable === "function") {
     await DOM.enable();
@@ -260,6 +325,16 @@ async function resumeBrowserSessionViaNewChrome(
   );
   const markdown = (await captureMarkdown(Runtime, recovered.meta, logger)) ?? recovered.text;
   const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
+  const withImages = await maybeSaveReattachedImages({
+    Runtime,
+    Network,
+    logger,
+    minTurnIndex,
+    generateImagePath: deps.generateImagePath,
+    outputPath: deps.outputPath,
+    answerText: aligned.answerText,
+    answerMarkdown: aligned.answerMarkdown,
+  });
 
   if (client && typeof client.close === "function") {
     try {
@@ -283,7 +358,7 @@ async function resumeBrowserSessionViaNewChrome(
     }
   }
 
-  return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
+  return { answerText: withImages.answerText, answerMarkdown: withImages.answerMarkdown };
 }
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
