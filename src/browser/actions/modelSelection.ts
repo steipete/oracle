@@ -441,6 +441,22 @@ function buildModelMatchersLiteral(targetModel: string): {
   push(`chatgpt ${dotless}`, labelTokens);
   push(`gpt ${base}`, labelTokens);
   push(`gpt ${dotless}`, labelTokens);
+  // Numeric variations (5.5 ↔ 55 ↔ gpt-5-5)
+  if (base.includes("5.5") || base.includes("5-5") || base.includes("55")) {
+    push("5.5", labelTokens);
+    push("gpt-5.5", labelTokens);
+    push("gpt5.5", labelTokens);
+    push("gpt-5-5", labelTokens);
+    push("gpt5-5", labelTokens);
+    push("gpt55", labelTokens);
+    push("chatgpt 5.5", labelTokens);
+    if (!base.includes("pro")) {
+      testIdTokens.add("model-switcher-gpt-5-5");
+    }
+    testIdTokens.add("gpt-5-5");
+    testIdTokens.add("gpt5-5");
+    testIdTokens.add("gpt55");
+  }
   // Numeric variations (5.4 ↔ 54 ↔ gpt-5-4)
   if (base.includes("5.4") || base.includes("5-4") || base.includes("54")) {
     push("5.4", labelTokens);
@@ -523,6 +539,11 @@ function buildModelMatchersLiteral(targetModel: string): {
       testIdTokens.add("gpt-5.4-pro");
       testIdTokens.add("gpt-5-4-pro");
       testIdTokens.add("gpt54pro");
+    }
+    if (base.includes("5.5") || base.includes("5-5") || base.includes("55")) {
+      testIdTokens.add("gpt-5.5-pro");
+      testIdTokens.add("gpt-5-5-pro");
+      testIdTokens.add("gpt55pro");
     }
     if (base.includes("5.1") || base.includes("5-1") || base.includes("51")) {
       testIdTokens.add("gpt-5.1-pro");

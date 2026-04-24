@@ -64,17 +64,77 @@ export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } fro
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from "./utils.js";
 
-function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
-  if (!(error instanceof BrowserAutomationError)) return false;
-  return (error.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
+function getBrowserAutomationStage(error: unknown): string | null {
+  if (!(error instanceof BrowserAutomationError)) return null;
+  return (error.details as { stage?: string } | undefined)?.stage ?? null;
 }
 
 function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolean {
-  return !headless && isCloudflareChallengeError(error);
+  if (headless) return false;
+  const stage = getBrowserAutomationStage(error);
+  return stage === "cloudflare-challenge" || stage === "assistant-timeout";
+}
+
+function shouldReattachForLikelyTruncatedAnswer({
+  promptText,
+  answerText,
+  tookMs,
+  attachmentCount,
+  desiredModel,
+  thinkingTime,
+}: {
+  promptText: string;
+  answerText: string;
+  tookMs: number;
+  attachmentCount: number;
+  desiredModel?: string | null;
+  thinkingTime?: string | null;
+}): boolean {
+  const promptLength = promptText.trim().length;
+  const answerLength = answerText.trim().length;
+  if (answerLength === 0 || answerLength >= 500) {
+    return false;
+  }
+
+  const promptHeavy =
+    promptLength >= 4_000 ||
+    (attachmentCount > 0 && promptLength >= 1_500) ||
+    /return exactly these sections|executive answer|detailed architecture|implementation plan/i.test(promptText);
+  if (!promptHeavy) {
+    return false;
+  }
+
+  const longRunning = tookMs >= 120_000;
+  const proModel = /\bpro\b/i.test(desiredModel ?? "");
+  const highThinking = /extended|heavy/i.test(thinkingTime ?? "");
+  if (!longRunning && !proModel && !highThinking) {
+    return false;
+  }
+
+  const likelyIntentionalShortReply =
+    /reply with (only )?(ok|yes|no|one word|one sentence|a single word)|answer in one sentence/i.test(
+      promptText,
+    );
+  if (likelyIntentionalShortReply) {
+    return false;
+  }
+
+  return true;
 }
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+export function shouldReattachForLikelyTruncatedAnswerForTest(args: {
+  promptText: string;
+  answerText: string;
+  tookMs: number;
+  attachmentCount: number;
+  desiredModel?: string | null;
+  thinkingTime?: string | null;
+}): boolean {
+  return shouldReattachForLikelyTruncatedAnswer(args);
 }
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
@@ -917,9 +977,37 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       // Bail out on mid-run disconnects so the session stays reattachable.
       throw new Error("Chrome disconnected before completion");
     }
+    const durationMs = Date.now() - startedAt;
+    if (
+      shouldReattachForLikelyTruncatedAnswer({
+        promptText,
+        answerText,
+        tookMs: durationMs,
+        attachmentCount: attachments.length,
+        desiredModel: config.desiredModel,
+        thinkingTime: config.thinkingTime,
+      })
+    ) {
+      const runtime = {
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
+      logger(
+        "Assistant response looks suspiciously short for a long/pro browser run; preserving browser for reattach.",
+      );
+      await emitRuntimeHint();
+      throw new BrowserAutomationError(
+        "Assistant response may be truncated; reattach later to capture the full answer.",
+        { stage: "assistant-timeout", runtime },
+      );
+    }
     stopThinkingMonitor?.();
     runStatus = "complete";
-    const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
     return {

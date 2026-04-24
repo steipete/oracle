@@ -1,6 +1,8 @@
 export type TokenizerFn = (input: unknown, options?: Record<string, unknown>) => number;
 
 export type KnownModelName =
+  | "gpt-5.5"
+  | "gpt-5.5-pro"
   | "gpt-5.4"
   | "gpt-5.4-pro"
   | "gpt-5.1-pro"
@@ -20,6 +22,7 @@ export type KnownModelName =
 export type ModelName = KnownModelName | (string & {});
 
 export type ProModelName =
+  | "gpt-5.5-pro"
   | "gpt-5.4-pro"
   | "gpt-5.1-pro"
   | "gpt-5-pro"
