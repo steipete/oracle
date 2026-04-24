@@ -64,7 +64,7 @@ export function applyHelpStyling(program: Command, version: string, isTty: boole
 
 function renderHelpBanner(version: string, colors: HelpColors): string {
   const subtitle =
-    "Prompt + files required — GPT-5.4 Pro/GPT-5.4 for tough questions with code/file context.";
+    "Prompt + files required — GPT-5.5 Pro/GPT-5.5 for tough questions with code/file context.";
   return `${colors.banner(`Oracle CLI v${version}`)} ${colors.subtitle(`— ${subtitle}`)}\n`;
 }
 
@@ -78,7 +78,7 @@ function renderHelpFooter(program: Command, colors: HelpColors): string {
     `${colors.bullet("•")} Best results: 6–30 sentences plus key source files; very short prompts often yield generic answers.`,
     `${colors.bullet("•")} Oracle is one-shot by default. For OpenAI/Azure API runs, you can chain follow-ups by passing ${colors.accent("--followup <sessionId|responseId>")} (continues via Responses API previous_response_id).`,
     `${colors.bullet("•")} Run ${colors.accent("--files-report")} to inspect token spend before hitting the API.`,
-    `${colors.bullet("•")} Non-preview runs spawn detached sessions (especially gpt-5.4-pro API). If the CLI times out, do not re-run — reattach with ${colors.accent("oracle session <slug>")} to resume/inspect the existing run.`,
+    `${colors.bullet("•")} Non-preview runs spawn detached sessions (especially gpt-5.5-pro API). If the CLI times out, do not re-run — reattach with ${colors.accent("oracle session <slug>")} to resume/inspect the existing run.`,
     `${colors.bullet("•")} Set a memorable 3–5 word slug via ${colors.accent('--slug "<words>"')} to keep session IDs tidy.`,
     `${colors.bullet("•")} Finished sessions auto-hide preamble logs when reattached; raw timestamps remain in the saved log file.`,
     `${colors.bullet("•")} Need hidden flags? Run ${colors.accent(`${program.name()} --help --verbose`)} to list search/token/browser overrides.`,
