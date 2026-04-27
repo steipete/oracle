@@ -67,7 +67,7 @@
     "dotenv": "^17.3.1",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
-    "inquirer": "13.3.0",
+    "inquirer": "13.4.2",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
@@ -85,15 +85,15 @@
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.3.5",
     "@typescript/native-preview": "7.0.0-dev.20260427.1",
-    "@vitest/coverage-v8": "4.0.18",
-    "devtools-protocol": "0.0.1595872",
+    "@vitest/coverage-v8": "4.1.5",
+    "devtools-protocol": "0.0.1619965",
     "es-toolkit": "^1.45.1",
-    "esbuild": "^0.27.3",
+    "esbuild": "^0.28.0",
     "oxfmt": "0.36.0",
     "oxlint": "^1.51.0",
     "puppeteer-core": "^24.38.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "vitest": "^4.0.18"
   },
   "devEngines": {
@@ -110,7 +110,7 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1595872"
+      "devtools-protocol": "0.0.1619965"
     },
     "onlyBuiltDependencies": [
       "esbuild"
