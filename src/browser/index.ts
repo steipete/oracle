@@ -9,6 +9,7 @@ import type {
   BrowserLogger,
   ChromeClient,
   BrowserAttachment,
+  BrowserProjectSourcesResult,
 } from "./types.js";
 import {
   launchChrome,
@@ -36,6 +37,13 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
   readAssistantSnapshot,
+  normalizeProjectSourcesUrl,
+  summarizeProjectSourcesResult,
+  waitForProjectSourcesReady,
+  listProjectSources,
+  uploadProjectSources,
+  deleteProjectSourcesByName,
+  resolveProjectSourceDeleteNames,
 } from "./pageActions.js";
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
@@ -78,8 +86,9 @@ export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: bo
 }
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
-  const promptText = options.prompt?.trim();
-  if (!promptText) {
+  const promptText = options.prompt?.trim() ?? "";
+  const projectSourcesRequest = options.projectSources;
+  if (!promptText && !projectSourcesRequest) {
     throw new Error("Prompt text is required when using browser mode.");
   }
 
@@ -346,17 +355,77 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     );
 
     if (config.url !== baseUrl) {
+      if (projectSourcesRequest) {
+        await raceWithDisconnect(
+          navigateToChatGPT(Page, Runtime, normalizeProjectSourcesUrl(config.url), logger),
+        );
+        await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+        await raceWithDisconnect(waitForProjectSourcesReady(Runtime, config.inputTimeoutMs, logger));
+      } else {
+        await raceWithDisconnect(
+          navigateToPromptReadyWithFallback(Page, Runtime, {
+            url: config.url,
+            fallbackUrl: baseUrl,
+            timeoutMs: config.inputTimeoutMs,
+            headless: config.headless,
+            logger,
+          }),
+        );
+      }
+    } else if (projectSourcesRequest) {
       await raceWithDisconnect(
-        navigateToPromptReadyWithFallback(Page, Runtime, {
-          url: config.url,
-          fallbackUrl: baseUrl,
-          timeoutMs: config.inputTimeoutMs,
-          headless: config.headless,
-          logger,
-        }),
+        navigateToChatGPT(Page, Runtime, normalizeProjectSourcesUrl(baseUrl), logger),
       );
+      await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+      await raceWithDisconnect(waitForProjectSourcesReady(Runtime, config.inputTimeoutMs, logger));
     } else {
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+    }
+    if (projectSourcesRequest) {
+      try {
+        const { result } = await Runtime.evaluate({
+          expression: "location.href",
+          returnByValue: true,
+        });
+        if (typeof result?.value === "string") {
+          lastUrl = result.value;
+        }
+      } catch {
+        // ignore
+      }
+      await emitRuntimeHint();
+      const projectSourcesResult = await raceWithDisconnect(
+        executeProjectSourcesFlow(
+          Runtime,
+          DOM,
+          Input,
+          Page,
+          config,
+          attachments,
+          logger,
+          projectSourcesRequest,
+        ),
+      );
+      const summary = summarizeProjectSourcesResult(projectSourcesResult);
+      answerText = summary.answerText;
+      answerMarkdown = summary.answerMarkdown;
+      runStatus = "complete";
+      return {
+        answerText,
+        answerMarkdown,
+        answerHtml: "",
+        projectSources: projectSourcesResult,
+        tookMs: Date.now() - startedAt,
+        answerTokens: estimateTokenCount(answerText),
+        answerChars: answerText.length,
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: isolatedTargetId ?? undefined,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
     }
     logger(
       `Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`,
@@ -1256,6 +1325,60 @@ async function maybeReuseRunningChrome(
   } as unknown as LaunchedChrome;
 }
 
+async function executeProjectSourcesFlow(
+  runtime: ChromeClient["Runtime"],
+  dom: ChromeClient["DOM"] | undefined,
+  input: ChromeClient["Input"] | undefined,
+  page: ChromeClient["Page"] | undefined,
+  config: ReturnType<typeof resolveBrowserConfig>,
+  attachments: BrowserAttachment[],
+  logger: BrowserLogger,
+  request: NonNullable<BrowserRunOptions["projectSources"]>,
+): Promise<BrowserProjectSourcesResult> {
+  const beforeNames = await listProjectSources(runtime);
+  const deleteNames = resolveProjectSourceDeleteNames({
+    operation: request.operation,
+    attachments,
+    beforeNames,
+    explicitDeleteNames: request.deleteNames,
+  });
+
+  let currentNames = beforeNames;
+  if (deleteNames.length > 0) {
+    currentNames = await deleteProjectSourcesByName(
+      runtime,
+      input,
+      deleteNames,
+      config.inputTimeoutMs,
+      logger,
+    );
+  }
+  if (attachments.length > 0 && request.operation !== "delete") {
+    currentNames = await uploadProjectSources(
+      { runtime, dom, input, page },
+      attachments,
+      logger,
+      config.inputTimeoutMs,
+    );
+  }
+
+  const afterNames = currentNames.length > 0 ? currentNames : await listProjectSources(runtime);
+  const addedNames =
+    request.operation === "delete"
+      ? []
+      : Array.from(new Set(attachments.map((attachment) => path.basename(attachment.path)))).filter(
+          (name) => afterNames.includes(name),
+        );
+  const deletedNames = Array.from(new Set(deleteNames)).filter((name) => !afterNames.includes(name));
+  return {
+    operation: request.operation,
+    beforeNames,
+    afterNames,
+    addedNames,
+    deletedNames,
+  };
+}
+
 async function runRemoteBrowserMode(
   promptText: string,
   attachments: BrowserAttachment[],
@@ -1320,9 +1443,52 @@ async function runRemoteBrowserMode(
     // Skip cookie sync for remote Chrome - it already has cookies
     logger("Skipping cookie sync for remote Chrome (using existing session)");
 
-    await navigateToChatGPT(Page, Runtime, config.url, logger);
+    const remoteTargetUrl = options.projectSources
+      ? normalizeProjectSourcesUrl(config.url)
+      : config.url;
+    await navigateToChatGPT(Page, Runtime, remoteTargetUrl, logger);
     await ensureNotBlocked(Runtime, config.headless, logger);
     await ensureLoggedIn(Runtime, logger, { remoteSession: true });
+    if (options.projectSources) {
+      await waitForProjectSourcesReady(Runtime, config.inputTimeoutMs, logger);
+      try {
+        const { result } = await Runtime.evaluate({
+          expression: "location.href",
+          returnByValue: true,
+        });
+        if (typeof result?.value === "string") {
+          lastUrl = result.value;
+        }
+      } catch {
+        // ignore
+      }
+      await emitRuntimeHint();
+      const projectSourcesResult = await executeProjectSourcesFlow(
+        Runtime,
+        DOM,
+        Input,
+        Page,
+        config,
+        attachments,
+        logger,
+        options.projectSources,
+      );
+      const summary = summarizeProjectSourcesResult(projectSourcesResult);
+      return {
+        answerText: summary.answerText,
+        answerMarkdown: summary.answerMarkdown,
+        answerHtml: "",
+        projectSources: projectSourcesResult,
+        tookMs: Date.now() - startedAt,
+        answerTokens: estimateTokenCount(summary.answerText),
+        answerChars: summary.answerText.length,
+        chromePort: port,
+        chromeHost: host,
+        chromeTargetId: remoteTargetId ?? undefined,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
+    }
     await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
     logger(
       `Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`,

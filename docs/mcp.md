@@ -11,6 +11,12 @@
 - Behavior: starts a session, runs it with the chosen engine, returns final output + metadata. Background/foreground follows the CLI (e.g., GPT‑5 Pro detaches by default).
 - Logging: emits MCP logs (`info` per line, `debug` for streamed chunks with byte sizes). If browser prerequisites are missing, returns an error payload instead of running.
 
+### `project_sources`
+
+- Inputs: `operation: "add" | "delete" | "replace" | "sync"` plus `files?: string[]`, `sourceNames?: string[]`, and optional `chatgptUrl`.
+- Behavior: drives the ChatGPT project Sources tab directly in browser mode. `add` uploads files, `delete` removes named sources, `replace` deletes named sources (or incoming basenames) then uploads, and `sync` clears current sources before uploading the provided files.
+- Notes: uploads are batched 10 files at a time to match the ChatGPT Sources UI limit. This tool is for persistent project sources, not chat-message attachments.
+
 ### `sessions`
 
 - Inputs: `{id?, hours?, limit?, includeAll?, detail?}` mirroring `oracle status` / `oracle session`.

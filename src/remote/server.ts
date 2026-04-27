@@ -215,6 +215,7 @@ export async function createRemoteServer(
       const result = await runBrowser({
         prompt: payload.prompt,
         attachments,
+        projectSources: payload.projectSources,
         config: payload.browserConfig,
         log: automationLogger,
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,

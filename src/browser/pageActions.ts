@@ -15,6 +15,15 @@ export {
   waitForUserTurnAttachments,
 } from "./actions/attachments.js";
 export {
+  normalizeProjectSourcesUrl,
+  summarizeProjectSourcesResult,
+  waitForProjectSourcesReady,
+  listProjectSources,
+  uploadProjectSources,
+  deleteProjectSourcesByName,
+  resolveProjectSourceDeleteNames,
+} from "./actions/projectSources.js";
+export {
   waitForAssistantResponse,
   readAssistantSnapshot,
   captureAssistantMarkdown,

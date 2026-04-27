@@ -1,6 +1,6 @@
 import type { BrowserSessionConfig } from "../sessionStore.js";
 import type { BrowserRunResult } from "../browserMode.js";
-import type { BrowserAttachment } from "../browser/types.js";
+import type { BrowserAttachment, BrowserProjectSourcesRequest } from "../browser/types.js";
 
 export interface RemoteAttachmentPayload {
   fileName: string;
@@ -12,6 +12,7 @@ export interface RemoteAttachmentPayload {
 export interface RemoteRunPayload {
   prompt: string;
   attachments: RemoteAttachmentPayload[];
+  projectSources?: BrowserProjectSourcesRequest;
   browserConfig: BrowserSessionConfig;
   options: {
     heartbeatIntervalMs?: number;

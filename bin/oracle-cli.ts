@@ -3,6 +3,8 @@ import "dotenv/config";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
 // Allow `npx @steipete/oracle oracle-mcp` to resolve the MCP server even though npx runs the default binary.
@@ -26,6 +28,7 @@ import {
 import { isKnownModel } from "../src/oracle/modelResolver.js";
 import type { ModelName, PreviewMode, RunOracleOptions } from "../src/oracle.js";
 import { CHATGPT_URL } from "../src/browserMode.js";
+import { runBrowserMode } from "../src/browserMode.js";
 import { createRemoteBrowserExecutor } from "../src/remote/client.js";
 import { createGeminiWebExecutor } from "../src/gemini-web/index.js";
 import { applyHelpStyling } from "../src/cli/help.js";
@@ -96,6 +99,8 @@ interface CliOptions extends OptionValues {
   render?: boolean;
   model: string;
   models?: string[];
+  projectSources?: "add" | "delete" | "replace" | "sync";
+  source?: string[];
   force?: boolean;
   slug?: string;
   filesReport?: boolean;
@@ -321,6 +326,18 @@ program
     new Option("--mode <mode>", "Alias for --engine (api | browser).")
       .choices(["api", "browser"])
       .hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--project-sources <operation>",
+      "Manage ChatGPT project Sources directly (add | delete | replace | sync). Requires browser automation and a ChatGPT project URL.",
+    ).choices(["add", "delete", "replace", "sync"]),
+  )
+  .option(
+    "--source <names...>",
+    "Source names to target for project source delete/replace (defaults to incoming --file basenames for replace).",
+    collectPaths,
+    [],
   )
   .option(
     "--files-report",
@@ -1202,6 +1219,69 @@ function getBrowserConfigFromMetadata(metadata: SessionMetadata): BrowserSession
   return metadata.options?.browserConfig ?? metadata.browser?.config;
 }
 
+async function runProjectSourcesCommand(args: {
+  options: CliOptions;
+  browserConfig: BrowserSessionConfig;
+  browserExecutor?: typeof runBrowserMode;
+}): Promise<void> {
+  const { options, browserConfig } = args;
+  const executeBrowser = args.browserExecutor ?? runBrowserMode;
+  const operation = options.projectSources;
+  if (!operation) {
+    throw new Error("Missing --project-sources operation.");
+  }
+  const isProjectUrl = (browserConfig.url ?? "").includes("/project");
+  if (!isProjectUrl) {
+    throw new Error(
+      "--project-sources requires --chatgpt-url (or browser.chatgptUrl config) to point at a ChatGPT project URL.",
+    );
+  }
+
+  const deleteNames = Array.from(new Set((options.source ?? []).map((name) => name.trim()))).filter(
+    Boolean,
+  );
+  const attachments = await Promise.all(
+    (options.file ?? []).map(async (filePath) => {
+      const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
+      const stats = await fs.stat(absolutePath);
+      return {
+        path: absolutePath,
+        displayPath: path.relative(process.cwd(), absolutePath) || path.basename(absolutePath),
+        sizeBytes: stats.size,
+      };
+    }),
+  );
+
+  if (operation === "delete" && deleteNames.length === 0) {
+    throw new Error("--project-sources delete requires at least one --source <name>.");
+  }
+  if (operation !== "delete" && attachments.length === 0) {
+    throw new Error(`--project-sources ${operation} requires at least one --file.`);
+  }
+
+  console.log(
+    chalk.dim(
+      `Managing ChatGPT project sources (${operation}) against ${browserConfig.url ?? CHATGPT_URL}`,
+    ),
+  );
+  const result = await executeBrowser({
+    prompt: "",
+    attachments,
+    projectSources: {
+      operation,
+      deleteNames,
+    },
+    config: browserConfig,
+    log: ((message?: string) => {
+      if (typeof message === "string") {
+        console.log(message);
+      }
+    }) as Parameters<typeof runBrowserMode>[0]["log"],
+    verbose: options.verbose,
+  });
+  console.log(result.answerMarkdown || result.answerText);
+}
+
 async function runRootCommand(options: CliOptions): Promise<void> {
   if (process.env.ORACLE_FORCE_TUI === "1") {
     await sessionStore.ensureStorage();
@@ -1309,6 +1389,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     browserFlag: options.browser,
     env: process.env,
   });
+  if (options.projectSources) {
+    engine = "browser";
+  }
   if (options.browser) {
     console.log(chalk.yellow("`--browser` is deprecated; use `--engine browser` instead."));
   }
@@ -1668,6 +1751,18 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
   }
   const remoteExecutionActive = Boolean(browserDeps);
+
+  if (options.projectSources) {
+    if (!browserConfig) {
+      throw new Error("Failed to resolve browser config for --project-sources.");
+    }
+    await runProjectSourcesCommand({
+      options,
+      browserConfig,
+      browserExecutor: browserDeps?.executeBrowser,
+    });
+    return;
+  }
 
   if (options.dryRun) {
     const baseRunOptions = buildRunOptions(resolvedOptions, {
