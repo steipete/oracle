@@ -679,6 +679,8 @@ async function autoReattachUntilComplete({
       };
       const result = await resumeBrowserSession(runtime, reattachConfig, logger, {
         promptPreview: sessionMeta.promptPreview,
+        generateImagePath: runOptions.generateImage,
+        outputPath: runOptions.outputPath,
       });
       const answerText = result.answerMarkdown || result.answerText || "";
       const outputTokens = estimateTokenCount(answerText);

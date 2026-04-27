@@ -78,6 +78,12 @@ npx -y @steipete/oracle --engine browser -p "Walk through the UI smoke test" --f
 # Gemini browser mode (no API key; uses Chrome cookies from gemini.google.com)
 npx -y @steipete/oracle --engine browser --model gemini-3-pro --prompt "a cute robot holding a banana" --generate-image out.jpg --aspect 1:1
 
+# ChatGPT browser mode image generation/editing, saving the generated originals locally
+npx -y @steipete/oracle --engine browser --browser-manual-login --browser-attachments always \
+  --file product-front.png --file product-side.jpg \
+  --generate-image out.png \
+  --prompt "Turn these into a 1:1 4K pure white background ecommerce hero image"
+
 # Sessions (list and replay)
 npx -y @steipete/oracle status --hours 72
 npx -y @steipete/oracle session <id> --render
@@ -95,6 +101,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 
 - API mode expects API keys in your environment: `OPENAI_API_KEY` (GPT-5.x), `GEMINI_API_KEY` (Gemini 3.1 Pro / Gemini 3 Pro), `ANTHROPIC_API_KEY` (Claude Sonnet 4.5 / Opus 4.1).
 - Gemini browser mode uses Chrome cookies instead of an API key—just be logged into `gemini.google.com` in Chrome (no Python/venv required).
+- ChatGPT browser mode can also save generated image originals locally via `--generate-image <file>`. When the assistant returns multiple images, Oracle saves the first one to the requested path and additional images as numbered siblings (for example `out.2.png`, `out.3.png`).
 - If your Gemini account can’t access “Pro”, Oracle auto-falls back to a supported model for web runs (and logs the fallback in verbose mode).
 - Prefer API mode or `--copy` + manual paste; browser automation is experimental.
 - Browser support: stable on macOS; works on Linux (add `--browser-chrome-path/--browser-cookie-path` when needed) and Windows (manual-login or inline cookies recommended when app-bound cookies block decryption).
@@ -231,8 +238,8 @@ oracle --engine browser \
 | `--remote-host`, `--remote-token`                               | Use a remote `oracle serve` host (browser).                                                                                                                                                                                                                                                                     |
 | `--remote-chrome <host:port>`                                   | Attach to an existing remote Chrome session (browser).                                                                                                                                                                                                                                                          |
 | `--youtube <url>`                                               | YouTube video URL to analyze (Gemini browser mode).                                                                                                                                                                                                                                                             |
-| `--generate-image <file>`                                       | Generate image and save to file (Gemini browser mode).                                                                                                                                                                                                                                                          |
-| `--edit-image <file>`                                           | Edit existing image with `--output` (Gemini browser mode).                                                                                                                                                                                                                                                      |
+| `--generate-image <file>`                                       | Save generated image output to a file. Supports Gemini browser mode natively and ChatGPT browser mode when the assistant response contains downloadable images. Extra images save as numbered siblings.                                                                                                         |
+| `--edit-image <file>`                                           | Edit existing image with `--output` (Gemini browser mode). For ChatGPT browser mode, attach source images with `--file` and use `--generate-image` for the output path.                                                                                                                                         |
 | `--azure-endpoint`, `--azure-deployment`, `--azure-api-version` | Target Azure OpenAI endpoints (picks Azure client automatically).                                                                                                                                                                                                                                               |
 
 ## Configuration

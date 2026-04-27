@@ -16,6 +16,26 @@ import {
 import { buildClickDispatcher } from "./domEvents.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
+const GENERATED_IMAGE_URL_FRAGMENT = "/backend-api/estuary/content?id=file_";
+const IMAGE_GENERATION_PLACEHOLDER_PATTERNS = [
+  "generating a more detailed image",
+  "generating image",
+  "creating image",
+  "rendering image",
+  "hang tight",
+] as const;
+
+interface AssistantTurnStatus {
+  text: string;
+  html?: string;
+  turnId?: string | null;
+  messageId?: string | null;
+  turnIndex?: number | null;
+  hasFinishedActions: boolean;
+  hasDoneMarkdown: boolean;
+  generatedImageCount: number;
+  imageGenerationPending: boolean;
+}
 
 function isAnswerNowPlaceholderText(normalized: string): boolean {
   const text = normalized.trim();
@@ -32,6 +52,47 @@ function isAnswerNowPlaceholderText(normalized: string): boolean {
   return (
     text.includes("answer now") && (text.includes("pro thinking") || text.includes("chatgpt said"))
   );
+}
+
+function isImageGenerationPlaceholderText(normalized: string): boolean {
+  const text = normalized.trim();
+  if (!text) return false;
+  return IMAGE_GENERATION_PLACEHOLDER_PATTERNS.some((pattern) => text.includes(pattern));
+}
+
+function isGeneratedImageControlsText(text: string | null | undefined): boolean {
+  const normalized = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  if (!normalized || normalized.length > 64) return false;
+  return [
+    "thinking preview",
+    "thinking edit",
+    "stopped thinking preview",
+    "stopped thinking edit",
+    "preview edit",
+    "preview",
+    "edit",
+    "generated image",
+  ].includes(normalized);
+}
+
+export function isGeneratedImageControlsTextForTest(text: string | null | undefined): boolean {
+  return isGeneratedImageControlsText(text);
+}
+
+async function readPageGeneratedImageCount(Runtime: ChromeClient["Runtime"]): Promise<number> {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: `document.querySelectorAll('img[src*="${GENERATED_IMAGE_URL_FRAGMENT}"]').length`,
+      returnByValue: true,
+    });
+    const value = Number(result?.value);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export async function waitForAssistantResponse(
@@ -154,12 +215,20 @@ export async function waitForAssistantResponse(
   const elapsedMs = Date.now() - start;
   const remainingMs = Math.max(0, timeoutMs - elapsedMs);
   if (remainingMs > 0) {
-    const [stopVisible, completionVisible] = await Promise.all([
+    const [stopVisible, completionStatus] = await Promise.all([
       isStopButtonVisible(Runtime),
-      isCompletionVisible(Runtime),
+      readAssistantTurnStatus(Runtime, minTurnIndex),
     ]);
+    const completionVisible = isAssistantTurnComplete(completionStatus);
+    const imageGenerationPending = Boolean(completionStatus?.imageGenerationPending);
     if (stopVisible) {
       logger("Assistant still generating; waiting for completion");
+      const completed = await pollAssistantCompletion(Runtime, remainingMs, minTurnIndex);
+      if (completed) {
+        return completed;
+      }
+    } else if (imageGenerationPending) {
+      logger("Image generation still in progress; waiting for downloadable image artifacts");
       const completed = await pollAssistantCompletion(Runtime, remainingMs, minTurnIndex);
       if (completed) {
         return completed;
@@ -297,19 +366,22 @@ async function parseAssistantEvaluationResult(
       typeof (result.value as { messageId?: unknown }).messageId === "string"
         ? ((result.value as { messageId?: string }).messageId ?? undefined)
         : undefined;
-    const text = cleanAssistantText(String((result.value as { text: unknown }).text ?? ""));
-    const normalized = text.toLowerCase();
-    if (isAnswerNowPlaceholderText(normalized)) {
-      return null;
-    }
-    return { text, html, meta: { turnId, messageId } };
+  const text = cleanAssistantText(String((result.value as { text: unknown }).text ?? ""));
+  const normalized = text.toLowerCase();
+  if (isAnswerNowPlaceholderText(normalized) || isImageGenerationPlaceholderText(normalized)) {
+    return null;
+  }
+  return { text, html, meta: { turnId, messageId } };
   }
   const fallbackText =
     typeof result.value === "string" ? cleanAssistantText(result.value as string) : "";
   if (!fallbackText) {
     return null;
   }
-  if (isAnswerNowPlaceholderText(fallbackText.toLowerCase())) {
+  if (
+    isAnswerNowPlaceholderText(fallbackText.toLowerCase()) ||
+    isImageGenerationPlaceholderText(fallbackText.toLowerCase())
+  ) {
     return null;
   }
   return { text: fallbackText, html: undefined, meta: {} };
@@ -403,8 +475,25 @@ async function pollAssistantCompletion(
     if (abortSignal?.aborted) {
       return null;
     }
-    const snapshot = await readAssistantSnapshot(Runtime, minTurnIndex);
-    const normalized = normalizeAssistantSnapshot(snapshot);
+    const [snapshot, turnStatus, stopVisible] = await Promise.all([
+      readAssistantSnapshot(Runtime, minTurnIndex),
+      readAssistantTurnStatus(Runtime, minTurnIndex),
+      isStopButtonVisible(Runtime),
+    ]);
+    const normalized = normalizeAssistantSnapshot(snapshot, turnStatus ?? undefined);
+    if (turnStatus?.generatedImageCount) {
+      if (normalized) {
+        return normalized;
+      }
+      return {
+        text: turnStatus.text || "Generated image",
+        html: turnStatus.html,
+        meta: {
+          turnId: turnStatus.turnId ?? undefined,
+          messageId: turnStatus.messageId ?? undefined,
+        },
+      };
+    }
     if (normalized) {
       const currentLength = normalized.text.length;
       if (currentLength > previousLength) {
@@ -414,10 +503,8 @@ async function pollAssistantCompletion(
       } else {
         stableCycles += 1;
       }
-      const [stopVisible, completionVisible] = await Promise.all([
-        isStopButtonVisible(Runtime),
-        isCompletionVisible(Runtime),
-      ]);
+      const completionVisible = isAssistantTurnComplete(turnStatus);
+      const imageGenerationPending = Boolean(turnStatus?.imageGenerationPending);
       const shortAnswer = currentLength > 0 && currentLength < 16;
       const mediumAnswer = currentLength >= 16 && currentLength < 40;
       const longAnswer = currentLength >= 40 && currentLength < 500;
@@ -430,10 +517,19 @@ async function pollAssistantCompletion(
       const minStableMs = shortAnswer ? 8000 : mediumAnswer ? 1200 : longAnswer ? 2000 : 3000;
       // Require stop button to disappear before treating completion as final.
       if (!stopVisible) {
+        const pageGeneratedImageCount =
+          isGeneratedImageControlsText(turnStatus?.text ?? normalized.text) &&
+          !imageGenerationPending &&
+          stableMs >= 1200
+            ? await readPageGeneratedImageCount(Runtime)
+            : 0;
+        if (pageGeneratedImageCount > 0) {
+          return normalized;
+        }
         const stableEnough = stableCycles >= requiredStableCycles && stableMs >= minStableMs;
         const completionEnough =
           completionVisible && stableCycles >= completionStableTarget && stableMs >= minStableMs;
-        if (completionEnough || stableEnough) {
+        if (completionEnough || (stableEnough && !imageGenerationPending)) {
           return normalized;
         }
       }
@@ -458,52 +554,108 @@ async function isStopButtonVisible(Runtime: ChromeClient["Runtime"]): Promise<bo
   }
 }
 
-async function isCompletionVisible(Runtime: ChromeClient["Runtime"]): Promise<boolean> {
+function isAssistantTurnComplete(status: AssistantTurnStatus | null): boolean {
+  return Boolean(
+    status &&
+      (status.hasFinishedActions || status.hasDoneMarkdown || status.generatedImageCount > 0),
+  );
+}
+
+function buildAssistantTurnStatusExpression(minTurnIndex?: number): string {
+  const minTurnLiteral =
+    typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
+      ? Math.floor(minTurnIndex)
+      : -1;
+  return `(() => {
+    const MIN_TURN_INDEX = ${minTurnLiteral};
+    const GENERATED_IMAGE_URL_FRAGMENT = ${JSON.stringify(GENERATED_IMAGE_URL_FRAGMENT)};
+    const IMAGE_PLACEHOLDER_PATTERNS = ${JSON.stringify(IMAGE_GENERATION_PLACEHOLDER_PATTERNS)};
+    const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
+    const FINISHED_SELECTOR = '${FINISHED_ACTIONS_SELECTOR}';
+    const CONVERSATION_SELECTOR = '${CONVERSATION_TURN_SELECTOR}';
+    const isAssistantTurn = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      if (turnAttr === 'assistant') return true;
+      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      if (role === 'assistant') return true;
+      const testId = (node.getAttribute('data-testid') || '').toLowerCase();
+      if (testId.includes('assistant')) return true;
+      return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+    };
+
+    const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    let lastAssistantTurn = null;
+    let turnIndex = null;
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      if (!isAssistantTurn(turns[index])) continue;
+      if (MIN_TURN_INDEX >= 0 && index < MIN_TURN_INDEX) continue;
+      lastAssistantTurn = turns[index];
+      turnIndex = index;
+      break;
+    }
+    if (!lastAssistantTurn) return null;
+    const messageRoot = lastAssistantTurn.querySelector(ASSISTANT_SELECTOR) || lastAssistantTurn;
+    const text = (messageRoot.innerText || messageRoot.textContent || '').trim();
+    const html = messageRoot.innerHTML || '';
+    const generatedImages = Array.from(messageRoot.querySelectorAll('img')).filter((img) => {
+      const src = img.getAttribute('src') || '';
+      return src.includes(GENERATED_IMAGE_URL_FRAGMENT);
+    });
+    const markdowns = lastAssistantTurn.querySelectorAll('.markdown');
+    const normalizedText = text.toLowerCase();
+    return {
+      text,
+      html,
+      turnId: messageRoot.getAttribute('data-testid'),
+      messageId: messageRoot.getAttribute('data-message-id'),
+      turnIndex,
+      hasFinishedActions: Boolean(lastAssistantTurn.querySelector(FINISHED_SELECTOR)),
+      hasDoneMarkdown: Array.from(markdowns).some((n) => (n.textContent || '').trim() === 'Done'),
+      generatedImageCount: generatedImages.length,
+      imageGenerationPending:
+        generatedImages.length === 0 &&
+        IMAGE_PLACEHOLDER_PATTERNS.some((pattern) => normalizedText.includes(pattern)),
+    };
+  })()`;
+}
+
+async function readAssistantTurnStatus(
+  Runtime: ChromeClient["Runtime"],
+  minTurnIndex?: number,
+): Promise<AssistantTurnStatus | null> {
   try {
     const { result } = await Runtime.evaluate({
-      expression: `(() => {
-        // Find the LAST assistant turn to check completion status
-        // Must match the same logic as buildAssistantExtractor for consistency
-        const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
-        const isAssistantTurn = (node) => {
-          if (!(node instanceof HTMLElement)) return false;
-          const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
-          if (turnAttr === 'assistant') return true;
-          const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
-          if (role === 'assistant') return true;
-          const testId = (node.getAttribute('data-testid') || '').toLowerCase();
-          if (testId.includes('assistant')) return true;
-          return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
-        };
-
-        const turns = Array.from(document.querySelectorAll('${CONVERSATION_TURN_SELECTOR}'));
-        let lastAssistantTurn = null;
-        for (let i = turns.length - 1; i >= 0; i--) {
-          if (isAssistantTurn(turns[i])) {
-            lastAssistantTurn = turns[i];
-            break;
-          }
-        }
-        if (!lastAssistantTurn) {
-          return false;
-        }
-        // Check if the last assistant turn has finished action buttons (copy, thumbs up/down, share)
-        if (lastAssistantTurn.querySelector('${FINISHED_ACTIONS_SELECTOR}')) {
-          return true;
-        }
-        // Also check for "Done" text in the last assistant turn's markdown
-        const markdowns = lastAssistantTurn.querySelectorAll('.markdown');
-        return Array.from(markdowns).some((n) => (n.textContent || '').trim() === 'Done');
-      })()`,
+      expression: buildAssistantTurnStatusExpression(minTurnIndex),
       returnByValue: true,
     });
-    return Boolean(result?.value);
+    const value = result?.value;
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+    return value as AssistantTurnStatus;
   } catch {
-    return false;
+    return null;
   }
 }
 
 function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+} | null;
+function normalizeAssistantSnapshot(
+  snapshot: AssistantSnapshot | null,
+  status: AssistantTurnStatus | null | undefined,
+): {
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+} | null;
+function normalizeAssistantSnapshot(
+  snapshot: AssistantSnapshot | null,
+  status?: AssistantTurnStatus | null,
+): {
   text: string;
   html?: string;
   meta: { turnId?: string | null; messageId?: string | null };
@@ -516,6 +668,9 @@ function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
   // "Pro thinking" often renders a placeholder turn containing an "Answer now" gate.
   // Treat it as incomplete so browser mode keeps waiting for the real assistant text.
   if (isAnswerNowPlaceholderText(normalized)) {
+    return null;
+  }
+  if (isImageGenerationPlaceholderText(normalized) && !status?.generatedImageCount) {
     return null;
   }
   // Ignore user echo turns that can show up in project view fallbacks.

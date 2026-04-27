@@ -29,11 +29,17 @@ describe("runBrowserSessionExecution", () => {
         tookMs: 1000,
         answerTokens: 12,
         answerChars: 20,
+        chromeTargetId: "t-1",
+        tabUrl: "https://chatgpt.com/c/foo",
       };
     });
     const result = await runBrowserSessionExecution(
       {
-        runOptions: baseRunOptions,
+        runOptions: {
+          ...baseRunOptions,
+          generateImage: "/tmp/generated.png",
+          outputPath: "/tmp/output.png",
+        },
         browserConfig: baseConfig,
         cwd: "/repo",
         log,
@@ -60,9 +66,19 @@ describe("runBrowserSessionExecution", () => {
       reasoningTokens: 0,
       totalTokens: 54,
     });
-    expect(result.runtime).toMatchObject({ chromePid: undefined });
+    expect(result.runtime).toMatchObject({
+      chromePid: undefined,
+      chromeTargetId: "t-1",
+      tabUrl: "https://chatgpt.com/c/foo",
+    });
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
+    );
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generateImagePath: "/tmp/generated.png",
+        outputPath: "/tmp/output.png",
+      }),
     );
     expect(log).toHaveBeenCalled();
   });
@@ -227,6 +243,44 @@ describe("runBrowserSessionExecution", () => {
     expect(log.mock.calls.some((call) => String(call[0]).includes("Browser attachments"))).toBe(
       true,
     );
+  });
+
+  test("prints a short image-generation timing hint when --generate-image is set", async () => {
+    const log = vi.fn();
+    await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false, generateImage: "/tmp/generated.png" },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 1,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async () => ({
+          answerText: "text",
+          answerMarkdown: "markdown",
+          tookMs: 10,
+          answerTokens: 1,
+          answerChars: 5,
+        }),
+      },
+    );
+
+    expect(
+      log.mock.calls.some((call) =>
+        String(call[0]).includes("Image generation may take longer than 2 minutes."),
+      ),
+    ).toBe(true);
   });
 
   test("verbose output spells out token labels", async () => {

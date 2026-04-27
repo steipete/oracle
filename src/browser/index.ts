@@ -59,6 +59,7 @@ import {
 } from "./profileState.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
+import { collectGeneratedImageArtifacts, readAssistantGeneratedImages } from "./chatgptImages.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -75,6 +76,47 @@ function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolea
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+const DEFAULT_IMAGE_RESPONSE_RECOVERY_TIMEOUT_MS = 120_000;
+const GENERATED_IMAGE_URL_FRAGMENT = "/backend-api/estuary/content?id=file_";
+
+function resolveAssistantResponseTimeoutMs(
+  configuredTimeoutMs: number,
+  imageOutputMode: boolean,
+): number {
+  if (!imageOutputMode) {
+    return configuredTimeoutMs;
+  }
+  return Math.min(configuredTimeoutMs, DEFAULT_IMAGE_RESPONSE_RECOVERY_TIMEOUT_MS);
+}
+
+export function resolveAssistantResponseTimeoutMsForTest(
+  configuredTimeoutMs: number,
+  imageOutputMode: boolean,
+): number {
+  return resolveAssistantResponseTimeoutMs(configuredTimeoutMs, imageOutputMode);
+}
+
+function shouldSkipMarkdownCaptureForGeneratedImage(answer: {
+  text?: string | null;
+  html?: string | null;
+}): boolean {
+  if (typeof answer.html === "string" && answer.html.includes(GENERATED_IMAGE_URL_FRAGMENT)) {
+    return true;
+  }
+  const normalizedText = String(answer.text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return normalizedText === "generated image";
+}
+
+export function shouldSkipMarkdownCaptureForGeneratedImageForTest(answer: {
+  text?: string | null;
+  html?: string | null;
+}): boolean {
+  return shouldSkipMarkdownCaptureForGeneratedImage(answer);
 }
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
@@ -97,6 +139,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const runtimeHintCb = options.runtimeHintCb;
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
+  const imageOutputMode = Boolean(options.generateImagePath || options.outputPath);
   const emitRuntimeHint = async (): Promise<void> => {
     if (!runtimeHintCb || !chrome?.port) {
       return;
@@ -549,8 +592,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           }
         }
       }
-      let baselineTurns = await readConversationTurnCount(Runtime, logger);
-      // Learned: return baselineTurns so assistant polling can ignore earlier content.
+      let baselineTurns = await readConversationTurnIndex(Runtime, logger);
+      // Learned: use the last existing turn index, not the raw turn count, so new
+      // image-only assistant turns are not filtered out when the DOM pre-renders wrappers.
       const sendAttachmentNames = attachmentWaitTimedOut ? [] : attachmentNames;
       const providerState: Record<string, unknown> = {
         runtime: Runtime,
@@ -587,9 +631,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             logger,
           );
           if (!verified) {
-            throw new Error("Sent user message did not expose attachment UI after upload.");
+            if (options.generateImagePath || options.outputPath) {
+              logger(
+                "Attachment UI did not render on the sent user message; continuing because image-output mode is enabled.",
+              );
+            } else {
+              throw new Error("Sent user message did not expose attachment UI after upload.");
+            }
+          } else {
+            logger("Verified attachments present on sent user message");
           }
-          logger("Verified attachments present on sent user message");
         }
       }
       // Reattach needs a /c/ URL; ChatGPT can update it late, so poll in the background.
@@ -712,7 +763,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           },
         );
       }
-      const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
+      const timeoutMs = resolveAssistantResponseTimeoutMs(
+        recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs,
+        imageOutputMode,
+      );
       const rechecked = await raceWithDisconnect(
         waitForAssistantResponseWithReload(
           Runtime,
@@ -730,7 +784,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         waitForAssistantResponseWithReload(
           Runtime,
           Page,
-          config.timeoutMs,
+          resolveAssistantResponseTimeoutMs(config.timeoutMs, imageOutputMode),
           logger,
           baselineTurns ?? undefined,
         ),
@@ -787,28 +841,34 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     answerText = answer.text;
     answerHtml = answer.html ?? "";
-    const copiedMarkdown = await raceWithDisconnect(
-      withRetries(
-        async () => {
-          const attempt = await captureAssistantMarkdown(Runtime, answer.meta, logger);
-          if (!attempt) {
-            throw new Error("copy-missing");
-          }
-          return attempt;
-        },
-        {
-          retries: 2,
-          delayMs: 350,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Markdown capture attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
-          },
-        },
-      ),
-    ).catch(() => null);
+    const skipMarkdownCapture = shouldSkipMarkdownCaptureForGeneratedImage(answer);
+    if (skipMarkdownCapture) {
+      logger("Skipping markdown capture for generated-image response");
+    }
+    const copiedMarkdown = skipMarkdownCapture
+      ? null
+      : await raceWithDisconnect(
+          withRetries(
+            async () => {
+              const attempt = await captureAssistantMarkdown(Runtime, answer.meta, logger);
+              if (!attempt) {
+                throw new Error("copy-missing");
+              }
+              return attempt;
+            },
+            {
+              retries: 2,
+              delayMs: 350,
+              onRetry: (attempt, error) => {
+                if (options.verbose) {
+                  logger(
+                    `[retry] Markdown capture attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                  );
+                }
+              },
+            },
+          ),
+        ).catch(() => null);
     answerMarkdown = copiedMarkdown ?? answerText;
 
     const promptEchoMatcher = buildPromptEchoMatcher(promptText);
@@ -919,6 +979,20 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     stopThinkingMonitor?.();
     runStatus = "complete";
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex: baselineTurns,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: options.config?.timeoutMs,
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -926,6 +1000,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       answerText,
       answerMarkdown,
       answerHtml: answerHtml.length > 0 ? answerHtml : undefined,
+      generatedImages: imageArtifacts.generatedImages,
+      savedImages: imageArtifacts.savedImages,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -935,6 +1011,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       userDataDir,
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -1275,6 +1352,7 @@ async function runRemoteBrowserMode(
   let client: ChromeClient | null = null;
   let remoteTargetId: string | null = null;
   let lastUrl: string | undefined;
+  const imageOutputMode = Boolean(options.generateImagePath || options.outputPath);
   const runtimeHintCb = options.runtimeHintCb;
   const emitRuntimeHint = async () => {
     if (!runtimeHintCb) return;
@@ -1403,7 +1481,7 @@ async function runRemoteBrowserMode(
         await waitForAttachmentCompletion(Runtime, waitBudget, attachmentNames, logger);
         logger("All attachments uploaded");
       }
-      let baselineTurns = await readConversationTurnCount(Runtime, logger);
+      let baselineTurns = await readConversationTurnIndex(Runtime, logger);
       const providerState: Record<string, unknown> = {
         runtime: Runtime,
         input: Input,
@@ -1535,7 +1613,10 @@ async function runRemoteBrowserMode(
         );
       }
       await emitRuntimeHint();
-      const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
+      const timeoutMs = resolveAssistantResponseTimeoutMs(
+        recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs,
+        imageOutputMode,
+      );
       const rechecked = await waitForAssistantResponseWithReload(
         Runtime,
         Page,
@@ -1550,7 +1631,7 @@ async function runRemoteBrowserMode(
       answer = await waitForAssistantResponseWithReload(
         Runtime,
         Page,
-        config.timeoutMs,
+        resolveAssistantResponseTimeoutMs(config.timeoutMs, imageOutputMode),
         logger,
         baselineTurns ?? undefined,
       );
@@ -1609,27 +1690,32 @@ async function runRemoteBrowserMode(
     }
     answerText = answer.text;
     answerHtml = answer.html ?? "";
-
-    const copiedMarkdown = await withRetries(
-      async () => {
-        const attempt = await captureAssistantMarkdown(Runtime, answer.meta, logger);
-        if (!attempt) {
-          throw new Error("copy-missing");
-        }
-        return attempt;
-      },
-      {
-        retries: 2,
-        delayMs: 350,
-        onRetry: (attempt, error) => {
-          if (options.verbose) {
-            logger(
-              `[retry] Markdown capture attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-            );
-          }
-        },
-      },
-    ).catch(() => null);
+    const skipMarkdownCapture = shouldSkipMarkdownCaptureForGeneratedImage(answer);
+    if (skipMarkdownCapture) {
+      logger("Skipping markdown capture for generated-image response");
+    }
+    const copiedMarkdown = skipMarkdownCapture
+      ? null
+      : await withRetries(
+          async () => {
+            const attempt = await captureAssistantMarkdown(Runtime, answer.meta, logger);
+            if (!attempt) {
+              throw new Error("copy-missing");
+            }
+            return attempt;
+          },
+          {
+            retries: 2,
+            delayMs: 350,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Markdown capture attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
+          },
+        ).catch(() => null);
 
     answerMarkdown = copiedMarkdown ?? answerText;
     ({ answerText, answerMarkdown } = await maybeRecoverLongAssistantResponse({
@@ -1704,6 +1790,20 @@ async function runRemoteBrowserMode(
     }
     stopThinkingMonitor?.();
 
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex: baselineTurns,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: options.config?.timeoutMs,
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -1712,6 +1812,8 @@ async function runRemoteBrowserMode(
       answerText,
       answerMarkdown,
       answerHtml: answerHtml.length > 0 ? answerHtml : undefined,
+      generatedImages: imageArtifacts.generatedImages,
+      savedImages: imageArtifacts.savedImages,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -1721,6 +1823,7 @@ async function runRemoteBrowserMode(
       userDataDir: undefined,
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -1833,6 +1936,14 @@ async function waitForAssistantResponseWithReload(
     logger("Assistant response stalled; reloading conversation and retrying once");
     await Page.navigate({ url: conversationUrl });
     await delay(1000);
+    const recoveredGeneratedImage = await recoverGeneratedImageAnswerAfterReload(
+      Runtime,
+      minTurnIndex,
+    );
+    if (recoveredGeneratedImage) {
+      logger("Recovered generated image artifacts after reloading conversation");
+      return recoveredGeneratedImage;
+    }
     return await waitForAssistantResponse(Runtime, timeoutMs, logger, minTurnIndex);
   }
 }
@@ -1996,7 +2107,85 @@ function buildSessionValidationExpression(): string {
   })()`;
 }
 
-async function readConversationTurnCount(
+function resolveBaselineTurnIndex(rawTurnCount: number): number {
+  return Math.max(0, Math.floor(rawTurnCount) - 1);
+}
+
+export function resolveBaselineTurnIndexForTest(rawTurnCount: number): number {
+  return resolveBaselineTurnIndex(rawTurnCount);
+}
+
+async function recoverGeneratedImageAnswerAfterReload(
+  Runtime: ChromeClient["Runtime"],
+  minTurnIndex?: number,
+): Promise<{
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+} | null> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const [images, snapshot] = await Promise.all([
+      readAssistantGeneratedImages(Runtime, minTurnIndex).catch(() => []),
+      readAssistantSnapshot(Runtime, minTurnIndex).catch(() => null),
+    ]);
+    if (images.length > 0) {
+      const text =
+        typeof snapshot?.text === "string" && snapshot.text.trim()
+          ? snapshot.text.trim()
+          : "Generated image";
+      return {
+        text,
+        html: typeof snapshot?.html === "string" ? snapshot.html : undefined,
+        meta: {
+          turnId: snapshot?.turnId ?? undefined,
+          messageId: snapshot?.messageId ?? undefined,
+        },
+      };
+    }
+
+    if (typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex)) {
+      const [fallbackImages, fallbackSnapshot] = await Promise.all([
+        readAssistantGeneratedImages(Runtime).catch(() => []),
+        readAssistantSnapshot(Runtime).catch(() => null),
+      ]);
+      const fallbackTurnIndex =
+        typeof fallbackSnapshot?.turnIndex === "number" ? fallbackSnapshot.turnIndex : null;
+      const nearBoundary =
+        fallbackTurnIndex !== null && fallbackTurnIndex + 1 >= Math.floor(minTurnIndex);
+      if (fallbackImages.length > 0 && nearBoundary) {
+        const text =
+          typeof fallbackSnapshot?.text === "string" && fallbackSnapshot.text.trim()
+            ? fallbackSnapshot.text.trim()
+            : "Generated image";
+        return {
+          text,
+          html: typeof fallbackSnapshot?.html === "string" ? fallbackSnapshot.html : undefined,
+          meta: {
+            turnId: fallbackSnapshot?.turnId ?? undefined,
+            messageId: fallbackSnapshot?.messageId ?? undefined,
+          },
+        };
+      }
+    }
+
+    await delay(500);
+  }
+  return null;
+}
+
+export async function recoverGeneratedImageAnswerAfterReloadForTest(
+  Runtime: ChromeClient["Runtime"],
+  minTurnIndex?: number,
+): Promise<{
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+} | null> {
+  return recoverGeneratedImageAnswerAfterReload(Runtime, minTurnIndex);
+}
+
+async function readConversationTurnIndex(
   Runtime: ChromeClient["Runtime"],
   logger?: BrowserLogger,
 ): Promise<number | null> {
@@ -2012,7 +2201,7 @@ async function readConversationTurnCount(
       if (!Number.isFinite(raw)) {
         throw new Error("Turn count not numeric");
       }
-      return Math.max(0, Math.floor(raw));
+      return resolveBaselineTurnIndex(raw);
     } catch (error) {
       if (attempt < attempts - 1) {
         await delay(150);
@@ -2020,7 +2209,7 @@ async function readConversationTurnCount(
       }
       if (logger?.verbose) {
         logger(
-          `Failed to read conversation turn count: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to read conversation turn index: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       return null;

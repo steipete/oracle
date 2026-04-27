@@ -89,6 +89,9 @@ export async function runBrowserSessionExecution(
 
   log(headerLine);
   log(chalk.dim("This run can take up to an hour (usually ~10 minutes)."));
+  if (runOptions.generateImage) {
+    log(chalk.dim("Image generation may take longer than 2 minutes."));
+  }
   if (runOptions.verbose) {
     log(chalk.dim("Chrome automation does not stream output; this may take a minute..."));
   }
@@ -108,6 +111,8 @@ export async function runBrowserSessionExecution(
       log: automationLogger,
       heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
       verbose: runOptions.verbose,
+      generateImagePath: runOptions.generateImage,
+      outputPath: runOptions.outputPath,
       runtimeHintCb: async (runtime) => {
         await persistRuntimeHint({
           ...runtime,
@@ -167,6 +172,9 @@ export async function runBrowserSessionExecution(
       chromePort: browserResult.chromePort,
       chromeHost: browserResult.chromeHost,
       userDataDir: browserResult.userDataDir,
+      chromeTargetId: browserResult.chromeTargetId,
+      tabUrl: browserResult.tabUrl,
+      conversationId: browserResult.conversationId,
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     answerText,

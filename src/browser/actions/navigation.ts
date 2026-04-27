@@ -196,6 +196,21 @@ export async function ensureLoggedIn(
     returnByValue: true,
   });
   const probe = normalizeLoginProbe(outcome.result?.value);
+  if (probe.pageUnavailable) {
+    const message = formatPageUnavailableMessage({
+      unavailable: true,
+      title: probe.pageTitle,
+      pageUrl: probe.pageUrl,
+      errorCode: probe.pageErrorCode,
+    });
+    logger(message);
+    throw new BrowserAutomationError(message, {
+      stage: "page-unavailable",
+      pageUrl: probe.pageUrl ?? null,
+      pageTitle: probe.pageTitle ?? null,
+      errorCode: probe.pageErrorCode ?? null,
+    });
+  }
   if (probe.ok) {
     logger(
       `Login check passed (status=${probe.status}, domLoginCta=${Boolean(probe.domLoginCta)})`,
@@ -347,6 +362,24 @@ export async function ensurePromptReady(
         return;
       }
     }
+    const unavailable = await readPageUnavailableState(Runtime).catch(
+      (): PageUnavailableState => ({
+        unavailable: false,
+        pageUrl: null,
+        title: null,
+        errorCode: null,
+      }),
+    );
+    if (unavailable.unavailable) {
+      const message = formatPageUnavailableMessage(unavailable);
+      logger(message);
+      throw new BrowserAutomationError(message, {
+        stage: "page-unavailable",
+        pageUrl: unavailable.pageUrl ?? null,
+        pageTitle: unavailable.title ?? null,
+        errorCode: unavailable.errorCode ?? null,
+      });
+    }
     await logDomFailure(Runtime, logger, "prompt-textarea");
     throw new Error("Prompt textarea did not appear before timeout");
   }
@@ -441,6 +474,9 @@ type LoginProbeResult = {
   pageUrl?: string | null;
   domLoginCta?: boolean;
   onAuthPage?: boolean;
+  pageUnavailable?: boolean;
+  pageTitle?: string | null;
+  pageErrorCode?: string | null;
 };
 
 function buildLoginProbeExpression(timeoutMs: number): string {
@@ -449,10 +485,30 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     // Some UIs render without a session; use DOM + network for a robust answer.
     const timer = setTimeout(() => {}, ${timeoutMs});
     const pageUrl = typeof location === 'object' && location?.href ? location.href : null;
+    const pageTitle = typeof document === 'object' && document?.title ? document.title : '';
+    const bodyText =
+      typeof document === 'object' && document?.body
+        ? String(document.body.innerText || document.body.textContent || '')
+        : '';
     const onAuthPage =
       typeof location === 'object' &&
       typeof location.pathname === 'string' &&
       /^\\/(auth|login|signin)/i.test(location.pathname);
+    const normalizedTitle = String(pageTitle || '').toLowerCase();
+    const normalizedBody = String(bodyText || '').toLowerCase();
+    const errorCodeMatch = String(bodyText || '').match(/\\b(ERR_[A-Z0-9_]+)\\b/);
+    const pageErrorCode = errorCodeMatch ? errorCodeMatch[1] : null;
+    const pageUnavailable =
+      Boolean(pageUrl && String(pageUrl).startsWith('chrome-error://')) ||
+      normalizedTitle.includes("this site can't be reached") ||
+      normalizedTitle.includes("site can't be reached") ||
+      normalizedTitle.includes('problem loading page') ||
+      normalizedBody.includes("this site can't be reached") ||
+      normalizedBody.includes("site can't be reached") ||
+      normalizedBody.includes('your internet access is blocked') ||
+      normalizedBody.includes('check if there is a typo') ||
+      normalizedBody.includes('dns_probe') ||
+      normalizedBody.includes('err_');
 
     const hasLoginCta = () => {
       const candidates = Array.from(
@@ -517,7 +573,7 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     const loginSignals = domLoginCta || onAuthPage;
     clearTimeout(timer);
     return {
-      ok: !loginSignals && (status === 0 || status === 200),
+      ok: !loginSignals && !pageUnavailable && status === 200,
       status,
       redirected: false,
       url: pageUrl,
@@ -525,6 +581,9 @@ function buildLoginProbeExpression(timeoutMs: number): string {
       domLoginCta,
       onAuthPage,
       error,
+      pageUnavailable,
+      pageTitle,
+      pageErrorCode,
     };
   })()`;
 }
@@ -551,5 +610,65 @@ function normalizeLoginProbe(raw: unknown): LoginProbeResult {
     pageUrl: typeof value.pageUrl === "string" ? value.pageUrl : null,
     domLoginCta: Boolean(value.domLoginCta),
     onAuthPage: Boolean(value.onAuthPage),
+    pageUnavailable: Boolean(value.pageUnavailable),
+    pageTitle: typeof value.pageTitle === "string" ? value.pageTitle : null,
+    pageErrorCode: typeof value.pageErrorCode === "string" ? value.pageErrorCode : null,
   };
+}
+
+type PageUnavailableState = {
+  unavailable: boolean;
+  title?: string | null;
+  pageUrl?: string | null;
+  errorCode?: string | null;
+};
+
+async function readPageUnavailableState(
+  Runtime: ChromeClient["Runtime"],
+): Promise<PageUnavailableState> {
+  const outcome = await Runtime.evaluate({
+    expression: `(() => {
+      const pageUrl = typeof location === 'object' && location?.href ? location.href : null;
+      const title = typeof document === 'object' && document?.title ? document.title : '';
+      const bodyText =
+        typeof document === 'object' && document?.body
+          ? String(document.body.innerText || document.body.textContent || '')
+          : '';
+      const normalizedTitle = String(title || '').toLowerCase();
+      const normalizedBody = String(bodyText || '').toLowerCase();
+      const errorCodeMatch = String(bodyText || '').match(/\\b(ERR_[A-Z0-9_]+)\\b/);
+      const errorCode = errorCodeMatch ? errorCodeMatch[1] : null;
+      const unavailable =
+        Boolean(pageUrl && String(pageUrl).startsWith('chrome-error://')) ||
+        normalizedTitle.includes("this site can't be reached") ||
+        normalizedTitle.includes("site can't be reached") ||
+        normalizedTitle.includes('problem loading page') ||
+        normalizedBody.includes("this site can't be reached") ||
+        normalizedBody.includes("site can't be reached") ||
+        normalizedBody.includes('your internet access is blocked') ||
+        normalizedBody.includes('check if there is a typo') ||
+        normalizedBody.includes('dns_probe') ||
+        normalizedBody.includes('err_');
+      return { unavailable, title, pageUrl, errorCode };
+    })()`,
+    returnByValue: true,
+  });
+  const value = outcome.result?.value as Record<string, unknown> | undefined;
+  return {
+    unavailable: Boolean(value?.unavailable),
+    title: typeof value?.title === "string" ? value.title : null,
+    pageUrl: typeof value?.pageUrl === "string" ? value.pageUrl : null,
+    errorCode: typeof value?.errorCode === "string" ? value.errorCode : null,
+  };
+}
+
+function formatPageUnavailableMessage(state: PageUnavailableState): string {
+  const parts = [
+    state.title ? `title=${state.title}` : null,
+    state.errorCode ? `code=${state.errorCode}` : null,
+    state.pageUrl ? `url=${state.pageUrl}` : null,
+  ].filter(Boolean);
+  return parts.length > 0
+    ? `ChatGPT page is unavailable (${parts.join(", ")}).`
+    : "ChatGPT page is unavailable.";
 }

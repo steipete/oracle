@@ -190,7 +190,11 @@ export async function attachSession(
           }) as unknown as BrowserLogger,
           { verbose: true },
         ),
-        { promptPreview: metadata.promptPreview },
+        {
+          promptPreview: metadata.promptPreview,
+          generateImagePath: metadata.options?.generateImage,
+          outputPath: metadata.options?.outputPath,
+        },
       );
       const outputTokens = estimateTokenCount(result.answerMarkdown);
       const logWriter = sessionStore.createLogWriter(sessionId);

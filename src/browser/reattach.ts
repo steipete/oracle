@@ -11,12 +11,13 @@ import {
   ensureLoggedIn,
   ensurePromptReady,
 } from "./pageActions.js";
+import { collectGeneratedImageArtifacts } from "./chatgptImages.js";
 import type { BrowserLogger, ChromeClient } from "./types.js";
 import { launchChrome, connectToChrome, hideChromeWindow } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
 import { syncCookies } from "./cookies.js";
 import { CHATGPT_URL } from "./constants.js";
-import { cleanupStaleProfileState } from "./profileState.js";
+import { cleanupStaleProfileState, readChromePid } from "./profileState.js";
 import {
   pickTarget,
   extractConversationIdFromUrl,
@@ -42,6 +43,8 @@ export interface ReattachDeps {
     config: BrowserSessionConfig | undefined,
   ) => Promise<ReattachResult>;
   promptPreview?: string;
+  generateImagePath?: string;
+  outputPath?: string;
 }
 
 export interface ReattachResult {
@@ -55,6 +58,7 @@ export async function resumeBrowserSession(
   logger: BrowserLogger,
   deps: ReattachDeps = {},
 ): Promise<ReattachResult> {
+  const resolved = resolveBrowserConfig(config ?? {});
   const recoverSession =
     deps.recoverSession ??
     (async (runtimeMeta, configMeta) =>
@@ -81,9 +85,12 @@ export async function resumeBrowserSession(
       port: runtime.chromePort,
       target: target?.targetId,
     })) as unknown as ChromeClient;
-    const { Runtime, DOM } = client;
+    const { Runtime, DOM, Network } = client;
     if (Runtime?.enable) {
       await Runtime.enable();
+    }
+    if (Network?.enable) {
+      await Network.enable({});
     }
     if (DOM && typeof DOM.enable === "function") {
       await DOM.enable();
@@ -142,29 +149,103 @@ export async function resumeBrowserSession(
       minTurnIndex,
       timeoutMs,
     );
-    const markdown =
-      (await withTimeout(
-        captureMarkdown(Runtime, recovered.meta, logger),
-        15_000,
+      const markdown =
+        (await withTimeout(
+          captureMarkdown(Runtime, recovered.meta, logger),
+          15_000,
         "Reattach markdown capture timed out",
       )) ?? recovered.text;
     const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex,
+      generateImagePath: deps.generateImagePath,
+      outputPath: deps.outputPath,
+      answerText: aligned.answerText,
+      waitTimeoutMs: config?.timeoutMs,
+    });
+      const withImages = {
+        answerText: imageArtifacts.answerText,
+        answerMarkdown: `${aligned.answerMarkdown}${imageArtifacts.markdownSuffix}`,
+      };
 
-    if (client && typeof client.close === "function") {
+      await closeExistingReattachChrome(client, runtime, resolved, logger);
+
+      return { answerText: withImages.answerText, answerMarkdown: withImages.answerMarkdown };
+    } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(
+      `Existing Chrome reattach failed (${message}); reopening browser to locate the session.`,
+    );
+    return recoverSession(runtime, config);
+  }
+}
+
+async function closeExistingReattachChrome(
+  client: ChromeClient,
+  runtime: BrowserRuntimeMetadata,
+  config: ReturnType<typeof resolveBrowserConfig>,
+  logger: BrowserLogger,
+): Promise<void> {
+  if (config.keepBrowser) {
+    if (typeof client.close === "function") {
       try {
         await client.close();
       } catch {
         // ignore
       }
     }
+    return;
+  }
 
-    return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger(
-      `Existing Chrome reattach failed (${message}); reopening browser to locate the session.`,
+  let browserClosed = false;
+  const browserDomain = (
+    client as ChromeClient & {
+      Browser?: {
+        close?: () => Promise<void>;
+      };
+    }
+  ).Browser;
+  if (browserDomain && typeof browserDomain.close === "function") {
+    try {
+      await browserDomain.close();
+      browserClosed = true;
+    } catch (error) {
+      logger(
+        `Failed to close reattached Chrome via CDP: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (!browserClosed) {
+    const pid =
+      runtime.chromePid ??
+      (runtime.userDataDir ? await readChromePid(runtime.userDataDir).catch(() => null) : null);
+    if (pid) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (typeof client.close === "function") {
+    try {
+      await client.close();
+    } catch {
+      // ignore
+    }
+  }
+
+  if (config.manualLogin && runtime.userDataDir) {
+    await cleanupStaleProfileState(runtime.userDataDir, logger, { lockRemovalMode: "never" }).catch(
+      () => undefined,
     );
-    return recoverSession(runtime, config);
+  } else if (runtime.userDataDir) {
+    await rm(runtime.userDataDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -189,6 +270,9 @@ async function resumeBrowserSessionViaNewChrome(
 
   if (Runtime?.enable) {
     await Runtime.enable();
+  }
+  if (Network?.enable) {
+    await Network.enable({});
   }
   if (DOM && typeof DOM.enable === "function") {
     await DOM.enable();
@@ -260,6 +344,20 @@ async function resumeBrowserSessionViaNewChrome(
   );
   const markdown = (await captureMarkdown(Runtime, recovered.meta, logger)) ?? recovered.text;
   const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
+  const imageArtifacts = await collectGeneratedImageArtifacts({
+    Runtime,
+    Network,
+    logger,
+    minTurnIndex,
+    generateImagePath: deps.generateImagePath,
+    outputPath: deps.outputPath,
+    answerText: aligned.answerText,
+    waitTimeoutMs: config?.timeoutMs,
+  });
+  const withImages = {
+    answerText: imageArtifacts.answerText,
+    answerMarkdown: `${aligned.answerMarkdown}${imageArtifacts.markdownSuffix}`,
+  };
 
   if (client && typeof client.close === "function") {
     try {
@@ -283,7 +381,7 @@ async function resumeBrowserSessionViaNewChrome(
     }
   }
 
-  return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
+  return { answerText: withImages.answerText, answerMarkdown: withImages.answerMarkdown };
 }
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite

@@ -166,6 +166,10 @@ export interface RunOracleOptions {
   background?: boolean;
   /** Optional absolute path to save only the assistant's final text output. */
   writeOutputPath?: string;
+  /** Browser/Gemini image generation output path. For browser chat surfaces, extra images save alongside this file. */
+  generateImage?: string;
+  /** Optional output path used by edit/image workflows. */
+  outputPath?: string;
   /** Number of seconds to wait before timing out, or 'auto' to use model defaults. */
   timeoutSeconds?: number | "auto";
   /** Override HTTP client timeout (milliseconds). */
