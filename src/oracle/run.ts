@@ -313,11 +313,11 @@ export async function runOracle(
     if (
       !options.suppressHeader &&
       (modelConfig.model === "gpt-5.1-pro" || modelConfig.model === "gpt-5.2-pro") &&
-      effectiveModelId === "gpt-5.4-pro"
+      effectiveModelId === "gpt-5.5-pro"
     ) {
       log(
         dim(
-          `Note: \`${modelConfig.model}\` is a stable CLI alias; OpenAI API uses \`gpt-5.4-pro\`.`,
+          `Note: \`${modelConfig.model}\` is a stable CLI alias; OpenAI API uses \`gpt-5.5-pro\`.`,
         ),
       );
     }
