@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildComposerSignalMatchersForTest,
   buildModelMatchersLiteralForTest,
   buildModelSelectionExpressionForTest,
 } from "../../src/browser/actions/modelSelection.js";
@@ -56,6 +57,17 @@ describe("browser model selection matchers", () => {
     expect(testIdTokens).toContain("gpt-5.2-thinking");
   });
 
+  it("includes language-independent thinking test ids for Thinking 5.4", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("Thinking 5.4");
+    expect(labelTokens).toContain("thinking");
+    expect(testIdTokens).toContain("model-switcher-gpt-5-4-thinking");
+    expect(testIdTokens).toContain("gpt-5-4-thinking");
+    expect(testIdTokens).toContain("gpt-5.4-thinking");
+    expect(testIdTokens).toContain("model-switcher-gpt-5-2-thinking");
+    expect(testIdTokens).toContain("gpt-5-2-thinking");
+    expect(testIdTokens).toContain("gpt-5.2-thinking");
+  });
+
   it("includes instant tokens for gpt-5.2-instant", () => {
     const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.2-instant");
     expect(labelTokens.some((t) => t.includes("instant"))).toBe(true);
@@ -69,5 +81,38 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const closeMenu = () =>");
     expect(expression).toContain("key: 'Escape'");
     expect(expression).toContain("closeMenu();");
+  });
+
+  it("builds composer footer matchers for generic ChatGPT header states", () => {
+    expect(buildComposerSignalMatchersForTest("GPT-5.4 Pro")).toEqual({
+      includesAny: ["pro"],
+      excludesAny: ["thinking"],
+      allowBlank: false,
+    });
+    expect(buildComposerSignalMatchersForTest("Thinking 5.4")).toEqual({
+      includesAny: ["thinking"],
+      excludesAny: ["pro"],
+      allowBlank: false,
+    });
+    expect(buildComposerSignalMatchersForTest("GPT-5.2 Instant")).toEqual({
+      includesAny: [],
+      excludesAny: ["thinking", "pro"],
+      allowBlank: true,
+    });
+  });
+
+  it("waits for composer/footer state when the header button stays generic", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.4 Pro");
+    expect(expression).toContain("const readComposerModelSignal = () =>");
+    expect(expression).toContain("const activeSelectionMatchesTarget = () =>");
+    expect(expression).toContain("const waitForTargetSelection = (previousButtonLabel, previousComposerSignal) =>");
+  });
+
+  it("accepts a post-click state change even when the footer text is localized", () => {
+    const expression = buildModelSelectionExpressionForTest("Thinking 5.4");
+    expect(expression).toContain("const selectionStateChanged = (previousButtonLabel, previousComposerSignal) =>");
+    expect(expression).toContain("const previousComposerSignal = readComposerModelSignal();");
+    expect(expression).toContain("const previousButtonLabel = normalizeText(getButtonLabel());");
+    expect(expression).toContain(".trailing svg");
   });
 });
