@@ -35,7 +35,10 @@ export function formatSessionTableRow(
   const status = colorStatus(meta.status ?? "unknown", rich);
   const modelLabel = (meta.model ?? "n/a").padEnd(MODEL_PAD);
   const model = rich ? chalk.white(modelLabel) : modelLabel;
-  const modeLabel = (meta.mode ?? meta.options?.mode ?? "api").padEnd(MODE_PAD);
+  const modeRaw = meta.mode ?? meta.options?.mode ?? "api";
+  const modeLabel = (
+    modeRaw === "browser" && meta.browser?.config?.deepResearch ? "browser/dr" : modeRaw
+  ).padEnd(MODE_PAD);
   const mode = rich ? chalk.gray(modeLabel) : modeLabel;
   const timestampLabel = formatTimestampAligned(meta.createdAt).padEnd(TIMESTAMP_PAD);
   const timestamp = rich ? chalk.gray(timestampLabel) : timestampLabel;

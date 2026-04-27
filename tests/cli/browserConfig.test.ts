@@ -196,6 +196,32 @@ describe("buildBrowserConfig", () => {
       }),
     ).rejects.toThrow(/between 1 and 65535/i);
   });
+
+  test("deep-research flag sets deepResearch to true", async () => {
+    const config = await buildBrowserConfig({ model: "gpt-5.2-pro", deepResearch: true });
+    expect(config.deepResearch).toBe(true);
+  });
+
+  test("deep-research forces model strategy to ignore", async () => {
+    const config = await buildBrowserConfig({ model: "gpt-5.2-pro", deepResearch: true });
+    expect(config.modelStrategy).toBe("ignore");
+  });
+
+  test("deep-research uses runtime default timeout (not set in config)", async () => {
+    const config = await buildBrowserConfig({ model: "gpt-5.2-pro", deepResearch: true });
+    // Timeout is handled at runtime by DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
+    // not set in buildBrowserConfig unless explicitly provided
+    expect(config.timeoutMs).toBeUndefined();
+  });
+
+  test("deep-research preserves explicit user timeout", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.2-pro",
+      deepResearch: true,
+      browserTimeout: "60m",
+    });
+    expect(config.timeoutMs).toBe(3_600_000);
+  });
 });
 
 describe("resolveBrowserModelLabel", () => {

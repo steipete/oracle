@@ -110,6 +110,77 @@ describe("resumeBrowserSession", () => {
     expect(result.answerText).toBe("fallback");
     expect(recoverSession).toHaveBeenCalled();
   });
+
+  test("uses Deep Research flow when config.deepResearch is true and completed", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+    };
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      // checkDeepResearchStatus: completed
+      if (expression.includes("completed") && expression.includes("inProgress")) {
+        return {
+          result: {
+            value: { completed: true, inProgress: false, hasIframe: false, textLength: 3000 },
+          },
+        };
+      }
+      // extractDeepResearchResult → readAssistantSnapshot
+      if (expression.includes("data-message-author-role")) {
+        return {
+          result: {
+            value: {
+              text: "Deep Research report",
+              html: "<p>Deep Research report</p>",
+              turnId: "t1",
+              messageId: "m1",
+            },
+          },
+        };
+      }
+      // captureAssistantMarkdown — copy button not found
+      return { result: { value: null } };
+    });
+    const listTargets = vi.fn(
+      async () =>
+        [
+          { targetId: "target-1", type: "page", url: runtime.tabUrl },
+        ] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const connect = vi.fn(
+      async () =>
+        ({
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Runtime: { enable: vi.fn(), evaluate },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          DOM: { enable: vi.fn() },
+          close: vi.fn(async () => {}),
+        }) satisfies FakeClient,
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const logger = vi.fn() as BrowserLogger;
+    logger.verbose = true;
+
+    const result = await resumeBrowserSession(
+      runtime,
+      { deepResearch: true, timeoutMs: 5_000 },
+      logger,
+      { listTargets, connect },
+    );
+
+    expect(result.answerText).toBe("Deep Research report");
+    expect(result.answerMarkdown).toBe("Deep Research report");
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("already completed"),
+    );
+  });
 });
 
 describe("reattach helpers", () => {

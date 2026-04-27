@@ -634,15 +634,24 @@ async function autoReattachUntilComplete({
     log(dim("Auto-reattach disabled: missing runtime or browser config."));
     return false;
   }
-  const delayMs = Math.max(0, browserConfig.autoReattachDelayMs ?? 0);
-  const intervalMs = Math.max(0, browserConfig.autoReattachIntervalMs ?? 0);
+  const isDeepResearch = browserConfig.deepResearch === true;
+  const delayMs = Math.max(
+    browserConfig.autoReattachDelayMs ?? 0,
+    isDeepResearch ? 120_000 : 0, // Deep Research: wait at least 2 min before first attempt
+  );
+  const intervalMs = Math.max(
+    browserConfig.autoReattachIntervalMs ?? 0,
+    isDeepResearch ? 60_000 : 0, // Deep Research: check every minute at minimum
+  );
   if (intervalMs <= 0) {
     return false;
   }
-  const timeoutMs =
+  const timeoutMs = Math.max(
     Math.max(0, browserConfig.autoReattachTimeoutMs ?? 0) ||
-    Math.max(0, browserConfig.timeoutMs ?? 0) ||
-    120_000;
+      Math.max(0, browserConfig.timeoutMs ?? 0) ||
+      120_000,
+    isDeepResearch ? 300_000 : 0, // Deep Research: 5 min per attempt at minimum
+  );
   const maxTotalMs = 2 * 60 * 60 * 1000; // 2h hard cap; avoid infinite polling by default.
   const maxDeadline = Date.now() + maxTotalMs;
 
