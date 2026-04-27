@@ -70,4 +70,11 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("key: 'Escape'");
     expect(expression).toContain("closeMenu();");
   });
+
+  it("recognizes the current ChatGPT + Pro composer state", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.4-pro", "current");
+    expect(expression).toContain("button.__composer-pill");
+    expect(expression).toContain('button[aria-label="Pro, click to remove"]');
+    expect(expression).toContain("currentLabel + ' + Pro'");
+  });
 });
