@@ -64,6 +64,15 @@ export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } fro
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from "./utils.js";
 
+function redactBrowserConfigForDebugLog(config: Record<string, unknown>): Record<string, unknown> {
+  const redacted = { ...config };
+  if (Array.isArray(config.inlineCookies)) {
+    redacted.inlineCookies = `[redacted:${config.inlineCookies.length} cookies]`;
+    redacted.inlineCookieCount = config.inlineCookies.length;
+  }
+  return redacted;
+}
+
 function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
   if (!(error instanceof BrowserAutomationError)) return false;
   return (error.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
@@ -122,7 +131,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   if (config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") {
     logger(
       `[browser-mode] config: ${JSON.stringify({
-        ...config,
+        ...redactBrowserConfigForDebugLog(config),
         promptLength: promptText.length,
       })}`,
     );
@@ -2145,7 +2154,25 @@ async function resolveUserDataBaseDir(): Promise<string> {
       }
     }
   }
-  return os.tmpdir();
+
+  const tmpDir = os.tmpdir();
+  if (process.platform === "linux") {
+    const homeDir = os.homedir();
+    const relativeToHome =
+      homeDir && tmpDir.startsWith(homeDir + path.sep) ? tmpDir.slice(homeDir.length + 1) : "";
+    const firstSegment = relativeToHome.split(path.sep, 1)[0];
+    const isHiddenHomeTmp = Boolean(firstSegment?.startsWith("."));
+    if (isHiddenHomeTmp) {
+      try {
+        await mkdir("/tmp", { recursive: true });
+        return "/tmp";
+      } catch {
+        // Fall back to the inherited tmpdir if /tmp is unavailable.
+      }
+    }
+  }
+
+  return tmpDir;
 }
 
 function buildThinkingStatusExpression(): string {
