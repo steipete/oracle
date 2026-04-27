@@ -158,6 +158,18 @@ Run these four smoke tests whenever we touch browser automation:
    Prepare `/tmp/browser-report.txt` with faux metrics, then run  
    `pnpm run oracle -- --engine browser --model gpt-5.2 --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`  
    Verify verbose logs show attachment upload and the final answer matches the file data.
+   Expected attachment-send logs:
+   - `Attachment queued`
+   - `All attachments uploaded`
+   - `Clicked send button`
+   - no `Submitted prompt via Enter key` after the attachment upload stage
+
+5. **Attachment send race guard**
+   Prepare a small text file, then run
+   `pnpm run oracle -- --engine browser --model gpt-5.2 --prompt "Reply exactly with OK." --file /tmp/browser-report.txt --verbose`
+   Validate one of these outcomes:
+   - success path: `All attachments uploaded` followed by `Clicked send button`, then the assistant answer
+   - fail-fast path: an explicit attachment/browser automation error before send, with no Enter fallback
 
 Record session IDs and outcomes in the PR description (pass/fail, notable delays). This ensures reviewers can audit real runs.
 

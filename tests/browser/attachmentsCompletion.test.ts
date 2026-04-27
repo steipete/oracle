@@ -84,7 +84,7 @@ describe("attachment completion fallbacks", () => {
     useRealTime();
   });
 
-  test("waitForAttachmentCompletion times out when send button stays disabled (upload likely in progress)", async () => {
+  test("waitForAttachmentCompletion resolves when attachment UI count is stable even if send button stays disabled", async () => {
     useFakeTime();
 
     const runtime = {
@@ -94,8 +94,35 @@ describe("attachment completion fallbacks", () => {
             state: "disabled",
             uploading: false,
             filesAttached: true,
-            attachedNames: ["oracle-attach-verify.txt"],
+            attachedNames: ["remove file"],
             inputNames: [],
+            fileCount: 0,
+            attachmentUiCount: 1,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 10_000, ["oracle-attach-verify.txt"]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(promise).resolves.toBeUndefined();
+    useRealTime();
+  });
+
+  test("waitForAttachmentCompletion times out when neither attachment UI nor file input matches", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "disabled",
+            uploading: false,
+            filesAttached: true,
+            attachedNames: ["remove file"],
+            inputNames: [],
+            fileCount: 0,
+            attachmentUiCount: 0,
           },
         },
       }),

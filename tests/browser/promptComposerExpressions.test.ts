@@ -1,12 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { buildAttachmentReadyExpressionForTest } from "../../src/browser/actions/promptComposer.ts";
+import { buildComposerSendReadinessExpressionForTest } from "../../src/browser/actions/promptComposer.ts";
 
 describe("prompt composer attachment expressions", () => {
-  test("attachment ready check does not match prompt text", () => {
-    const expression = buildAttachmentReadyExpressionForTest(["oracle-attach-verify.txt"]);
-    expect(expression).toContain("document.querySelector('[data-testid*=\"composer\"]')");
-    expect(expression).toContain("composer.querySelectorAll");
+  test("composer readiness check scopes attachment evidence to the composer", () => {
+    const expression = buildComposerSendReadinessExpressionForTest();
+    expect(expression).toContain("locateComposerRoot");
+    expect(expression).toContain("composerScope.querySelectorAll");
     expect(expression).toContain('input[type="file"]');
+    expect(expression).toContain("attachmentUiCount");
     expect(expression).not.toContain("a,div,span");
     expect(expression).not.toContain(
       'document.querySelectorAll(\'[data-testid*="chip"],[data-testid*="attachment"],a,div,span\')',

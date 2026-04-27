@@ -72,4 +72,47 @@ describe("promptComposer", () => {
       promptComposer.verifyPromptCommitted(runtime as never, "hello", 150),
     ).resolves.toBe(1);
   });
+
+  test("attachment sends time out instead of falling back when composer never becomes send-ready", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn().mockImplementation(async ({ expression }: { expression: string }) => {
+          if (expression.includes("dispatchClickSequence")) {
+            return { result: { value: "clicked" } };
+          }
+          return {
+            result: {
+              value: {
+                state: "disabled",
+                uploading: false,
+                filesAttached: true,
+                attachedNames: ["remove file"],
+                inputNames: [],
+                fileCount: 0,
+                attachmentUiCount: 1,
+              },
+            },
+          };
+        }),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.attemptSendButton(
+        runtime as never,
+        (() => undefined) as never,
+        ["oracle-attach-verify.txt"],
+        250,
+      );
+      const assertion = expect(promise).rejects.toThrow(/send-ready state/i);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await assertion;
+      expect(runtime.evaluate).not.toHaveBeenCalledWith(
+        expect.objectContaining({ expression: expect.stringContaining("dispatchClickSequence") }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
