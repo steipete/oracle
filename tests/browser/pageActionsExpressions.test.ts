@@ -1,9 +1,11 @@
 import { describe, expect, test } from "vitest";
 import {
   buildAssistantExtractorForTest,
+  buildAssistantSnapshotExpressionForTest,
   buildConversationDebugExpressionForTest,
   buildMarkdownFallbackExtractorForTest,
   buildCopyExpressionForTest,
+  buildUserTurnAttachmentExpressionForTest,
 } from "../../src/browser/pageActions.ts";
 import {
   CONVERSATION_TURN_SELECTOR,
@@ -20,6 +22,13 @@ describe("browser automation expressions", () => {
   test("conversation debug expression references conversation selector", () => {
     const expression = buildConversationDebugExpressionForTest();
     expect(expression).toContain(JSON.stringify(CONVERSATION_TURN_SELECTOR));
+  });
+
+  test("assistant snapshot expression guards against conversation drift", () => {
+    const expression = buildAssistantSnapshotExpressionForTest(4, "conv-123");
+    expect(expression).toContain('const EXPECTED_CONVERSATION_ID = "conv-123"');
+    expect(expression).toContain("currentConversationId !== EXPECTED_CONVERSATION_ID");
+    expect(expression).toContain("return null;");
   });
 
   test("markdown fallback filters user turns and respects assistant indicators", () => {
@@ -44,5 +53,14 @@ describe("browser automation expressions", () => {
     expect(expression).toContain(ASSISTANT_ROLE_SELECTOR);
     expect(expression).toContain("isAssistantTurn");
     expect(expression).toContain("copy-turn-action-button");
+  });
+
+  test("user-turn attachment expression requires non-empty prompt text for prefix fallback", () => {
+    const expression = buildUserTurnAttachmentExpressionForTest({
+      expectedPromptPrefix: "expected prompt text",
+    });
+    expect(expression).toContain("const textPrefix = text.slice");
+    expect(expression).toContain("text.length > 0");
+    expect(expression).toContain("textPrefix.length > 0");
   });
 });

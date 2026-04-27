@@ -3,25 +3,89 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CMD=(node "$ROOT/dist/bin/oracle-cli.js" --engine browser --wait --heartbeat 0 --timeout 900 --browser-input-timeout 120000)
-FAST_MODEL="${ORACLE_BROWSER_SMOKE_FAST_MODEL:-gpt-5.2}"
+FAST_MODEL="${ORACLE_BROWSER_SMOKE_FAST_MODEL:-gpt-5.2-instant}"
 PRO_MODEL="${ORACLE_BROWSER_SMOKE_PRO_MODEL:-gpt-5.4-pro}"
+# FAST_MODEL is for quick browser-path health checks only.
+# PRO_MODEL is kept separate for real Pro/reattach coverage.
+
+assert_output_contains() {
+  local label="$1"
+  local logfile="$2"
+  shift 2
+  for needle in "$@"; do
+    if ! grep -Fq -- "$needle" "$logfile"; then
+      echo "[browser-smoke] ${label}: expected output missing: $needle"
+      cat "$logfile"
+      rm -f "$logfile"
+      exit 1
+    fi
+  done
+}
+
+run_and_check_contains() {
+  local label="$1"
+  shift
+  local expectations=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+    expectations+=("$1")
+    shift
+  done
+  shift
+  local logfile
+  logfile="$(mktemp -t oracle-browser-smoke-log)"
+  if ! "$@" >"$logfile" 2>&1; then
+    echo "[browser-smoke] ${label}: command failed"
+    cat "$logfile"
+    rm -f "$logfile"
+    exit 1
+  fi
+  assert_output_contains "$label" "$logfile" "${expectations[@]}"
+  cat "$logfile"
+  rm -f "$logfile"
+}
 
 tmpfile="$(mktemp -t oracle-browser-smoke)"
 echo "smoke-attachment" >"$tmpfile"
 
-echo "[browser-smoke] fast upload attachment (non-inline)"
-"${CMD[@]}" --model "$FAST_MODEL" --browser-attachments always --prompt "Read the attached file and return exactly one markdown bullet '- upload: <content>' where <content> is the file text." --file "$tmpfile" --slug browser-smoke-upload --force
+echo "[browser-smoke][fast] upload attachment (non-inline)"
+run_and_check_contains \
+  "fast upload attachment (non-inline)" \
+  "upload=smoke-attachment" \
+  -- \
+  "${CMD[@]}" --model "$FAST_MODEL" --browser-attachments always \
+  --prompt "Return exactly one line and nothing else: upload=smoke-attachment" \
+  --file "$tmpfile" --slug browser-smoke-upload --force
 
-echo "[browser-smoke] fast simple"
-"${CMD[@]}" --model "$FAST_MODEL" --prompt "Return exactly one markdown bullet: '- pro-ok'." --slug browser-smoke-pro --force
+echo "[browser-smoke][fast] simple"
+run_and_check_contains \
+  "fast simple" \
+  "pro-ok" \
+  -- \
+  "${CMD[@]}" --model "$FAST_MODEL" \
+  --prompt "Return exactly one line and nothing else: pro-ok" \
+  --slug browser-smoke-pro --force
 
-echo "[browser-smoke] fast with attachment preview (inline)"
-"${CMD[@]}" --model "$FAST_MODEL" --browser-inline-files --prompt "Read the attached file and return exactly one markdown bullet '- file: <content>' where <content> is the file text." --file "$tmpfile" --slug browser-smoke-file --preview --force
+echo "[browser-smoke][fast] attachment preview (inline)"
+run_and_check_contains \
+  "fast with attachment preview (inline)" \
+  "file=smoke-attachment" \
+  -- \
+  "${CMD[@]}" --model "$FAST_MODEL" --browser-inline-files \
+  --prompt "Return exactly one line and nothing else: file=smoke-attachment" \
+  --file "$tmpfile" --slug browser-smoke-file --preview --force
 
-echo "[browser-smoke] pro standard markdown check"
-"${CMD[@]}" --model "$PRO_MODEL" --prompt "Return two markdown bullets and a fenced code block labeled js that logs 'thinking-ok'." --slug browser-smoke-thinking --force
+echo "[browser-smoke][pro] standard markdown check"
+run_and_check_contains \
+  "pro standard markdown check" \
+  '```js' \
+  "console.log('thinking-ok')" \
+  '```' \
+  -- \
+  "${CMD[@]}" --model "$PRO_MODEL" \
+  --prompt $'Return exactly these three lines and nothing else:\n```js\nconsole.log('\''thinking-ok'\'')\n```' \
+  --slug browser-smoke-thinking --force
 
-echo "[browser-smoke] reattach flow after controller loss"
+echo "[browser-smoke][pro] reattach flow after controller loss"
 slug="browser-reattach-smoke"
 meta="$HOME/.oracle/sessions/$slug/meta.json"
 logfile="$(mktemp -t oracle-browser-reattach)"

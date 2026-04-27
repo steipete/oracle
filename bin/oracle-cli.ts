@@ -13,6 +13,7 @@ if (process.argv[2] === "oracle-mcp") {
 }
 import { resolveEngine, type EngineMode, defaultWaitPreference } from "../src/cli/engine.js";
 import { shouldRequirePrompt } from "../src/cli/promptRequirement.js";
+import { resolveDashPrompt } from "../src/cli/stdin.js";
 import chalk from "chalk";
 import type { SessionMetadata, SessionMode, BrowserSessionConfig } from "../src/sessionStore.js";
 import { sessionStore, pruneOldSessions } from "../src/sessionStore.js";
@@ -216,7 +217,7 @@ program.hook("preAction", () => {
   introPrinted = true;
 });
 applyHelpStyling(program, VERSION, isTty);
-program.hook("preAction", (thisCommand) => {
+program.hook("preAction", async (thisCommand) => {
   if (thisCommand !== program) {
     return;
   }
@@ -233,6 +234,11 @@ program.hook("preAction", (thisCommand) => {
   if (!opts.prompt && positional) {
     opts.prompt = positional;
     thisCommand.setOptionValue("prompt", positional);
+  }
+  const resolvedPrompt = await resolveDashPrompt(opts.prompt);
+  if (resolvedPrompt !== opts.prompt) {
+    opts.prompt = resolvedPrompt;
+    thisCommand.setOptionValue("prompt", resolvedPrompt);
   }
   if (shouldRequirePrompt(userCliArgs, opts)) {
     console.log(
