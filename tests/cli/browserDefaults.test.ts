@@ -121,6 +121,19 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserManualLoginProfileDir).toBe("/tmp/oracle-profile");
   });
 
+  test("applies attach-running defaults from config when CLI flags are untouched", () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = {
+      browser: {
+        attachRunning: true,
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => "default");
+
+    expect(options.browserAttachRunning).toBe(true);
+  });
+
   test("does not override manual-login when CLI enabled it", () => {
     const options: BrowserDefaultsOptions = { browserManualLogin: true };
     const config: UserConfig = {

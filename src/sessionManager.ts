@@ -20,6 +20,7 @@ export interface BrowserSessionConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
+  attachRunning?: boolean;
   chatgptUrl?: string | null;
   url?: string;
   timeoutMs?: number;
@@ -60,9 +61,12 @@ export interface BrowserSessionConfig {
 }
 
 export interface BrowserRuntimeMetadata {
+  browserTransport?: "cdp";
   chromePid?: number;
   chromePort?: number;
   chromeHost?: string;
+  chromeBrowserWSEndpoint?: string;
+  chromeProfileRoot?: string;
   userDataDir?: string;
   chromeTargetId?: string;
   tabUrl?: string;

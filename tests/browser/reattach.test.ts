@@ -91,6 +91,66 @@ describe("resumeBrowserSession", () => {
     expect(recoverSession).toHaveBeenCalled();
   });
 
+  test("tries live reattach from browser websocket metadata before falling back", async () => {
+    const runtime = {
+      chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+      chromeProfileRoot: "/tmp/oracle-attach-running-profile",
+      tabUrl: "https://chatgpt.com/c/abc",
+      chromeTargetId: "target-2",
+    };
+    const listTargets = vi.fn(
+      async () =>
+        [
+          { targetId: "target-2", type: "page", url: "https://chatgpt.com/c/abc" },
+        ] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(
+      async () =>
+        ({
+          Runtime: { enable: vi.fn(), evaluate },
+          DOM: { enable: vi.fn() },
+          close: vi.fn(async () => {}),
+        }) satisfies FakeClient,
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "attached",
+      html: "",
+      meta: { messageId: "m1", turnId: "conversation-turn-1" },
+    }));
+    const captureAssistantMarkdown = vi.fn(async () => "attached-md");
+    const logger = vi.fn() as BrowserLogger;
+
+    const result = await resumeBrowserSession(
+      runtime,
+      { attachRunning: true, timeoutMs: 2_000 },
+      logger,
+      {
+        listTargets,
+        connect,
+        waitForAssistantResponse,
+        captureAssistantMarkdown,
+      },
+    );
+
+    expect(result.answerMarkdown).toBe("attached-md");
+    expect(listTargets).toHaveBeenCalled();
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: "ws://127.0.0.1:9222/devtools/browser/abc",
+        local: true,
+      }),
+    );
+  });
+
   test("falls back to recovery when existing chrome attach fails", async () => {
     const runtime = {
       chromePort: 51559,

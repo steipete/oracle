@@ -12,11 +12,18 @@ import {
   ensurePromptReady,
 } from "./pageActions.js";
 import type { BrowserLogger, ChromeClient } from "./types.js";
-import { launchChrome, connectToChrome, hideChromeWindow } from "./chromeLifecycle.js";
+import {
+  launchChrome,
+  connectToChrome,
+  hideChromeWindow,
+  connectToRemoteChromeTarget,
+  listRemoteChromeTargets,
+} from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
 import { syncCookies } from "./cookies.js";
 import { CHATGPT_URL } from "./constants.js";
 import { cleanupStaleProfileState } from "./profileState.js";
+import { readDevToolsActivePortInfo } from "./detect.js";
 import {
   pickTarget,
   extractConversationIdFromUrl,
@@ -31,7 +38,6 @@ import {
   alignPromptEchoMarkdown,
   type TargetInfoLite,
 } from "./reattachHelpers.js";
-
 export interface ReattachDeps {
   listTargets?: () => Promise<TargetInfoLite[]>;
   connect?: (options?: unknown) => Promise<ChromeClient>;
@@ -60,27 +66,51 @@ export async function resumeBrowserSession(
     (async (runtimeMeta, configMeta) =>
       resumeBrowserSessionViaNewChrome(runtimeMeta, configMeta, logger, deps));
 
-  if (!runtime.chromePort) {
+  if (!runtime.chromePort && !runtime.chromeBrowserWSEndpoint) {
     logger("No running Chrome detected; reopening browser to locate the session.");
     return recoverSession(runtime, config);
   }
 
-  const host = runtime.chromeHost ?? "127.0.0.1";
   try {
+    const liveRuntime = (await refreshAttachRuntime(runtime).catch(() => runtime)) ?? runtime;
+    const host = liveRuntime.chromeHost ?? "127.0.0.1";
+    const port =
+      liveRuntime.chromePort ?? inferPortFromBrowserWSEndpoint(liveRuntime.chromeBrowserWSEndpoint);
+    const browserWSEndpoint = liveRuntime.chromeBrowserWSEndpoint ?? undefined;
     const listTargets =
       deps.listTargets ??
-      (async () => {
-        const targets = await CDP.List({ host, port: runtime.chromePort as number });
-        return targets as unknown as TargetInfoLite[];
-      });
-    const connect = deps.connect ?? ((options?: unknown) => CDP(options as CDP.Options));
+      (async () =>
+        (await listRemoteChromeTargets({
+          host,
+          port: port ?? 9222,
+          browserWSEndpoint,
+        })) as TargetInfoLite[]);
     const targetList = (await listTargets()) as TargetInfoLite[];
-    const target = pickTarget(targetList, runtime);
-    const client: ChromeClient = (await connect({
-      host,
-      port: runtime.chromePort,
-      target: target?.targetId,
-    })) as unknown as ChromeClient;
+    const target = pickTarget(targetList, liveRuntime);
+    const connection =
+      browserWSEndpoint && !deps.connect
+        ? await connectToRemoteChromeTarget(host, port ?? 9222, logger, {
+            browserWSEndpoint,
+            targetId: target?.targetId,
+            closeTargetOnDispose: false,
+          })
+        : ({
+            client: (await (deps.connect ?? ((options?: unknown) => CDP(options as CDP.Options)))(
+              browserWSEndpoint
+                ? {
+                    target: browserWSEndpoint,
+                    local: true,
+                    targetId: target?.targetId,
+                  }
+                : {
+                    host,
+                    port,
+                    target: target?.targetId,
+                  },
+            )) as unknown as ChromeClient,
+            close: async () => undefined,
+          } as const);
+    const client: ChromeClient = connection.client;
     const { Runtime, DOM } = client;
     if (Runtime?.enable) {
       await Runtime.enable();
@@ -150,13 +180,7 @@ export async function resumeBrowserSession(
       )) ?? recovered.text;
     const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
 
-    if (client && typeof client.close === "function") {
-      try {
-        await client.close();
-      } catch {
-        // ignore
-      }
-    }
+    await connection.close().catch(() => undefined);
 
     return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
   } catch (error) {
@@ -166,6 +190,43 @@ export async function resumeBrowserSession(
     );
     return recoverSession(runtime, config);
   }
+}
+
+async function refreshAttachRuntime(
+  runtime: BrowserRuntimeMetadata,
+): Promise<BrowserRuntimeMetadata | null> {
+  if (!runtime.chromeProfileRoot) {
+    return runtime;
+  }
+  const host = runtime.chromeHost ?? "127.0.0.1";
+  const activePort = await readDevToolsActivePortInfo(runtime.chromeProfileRoot, {
+    host,
+  });
+  if (!activePort) {
+    return runtime;
+  }
+  return {
+    ...runtime,
+    chromeHost: host,
+    chromePort: activePort.port,
+    chromeBrowserWSEndpoint: activePort.browserWSEndpoint,
+  };
+}
+
+function inferPortFromBrowserWSEndpoint(browserWSEndpoint?: string): number | undefined {
+  if (!browserWSEndpoint) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(browserWSEndpoint);
+    const port = Number.parseInt(parsed.port, 10);
+    if (Number.isFinite(port) && port > 0) {
+      return port;
+    }
+  } catch {
+    // ignore malformed ws endpoints and fall back to caller defaults
+  }
+  return undefined;
 }
 
 async function resumeBrowserSessionViaNewChrome(

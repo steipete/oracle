@@ -193,6 +193,22 @@ Run this whenever you touch CDP connection logic (remote chrome lifecycle, attac
 
 Capture the pass/fail result (include the helper’s log snippet) in your PR description alongside other manual browser tests.
 
+### Attach-running smoke test
+
+Run this whenever you touch the local attach path (`--browser-attach-running`) or the direct browser websocket bootstrap.
+
+1. Start or reuse a local signed-in Chrome with DevTools access available. If you want an explicit local endpoint, launch Chrome with `--remote-debugging-port=9222`.
+2. Run Oracle against the running browser:
+   ```bash
+   pnpm run oracle -- --engine browser \
+     --browser-attach-running \
+     --model "GPT-5.2" \
+     --prompt "Give me two short markdown bullets about browser tabs"
+   ```
+   If the browser’s remote-debugging UI shows a different local port, rerun with `--remote-chrome <host:port>` in addition to `--browser-attach-running`.
+3. Verify Oracle opens a fresh tab in the existing browser, returns the answer, and closes only that Oracle-owned tab afterward.
+4. Reattach sanity check: repeat with a very short timeout if needed, then run `oracle session <id>` and confirm Oracle can reconnect to the saved tab/conversation.
+
 ## Chrome DevTools / MCP Debugging
 
 Use this when you need to inspect the live ChatGPT composer (DOM state, markdown text, screenshots, etc.). For smaller ad‑hoc pokes, you can often rely on `pnpm tsx scripts/browser-tools.ts …` instead.
@@ -227,6 +243,7 @@ Use this when you need to inspect the live ChatGPT composer (DOM state, markdown
      }
      ```
    - Once the server prints `chrome-devtools-mcp exposes…`, you can list/call tools via `mcporter`.
+   - Oracle’s attach-running mode no longer depends on MCP at runtime; `mcporter` remains useful here for manual inspection only.
 
 4. **Interact & capture**
    - Use MCP tools (`click`, `evaluate_js`, `screenshot`, etc.) to debug the composer contents.

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Browser: add `--browser-attach-running` to reuse a local already-running signed-in Chrome through Chrome’s local remote-debugging toggle. Oracle opens a dedicated tab, stores attach metadata for reattach, and leaves the browser itself untouched.
+
+### Docs
+
+- Browser: document the new attach-running workflow and add a manual smoke test for the direct attach path.
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed

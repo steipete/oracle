@@ -78,7 +78,7 @@ CLI flags → `config.json` → environment → built-in defaults.
 - `sessionRetentionHours` controls the default value for `--retain-hours`. When unset, `ORACLE_RETAIN_HOURS` (if present) becomes the fallback, and the CLI flag still wins over both.
 - `ORACLE_MAX_FILE_SIZE_BYTES` overrides `maxFileSizeBytes` when set. Oracle validates it as a positive integer number of bytes before reading any `--file` inputs.
 - `browser.chatgptUrl` accepts either the root ChatGPT URL (`https://chatgpt.com/`) or a folder/workspace URL (e.g., `https://chatgpt.com/g/.../project`); `browser.url` remains as a legacy alias.
-- Browser automation defaults can be set under `browser.*`, including `browser.manualLogin`, `browser.manualLoginProfileDir`, and `browser.thinkingTime` (CLI override: `--browser-thinking-time`). On Windows, `browser.manualLogin` defaults to `true` when omitted.
+- Browser automation defaults can be set under `browser.*`, including `browser.manualLogin`, `browser.manualLoginProfileDir`, `browser.thinkingTime`, and `browser.attachRunning`. On Windows, `browser.manualLogin` defaults to `true` when omitted.
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
 

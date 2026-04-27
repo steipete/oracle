@@ -9,6 +9,7 @@ export interface BrowserDefaultsOptions {
   browserChromeProfile?: string;
   browserChromePath?: string;
   browserCookiePath?: string;
+  browserAttachRunning?: boolean;
   browserTimeout?: string | number;
   browserInputTimeout?: string | number;
   browserRecheckDelay?: string | number;
@@ -58,6 +59,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset("browserCookiePath") && browser.chromeCookiePath !== undefined) {
     options.browserCookiePath = browser.chromeCookiePath ?? undefined;
+  }
+  if (isUnset("browserAttachRunning") && browser.attachRunning !== undefined) {
+    options.browserAttachRunning = browser.attachRunning;
   }
   if (isUnset("browserUrl") && options.browserUrl === undefined && browser.url !== undefined) {
     options.browserUrl = browser.url;

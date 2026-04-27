@@ -9,6 +9,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   chromeProfile: null,
   chromePath: null,
   chromeCookiePath: null,
+  attachRunning: false,
   url: CHATGPT_URL,
   chatgptUrl: CHATGPT_URL,
   timeoutMs: 1_200_000,
@@ -34,6 +35,8 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   debug: false,
   allowCookieErrors: false,
   remoteChrome: null,
+  remoteChromeBrowserWSEndpoint: null,
+  remoteChromeProfileRoot: null,
   manualLogin: false,
   manualLoginProfileDir: null,
   manualLoginCookieSync: false,
@@ -110,9 +113,14 @@ export function resolveBrowserConfig(
     chromeProfile: config?.chromeProfile ?? DEFAULT_BROWSER_CONFIG.chromeProfile,
     chromePath: config?.chromePath ?? DEFAULT_BROWSER_CONFIG.chromePath,
     chromeCookiePath: config?.chromeCookiePath ?? DEFAULT_BROWSER_CONFIG.chromeCookiePath,
+    attachRunning: config?.attachRunning ?? DEFAULT_BROWSER_CONFIG.attachRunning,
     debug: config?.debug ?? DEFAULT_BROWSER_CONFIG.debug,
     allowCookieErrors:
       config?.allowCookieErrors ?? envAllowCookieErrors ?? DEFAULT_BROWSER_CONFIG.allowCookieErrors,
+    remoteChromeBrowserWSEndpoint:
+      config?.remoteChromeBrowserWSEndpoint ?? DEFAULT_BROWSER_CONFIG.remoteChromeBrowserWSEndpoint,
+    remoteChromeProfileRoot:
+      config?.remoteChromeProfileRoot ?? DEFAULT_BROWSER_CONFIG.remoteChromeProfileRoot,
     thinkingTime: config?.thinkingTime,
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
