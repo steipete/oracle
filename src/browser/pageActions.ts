@@ -22,4 +22,5 @@ export {
   buildConversationDebugExpressionForTest,
   buildMarkdownFallbackExtractorForTest,
   buildCopyExpressionForTest,
+  isGeneratedImageControlsTextForTest,
 } from "./actions/assistantResponse.js";

@@ -89,6 +89,9 @@ export async function runBrowserSessionExecution(
 
   log(headerLine);
   log(chalk.dim("This run can take up to an hour (usually ~10 minutes)."));
+  if (runOptions.generateImage) {
+    log(chalk.dim("Image generation may take longer than 2 minutes."));
+  }
   if (runOptions.verbose) {
     log(chalk.dim("Chrome automation does not stream output; this may take a minute..."));
   }

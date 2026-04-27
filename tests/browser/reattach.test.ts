@@ -1,4 +1,7 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
 
@@ -13,9 +16,22 @@ type FakeClient = {
     }) => Promise<{ result: { value: unknown } }>;
   };
   // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+  Network?: {
+    enable?: () => void;
+    getCookies: () => Promise<{ cookies: Array<{ name: string; value: string }> }>;
+  };
+  // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
   DOM: { enable: () => void };
   close: () => Promise<void> | void;
 };
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("resumeBrowserSession", () => {
   test("selects target and captures markdown via stubs", async () => {
@@ -109,6 +125,181 @@ describe("resumeBrowserSession", () => {
 
     expect(result.answerText).toBe("fallback");
     expect(recoverSession).toHaveBeenCalled();
+  });
+
+  test("waits for generated images during reattach before saving them", async () => {
+    vi.useFakeTimers();
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-reattach-images-"));
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+    };
+    let imagePolls = 0;
+    const listTargets = vi.fn(
+      async () =>
+        [
+          { targetId: "target-1", type: "page", url: runtime.tabUrl },
+          { targetId: "target-2", type: "page", url: "about:blank" },
+        ] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      if (expression.includes("/backend-api/estuary/content?id=file_")) {
+        imagePolls += 1;
+        if (imagePolls < 6) {
+          return { result: { value: [] } };
+        }
+        return {
+          result: {
+            value: [
+              {
+                url: "https://chatgpt.com/backend-api/estuary/content?id=file_waited",
+                alt: "waited",
+                width: 1024,
+                height: 1024,
+              },
+            ],
+          },
+        };
+      }
+      if (expression.includes("extractAssistantTurn")) {
+        return {
+          result: {
+            value: {
+              text: "Still rendering image",
+              html: "<p>Still rendering image</p>",
+              messageId: "m1",
+              turnId: "t1",
+              turnIndex: 0,
+            },
+          },
+        };
+      }
+      if (expression.includes("document.querySelectorAll(") && expression.includes(".length")) {
+        return { result: { value: 1 } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(
+      async () =>
+        ({
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Runtime: { enable: vi.fn(), evaluate },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Network: {
+            enable: vi.fn(),
+            getCookies: vi.fn().mockResolvedValue({
+              cookies: [{ name: "__Secure-next-auth.session-token", value: "abc" }],
+            }),
+          },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          DOM: { enable: vi.fn() },
+          close: vi.fn(async () => {}),
+        }) satisfies FakeClient,
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "Still rendering image",
+      html: "",
+      meta: { messageId: "m1", turnId: "conversation-turn-1" },
+    }));
+    const captureAssistantMarkdown = vi.fn(async () => "markdown response");
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      url: "https://files.local/waited",
+      headers: { get: (name: string) => (name === "content-type" ? "image/png" : null) },
+      arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer,
+    } as Response);
+    const logger = vi.fn() as BrowserLogger;
+    logger.verbose = true;
+
+    const resultPromise = resumeBrowserSession(runtime, {}, logger, {
+      listTargets,
+      connect,
+      waitForAssistantResponse,
+      captureAssistantMarkdown,
+      outputPath: path.join(tmpDir, "reattach.png"),
+    });
+
+    await vi.advanceTimersByTimeAsync(7_600);
+    const result = await resultPromise;
+
+    expect(imagePolls).toBe(6);
+    expect(result.answerMarkdown).toContain("Saved to:");
+  });
+
+  test("closes the existing chrome browser after successful reattach when keepBrowser is false", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      chromePid: 43210,
+      tabUrl: "https://chatgpt.com/c/abc",
+    };
+    const listTargets = vi.fn(
+      async () =>
+        [{ targetId: "target-1", type: "page", url: runtime.tabUrl }] satisfies FakeTarget[],
+    ) as unknown as () => Promise<FakeTarget[]>;
+    const browserClose = vi.fn(async () => {});
+    const clientClose = vi.fn(async () => {});
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") {
+        return { result: { value: runtime.tabUrl } };
+      }
+      if (expression === "1+1") {
+        return { result: { value: 2 } };
+      }
+      if (expression.includes("document.querySelectorAll(") && expression.includes(".length")) {
+        return { result: { value: 1 } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(
+      async () =>
+        ({
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Runtime: { enable: vi.fn(), evaluate },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Network: { enable: vi.fn(), getCookies: vi.fn().mockResolvedValue({ cookies: [] }) },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          DOM: { enable: vi.fn() },
+          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+          Browser: { close: browserClose },
+          close: clientClose,
+        }) satisfies FakeClient & { Browser: { close: () => Promise<void> } },
+    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "Stopped thinking\nEdit",
+      html: "<div><img src=\"https://chatgpt.com/backend-api/estuary/content?id=file_done\"></div>",
+      meta: { messageId: "m1", turnId: "conversation-turn-1" },
+    }));
+    const captureAssistantMarkdown = vi.fn(async () => "Stopped thinking\nEdit");
+    const logger = vi.fn() as BrowserLogger;
+    logger.verbose = true;
+
+    const result = await resumeBrowserSession(
+      runtime,
+      { timeoutMs: 2_000, keepBrowser: false },
+      logger,
+      {
+        listTargets,
+        connect,
+        waitForAssistantResponse,
+        captureAssistantMarkdown,
+      },
+    );
+
+    expect(result.answerMarkdown).toBe("Stopped thinking\nEdit");
+    expect(browserClose).toHaveBeenCalledTimes(1);
+    expect(clientClose).toHaveBeenCalledTimes(1);
   });
 });
 

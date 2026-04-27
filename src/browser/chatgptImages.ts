@@ -7,6 +7,12 @@ import type {
   SavedBrowserImage,
 } from "./types.js";
 import { CONVERSATION_TURN_SELECTOR, ASSISTANT_ROLE_SELECTOR } from "./constants.js";
+import { delay } from "./utils.js";
+import { readAssistantSnapshot } from "./pageActions.js";
+import { getOracleHomeDir } from "../oracleHome.js";
+
+const GENERATED_IMAGE_WAIT_MIN_MS = 15_000;
+const GENERATED_IMAGE_WAIT_MAX_MS = 15 * 60_000;
 
 function extractFileId(url: string): string | undefined {
   try {
@@ -90,6 +96,48 @@ export async function readAssistantGeneratedImages(
   return dedupeImages(normalized);
 }
 
+async function readAssistantGeneratedImagesWithFallback(
+  Runtime: ChromeClient["Runtime"],
+  minTurnIndex?: number | null,
+): Promise<BrowserGeneratedImage[]> {
+  const filteredImages = await readAssistantGeneratedImages(
+    Runtime,
+    minTurnIndex ?? undefined,
+  ).catch(() => []);
+  if (
+    filteredImages.length > 0 ||
+    typeof minTurnIndex !== "number" ||
+    !Number.isFinite(minTurnIndex)
+  ) {
+    return filteredImages;
+  }
+
+  const [fallbackImages, fallbackSnapshot] = await Promise.all([
+    readAssistantGeneratedImages(Runtime).catch(() => []),
+    readAssistantSnapshot(Runtime).catch(() => null),
+  ]);
+  const fallbackTurnIndex =
+    typeof fallbackSnapshot?.turnIndex === "number" ? fallbackSnapshot.turnIndex : null;
+  const nearBoundary =
+    fallbackTurnIndex !== null && fallbackTurnIndex + 1 >= Math.floor(minTurnIndex);
+  return fallbackImages.length > 0 && nearBoundary ? fallbackImages : [];
+}
+
+function resolveGeneratedImageWaitTimeoutMs(waitTimeoutMs?: number): number {
+  const requestedTimeout =
+    typeof waitTimeoutMs === "number" && Number.isFinite(waitTimeoutMs)
+      ? waitTimeoutMs
+      : GENERATED_IMAGE_WAIT_MAX_MS;
+  return Math.max(
+    GENERATED_IMAGE_WAIT_MIN_MS,
+    Math.min(requestedTimeout, GENERATED_IMAGE_WAIT_MAX_MS),
+  );
+}
+
+export function resolveGeneratedImageWaitTimeoutMsForTest(waitTimeoutMs?: number): number {
+  return resolveGeneratedImageWaitTimeoutMs(waitTimeoutMs);
+}
+
 function contentTypeToExtension(contentType: string | null): string {
   const value = String(contentType ?? "").toLowerCase();
   if (value.includes("png")) return "png";
@@ -109,6 +157,25 @@ function resolveSiblingImagePath(basePath: string, index: number, extension: str
   }
   const suffix = ext ? `${stem}.${index + 1}${ext}` : `${stem}.${index + 1}.${extension}`;
   return path.join(dir, suffix);
+}
+
+function sanitizeGeneratedImageStem(value: string): string {
+  return value
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
+function resolveDefaultGeneratedImagePath(images: BrowserGeneratedImage[]): string {
+  const primary = images[0];
+  const stemSource =
+    primary?.fileId ||
+    primary?.alt ||
+    primary?.url ||
+    `generated-${Date.now().toString(36)}`;
+  const stem = sanitizeGeneratedImageStem(stemSource) || `generated-${Date.now().toString(36)}`;
+  return path.join(getOracleHomeDir(), ".temp", `${stem}.png`);
 }
 
 async function buildCookieHeader(Network: ChromeClient["Network"]): Promise<string> {
@@ -190,5 +257,109 @@ export async function saveChatGptGeneratedImages(params: {
     imageCount: images.length,
     savedImages,
     errors,
+  };
+}
+
+export async function collectGeneratedImageArtifacts(params: {
+  Runtime: ChromeClient["Runtime"];
+  Network: ChromeClient["Network"];
+  logger?: BrowserLogger;
+  minTurnIndex?: number | null;
+  generateImagePath?: string;
+  outputPath?: string;
+  answerText: string;
+  waitTimeoutMs?: number;
+}): Promise<{
+  generatedImages: BrowserGeneratedImage[];
+  savedImages: SavedBrowserImage[];
+  imageCount: number;
+  markdownSuffix: string;
+  answerText: string;
+}> {
+  const explicitTargetPath = params.generateImagePath ?? params.outputPath;
+  let generatedImages = await readAssistantGeneratedImagesWithFallback(
+    params.Runtime,
+    params.minTurnIndex ?? undefined,
+  );
+  let latestAnswerText = params.answerText;
+
+  if (explicitTargetPath && generatedImages.length === 0) {
+    const deadline = Date.now() + resolveGeneratedImageWaitTimeoutMs(params.waitTimeoutMs);
+    while (Date.now() < deadline) {
+      await delay(1500);
+      generatedImages = await readAssistantGeneratedImagesWithFallback(
+        params.Runtime,
+        params.minTurnIndex ?? undefined,
+      );
+      if (generatedImages.length > 0) {
+        break;
+      }
+      const latestSnapshot = await readAssistantSnapshot(
+        params.Runtime,
+        params.minTurnIndex ?? undefined,
+      ).catch(() => null);
+      const snapshotText =
+        typeof latestSnapshot?.text === "string" ? latestSnapshot.text.trim() : "";
+      if (snapshotText) {
+        latestAnswerText = snapshotText;
+      }
+    }
+  }
+
+  const imageCount = generatedImages.length;
+  if (explicitTargetPath && imageCount === 0) {
+    throw new Error(`No images generated. Response text:\n${latestAnswerText || "(empty response)"}`);
+  }
+  if (imageCount === 0) {
+    return {
+      generatedImages,
+      savedImages: [],
+      imageCount,
+      markdownSuffix: imageCount > 0 ? `\n\n*Generated ${imageCount} image(s).*` : "",
+      answerText: latestAnswerText,
+    };
+  }
+
+  const targetPath = explicitTargetPath ?? resolveDefaultGeneratedImagePath(generatedImages);
+  if (!explicitTargetPath) {
+    params.logger?.(`[browser] Auto-saving generated images to ${targetPath}`);
+  }
+
+  const saved = await saveChatGptGeneratedImages({
+    Network: params.Network,
+    images: generatedImages,
+    outputPath: targetPath,
+    logger: params.logger,
+  });
+  if (!saved.saved) {
+    const detail = saved.errors.length > 0 ? `\n${saved.errors.join("\n")}` : "";
+    if (explicitTargetPath) {
+      throw new Error(
+        `No images generated. Response text:\n${latestAnswerText || "(empty response)"}${detail}`,
+      );
+    }
+    params.logger?.(
+      `[browser] Auto-save for generated images failed; returning metadata only.${detail}`,
+    );
+    return {
+      generatedImages,
+      savedImages: [],
+      imageCount,
+      markdownSuffix: `\n\n*Generated ${imageCount} image(s).*`,
+      answerText: latestAnswerText,
+    };
+  }
+
+  const primaryPath = saved.savedImages[0]?.path ?? targetPath;
+  const suffix =
+    saved.savedImages.length > 1
+      ? `\n\n*Generated ${saved.imageCount} image(s). Saved ${saved.savedImages.length} file(s) starting at: ${primaryPath}*`
+      : `\n\n*Generated ${saved.imageCount} image(s). Saved to: ${primaryPath}*`;
+  return {
+    generatedImages,
+    savedImages: saved.savedImages,
+    imageCount: saved.imageCount,
+    markdownSuffix: suffix,
+    answerText: latestAnswerText,
   };
 }
