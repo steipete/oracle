@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/steipete-oracle-badge.png)](https://mseep.ai/app/steipete-oracle)
+
 # oracle 🧿 — Whispering your tokens to the silicon sage
 
 <p align="center">
