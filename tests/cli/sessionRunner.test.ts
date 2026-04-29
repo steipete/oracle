@@ -1021,6 +1021,56 @@ describe("performSessionRun", () => {
     );
   });
 
+  test("records runtime and guidance when ChatGPT login is required", async () => {
+    const automationError = new BrowserAutomationError(
+      "ChatGPT login required. Sign in using the open browser, then rerun with the reuse-profile command.",
+      {
+        stage: "auth-required",
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          userDataDir: "/tmp/oracle-browser-profile",
+        },
+        reuseProfileHint:
+          'oracle --engine browser --browser-manual-login --browser-manual-login-profile-dir "/tmp/oracle-browser-profile"',
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("ChatGPT login required");
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "error",
+      browser: expect.objectContaining({
+        runtime: expect.objectContaining({
+          chromePort: 9222,
+          userDataDir: "/tmp/oracle-browser-profile",
+        }),
+      }),
+      error: expect.objectContaining({
+        category: "browser-automation",
+        details: expect.objectContaining({ stage: "auth-required" }),
+      }),
+    });
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).toContain("ChatGPT login required; browser left running so you can sign in.");
+    expect(logLines).toContain(
+      "Reuse this browser profile with: oracle --engine browser --browser-manual-login",
+    );
+  });
+
   test("auto-reattaches after assistant timeout when configured", async () => {
     const automationError = new BrowserAutomationError("assistant timed out", {
       stage: "assistant-timeout",

@@ -20,6 +20,13 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
     expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(true);
   });
 
+  test("preserves the browser for headful auth-required errors", () => {
+    const error = new BrowserAutomationError("ChatGPT login required.", {
+      stage: "auth-required",
+    });
+    expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(true);
+  });
+
   test("does not preserve the browser for headless cloudflare challenge errors", () => {
     const error = new BrowserAutomationError("Cloudflare challenge detected.", {
       stage: "cloudflare-challenge",

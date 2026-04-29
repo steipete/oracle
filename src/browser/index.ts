@@ -72,7 +72,14 @@ function getBrowserAutomationStage(error: unknown): string | null {
 function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolean {
   if (headless) return false;
   const stage = getBrowserAutomationStage(error);
-  return stage === "cloudflare-challenge" || stage === "assistant-timeout";
+  return stage === "cloudflare-challenge" || stage === "assistant-timeout" || stage === "auth-required";
+}
+
+function unrefChromeProcess(chrome: unknown): void {
+  const child = (chrome as { process?: { unref?: () => void } } | null)?.process;
+  if (typeof child?.unref === "function") {
+    child.unref();
+  }
 }
 
 function shouldReattachForLikelyTruncatedAnswer({
@@ -371,25 +378,53 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
 
+    const baseUrl = CHATGPT_URL;
     if (cookieSyncEnabled && !manualLogin && (appliedCookies ?? 0) === 0 && !config.inlineCookies) {
       // Learned: if the profile has no ChatGPT cookies, browser mode will just bounce to login.
-      // Fail early so the user knows to sign in.
+      // In headful mode, leave the browser on ChatGPT so the user can sign in instead of
+      // watching Chromium open to a blank tab and immediately close.
+      if (!config.headless) {
+        logger(
+          "No ChatGPT cookies were applied; opening ChatGPT login and preserving this browser.",
+        );
+        try {
+          await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
+          lastUrl = baseUrl;
+        } catch (navigateError) {
+          logger(
+            `Could not open ChatGPT login before preserving browser: ${
+              navigateError instanceof Error ? navigateError.message : String(navigateError)
+            }`,
+          );
+        }
+      }
       throw new BrowserAutomationError(
         "No ChatGPT cookies were applied from your Chrome profile; cannot proceed in browser mode. " +
-          "Make sure ChatGPT is signed in in the selected profile, use --browser-manual-login / inline cookies, " +
-          "or retry with --browser-cookie-wait 5s if Keychain prompts are slow.",
+          "Sign in using the browser left open, then rerun with --browser-manual-login / inline cookies, " +
+          "or retry with --browser-cookie-wait 5s if cookie extraction was slow.",
         {
-          stage: "execute-browser",
+          stage: "auth-required",
+          runtime: {
+            chromePid: chrome.pid,
+            chromePort: chrome.port,
+            chromeHost,
+            userDataDir,
+            chromeTargetId: lastTargetId,
+            tabUrl: lastUrl,
+            controllerPid: process.pid,
+          },
+          reuseProfileHint:
+            `oracle --engine browser --browser-manual-login ` +
+            `--browser-manual-login-profile-dir ${JSON.stringify(userDataDir)}`,
           details: {
             profile: config.chromeProfile ?? "Default",
             cookiePath: config.chromeCookiePath ?? null,
-            hint: "If macOS Keychain prompts or denies access, run oracle from a GUI session or use --copy/--render for the manual flow.",
+            hint: "If cookie extraction fails, complete login in the preserved browser and rerun with the reuse-profile command.",
           },
         },
       );
     }
 
-    const baseUrl = CHATGPT_URL;
     // First load the base ChatGPT homepage to satisfy potential interstitials,
     // then hop to the requested URL if it differs.
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
@@ -1032,6 +1067,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
     if (shouldPreserveBrowserOnError(normalizedError, config.headless)) {
       preserveBrowserOnError = true;
+      const stage = getBrowserAutomationStage(normalizedError) ?? "execute-browser";
       const runtime = {
         chromePid: chrome.pid,
         chromePort: chrome.port,
@@ -1045,12 +1081,24 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         `oracle --engine browser --browser-manual-login ` +
         `--browser-manual-login-profile-dir ${JSON.stringify(userDataDir)}`;
       await emitRuntimeHint();
-      logger("Cloudflare challenge detected; leaving browser open so you can complete the check.");
+      const preserveMessage =
+        stage === "cloudflare-challenge"
+          ? "Cloudflare challenge detected; leaving browser open so you can complete the check."
+          : stage === "auth-required"
+            ? "ChatGPT login required; leaving browser open so you can sign in."
+            : "Browser run needs reattach; leaving browser open so Oracle can recover it.";
+      logger(preserveMessage);
       logger(`Reuse this browser profile with: ${reuseProfileHint}`);
+      const errorMessage =
+        stage === "cloudflare-challenge"
+          ? "Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun."
+          : stage === "auth-required"
+            ? "ChatGPT login required. Sign in using the open browser, then rerun with the reuse-profile command."
+            : normalizedError.message;
       throw new BrowserAutomationError(
-        "Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun.",
+        errorMessage,
         {
-          stage: "cloudflare-challenge",
+          stage,
           runtime,
           reuseProfileHint,
         },
@@ -1133,6 +1181,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         logger(`Cleanup ${runStatus} • ${totalSeconds.toFixed(1)}s total`);
       }
     } else if (!connectionClosedUnexpectedly) {
+      unrefChromeProcess(chrome);
       logger(`Chrome left running on port ${chrome.port} with profile ${userDataDir}`);
     }
   }
