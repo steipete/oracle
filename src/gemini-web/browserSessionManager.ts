@@ -31,16 +31,17 @@ export async function openGeminiBrowserSession(
   input: OpenGeminiBrowserSessionInput,
 ): Promise<GeminiBrowserSession> {
   const { browserConfig, keepBrowserDefault, purpose, log } = input;
-  const profileDir =
-    browserConfig?.manualLoginProfileDir ?? path.join(os.homedir(), ".oracle", "browser-profile");
-  await mkdir(profileDir, { recursive: true });
-
   const resolvedConfig = resolveBrowserConfig({
     ...browserConfig,
     manualLogin: true,
-    manualLoginProfileDir: profileDir,
     keepBrowser: browserConfig?.keepBrowser ?? keepBrowserDefault,
   });
+  const profileDir = resolveGeminiProfileDir(
+    resolvedConfig.manualLoginProfileDir,
+    browserConfig?.manualLoginProfileDir,
+    process.env.ORACLE_BROWSER_PROFILE_DIR,
+  );
+  await mkdir(profileDir, { recursive: true });
   const keepBrowser = Boolean(resolvedConfig.keepBrowser);
 
   let port = await readDevToolsPort(profileDir);
@@ -111,4 +112,17 @@ export async function openGeminiBrowserSession(
     targetId: targetId ?? undefined,
     close,
   };
+}
+
+function resolveGeminiProfileDir(
+  ...candidates: Array<string | null | undefined>
+): string {
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const normalized = candidate.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return path.join(os.homedir(), ".oracle", "browser-profile");
 }
