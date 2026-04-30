@@ -14,12 +14,11 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "types": [],
-    "baseUrl": ".",
     "typeRoots": ["./src/types", "./node_modules/@types"],
     "paths": {
       "markdansi": ["./node_modules/markdansi/dist/index"],
-      "@src/*": ["src/*"],
-      "@tests/*": ["tests/*"]
+      "@src/*": ["./src/*"],
+      "@tests/*": ["./tests/*"]
     }
   },
   "include": ["bin/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "types/**/*.d.ts"],

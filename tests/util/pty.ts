@@ -3,14 +3,15 @@ import os from "node:os";
 import path from "node:path";
 
 // Minimal PTY helper shared across interactive tests (TUI + streaming).
-// Third-party modules ship without types; keep the surface tiny and typed as any.
+// PTY is an optional local test helper; keep default installs native-free.
 // biome-ignore lint/suspicious/noExplicitAny: PTY modules do not provide types
 let pty: any | null = null;
 try {
+  const importPty = (specifier: string): Promise<unknown> => import(specifier);
   // Prefer the new package, fall back to the legacy one.
   // biome-ignore lint/suspicious/noExplicitAny: PTY modules do not provide types
-  const mod: any = await import("@cdktf/node-pty-prebuilt-multiarch").catch(
-    () => import("@homebridge/node-pty-prebuilt-multiarch"),
+  const mod: any = await importPty("@cdktf/node-pty-prebuilt-multiarch").catch(() =>
+    importPty("@homebridge/node-pty-prebuilt-multiarch"),
   );
   pty = mod.default ?? mod;
 } catch {

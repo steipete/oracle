@@ -11,10 +11,11 @@ let ptyAvailable = process.platform !== "linux";
 // biome-ignore lint/suspicious/noExplicitAny: third-party module without types
 let pty: any | null = null;
 try {
+  const importPty = (specifier: string): Promise<unknown> => import(specifier);
   // Prefer the bundled multiarch build; fall back to the legacy package if needed.
   // biome-ignore lint/suspicious/noExplicitAny: third-party module without types
-  const mod: any = await import("@cdktf/node-pty-prebuilt-multiarch").catch(
-    () => import("@homebridge/node-pty-prebuilt-multiarch"),
+  const mod: any = await importPty("@cdktf/node-pty-prebuilt-multiarch").catch(() =>
+    importPty("@homebridge/node-pty-prebuilt-multiarch"),
   );
   pty = mod.default ?? mod;
 } catch {

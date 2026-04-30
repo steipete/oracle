@@ -14,9 +14,10 @@ let ptyAvailable = true;
 // biome-ignore lint/suspicious/noExplicitAny: third-party pty module ships without types
 let pty: any | null = null;
 try {
+  const importPty = (specifier: string): Promise<unknown> => import(specifier);
   // Prefer the new package, fall back to the legacy one used in some environments.
-  const mod = await import("@cdktf/node-pty-prebuilt-multiarch").catch(
-    () => import("@homebridge/node-pty-prebuilt-multiarch"),
+  const mod = await importPty("@cdktf/node-pty-prebuilt-multiarch").catch(() =>
+    importPty("@homebridge/node-pty-prebuilt-multiarch"),
   );
   // biome-ignore lint/suspicious/noExplicitAny: third-party pty module ships without types
   pty = (mod as any).default ?? mod;

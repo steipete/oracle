@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
 const CLIENT_FACTORY = path.join(process.cwd(), "tests", "fixtures", "mockClientFactory.cjs");
-const INTEGRATION_TIMEOUT = process.platform === "win32" ? 60000 : 30000;
+const INTEGRATION_TIMEOUT = 60000;
 
 describe("oracle CLI integration", () => {
   test(

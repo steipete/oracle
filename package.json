@@ -30,12 +30,12 @@
   "main": "dist/bin/oracle-cli.js",
   "scripts": {
     "docs:list": "tsx scripts/docs-list.ts",
-    "build": "tsc -p tsconfig.build.json && pnpm run build:vendor",
+    "build": "tsgo -p tsconfig.build.json && pnpm run build:vendor",
     "build:vendor": "node -e \"const fs=require('fs'); const path=require('path'); const vendorRoot=path.join('dist','vendor'); fs.rmSync(vendorRoot,{recursive:true,force:true}); const vendors=[['oracle-notifier']]; vendors.forEach(([name])=>{const src=path.join('vendor',name); const dest=path.join(vendorRoot,name); fs.mkdirSync(dest,{recursive:true}); if(fs.existsSync(src)){fs.cpSync(src,dest,{recursive:true,force:true});}});\"",
     "start": "pnpm run build && node ./dist/scripts/run-cli.js",
     "oracle": "pnpm start",
     "check": "pnpm run format:check && pnpm run lint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "format:diff": "oxfmt --write . && git --no-pager diff",
@@ -44,7 +44,7 @@
     "test": "vitest run",
     "test:mcp": "pnpm run build && pnpm run test:mcp:unit && pnpm run test:mcp:mcporter",
     "test:mcp:unit": "vitest run tests/mcp*.test.ts tests/mcp/**/*.test.ts",
-    "test:mcp:mcporter": "npx -y mcporter list oracle-local --schema --config config/mcporter.json && npx -y mcporter call oracle-local.sessions limit:1 --config config/mcporter.json",
+    "test:mcp:mcporter": "pnpm dlx mcporter list oracle-local --schema --config config/mcporter.json && pnpm dlx mcporter call oracle-local.sessions limit:1 --config config/mcporter.json",
     "test:browser": "pnpm run build && tsx scripts/test-browser.ts && ./scripts/browser-smoke.sh",
     "test:live": "ORACLE_LIVE_TEST=1 vitest run tests/live --exclude tests/live/openai-live.test.ts",
     "test:live:fast": "ORACLE_LIVE_TEST=1 ORACLE_LIVE_TEST_FAST=1 vitest run tests/live/browser-fast-live.test.ts",
@@ -55,65 +55,64 @@
   },
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
-    "@google/genai": "^1.44.0",
+    "@google/genai": "^1.50.1",
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@steipete/sweet-cookie": "^0.2.0",
     "chalk": "^5.6.2",
     "chrome-launcher": "^1.2.1",
     "chrome-remote-interface": "^0.34.0",
     "clipboardy": "^5.3.1",
     "commander": "^14.0.3",
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.4.2",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
-    "inquirer": "13.3.0",
+    "inquirer": "13.4.2",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
-    "openai": "^6.27.0",
+    "openai": "^6.34.0",
     "osc-progress": "^0.3.0",
-    "qs": "^6.15.0",
-    "shiki": "^4.0.1",
+    "qs": "^6.15.1",
+    "shiki": "^4.0.2",
     "toasted-notifier": "^10.1.0",
     "tokentally": "^0.1.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
-    "@cdktf/node-pty-prebuilt-multiarch": "0.10.2",
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/inquirer": "^9.0.9",
-    "@types/node": "^25.3.5",
-    "@vitest/coverage-v8": "4.0.18",
-    "devtools-protocol": "0.0.1595872",
-    "es-toolkit": "^1.45.1",
-    "esbuild": "^0.27.3",
-    "oxfmt": "0.36.0",
-    "oxlint": "^1.51.0",
-    "puppeteer-core": "^24.38.0",
+    "@types/node": "^25.6.0",
+    "@typescript/native-preview": "7.0.0-dev.20260427.1",
+    "@vitest/coverage-v8": "4.1.5",
+    "devtools-protocol": "0.0.1619965",
+    "es-toolkit": "^1.46.0",
+    "esbuild": "^0.28.0",
+    "oxfmt": "0.47.0",
+    "oxlint": "^1.62.0",
+    "puppeteer-core": "^24.42.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   },
   "devEngines": {
     "runtime": [
       {
         "name": "node",
-        "version": ">=22"
+        "version": ">=24"
       }
     ]
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
-  "packageManager": "pnpm@10.23.0+sha512.21c4e5698002ade97e4efe8b8b4a89a8de3c85a37919f957e7a0f30f38fbc5bbdd05980ffe29179b2fb6e6e691242e098d945d1601772cad0fef5fb6411e2a4b",
+  "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1595872"
+      "devtools-protocol": "0.0.1619965"
     },
     "onlyBuiltDependencies": [
-      "@cdktf/node-pty-prebuilt-multiarch",
       "esbuild"
     ]
   }
