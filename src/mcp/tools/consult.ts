@@ -72,6 +72,10 @@ const consultInputShape = {
     .enum(["light", "standard", "extended", "heavy"])
     .optional()
     .describe("Browser-only: set ChatGPT thinking time when supported by the chosen model."),
+  browserResearchMode: z
+    .enum(["deep"])
+    .optional()
+    .describe("Browser-only: activate ChatGPT Deep Research mode for broad web research."),
   browserKeepBrowser: z
     .boolean()
     .optional()
@@ -165,6 +169,7 @@ export function buildConsultBrowserConfig({
   inputModel,
   browserModelLabel,
   browserThinkingTime,
+  browserResearchMode,
   browserKeepBrowser,
 }: {
   userConfig: UserConfig;
@@ -173,6 +178,7 @@ export function buildConsultBrowserConfig({
   inputModel?: string;
   browserModelLabel?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  browserResearchMode?: "deep";
   browserKeepBrowser?: boolean;
 }): BrowserSessionConfig {
   const configuredBrowser = userConfig.browser ?? {};
@@ -199,6 +205,7 @@ export function buildConsultBrowserConfig({
       ? ((envProfileDir || configuredBrowser.manualLoginProfileDir) ?? null)
       : null,
     thinkingTime: browserThinkingTime ?? configuredBrowser.thinkingTime,
+    researchMode: browserResearchMode ?? configuredBrowser.researchMode,
     desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
   };
 }
@@ -227,6 +234,7 @@ export function registerConsultTool(server: McpServer): void {
         browserAttachments,
         browserBundleFiles,
         browserThinkingTime,
+        browserResearchMode,
         browserKeepBrowser,
         slug,
       } = consultInputSchema.parse(input);
@@ -283,6 +291,7 @@ export function registerConsultTool(server: McpServer): void {
           inputModel: model,
           browserModelLabel,
           browserThinkingTime,
+          browserResearchMode,
           browserKeepBrowser,
         });
       }
