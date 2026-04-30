@@ -576,6 +576,12 @@ program
     ).hideHelp(),
   )
   .addOption(
+    new Option(
+      "--browser-prevent-focus",
+      "Best-effort restore focus to the previously active window after Chrome launch/tab creation (Linux/X11).",
+    ).hideHelp(),
+  )
+  .addOption(
     new Option("--browser-keep-browser", "Keep Chrome running after completion.").hideHelp(),
   )
   .addOption(
@@ -2127,6 +2133,7 @@ function printDebugHelp(cliName: string): void {
     ],
     ["--browser-headless", "Launch Chrome in headless mode."],
     ["--browser-hide-window", "Hide the Chrome window (macOS headful only)."],
+    ["--browser-prevent-focus", "Restore focus after Chrome launch/tab creation (Linux/X11)."],
     ["--browser-keep-browser", "Leave Chrome running after completion."],
   ]);
   console.log("");

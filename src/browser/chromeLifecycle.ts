@@ -17,6 +17,7 @@ export async function launchChrome(
   userDataDir: string,
   logger: BrowserLogger,
 ) {
+  const focusRestorer = await createFocusRestorer(Boolean(config.preventFocus), logger);
   const connectHost = resolveRemoteDebugHost();
   const debugBindAddress = connectHost && connectHost !== "127.0.0.1" ? "0.0.0.0" : connectHost;
   const debugPort = config.debugPort ?? parseDebugPortEnv();
@@ -40,9 +41,63 @@ export async function launchChrome(
   const pidLabel = typeof launcher.pid === "number" ? ` (pid ${launcher.pid})` : "";
   const hostLabel = connectHost ? ` on ${connectHost}` : "";
   logger(`Launched Chrome${pidLabel} on port ${launcher.port}${hostLabel}`);
-  return Object.assign(launcher, { host: connectHost ?? "127.0.0.1" }) as LaunchedChrome & {
+  await focusRestorer?.restore("Chrome launch");
+  return Object.assign(launcher, {
+    host: connectHost ?? "127.0.0.1",
+    focusRestorer,
+  }) as LaunchedChrome & {
     host?: string;
+    focusRestorer?: ChromeFocusRestorer | null;
   };
+}
+
+export interface ChromeFocusRestorer {
+  restore(reason: string): Promise<void>;
+}
+
+export async function createFocusRestorer(
+  enabled: boolean,
+  logger: BrowserLogger,
+): Promise<ChromeFocusRestorer | null> {
+  if (!enabled) return null;
+  if (process.platform !== "linux") {
+    logger("Browser focus prevention is currently supported on Linux/X11 only");
+    return null;
+  }
+
+  const activeWindow = await readActiveX11Window(logger);
+  if (!activeWindow) return null;
+
+  return {
+    async restore(reason: string) {
+      try {
+        await execFileAsync("xdotool", ["windowactivate", "--sync", activeWindow], {
+          timeout: 2_000,
+        });
+        if (logger.verbose) {
+          logger(`Restored focus to previous window after ${reason}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger(`Unable to restore browser focus after ${reason}: ${message}`);
+      }
+    },
+  };
+}
+
+async function readActiveX11Window(logger: BrowserLogger): Promise<string | null> {
+  try {
+    const result = await execFileAsync("xdotool", ["getactivewindow"], { timeout: 2_000 });
+    const windowId = result.stdout.trim();
+    return windowId.length > 0 ? windowId : null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(
+      "Browser focus prevention requires xdotool and an X11 session; " +
+        `continuing without focus restoration (${message}).`,
+    );
+    return null;
+  }
 }
 
 export function registerTerminationHooks(

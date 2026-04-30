@@ -44,6 +44,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     manualLoginProfileDir: null, // override profile dir (or set ORACLE_BROWSER_PROFILE_DIR)
     headless: false,
     hideWindow: false,
+    preventFocus: false, // Linux/X11: restore focus to the previous window after Chrome opens
     keepBrowser: false,
     manualLoginCookieSync: false, // allow cookie sync even in manual-login mode
   },

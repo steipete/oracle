@@ -125,7 +125,9 @@ function shouldReattachForLikelyTruncatedAnswer({
   const promptHeavy =
     promptLength >= 4_000 ||
     (attachmentCount > 0 && promptLength >= 1_500) ||
-    /return exactly these sections|executive answer|detailed architecture|implementation plan/i.test(promptText);
+    /return exactly these sections|executive answer|detailed architecture|implementation plan/i.test(
+      promptText,
+    );
   if (!promptHeavy) {
     return false;
   }
@@ -236,10 +238,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   // Remote Chrome mode - connect to existing browser
   if (config.remoteChrome) {
     // Warn about ignored local-only options
-    if (config.headless || config.hideWindow || config.keepBrowser || config.chromePath) {
+    if (
+      config.headless ||
+      config.hideWindow ||
+      config.preventFocus ||
+      config.keepBrowser ||
+      config.chromePath
+    ) {
       logger(
         "Note: --remote-chrome ignores local Chrome flags " +
-          "(--browser-headless, --browser-hide-window, --browser-keep-browser, --browser-chrome-path).",
+          "(--browser-headless, --browser-hide-window, --browser-prevent-focus, --browser-keep-browser, --browser-chrome-path).",
       );
     }
 
@@ -323,6 +331,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         retries: strictTabIsolation ? 3 : 0,
         retryDelayMs: 500,
       });
+      await (
+        chrome as { focusRestorer?: { restore(reason: string): Promise<void> } | null }
+      ).focusRestorer?.restore("isolated tab open");
       client = connection.client;
       isolatedTargetId = connection.targetId ?? null;
     } catch (error) {

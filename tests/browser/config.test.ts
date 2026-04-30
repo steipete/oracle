@@ -9,6 +9,7 @@ describe("resolveBrowserConfig", () => {
     const isWindows = process.platform === "win32";
     expect(resolved.cookieSync).toBe(!isWindows);
     expect(resolved.headless).toBe(false);
+    expect(resolved.preventFocus).toBe(false);
     expect(resolved.manualLogin).toBe(isWindows);
     expect(resolved.profileLockTimeoutMs).toBe(300_000);
   });
@@ -20,6 +21,7 @@ describe("resolveBrowserConfig", () => {
       inputTimeoutMs: 456,
       cookieSync: false,
       headless: true,
+      preventFocus: true,
       desiredModel: "Custom",
       chromeProfile: "Profile 1",
       chromePath: "/Applications/Chrome",
@@ -30,6 +32,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.inputTimeoutMs).toBe(456);
     expect(resolved.cookieSync).toBe(false);
     expect(resolved.headless).toBe(true);
+    expect(resolved.preventFocus).toBe(true);
     expect(resolved.desiredModel).toBe("Custom");
     expect(resolved.chromeProfile).toBe("Profile 1");
     expect(resolved.chromePath).toBe("/Applications/Chrome");

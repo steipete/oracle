@@ -63,6 +63,7 @@ export interface BrowserFlagOptions {
   browserInlineCookies?: string;
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
+  browserPreventFocus?: boolean;
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
@@ -210,6 +211,7 @@ export async function buildBrowserConfig(
     manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
     manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
+    preventFocus: options.browserPreventFocus ? true : undefined,
     desiredModel,
     modelStrategy,
     debug: options.verbose ? true : undefined,
