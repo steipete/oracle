@@ -1,5 +1,7 @@
+import { createContext, Script } from "node:vm";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  buildThinkingStatusExpressionForTest,
   formatThinkingLog,
   formatThinkingWaitingLog,
   readThinkingStatusForTest,
@@ -7,6 +9,238 @@ import {
   startThinkingStatusMonitorForTest,
 } from "../../src/browser/index.js";
 import type { ChromeClient } from "../../src/browser/types.js";
+
+type FakeRect = {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+const visibleRect = (overrides: Partial<FakeRect> = {}): FakeRect => ({
+  top: 10,
+  left: 10,
+  right: 210,
+  bottom: 90,
+  width: 200,
+  height: 80,
+  ...overrides,
+});
+
+class FakeElement {
+  parentElement: FakeElement | null = null;
+  readonly dataset: Record<string, string> = {};
+  readonly style: Record<string, string> = {};
+  private readonly attrs = new Map<string, string>();
+  private readonly children: FakeElement[] = [];
+
+  constructor(
+    readonly tagName: string,
+    public textContent = "",
+    attrs: Record<string, string> = {},
+    private readonly rect: FakeRect = visibleRect(),
+    private readonly onClick?: () => void,
+  ) {
+    for (const [key, value] of Object.entries(attrs)) {
+      this.setAttribute(key, value);
+    }
+  }
+
+  get className(): string {
+    return this.getAttribute("class") ?? "";
+  }
+
+  append(...nodes: FakeElement[]) {
+    for (const node of nodes) {
+      node.parentElement = this;
+      this.children.push(node);
+    }
+  }
+
+  getAttribute(name: string) {
+    return this.attrs.get(name) ?? null;
+  }
+
+  setAttribute(name: string, value: string) {
+    this.attrs.set(name, value);
+    if (name.startsWith("data-")) {
+      const dataKey = name
+        .slice("data-".length)
+        .replace(/-([a-z])/g, (_match, char: string) => char.toUpperCase());
+      this.dataset[dataKey] = value;
+    }
+  }
+
+  getBoundingClientRect() {
+    return this.rect;
+  }
+
+  click() {
+    this.onClick?.();
+  }
+
+  contains(node: FakeElement): boolean {
+    for (let current: FakeElement | null = node; current; current = current.parentElement) {
+      if (current === this) return true;
+    }
+    return false;
+  }
+
+  closest(selector: string): FakeElement | null {
+    if (matchesSelectorList(this, selector)) return this;
+    for (
+      let current: FakeElement | null = this.parentElement;
+      current;
+      current = current.parentElement
+    ) {
+      if (matchesSelectorList(current, selector)) return current;
+    }
+    return null;
+  }
+
+  querySelector(selector: string): FakeElement | null {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+
+  querySelectorAll(selector: string): FakeElement[] {
+    const results: FakeElement[] = [];
+    const visit = (node: FakeElement) => {
+      for (const child of node.children) {
+        if (matchesSelectorList(child, selector)) {
+          results.push(child);
+        }
+        visit(child);
+      }
+    };
+    visit(this);
+    return results;
+  }
+}
+
+class FakeProgressElement extends FakeElement {
+  constructor(
+    value: number,
+    max: number,
+    attrs: Record<string, string> = {},
+    rect: FakeRect = visibleRect(),
+  ) {
+    super("progress", "", attrs, rect);
+    this.value = value;
+    this.max = max;
+  }
+
+  value: number;
+  max: number;
+}
+
+class FakeDocument {
+  readonly body = new FakeElement("body");
+
+  constructor(public title = "") {}
+
+  append(...nodes: FakeElement[]) {
+    this.body.append(...nodes);
+  }
+
+  querySelectorAll(selector: string): FakeElement[] {
+    return this.body.querySelectorAll(selector);
+  }
+}
+
+function matchesSelectorList(node: FakeElement, selector: string): boolean {
+  return selector
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .some((part) => matchesSimpleSelector(node, part));
+}
+
+function matchesSimpleSelector(node: FakeElement, selector: string): boolean {
+  const tagMatch = selector.match(/^[a-z]+/i);
+  if (tagMatch && node.tagName.toLowerCase() !== tagMatch[0].toLowerCase()) {
+    return false;
+  }
+
+  const classMatches = [...selector.matchAll(/\.([a-zA-Z0-9_-]+)/g)];
+  for (const match of classMatches) {
+    if (!node.className.split(/\s+/).includes(match[1] ?? "")) {
+      return false;
+    }
+  }
+
+  const attrMatches = [
+    ...selector.matchAll(/\[([a-zA-Z0-9_-]+)([*^]?=)?(?:"([^"]*)"|'([^']*)'|([^\]]+))?\]/g),
+  ];
+  for (const match of attrMatches) {
+    const attr = match[1] ?? "";
+    const operator = match[2];
+    const expected = match[3] ?? match[4] ?? match[5] ?? "";
+    const actual = node.getAttribute(attr);
+    if (!operator && actual == null) return false;
+    if (operator === "=" && actual !== expected) return false;
+    if (operator === "*=" && !String(actual ?? "").includes(expected)) return false;
+    if (operator === "^=" && !String(actual ?? "").startsWith(expected)) return false;
+  }
+
+  return true;
+}
+
+async function runThinkingStatusExpression(document: FakeDocument) {
+  const context = createContext({
+    document,
+    HTMLElement: FakeElement,
+    HTMLProgressElement: FakeProgressElement,
+    Number,
+    String,
+    Array,
+    Set,
+    setTimeout: (callback: () => void) => {
+      callback();
+      return 0;
+    },
+    window: {
+      innerHeight: 900,
+      innerWidth: 1200,
+      getComputedStyle: (node: FakeElement) => ({
+        display: node.style.display ?? "block",
+        visibility: node.style.visibility ?? "visible",
+        opacity: node.style.opacity ?? "1",
+        width: node.style.width ?? "",
+        transform: node.style.transform ?? "",
+      }),
+    },
+  });
+  return await new Script(buildThinkingStatusExpressionForTest()).runInContext(context);
+}
+
+function assistantTurn(...children: FakeElement[]) {
+  const turn = new FakeElement("article", "", {
+    "data-testid": "conversation-turn-1",
+    "data-message-author-role": "assistant",
+  });
+  turn.append(...children);
+  return turn;
+}
+
+function sidecarWithProgress(progress: number, text = "Thinking sidecar") {
+  const sidecar = new FakeElement(
+    "aside",
+    text,
+    { role: "complementary", class: "oracle-thinking-sidecar" },
+    visibleRect({ left: 720, right: 1120, width: 400, height: 300, bottom: 360 }),
+  );
+  sidecar.append(
+    new FakeElement("div", "", {
+      role: "progressbar",
+      "aria-valuemin": "0",
+      "aria-valuemax": "100",
+      "aria-valuenow": String(progress),
+    }),
+  );
+  return sidecar;
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -168,5 +402,87 @@ describe("formatThinkingLog", () => {
     expect(logger).toHaveBeenCalledTimes(1);
 
     stop();
+  });
+});
+
+describe("thinking status browser expression", () => {
+  test("opens only the latest assistant turn disclosure and reads sidecar progress", async () => {
+    const document = new FakeDocument();
+    let oldClicked = false;
+    let latestClicked = false;
+    const oldDisclosure = new FakeElement(
+      "button",
+      "Thinking",
+      { "aria-expanded": "false" },
+      visibleRect(),
+      () => {
+        oldClicked = true;
+      },
+    );
+    const latestDisclosure = new FakeElement(
+      "button",
+      "Pro thinking",
+      { "aria-expanded": "false" },
+      visibleRect(),
+      () => {
+        latestClicked = true;
+        document.append(sidecarWithProgress(42, "Private reasoning should not be logged"));
+      },
+    );
+    document.append(assistantTurn(oldDisclosure), assistantTurn(latestDisclosure));
+
+    const result = await runThinkingStatusExpression(document);
+
+    expect(oldClicked).toBe(false);
+    expect(latestClicked).toBe(true);
+    expect(result).toMatchObject({
+      message: "thinking sidecar opened",
+      source: "sidecar",
+      progressPercent: 42,
+      panelOpened: true,
+      panelVisible: true,
+    });
+    expect(JSON.stringify(result)).not.toContain("Private reasoning");
+  });
+
+  test("uses an existing sidecar without clicking the thinking disclosure", async () => {
+    const document = new FakeDocument();
+    let clicked = false;
+    document.append(
+      assistantTurn(
+        new FakeElement("button", "Thinking", { "aria-expanded": "false" }, visibleRect(), () => {
+          clicked = true;
+        }),
+      ),
+      sidecarWithProgress(64),
+    );
+
+    const result = await runThinkingStatusExpression(document);
+
+    expect(clicked).toBe(false);
+    expect(result).toMatchObject({
+      message: "thinking sidecar active",
+      source: "sidecar",
+      progressPercent: 64,
+      panelOpened: false,
+      panelVisible: true,
+    });
+  });
+
+  test("ignores composer-adjacent thinking controls", async () => {
+    const document = new FakeDocument();
+    let clicked = false;
+    const composer = new FakeElement("div", "", { "data-testid": "composer-footer-actions" });
+    composer.append(
+      new FakeElement("button", "Thinking", { "aria-expanded": "false" }, visibleRect(), () => {
+        clicked = true;
+      }),
+    );
+    document.append(assistantTurn(composer));
+
+    const result = await runThinkingStatusExpression(document);
+
+    expect(clicked).toBe(false);
+    expect(result).toBeNull();
   });
 });
