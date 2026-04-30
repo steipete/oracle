@@ -33,6 +33,8 @@ export interface BrowserSessionConfig {
   reuseChromeWaitMs?: number;
   /** Max time to wait for a shared manual-login profile lock (serializes parallel runs). */
   profileLockTimeoutMs?: number;
+  /** Soft limit for concurrent ChatGPT tabs sharing one manual-login profile. */
+  maxConcurrentTabs?: number;
   /** Delay before starting periodic auto-reattach attempts after a timeout. */
   autoReattachDelayMs?: number;
   /** Interval between auto-reattach attempts (0 disables). */

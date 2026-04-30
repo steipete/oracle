@@ -111,7 +111,12 @@ export async function performSessionRun({
         },
       };
       const result = await runBrowserSessionExecution(
-        { runOptions, browserConfig, cwd, log },
+        {
+          runOptions: { ...runOptions, sessionId: runOptions.sessionId ?? sessionMeta.id },
+          browserConfig,
+          cwd,
+          log,
+        },
         runnerDeps,
       );
       if (modelForStatus) {

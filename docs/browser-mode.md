@@ -64,6 +64,7 @@ You can pass the same payload inline (`--browser-inline-cookies '<json or base64
 - `--browser-recheck-delay`, `--browser-recheck-timeout`: after an assistant timeout, wait the delay, revisit the conversation, and retry capture (default recheck timeout 120s). Useful for Pro runs that finish later.
 - `--browser-reuse-wait`: wait for a shared Chrome profile (DevToolsActivePort) to appear before launching a new Chrome. Helps multiple parallel runs reuse the same Chromium instance.
 - `--browser-profile-lock-timeout`: wait for the shared manual-login profile lock before sending, serializing parallel runs that share a Chrome profile.
+- `--browser-max-concurrent-tabs`: soft limit for simultaneous ChatGPT tabs sharing one manual-login profile (default `3`). Additional runs wait up to the browser timeout for a slot and log `[browser] Waiting for ChatGPT browser slot...`.
 - `--browser-auto-reattach-delay`, `--browser-auto-reattach-interval`, `--browser-auto-reattach-timeout`: after a timeout, start periodic auto-reattach attempts (delay before first attempt, repeat interval, per-attempt timeout). This lets Oracle keep polling a finished Pro response without manual `oracle session` runs.
 - If an assistant response still times out (common with long Pro runs), the session stays running for reattach. Use `oracle session <id>` later to collect the final answer or increase `--browser-timeout`.
 - `--browser-model-strategy <select|current|ignore>`: control ChatGPT model selection. `select` (default) switches to the requested model; `current` keeps the active model and logs its label; `ignore` skips the picker entirely. (Ignored for Gemini web runs.)
@@ -127,6 +128,13 @@ oracle --engine browser \
 - Add `--browser-keep-browser` (or config `browser.keepBrowser=true`) when doing the initial login/setup or debugging so the Chrome window stays open after the run. When omitted, Oracle closes Chrome but preserves the profile on disk.
 - Cookie copy is skipped by default in this mode. To automate manual-login runs, set `browser.manualLoginCookieSync=true` in `~/.oracle/config.json` to seed the persistent profile from your existing Chrome cookies; inline cookies apply when cookie sync is enabled.
 - If Chrome is already running with that profile and DevTools remote debugging enabled (see `DevToolsActivePort` in the profile dir), you can reuse it instead of relaunching by pointing Oracle at it with `--remote-chrome <host:port>`.
+- Remote Chrome runs also participate in tab-slot coordination when paired with `--browser-manual-login` and a shared manual-login profile.
+
+### Concurrent agents and long Pro runs
+
+When Codex, Claude Code, or another Oracle caller share the same manual-login profile, each browser run now acquires a tab slot before opening a ChatGPT tab. The default allows three simultaneous ChatGPT tabs; the fourth caller waits instead of failing because another agent is already using the browser. This is most useful for long Pro/Thinking runs where one agent may wait for a response while another agent needs to start a separate consult.
+
+Use `--browser-max-concurrent-tabs <n>` or `browser.maxConcurrentTabs` to tune the soft limit. Keep the value modest: too many concurrent ChatGPT tabs can make the UI unstable or trigger account-side throttling. The short profile lock still serializes the send/upload moment so separate agents do not type into the same composer.
 
 ## Remote Chrome Sessions (headless/server workflows)
 
@@ -170,6 +178,7 @@ Key behavior:
 - Local-only flags like `--browser-headless`, `--browser-hide-window`, `--browser-keep-browser`, and `--browser-chrome-path` are ignored because Oracle no longer launches Chrome. You still get verbose logging, model switching, attachment uploads, and markdown capture.
 - Cookie sync is skipped automatically (the remote browser already has cookies). If you need inline cookies, use them on the machine that’s actually running Chrome.
 - Oracle opens a dedicated CDP target (new tab) for each run and closes it afterward so your existing tabs stay untouched.
+- When remote runs are served by an Oracle host with a manual-login profile, the host-side tab lease registry applies the same concurrent tab limit.
 - Attachments are transferred via CDP: Oracle reads each file locally, base64-encodes it, and uses `DataTransfer` inside the remote browser to populate the upload field. Files larger than 20 MB are rejected to keep CDP messages reasonable.
 - When the remote WebSocket disconnects, Oracle errors with “Remote Chrome connection lost…” so you can re-run after restarting the browser.
 

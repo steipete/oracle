@@ -1,5 +1,9 @@
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 import { normalizeBrowserModelStrategy } from "./modelStrategy.js";
+import {
+  DEFAULT_MAX_CONCURRENT_CHATGPT_TABS,
+  normalizeMaxConcurrentTabs,
+} from "./tabLeaseRegistry.js";
 import type { BrowserAutomationConfig, ResolvedBrowserConfig } from "./types.js";
 import { isTemporaryChatUrl, normalizeChatgptUrl } from "./utils.js";
 import os from "node:os";
@@ -18,6 +22,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   assistantRecheckTimeoutMs: 120_000,
   reuseChromeWaitMs: 10_000,
   profileLockTimeoutMs: 300_000,
+  maxConcurrentTabs: DEFAULT_MAX_CONCURRENT_CHATGPT_TABS,
   autoReattachDelayMs: 0,
   autoReattachIntervalMs: 0,
   autoReattachTimeoutMs: 120_000,
@@ -92,6 +97,9 @@ export function resolveBrowserConfig(
     reuseChromeWaitMs: config?.reuseChromeWaitMs ?? DEFAULT_BROWSER_CONFIG.reuseChromeWaitMs,
     profileLockTimeoutMs:
       config?.profileLockTimeoutMs ?? DEFAULT_BROWSER_CONFIG.profileLockTimeoutMs,
+    maxConcurrentTabs: normalizeMaxConcurrentTabs(
+      config?.maxConcurrentTabs ?? DEFAULT_BROWSER_CONFIG.maxConcurrentTabs,
+    ),
     autoReattachDelayMs: config?.autoReattachDelayMs ?? DEFAULT_BROWSER_CONFIG.autoReattachDelayMs,
     autoReattachIntervalMs:
       config?.autoReattachIntervalMs ?? DEFAULT_BROWSER_CONFIG.autoReattachIntervalMs,
