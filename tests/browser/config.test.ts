@@ -11,6 +11,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.headless).toBe(false);
     expect(resolved.manualLogin).toBe(isWindows);
     expect(resolved.profileLockTimeoutMs).toBe(300_000);
+    expect(resolved.researchMode).toBe("off");
   });
 
   test("applies overrides", () => {
@@ -24,6 +25,7 @@ describe("resolveBrowserConfig", () => {
       chromeProfile: "Profile 1",
       chromePath: "/Applications/Chrome",
       debug: true,
+      researchMode: "deep",
     });
     expect(resolved.url).toBe("https://example.com/");
     expect(resolved.timeoutMs).toBe(123);
@@ -34,6 +36,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.chromeProfile).toBe("Profile 1");
     expect(resolved.chromePath).toBe("/Applications/Chrome");
     expect(resolved.debug).toBe(true);
+    expect(resolved.researchMode).toBe("deep");
   });
 
   test("rejects temporary chat URLs when desiredModel is Pro", () => {
