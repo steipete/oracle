@@ -159,6 +159,10 @@ Run these four smoke tests whenever we touch browser automation:
    `pnpm run oracle -- --engine browser --model gpt-5.2 --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`  
    Verify verbose logs show attachment upload and the final answer matches the file data.
 
+5. **Deep Research smoke**
+   `pnpm run oracle -- --engine browser --browser-manual-login --browser-research deep --prompt "Research one current public source about WebGPU browser support and cite it"`
+   Confirm the logs show Deep Research activation/progress and the final report includes citations or source links. Do not use connected apps or private data.
+
 Record session IDs and outcomes in the PR description (pass/fail, notable delays). This ensures reviewers can audit real runs.
 
 ### Remote Chrome smoke test (CDP)
