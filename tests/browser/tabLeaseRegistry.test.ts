@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -18,26 +18,31 @@ describe("tabLeaseRegistry", () => {
   test("queues when the max concurrent tab limit is reached", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
     try {
+      const logger = vi.fn();
       const first = await acquireBrowserTabLease(dir, {
         maxConcurrentTabs: 3,
         pollMs: 25,
         timeoutMs: 500,
+        logger,
       });
       const second = await acquireBrowserTabLease(dir, {
         maxConcurrentTabs: 3,
         pollMs: 25,
         timeoutMs: 500,
+        logger,
       });
       const third = await acquireBrowserTabLease(dir, {
         maxConcurrentTabs: 3,
         pollMs: 25,
         timeoutMs: 500,
+        logger,
       });
       let resolved = false;
       const fourthPromise = acquireBrowserTabLease(dir, {
         maxConcurrentTabs: 3,
         pollMs: 25,
         timeoutMs: 1000,
+        logger,
       }).then((lease) => {
         resolved = true;
         return lease;
@@ -45,6 +50,9 @@ describe("tabLeaseRegistry", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 75));
       expect(resolved).toBe(false);
+      expect(logger).toHaveBeenCalledWith(
+        expect.stringContaining("Waiting for ChatGPT browser slot"),
+      );
 
       await first.release();
       const fourth = await fourthPromise;
