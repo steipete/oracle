@@ -654,7 +654,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     if (deepResearch) {
       await raceWithDisconnect(waitForResearchPlanAutoConfirm(Runtime, logger));
       const researchResult = await raceWithDisconnect(
-        waitForDeepResearchCompletion(Runtime, logger, config.timeoutMs),
+        waitForDeepResearchCompletion(
+          Runtime,
+          logger,
+          config.timeoutMs,
+          baselineTurns,
+          Page,
+          client,
+        ),
       );
       await updateConversationHint("post-deep-research", 15_000).catch(() => false);
       runStatus = "complete";
@@ -1521,7 +1528,14 @@ async function runRemoteBrowserMode(
     }
     if (deepResearch) {
       await waitForResearchPlanAutoConfirm(Runtime, logger);
-      const researchResult = await waitForDeepResearchCompletion(Runtime, logger, config.timeoutMs);
+      const researchResult = await waitForDeepResearchCompletion(
+        Runtime,
+        logger,
+        config.timeoutMs,
+        baselineTurns,
+        Page,
+        client,
+      );
       await emitRuntimeHint();
       const durationMs = Date.now() - startedAt;
       const tokens = estimateTokenCount(researchResult.text);

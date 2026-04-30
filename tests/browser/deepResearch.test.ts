@@ -12,6 +12,9 @@ vi.mock("../../src/browser/utils.js", async (importOriginal) => {
 import {
   activateDeepResearch,
   buildActivateDeepResearchExpressionForTest,
+  buildDeepResearchFrameStatusExpressionForTest,
+  findDeepResearchFrameIdForTest,
+  isDeepResearchPlaceholderTextForTest,
   waitForResearchPlanAutoConfirm,
   waitForDeepResearchCompletion,
   checkDeepResearchStatus,
@@ -111,8 +114,44 @@ describe("Deep Research activation expression", () => {
     expect(expression).toContain("/Deepresearch");
     expect(expression).toContain("findDeepResearchItem");
     expect(expression).toContain("composer-plus-btn");
+    expect(expression).toContain('role="menuitemradio"');
+    expect(expression).toContain('[class*="composer-pill"]');
     expect(expression).toContain("deep research");
     expect(expression).toContain("already-active");
+  });
+});
+
+describe("isDeepResearchPlaceholderTextForTest", () => {
+  it("rejects tool-call stubs as final reports", () => {
+    expect(isDeepResearchPlaceholderTextForTest("Called tool")).toBe(true);
+    expect(isDeepResearchPlaceholderTextForTest("Użyto narzędzia")).toBe(true);
+    expect(isDeepResearchPlaceholderTextForTest("CHECK_DEEP_OK https://example.com")).toBe(false);
+  });
+});
+
+describe("Deep Research iframe helpers", () => {
+  it("finds nested Deep Research frames", () => {
+    expect(
+      findDeepResearchFrameIdForTest({
+        frame: { id: "root", url: "https://chatgpt.com/" },
+        childFrames: [
+          { frame: { id: "other", url: "https://example.com/" } },
+          {
+            frame: {
+              id: "deep",
+              url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+            },
+          },
+        ],
+      }),
+    ).toBe("deep");
+  });
+
+  it("normalizes completed iframe report text", () => {
+    const expression = buildDeepResearchFrameStatusExpressionForTest();
+    expect(expression).toContain("deep research report");
+    expect(expression).toContain("research completed");
+    expect(expression).toContain("reportText");
   });
 });
 
@@ -225,6 +264,144 @@ describe("waitForDeepResearchCompletion", () => {
 
     const result = await waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000);
     expect(result.text).toBe("Research report content");
+  });
+
+  it("detects completion via the Deep Research iframe", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: false, stopVisible: false, textLength: 0, hasIframe: true },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          completed: true,
+          inProgress: false,
+          textLength: 80,
+          text: "CHECK_DEEP_OK https://example.com/report",
+          html: "<p>CHECK_DEEP_OK https://example.com/report</p>",
+        },
+      },
+    });
+    const mockPage = {
+      getFrameTree: vi.fn().mockResolvedValue({
+        frameTree: {
+          frame: { id: "root", url: "https://chatgpt.com/" },
+          childFrames: [
+            {
+              frame: {
+                id: "deep-frame",
+                url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+              },
+            },
+          ],
+        },
+      }),
+      createIsolatedWorld: vi.fn().mockResolvedValue({ executionContextId: 42 }),
+    };
+
+    const result = await waitForDeepResearchCompletion(
+      mockRuntime as never,
+      mockLogger,
+      60_000,
+      0,
+      mockPage as never,
+    );
+
+    expect(result.text).toBe("CHECK_DEEP_OK https://example.com/report");
+    expect(mockPage.createIsolatedWorld).toHaveBeenCalledWith(
+      expect.objectContaining({ frameId: "deep-frame" }),
+    );
+    expect(mockRuntime.evaluate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ contextId: 42 }),
+    );
+  });
+
+  it("detects completion via a Deep Research target session", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: false, stopVisible: false, textLength: 0, hasIframe: true },
+      },
+    });
+    const listeners = new Map<string, (params: unknown, sessionId?: string) => void>();
+    const mockClient = {
+      on: vi.fn((event: string, listener: (params: unknown, sessionId?: string) => void) => {
+        listeners.set(event, listener);
+      }),
+      removeListener: vi.fn(),
+      send: vi.fn(async (method: string, params?: unknown, sessionId?: string) => {
+        if (method === "Target.setAutoAttach") {
+          listeners.get("Target.attachedToTarget")?.({
+            sessionId: "deep-session",
+            targetInfo: {
+              type: "iframe",
+              url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+            },
+          });
+          return {};
+        }
+        if (method === "Target.getTargets") {
+          return { targetInfos: [] };
+        }
+        if (method === "Page.getFrameTree" && sessionId === "deep-session") {
+          return {
+            frameTree: {
+              frame: {
+                id: "sandbox",
+                url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+              },
+              childFrames: [
+                {
+                  frame: {
+                    id: "root-frame",
+                    name: "root",
+                    url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+                  },
+                },
+              ],
+            },
+          };
+        }
+        if (method === "Page.createIsolatedWorld" && sessionId === "deep-session") {
+          return {
+            executionContextId: (params as { frameId?: string }).frameId === "root-frame" ? 12 : 11,
+          };
+        }
+        if (
+          method === "Runtime.evaluate" &&
+          sessionId === "deep-session" &&
+          (params as { contextId?: number }).contextId === 12
+        ) {
+          return {
+            result: {
+              value: {
+                completed: true,
+                inProgress: false,
+                textLength: 80,
+                text: "CHECK_DEEP_OK https://example.com/report",
+              },
+            },
+          };
+        }
+        return {};
+      }),
+    };
+
+    const result = await waitForDeepResearchCompletion(
+      mockRuntime as never,
+      mockLogger,
+      60_000,
+      0,
+      undefined,
+      mockClient as never,
+    );
+
+    expect(result.text).toBe("CHECK_DEEP_OK https://example.com/report");
+    expect(mockClient.send).toHaveBeenCalledWith(
+      "Runtime.evaluate",
+      expect.objectContaining({ contextId: 12, returnByValue: true }),
+      "deep-session",
+    );
   });
 
   it("throws on timeout with metadata", async () => {
