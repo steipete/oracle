@@ -6,6 +6,9 @@ import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js"
 
 export interface BridgeClaudeConfigCliOptions {
   printToken?: boolean;
+  localBrowser?: boolean;
+  oracleHomeDir?: string;
+  browserProfileDir?: string;
 }
 
 export async function runBridgeClaudeConfig(options: BridgeClaudeConfigCliOptions): Promise<void> {
@@ -18,13 +21,22 @@ export async function runBridgeClaudeConfig(options: BridgeClaudeConfigCliOption
   });
 
   const snippet = formatClaudeMcpConfig({
-    oracleHomeDir: process.env.ORACLE_HOME_DIR ?? path.join(os.homedir(), ".oracle-local"),
+    oracleHomeDir:
+      options.oracleHomeDir ??
+      process.env.ORACLE_HOME_DIR ??
+      path.join(os.homedir(), options.localBrowser ? ".oracle" : ".oracle-local"),
     browserProfileDir:
+      options.browserProfileDir ??
       process.env.ORACLE_BROWSER_PROFILE_DIR ??
-      path.join(os.homedir(), ".oracle-local", "browser-profile"),
+      path.join(
+        os.homedir(),
+        options.localBrowser ? ".oracle" : ".oracle-local",
+        "browser-profile",
+      ),
     remoteHost: resolved.host,
     remoteToken: resolved.token,
     includeToken: Boolean(options.printToken),
+    localBrowser: Boolean(options.localBrowser),
   });
 
   console.log(snippet);
@@ -42,12 +54,14 @@ export function formatClaudeMcpConfig({
   remoteHost,
   remoteToken,
   includeToken,
+  localBrowser = false,
 }: {
   oracleHomeDir: string;
   browserProfileDir: string;
   remoteHost?: string;
   remoteToken?: string;
   includeToken: boolean;
+  localBrowser?: boolean;
 }): string {
   const env: Record<string, string> = {};
   // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
@@ -57,7 +71,7 @@ export function formatClaudeMcpConfig({
   // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
   env["ORACLE_BROWSER_PROFILE_DIR"] = browserProfileDir;
 
-  if (remoteHost) {
+  if (remoteHost && !localBrowser) {
     // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
     env["ORACLE_REMOTE_HOST"] = remoteHost;
     // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
