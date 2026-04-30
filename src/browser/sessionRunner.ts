@@ -80,7 +80,9 @@ export async function runBrowserSessionExecution(
   const headerLine = `Launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens.`;
   const automationLogger: BrowserLogger = ((message?: string) => {
     if (typeof message !== "string") return;
-    const shouldAlwaysPrint = message.startsWith("[browser] ") && /fallback|retry/i.test(message);
+    const shouldAlwaysPrint =
+      message.startsWith("[browser] ") &&
+      /fallback|retry|thinking|waiting for chatgpt/i.test(message);
     if (!runOptions.verbose && !shouldAlwaysPrint) return;
     log(message);
   }) as BrowserLogger;
