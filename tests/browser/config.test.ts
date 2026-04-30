@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
-import { CHATGPT_URL } from "../../src/browser/constants.js";
+import { CHATGPT_URL, DEEP_RESEARCH_DEFAULT_TIMEOUT_MS } from "../../src/browser/constants.js";
 
 describe("resolveBrowserConfig", () => {
   test("returns defaults when config missing", () => {
@@ -46,5 +46,12 @@ describe("resolveBrowserConfig", () => {
         desiredModel: "GPT-5.2 Pro",
       }),
     ).toThrow(/Temporary Chat/i);
+  });
+
+  test("uses the longer Deep Research timeout unless explicitly overridden", () => {
+    expect(resolveBrowserConfig({ researchMode: "deep" }).timeoutMs).toBe(
+      DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
+    );
+    expect(resolveBrowserConfig({ researchMode: "deep", timeoutMs: 123 }).timeoutMs).toBe(123);
   });
 });
