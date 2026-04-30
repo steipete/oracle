@@ -4,6 +4,7 @@ import {
   buildConsultBrowserConfig,
   summarizeModelRunsForConsult,
 } from "../../src/mcp/tools/consult.ts";
+import { consultInputSchema } from "../../src/mcp/types.ts";
 
 describe("summarizeModelRunsForConsult", () => {
   test("maps per-model metadata into consult summaries", () => {
@@ -92,6 +93,23 @@ describe("summarizeModelRunsForConsult", () => {
       thinkingTime: "heavy",
       desiredModel: "Claude Sonnet",
       cookieSync: false,
+    });
+  });
+});
+
+describe("consultInputSchema", () => {
+  test("accepts dryRun previews for safe MCP planning", () => {
+    const parsed = consultInputSchema.parse({
+      prompt: "Preview this before running a browser consult.",
+      engine: "browser",
+      model: "gpt-5.5-pro",
+      dryRun: true,
+    });
+
+    expect(parsed).toMatchObject({
+      engine: "browser",
+      model: "gpt-5.5-pro",
+      dryRun: true,
     });
   });
 });

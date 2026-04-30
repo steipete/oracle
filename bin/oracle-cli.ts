@@ -51,7 +51,11 @@ import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
 import { shouldDetachSession } from "../src/cli/detach.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
-import { buildBrowserConfig, resolveBrowserModelLabel } from "../src/cli/browserConfig.js";
+import {
+  buildBrowserConfig,
+  normalizeChatGptModelForBrowser,
+  resolveBrowserModelLabel,
+} from "../src/cli/browserConfig.js";
 import { performSessionRun } from "../src/cli/sessionRunner.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
@@ -246,7 +250,7 @@ program.hook("preAction", (thisCommand) => {
 program
   .name("oracle")
   .description(
-    "One-shot GPT-5.4 Pro / GPT-5.4 / GPT-5.1 Codex tool for hard questions that benefit from large file context and server-side search.",
+    "One-shot GPT-5.4 Pro / GPT-5.4 / GPT-5.1 Codex tool for hard questions that benefit from large file context and server-side search. Browser mode can target ChatGPT GPT-5.5 Pro.",
   )
   .version(VERSION)
   .argument("[prompt]", "Prompt text (shorthand for --prompt).")
@@ -300,7 +304,7 @@ program
   .option("-s, --slug <words>", "Custom session slug (3-5 words).")
   .option(
     "-m, --model <model>",
-    'Model to target (gpt-5.4-pro default). Also gpt-5.4, gpt-5.1-pro, gpt-5-pro, gpt-5.1, gpt-5.1-codex API-only, gpt-5.2, gpt-5.2-instant, gpt-5.2-pro, gemini-3.1-pro API-only, gemini-3-pro, claude-4.5-sonnet, claude-4.1-opus, or ChatGPT labels like "5.2 Thinking" for browser runs).',
+    'Model to target (gpt-5.4-pro API default; browser defaults to gpt-5.5-pro). Also gpt-5.4, gpt-5.1-pro, gpt-5-pro, gpt-5.1, gpt-5.1-codex API-only, gpt-5.2, gpt-5.2-instant, gpt-5.2-pro, gemini-3.1-pro API-only, gemini-3-pro, claude-4.5-sonnet, claude-4.1-opus, or ChatGPT labels like "gpt-5.5-pro" / "5.2 Thinking" for browser runs).',
     normalizeModelOption,
   )
   .addOption(
@@ -1360,14 +1364,23 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const normalizedMultiModels: ModelName[] = multiModelProvided
     ? Array.from(new Set(options.models!.map((entry) => resolveApiModel(entry))))
     : [];
+  const browserDefaultModel =
+    engine === "browser" && !multiModelProvided && optionUsesDefault("model") && !userConfig.model
+      ? "gpt-5.5-pro"
+      : undefined;
   const cliModelArg =
-    normalizeModelOption(options.model) || (multiModelProvided ? "" : DEFAULT_MODEL);
+    normalizeModelOption(browserDefaultModel ?? options.model) ||
+    (multiModelProvided ? "" : DEFAULT_MODEL);
   const resolvedModelCandidate: ModelName = multiModelProvided
     ? normalizedMultiModels[0]
     : engine === "browser"
       ? inferModelFromLabel(cliModelArg || DEFAULT_MODEL)
       : resolveApiModel(cliModelArg || DEFAULT_MODEL);
-  const primaryModelCandidate = normalizedMultiModels[0] ?? resolvedModelCandidate;
+  const browserResolvedModelCandidate =
+    engine === "browser" && normalizedMultiModels.length === 0
+      ? normalizeChatGptModelForBrowser(resolvedModelCandidate)
+      : resolvedModelCandidate;
+  const primaryModelCandidate = normalizedMultiModels[0] ?? browserResolvedModelCandidate;
   const isGemini = primaryModelCandidate.startsWith("gemini");
   const isCodex = primaryModelCandidate.startsWith("gpt-5.1-codex");
   const isClaude = primaryModelCandidate.startsWith("claude");
@@ -1378,7 +1391,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     (engine === "browser" || userForcedBrowser) &&
     (normalizedMultiModels.length > 0
       ? normalizedMultiModels.some((model) => !isBrowserCompatible(model))
-      : !isBrowserCompatible(resolvedModelCandidate));
+      : !isBrowserCompatible(browserResolvedModelCandidate));
   if (hasNonBrowserCompatibleTarget) {
     throw new Error(
       "Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.",
@@ -1399,7 +1412,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error("--remote-host does not support --models yet. Use API engine locally instead.");
   }
   const resolvedModel: ModelName =
-    normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
+    normalizedMultiModels[0] ??
+    (isGemini ? resolveApiModel(cliModelArg) : browserResolvedModelCandidate);
   const includesGeminiApiOnly = (
     normalizedMultiModels.length > 0 ? normalizedMultiModels : [resolvedModel]
   ).some((model) => model === "gemini-3.1-pro");

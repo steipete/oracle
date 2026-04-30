@@ -25,13 +25,15 @@ const DEFAULT_CHROME_PROFILE = "Default";
 // The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
+  ["gpt-5.5-pro", "GPT-5.5 Pro"],
   ["gpt-5.4-pro", "GPT-5.4 Pro"],
   ["gpt-5.2-thinking", "GPT-5.2 Thinking"],
   ["gpt-5.2-instant", "GPT-5.2 Instant"],
-  ["gpt-5.2-pro", "GPT-5.4 Pro"],
-  ["gpt-5.1-pro", "GPT-5.4 Pro"],
-  ["gpt-5-pro", "GPT-5.4 Pro"],
+  ["gpt-5.2-pro", "GPT-5.5 Pro"],
+  ["gpt-5.1-pro", "GPT-5.5 Pro"],
+  ["gpt-5-pro", "GPT-5.5 Pro"],
   // Base models last (least specific)
+  ["gpt-5.5", "Thinking 5.5"],
   ["gpt-5.4", "Thinking 5.4"],
   ["gpt-5.2", "GPT-5.2"], // Selects "Auto" in ChatGPT UI
   ["gpt-5.1", "GPT-5.2"], // Legacy alias → Auto
@@ -82,13 +84,17 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
     return model;
   }
 
+  if (normalized === "gpt-5.5-pro" || normalized === "gpt-5.5") {
+    return normalized;
+  }
+
   if (normalized === "gpt-5.4-pro" || normalized === "gpt-5.4") {
     return normalized;
   }
 
   // Pro variants: resolve to the latest Pro model in ChatGPT.
   if (normalized === "gpt-5-pro" || normalized === "gpt-5.1-pro" || normalized === "gpt-5.2-pro") {
-    return "gpt-5.4-pro";
+    return "gpt-5.5-pro";
   }
 
   // Explicit model variants: keep as-is (they have their own browser labels)
@@ -197,7 +203,8 @@ export async function buildBrowserConfig(
     headless: undefined, // disable headless; Cloudflare blocks it
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
-    manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
+    manualLoginProfileDir:
+      options.browserManualLoginProfileDir ?? process.env.ORACLE_BROWSER_PROFILE_DIR ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,
     modelStrategy,

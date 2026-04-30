@@ -177,7 +177,9 @@ async function resumeBrowserSessionViaNewChrome(
   const resolved = resolveBrowserConfig(config ?? {});
   const manualLogin = Boolean(resolved.manualLogin);
   const userDataDir = manualLogin
-    ? (resolved.manualLoginProfileDir ?? path.join(os.homedir(), ".oracle", "browser-profile"))
+    ? (runtime.userDataDir ??
+      resolved.manualLoginProfileDir ??
+      path.join(os.homedir(), ".oracle", "browser-profile"))
     : await mkdtemp(path.join(os.tmpdir(), "oracle-reattach-"));
   if (manualLogin) {
     await mkdir(userDataDir, { recursive: true });

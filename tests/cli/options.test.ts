@@ -224,6 +224,12 @@ describe("inferModelFromLabel", () => {
     expect(inferModelFromLabel("5_4 PRO")).toBe("gpt-5.4-pro");
   });
 
+  test("infers browser-only 5.5 variants", () => {
+    expect(inferModelFromLabel("ChatGPT 5.5")).toBe("gpt-5.5");
+    expect(inferModelFromLabel("GPT-5.5 Pro")).toBe("gpt-5.5-pro");
+    expect(inferModelFromLabel("5_5 PRO")).toBe("gpt-5.5-pro");
+  });
+
   test("infers 5.1 variants as gpt-5.1", () => {
     expect(inferModelFromLabel("ChatGPT 5.1 Instant")).toBe("gpt-5.1");
     expect(inferModelFromLabel("5.1 thinking")).toBe("gpt-5.1");
@@ -246,7 +252,7 @@ describe("inferModelFromLabel", () => {
   });
 
   test("falls back to pro when the label references pro", () => {
-    expect(inferModelFromLabel("ChatGPT Pro")).toBe("gpt-5.4-pro");
+    expect(inferModelFromLabel("ChatGPT Pro")).toBe("gpt-5.5-pro");
     expect(inferModelFromLabel("GPT-5.2 Pro")).toBe("gpt-5.2-pro");
     expect(inferModelFromLabel("GPT-5 Pro (Classic)")).toBe("gpt-5-pro");
   });

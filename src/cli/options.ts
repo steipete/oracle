@@ -297,6 +297,12 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (normalized.includes("classic")) {
     return "gpt-5-pro";
   }
+  if ((normalized.includes("5.5") || normalized.includes("5_5")) && normalized.includes("pro")) {
+    return "gpt-5.5-pro";
+  }
+  if (normalized.includes("5.5") || normalized.includes("5_5")) {
+    return "gpt-5.5";
+  }
   if ((normalized.includes("5.4") || normalized.includes("5_4")) && normalized.includes("pro")) {
     return "gpt-5.4-pro";
   }
@@ -327,6 +333,7 @@ export function inferModelFromLabel(modelValue: string): ModelName {
     normalized.includes("pro") &&
     !normalized.includes("5.1") &&
     !normalized.includes("5.2") &&
+    !normalized.includes("5.5") &&
     !normalized.includes("5.4")
   ) {
     return "gpt-5-pro";
@@ -335,7 +342,7 @@ export function inferModelFromLabel(modelValue: string): ModelName {
     return "gpt-5.1-pro";
   }
   if (normalized.includes("pro")) {
-    return DEFAULT_MODEL;
+    return "gpt-5.5-pro";
   }
   if (normalized.includes("5.1") || normalized.includes("5_1")) {
     return "gpt-5.1";

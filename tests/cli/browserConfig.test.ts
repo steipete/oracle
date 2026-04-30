@@ -1,5 +1,15 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { buildBrowserConfig, resolveBrowserModelLabel } from "../../src/cli/browserConfig.js";
+
+const originalProfileDir = process.env.ORACLE_BROWSER_PROFILE_DIR;
+
+afterEach(() => {
+  if (originalProfileDir === undefined) {
+    delete process.env.ORACLE_BROWSER_PROFILE_DIR;
+  } else {
+    process.env.ORACLE_BROWSER_PROFILE_DIR = originalProfileDir;
+  }
+});
 
 describe("buildBrowserConfig", () => {
   test("uses defaults when optional flags omitted", async () => {
@@ -26,12 +36,30 @@ describe("buildBrowserConfig", () => {
     expect(config.desiredModel).toBe("Thinking 5.4");
   });
 
+  test("maps gpt-5.5 browser runs to ChatGPT 5.5 labels", async () => {
+    await expect(buildBrowserConfig({ model: "gpt-5.5-pro" })).resolves.toMatchObject({
+      desiredModel: "GPT-5.5 Pro",
+    });
+    await expect(buildBrowserConfig({ model: "gpt-5.5" })).resolves.toMatchObject({
+      desiredModel: "Thinking 5.5",
+    });
+  });
+
   test("sets model strategy when provided", async () => {
     const config = await buildBrowserConfig({
       model: "gpt-5.2-pro",
       browserModelStrategy: "current",
     });
     expect(config.modelStrategy).toBe("current");
+  });
+
+  test("persists env manual-login profile dir into browser session config", async () => {
+    process.env.ORACLE_BROWSER_PROFILE_DIR = "/tmp/oracle-browser-profile";
+    const config = await buildBrowserConfig({
+      model: "gpt-5.5-pro",
+      browserManualLogin: true,
+    });
+    expect(config.manualLoginProfileDir).toBe("/tmp/oracle-browser-profile");
   });
 
   test("honors overrides and converts durations + booleans", async () => {
@@ -76,7 +104,7 @@ describe("buildBrowserConfig", () => {
       model: "gpt-5.2-pro",
       browserModelLabel: "Instant",
     });
-    expect(config.desiredModel).toBe("GPT-5.4 Pro");
+    expect(config.desiredModel).toBe("GPT-5.5 Pro");
   });
 
   test("falls back to canonical label when override matches base model", async () => {
@@ -202,9 +230,11 @@ describe("resolveBrowserModelLabel", () => {
   test("returns canonical ChatGPT label when CLI value matches API model", () => {
     expect(resolveBrowserModelLabel("gpt-5.4-pro", "gpt-5.4-pro")).toBe("GPT-5.4 Pro");
     expect(resolveBrowserModelLabel("gpt-5.4", "gpt-5.4")).toBe("Thinking 5.4");
-    expect(resolveBrowserModelLabel("gpt-5-pro", "gpt-5-pro")).toBe("GPT-5.4 Pro");
-    expect(resolveBrowserModelLabel("gpt-5.2-pro", "gpt-5.2-pro")).toBe("GPT-5.4 Pro");
-    expect(resolveBrowserModelLabel("gpt-5.1-pro", "gpt-5.1-pro")).toBe("GPT-5.4 Pro");
+    expect(resolveBrowserModelLabel("gpt-5.5-pro", "gpt-5.5-pro")).toBe("GPT-5.5 Pro");
+    expect(resolveBrowserModelLabel("gpt-5.5", "gpt-5.5")).toBe("Thinking 5.5");
+    expect(resolveBrowserModelLabel("gpt-5-pro", "gpt-5-pro")).toBe("GPT-5.5 Pro");
+    expect(resolveBrowserModelLabel("gpt-5.2-pro", "gpt-5.2-pro")).toBe("GPT-5.5 Pro");
+    expect(resolveBrowserModelLabel("gpt-5.1-pro", "gpt-5.1-pro")).toBe("GPT-5.5 Pro");
     expect(resolveBrowserModelLabel("GPT-5.1", "gpt-5.1")).toBe("GPT-5.2");
   });
 
@@ -217,7 +247,7 @@ describe("resolveBrowserModelLabel", () => {
   });
 
   test("supports undefined or whitespace-only input", () => {
-    expect(resolveBrowserModelLabel(undefined, "gpt-5.2-pro")).toBe("GPT-5.4 Pro");
+    expect(resolveBrowserModelLabel(undefined, "gpt-5.2-pro")).toBe("GPT-5.5 Pro");
     expect(resolveBrowserModelLabel("   ", "gpt-5.1")).toBe("GPT-5.2");
   });
 

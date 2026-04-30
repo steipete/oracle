@@ -31,6 +31,16 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(runOptions.model).toBe(DEFAULT_MODEL);
   });
 
+  it("defaults browser engine to gpt-5.5-pro without changing the API default", () => {
+    const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      engine: "browser",
+    });
+    expect(resolvedEngine).toBe("browser");
+    expect(DEFAULT_MODEL).toBe("gpt-5.4-pro");
+    expect(runOptions.model).toBe("gpt-5.5-pro");
+  });
+
   it("uses config model when caller does not provide one", () => {
     const { runOptions } = resolveRunOptionsFromConfig({
       prompt: basePrompt,
@@ -173,10 +183,20 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(runOptions.model).toBe("gpt-5.2");
   });
 
-  it("maps browser engine Pro aliases to gpt-5.4-pro", () => {
+  it("maps browser engine Pro aliases to gpt-5.5-pro", () => {
     const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
       prompt: basePrompt,
       model: "gpt-5.1-pro",
+      engine: "browser",
+    });
+    expect(resolvedEngine).toBe("browser");
+    expect(runOptions.model).toBe("gpt-5.5-pro");
+  });
+
+  it("preserves explicit gpt-5.4 browser targets", () => {
+    const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      model: "gpt-5.4-pro",
       engine: "browser",
     });
     expect(resolvedEngine).toBe("browser");
