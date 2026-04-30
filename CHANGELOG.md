@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Browser: track ChatGPT's April 2026 composer rewrite — the model picker dropped its `data-testid="model-switcher-dropdown-button"` in favor of a `__composer-pill` button, and the per-effort "Thinking" chip moved into a per-row trailing button inside the model menu (`[data-model-picker-thinking-effort-action]`). Model selection now matches both the legacy testid and the new pill, and thinking-time selection navigates the new model-menu trailing button (with bilingual EN/中文 label matching) before falling back to the old composer chip. When neither layout is available, thinking-time selection now degrades to a logged warning instead of failing the run, so Pro consults still work while the UI keeps shifting.
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed
