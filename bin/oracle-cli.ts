@@ -806,6 +806,16 @@ bridgeCommand
   .command("claude-config")
   .description("Print a Claude Code MCP config snippet (.mcp.json) for oracle-mcp.")
   .option("--print-token", "Include ORACLE_REMOTE_TOKEN in the snippet.", false)
+  .option(
+    "--local-browser",
+    "Use a local signed-in Chrome profile instead of a remote bridge.",
+    false,
+  )
+  .option("--oracle-home-dir <path>", "Override ORACLE_HOME_DIR in the generated snippet.")
+  .option(
+    "--browser-profile-dir <path>",
+    "Override ORACLE_BROWSER_PROFILE_DIR in the generated snippet.",
+  )
   .action(async (commandOptions) => {
     const { runBridgeClaudeConfig } = await import("../src/cli/bridge/claudeConfig.js");
     await runBridgeClaudeConfig(commandOptions);
