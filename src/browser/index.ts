@@ -40,6 +40,7 @@ import {
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
 import { ensureThinkingTime } from "./actions/thinkingTime.js";
+import { startThinkingStatusMonitor } from "./actions/thinkingStatus.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
 import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from "./constants.js";
@@ -63,6 +64,13 @@ import { chatgptDomProvider } from "./providers/index.js";
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from "./utils.js";
+export {
+  formatThinkingLog,
+  formatThinkingWaitingLog,
+  readThinkingStatusForTest,
+  sanitizeThinkingText,
+  startThinkingStatusMonitorForTest,
+} from "./actions/thinkingStatus.js";
 
 function redactBrowserConfigForDebugLog(config: Record<string, unknown>): Record<string, unknown> {
   const redacted = { ...config };
@@ -705,7 +713,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     } finally {
       await releaseProfileLockIfHeld();
     }
-    stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
     const normalizeForComparison = (text: string): string =>
       text.toLowerCase().replace(/\s+/g, " ").trim();
@@ -748,6 +755,18 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       text: string;
       html?: string;
       meta: { turnId?: string | null; messageId?: string | null };
+    };
+    const waitWithThinkingMonitor = async <T>(operation: () => Promise<T>): Promise<T> => {
+      stopThinkingMonitor?.();
+      stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, {
+        intervalMs: options.heartbeatIntervalMs,
+      });
+      try {
+        return await operation();
+      } finally {
+        stopThinkingMonitor?.();
+        stopThinkingMonitor = null;
+      }
     };
     const recheckDelayMs = Math.max(0, config.assistantRecheckDelayMs ?? 0);
     const recheckTimeoutMs = Math.max(0, config.assistantRecheckTimeoutMs ?? 0);
@@ -796,14 +815,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         );
       }
       const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
-      const rechecked = await raceWithDisconnect(
-        waitForAssistantResponseWithReload(
-          Runtime,
-          Page,
-          timeoutMs,
-          logger,
-          baselineTurns ?? undefined,
-          expectedConversationId(),
+      const rechecked = await waitWithThinkingMonitor(() =>
+        raceWithDisconnect(
+          waitForAssistantResponseWithReload(
+            Runtime,
+            Page,
+            timeoutMs,
+            logger,
+            baselineTurns ?? undefined,
+            expectedConversationId(),
+          ),
         ),
       );
       logger("Recovered assistant response after delayed recheck");
@@ -811,14 +832,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     };
     try {
       await updateConversationHint("assistant-wait", 15_000).catch(() => false);
-      answer = await raceWithDisconnect(
-        waitForAssistantResponseWithReload(
-          Runtime,
-          Page,
-          config.timeoutMs,
-          logger,
-          baselineTurns ?? undefined,
-          expectedConversationId(),
+      answer = await waitWithThinkingMonitor(() =>
+        raceWithDisconnect(
+          waitForAssistantResponseWithReload(
+            Runtime,
+            Page,
+            config.timeoutMs,
+            logger,
+            baselineTurns ?? undefined,
+            expectedConversationId(),
+          ),
         ),
       );
     } catch (error) {
@@ -1009,7 +1032,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       // Bail out on mid-run disconnects so the session stays reattachable.
       throw new Error("Chrome disconnected before completion");
     }
-    stopThinkingMonitor?.();
     runStatus = "complete";
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
@@ -1031,7 +1053,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     };
   } catch (error) {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
-    stopThinkingMonitor?.();
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
     if (shouldPreserveBrowserOnError(normalizedError, config.headless)) {
@@ -1540,7 +1561,6 @@ async function runRemoteBrowserMode(
     });
     baselineTurns = submission.baselineTurns;
     baselineAssistantText = submission.baselineAssistantText;
-    stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
     const normalizeForComparison = (text: string): string =>
       text.toLowerCase().replace(/\s+/g, " ").trim();
@@ -1583,6 +1603,18 @@ async function runRemoteBrowserMode(
       text: string;
       html?: string;
       meta: { turnId?: string | null; messageId?: string | null };
+    };
+    const waitWithThinkingMonitor = async <T>(operation: () => Promise<T>): Promise<T> => {
+      stopThinkingMonitor?.();
+      stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, {
+        intervalMs: options.heartbeatIntervalMs,
+      });
+      try {
+        return await operation();
+      } finally {
+        stopThinkingMonitor?.();
+        stopThinkingMonitor = null;
+      }
     };
     const recheckDelayMs = Math.max(0, config.assistantRecheckDelayMs ?? 0);
     const recheckTimeoutMs = Math.max(0, config.assistantRecheckTimeoutMs ?? 0);
@@ -1629,13 +1661,15 @@ async function runRemoteBrowserMode(
       }
       await emitRuntimeHint();
       const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
-      const rechecked = await waitForAssistantResponseWithReload(
-        Runtime,
-        Page,
-        timeoutMs,
-        logger,
-        baselineTurns ?? undefined,
-        expectedConversationId(),
+      const rechecked = await waitWithThinkingMonitor(() =>
+        waitForAssistantResponseWithReload(
+          Runtime,
+          Page,
+          timeoutMs,
+          logger,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ),
       );
       logger("Recovered assistant response after delayed recheck");
       return rechecked;
@@ -1646,13 +1680,15 @@ async function runRemoteBrowserMode(
         lastUrl = conversationUrl;
         await emitRuntimeHint();
       }
-      answer = await waitForAssistantResponseWithReload(
-        Runtime,
-        Page,
-        config.timeoutMs,
-        logger,
-        baselineTurns ?? undefined,
-        expectedConversationId(),
+      answer = await waitWithThinkingMonitor(() =>
+        waitForAssistantResponseWithReload(
+          Runtime,
+          Page,
+          config.timeoutMs,
+          logger,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ),
       );
     } catch (error) {
       if (isAssistantResponseTimeoutError(error)) {
@@ -1806,8 +1842,6 @@ async function runRemoteBrowserMode(
         answerMarkdown = bestText;
       }
     }
-    stopThinkingMonitor?.();
-
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -1829,7 +1863,6 @@ async function runRemoteBrowserMode(
     };
   } catch (error) {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
-    stopThinkingMonitor?.();
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
 
@@ -1899,22 +1932,6 @@ export function isWebSocketClosureError(error: Error): boolean {
     message.includes("inspected target navigated or closed") ||
     message.includes("target closed")
   );
-}
-
-export function formatThinkingLog(
-  startedAt: number,
-  now: number,
-  message: string,
-  locatorSuffix: string,
-): string {
-  const elapsedMs = now - startedAt;
-  const elapsedText = formatElapsed(elapsedMs);
-  const progress = Math.min(1, elapsedMs / 600_000); // soft target: 10 minutes
-  const pct = Math.round(progress * 100)
-    .toString()
-    .padStart(3, " ");
-  const statusLabel = message ? ` — ${message}` : "";
-  return `${pct}% [${elapsedText} / ~10m]${statusLabel}${locatorSuffix}`;
 }
 
 async function waitForAssistantResponseWithReload(
@@ -2150,77 +2167,6 @@ function isConversationUrl(url: string): boolean {
   return /\/c\/[a-z0-9-]+/i.test(url);
 }
 
-function startThinkingStatusMonitor(
-  Runtime: ChromeClient["Runtime"],
-  logger: BrowserLogger,
-  includeDiagnostics = false,
-): () => void {
-  let stopped = false;
-  let pending = false;
-  let lastMessage: string | null = null;
-  const startedAt = Date.now();
-  const interval = setInterval(async () => {
-    // stop flag flips asynchronously
-    if (stopped || pending) {
-      return;
-    }
-    pending = true;
-    try {
-      const nextMessage = await readThinkingStatus(Runtime);
-      if (nextMessage && nextMessage !== lastMessage) {
-        lastMessage = nextMessage;
-        let locatorSuffix = "";
-        if (includeDiagnostics) {
-          try {
-            const snapshot = await readAssistantSnapshot(Runtime);
-            locatorSuffix = ` | assistant-turn=${snapshot ? "present" : "missing"}`;
-          } catch {
-            locatorSuffix = " | assistant-turn=error";
-          }
-        }
-        logger(formatThinkingLog(startedAt, Date.now(), nextMessage, locatorSuffix));
-      }
-    } catch {
-      // ignore DOM polling errors
-    } finally {
-      pending = false;
-    }
-  }, 1500);
-  interval.unref?.();
-  return () => {
-    // multiple callers may race to stop
-    if (stopped) {
-      return;
-    }
-    stopped = true;
-    clearInterval(interval);
-  };
-}
-
-async function readThinkingStatus(Runtime: ChromeClient["Runtime"]): Promise<string | null> {
-  const expression = buildThinkingStatusExpression();
-  try {
-    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
-    const value = typeof result.value === "string" ? result.value.trim() : "";
-    const sanitized = sanitizeThinkingText(value);
-    return sanitized || null;
-  } catch {
-    return null;
-  }
-}
-
-function sanitizeThinkingText(raw: string): string {
-  if (!raw) {
-    return "";
-  }
-  const trimmed = raw.trim();
-  const prefixPattern = /^(pro thinking)\s*[•:\-–—]*\s*/i;
-  if (prefixPattern.test(trimmed)) {
-    return trimmed.replace(prefixPattern, "").trim();
-  }
-  return trimmed;
-}
-
 function describeDevtoolsFirewallHint(host: string, port: number): string | null {
   if (!isWsl()) return null;
   return [
@@ -2294,61 +2240,4 @@ export function shouldPreferSystemTmpDirForTest(
   homeDir: string,
 ): boolean {
   return shouldPreferSystemTmpDir(platform, tmpDir, homeDir);
-}
-
-function buildThinkingStatusExpression(): string {
-  const selectors = [
-    "span.loading-shimmer",
-    "span.flex.items-center.gap-1.truncate.text-start.align-middle.text-token-text-tertiary",
-    '[data-testid*="thinking"]',
-    '[data-testid*="reasoning"]',
-    '[role="status"]',
-    '[aria-live="polite"]',
-  ];
-  const keywords = [
-    "pro thinking",
-    "thinking",
-    "reasoning",
-    "clarifying",
-    "planning",
-    "drafting",
-    "summarizing",
-  ];
-  const selectorLiteral = JSON.stringify(selectors);
-  const keywordsLiteral = JSON.stringify(keywords);
-  return `(() => {
-    const selectors = ${selectorLiteral};
-    const keywords = ${keywordsLiteral};
-    const nodes = new Set();
-    for (const selector of selectors) {
-      document.querySelectorAll(selector).forEach((node) => nodes.add(node));
-    }
-    document.querySelectorAll('[data-testid]').forEach((node) => nodes.add(node));
-    for (const node of nodes) {
-      if (!(node instanceof HTMLElement)) {
-        continue;
-      }
-      const text = node.textContent?.trim();
-      if (!text) {
-        continue;
-      }
-      const classLabel = (node.className || '').toLowerCase();
-      const dataLabel = ((node.getAttribute('data-testid') || '') + ' ' + (node.getAttribute('aria-label') || ''))
-        .toLowerCase();
-      const normalizedText = text.toLowerCase();
-      const matches = keywords.some((keyword) =>
-        normalizedText.includes(keyword) || classLabel.includes(keyword) || dataLabel.includes(keyword)
-      );
-      if (matches) {
-        const shimmerChild = node.querySelector(
-          'span.flex.items-center.gap-1.truncate.text-start.align-middle.text-token-text-tertiary',
-        );
-        if (shimmerChild?.textContent?.trim()) {
-          return shimmerChild.textContent.trim();
-        }
-        return text.trim();
-      }
-    }
-    return null;
-  })()`;
 }
