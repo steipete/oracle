@@ -78,6 +78,21 @@ export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: bo
   return shouldPreserveBrowserOnError(error, headless);
 }
 
+function resolveRemoteTabLeaseProfileDir(
+  config: ReturnType<typeof resolveBrowserConfig>,
+): string | null {
+  if (!config.remoteChrome || !config.manualLogin || !config.manualLoginProfileDir) {
+    return null;
+  }
+  return path.resolve(config.manualLoginProfileDir);
+}
+
+export function resolveRemoteTabLeaseProfileDirForTest(
+  config: ReturnType<typeof resolveBrowserConfig>,
+): string | null {
+  return resolveRemoteTabLeaseProfileDir(config);
+}
+
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
   if (!promptText) {
@@ -1304,6 +1319,7 @@ async function runRemoteBrowserMode(
 
   let client: ChromeClient | null = null;
   let remoteTargetId: string | null = null;
+  let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
   const runtimeHintCb = options.runtimeHintCb;
   const emitRuntimeHint = async () => {
@@ -1315,6 +1331,12 @@ async function runRemoteBrowserMode(
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         controllerPid: process.pid,
+      });
+      await tabLease?.update({
+        chromeHost: host,
+        chromePort: port,
+        chromeTargetId: remoteTargetId ?? undefined,
+        tabUrl: lastUrl,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1330,6 +1352,18 @@ async function runRemoteBrowserMode(
   let removeDialogHandler: (() => void) | null = null;
 
   try {
+    const remoteLeaseProfileDir = resolveRemoteTabLeaseProfileDir(config);
+    if (remoteLeaseProfileDir) {
+      await mkdir(remoteLeaseProfileDir, { recursive: true });
+      tabLease = await acquireBrowserTabLease(remoteLeaseProfileDir, {
+        maxConcurrentTabs: config.maxConcurrentTabs,
+        timeoutMs: config.timeoutMs,
+        logger,
+        sessionId: options.sessionId,
+        chromeHost: host,
+        chromePort: port,
+      });
+    }
     const connection = await connectToRemoteChrome(host, port, logger, config.url);
     client = connection.client;
     remoteTargetId = connection.targetId ?? null;
@@ -1787,6 +1821,11 @@ async function runRemoteBrowserMode(
     }
     removeDialogHandler?.();
     await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
+    if (tabLease) {
+      const handle = tabLease;
+      tabLease = null;
+      await handle.release().catch(() => undefined);
+    }
     // Don't kill remote Chrome - it's not ours to manage
     const totalSeconds = (Date.now() - startedAt) / 1000;
     logger(`Remote session complete • ${totalSeconds.toFixed(1)}s total`);
