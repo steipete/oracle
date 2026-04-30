@@ -4,7 +4,7 @@
 
 ### Added
 
-- Browser: add `--browser-prevent-focus` / `browser.preventFocus` to restore focus to the previously active Linux/X11 window after Chrome launch or tab creation.
+- Browser: add `--browser-prevent-focus` / `browser.preventFocus` to open automation tabs without requesting focus and restore focus to the previously active Linux/X11 window after Chrome launch or tab creation.
 
 ### Changed
 

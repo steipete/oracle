@@ -282,8 +282,9 @@ async function connectToNewTarget(
   logger: BrowserLogger,
   messages: TargetConnectMessages,
 ): Promise<{ client: ChromeClient; targetId: string } | null> {
+  let target: { id: string } | null = null;
   try {
-    const target = await CDP.New({ host, port, url });
+    target = await createNonFocusingTarget(host, port, url, logger);
     try {
       const client = await CDP({ host, port, target: target.id });
       if (messages.opened) {
@@ -305,6 +306,44 @@ async function connectToNewTarget(
     logger(messages.openFailed(message));
   }
   return null;
+}
+
+async function createNonFocusingTarget(
+  host: string,
+  port: number,
+  url: string,
+  logger: BrowserLogger,
+): Promise<{ id: string }> {
+  let browserClient: ChromeClient | null = null;
+  try {
+    browserClient = await CDP({ host, port });
+    const targetApi = browserClient.Target as
+      | {
+          createTarget?: (params: {
+            url: string;
+            background?: boolean;
+            focus?: boolean;
+          }) => Promise<{ targetId: string }>;
+        }
+      | undefined;
+    const response = await targetApi?.createTarget?.({
+      url,
+      background: false,
+      focus: false,
+    });
+    if (!response?.targetId) {
+      throw new Error("Target.createTarget did not return a target id");
+    }
+    return { id: response.targetId };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (logger.verbose) {
+      logger(`Non-focusing tab open failed (${message}); falling back to Chrome /json/new.`);
+    }
+    return CDP.New({ host, port, url });
+  } finally {
+    browserClient?.close();
+  }
 }
 
 export async function connectWithNewTab(
