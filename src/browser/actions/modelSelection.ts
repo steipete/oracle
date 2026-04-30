@@ -100,15 +100,17 @@ function buildModelSelectionExpression(
       .map((token) => normalizeText(token))
       .filter(Boolean);
     const targetWords = normalizedTarget.split(' ').filter(Boolean);
-    const desiredVersion = normalizedTarget.includes('5 4')
-      ? '5-4'
-      : normalizedTarget.includes('5 2')
-        ? '5-2'
-        : normalizedTarget.includes('5 1')
-          ? '5-1'
-          : normalizedTarget.includes('5 0')
-            ? '5-0'
-            : null;
+    const desiredVersion = normalizedTarget.includes('5 5')
+      ? '5-5'
+      : normalizedTarget.includes('5 4')
+        ? '5-4'
+        : normalizedTarget.includes('5 2')
+          ? '5-2'
+          : normalizedTarget.includes('5 1')
+            ? '5-1'
+            : normalizedTarget.includes('5 0')
+              ? '5-0'
+              : null;
     const wantsPro = normalizedTarget.includes(' pro') || normalizedTarget.endsWith(' pro') || normalizedTokens.includes('pro');
     const wantsInstant = normalizedTarget.includes('instant');
     const wantsThinking = normalizedTarget.includes('thinking');
@@ -146,6 +148,7 @@ function buildModelSelectionExpression(
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
       if (desiredVersion) {
+        if (desiredVersion === '5-5' && !normalizedLabel.includes('5 5')) return false;
         if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
         if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
         if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;
@@ -205,6 +208,12 @@ function buildModelSelectionExpression(
       if (normalizedTestId) {
         if (desiredVersion) {
           // data-testid strings have been observed with both dotted and dashed versions (e.g. gpt-5.2-pro vs gpt-5-2-pro).
+          const has55 =
+            normalizedTestId.includes('5-5') ||
+            normalizedTestId.includes('5.5') ||
+            normalizedTestId.includes('gpt-5-5') ||
+            normalizedTestId.includes('gpt-5.5') ||
+            normalizedTestId.includes('gpt55');
           const has52 =
             normalizedTestId.includes('5-2') ||
             normalizedTestId.includes('5.2') ||
@@ -229,7 +238,17 @@ function buildModelSelectionExpression(
             normalizedTestId.includes('gpt-5-0') ||
             normalizedTestId.includes('gpt-5.0') ||
             normalizedTestId.includes('gpt50');
-          const candidateVersion = has54 ? '5-4' : has52 ? '5-2' : has51 ? '5-1' : has50 ? '5-0' : null;
+          const candidateVersion = has55
+            ? '5-5'
+            : has54
+              ? '5-4'
+              : has52
+                ? '5-2'
+                : has51
+                  ? '5-1'
+                  : has50
+                    ? '5-0'
+                    : null;
           // If a candidate advertises a different version, ignore it entirely.
           if (candidateVersion && candidateVersion !== desiredVersion) {
             return 0;

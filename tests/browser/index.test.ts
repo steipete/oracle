@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  shouldProbeManualLoginCleanupForTest,
   shouldPreserveBrowserOnErrorForTest,
   shouldReattachForLikelyTruncatedAnswerForTest,
 } from "../../src/browser/index.js";
@@ -27,6 +28,13 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
     expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(true);
   });
 
+  test("preserves the browser for headful model-selection errors", () => {
+    const error = new BrowserAutomationError("Unable to locate the ChatGPT model selector button.", {
+      stage: "model-selection",
+    });
+    expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(true);
+  });
+
   test("does not preserve the browser for headless cloudflare challenge errors", () => {
     const error = new BrowserAutomationError("Cloudflare challenge detected.", {
       stage: "cloudflare-challenge",
@@ -39,6 +47,45 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
       stage: "execute-browser",
     });
     expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(false);
+  });
+});
+
+describe("shouldProbeManualLoginCleanupForTest", () => {
+  test("does not clear DevTools hints after a clean run that reused live manual-login Chrome", () => {
+    expect(
+      shouldProbeManualLoginCleanupForTest({
+        manualLogin: true,
+        reusedChrome: true,
+        connectionClosedUnexpectedly: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("checks manual-login cleanup when Oracle owns Chrome or the reused connection drops", () => {
+    expect(
+      shouldProbeManualLoginCleanupForTest({
+        manualLogin: true,
+        reusedChrome: false,
+        connectionClosedUnexpectedly: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldProbeManualLoginCleanupForTest({
+        manualLogin: true,
+        reusedChrome: true,
+        connectionClosedUnexpectedly: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("does not run manual-login cleanup for temporary profiles", () => {
+    expect(
+      shouldProbeManualLoginCleanupForTest({
+        manualLogin: false,
+        reusedChrome: false,
+        connectionClosedUnexpectedly: false,
+      }),
+    ).toBe(false);
   });
 });
 

@@ -72,7 +72,12 @@ function getBrowserAutomationStage(error: unknown): string | null {
 function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolean {
   if (headless) return false;
   const stage = getBrowserAutomationStage(error);
-  return stage === "cloudflare-challenge" || stage === "assistant-timeout" || stage === "auth-required";
+  return (
+    stage === "cloudflare-challenge" ||
+    stage === "assistant-timeout" ||
+    stage === "auth-required" ||
+    stage === "model-selection"
+  );
 }
 
 function unrefChromeProcess(chrome: unknown): void {
@@ -80,6 +85,20 @@ function unrefChromeProcess(chrome: unknown): void {
   if (typeof child?.unref === "function") {
     child.unref();
   }
+}
+
+function shouldProbeManualLoginCleanup({
+  manualLogin,
+  reusedChrome,
+  connectionClosedUnexpectedly,
+}: {
+  manualLogin: boolean;
+  reusedChrome: boolean;
+  connectionClosedUnexpectedly: boolean;
+}): boolean {
+  if (!manualLogin) return false;
+  if (!reusedChrome) return true;
+  return connectionClosedUnexpectedly;
 }
 
 function shouldReattachForLikelyTruncatedAnswer({
@@ -131,6 +150,14 @@ function shouldReattachForLikelyTruncatedAnswer({
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+export function shouldProbeManualLoginCleanupForTest(args: {
+  manualLogin: boolean;
+  reusedChrome: boolean;
+  connectionClosedUnexpectedly: boolean;
+}): boolean {
+  return shouldProbeManualLoginCleanup(args);
 }
 
 export function shouldReattachForLikelyTruncatedAnswerForTest(args: {
@@ -549,11 +576,21 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         ),
       ).catch((error) => {
         const base = error instanceof Error ? error.message : String(error);
-        const hint =
-          appliedCookies === 0
+        const hint = manualLogin
+          ? " Manual-login profile is active; make sure ChatGPT is fully signed in in the Oracle browser profile, then rerun."
+          : appliedCookies === 0
             ? " No cookies were applied; log in to ChatGPT in Chrome or provide inline cookies (--browser-inline-cookies[(-file)] or ORACLE_BROWSER_COOKIES_JSON)."
             : "";
-        throw new Error(`${base}${hint}`);
+        throw new BrowserAutomationError(`${base}${hint}`, {
+          stage: "model-selection",
+          details: {
+            desiredModel: config.desiredModel,
+            modelStrategy,
+            manualLogin,
+            appliedCookies,
+            tabUrl: lastUrl,
+          },
+        });
       });
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(
@@ -1150,15 +1187,22 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     removeDialogHandler?.();
     removeTerminationHooks?.();
     const keepBrowserOpen = effectiveKeepBrowser || preserveBrowserOnError;
+    const ownsChrome = !reusedChrome;
     if (!keepBrowserOpen) {
-      if (!connectionClosedUnexpectedly) {
+      if (!connectionClosedUnexpectedly && ownsChrome) {
         try {
           await chrome.kill();
         } catch {
           // ignore kill failures
         }
       }
-      if (manualLogin) {
+      if (
+        shouldProbeManualLoginCleanup({
+          manualLogin,
+          reusedChrome: Boolean(reusedChrome),
+          connectionClosedUnexpectedly,
+        })
+      ) {
         const shouldCleanup = await shouldCleanupManualLoginProfileState(
           userDataDir,
           logger.verbose ? logger : undefined,
@@ -1173,7 +1217,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             () => undefined,
           );
         }
-      } else {
+      } else if (!manualLogin) {
         await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
       }
       if (!connectionClosedUnexpectedly) {

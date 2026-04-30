@@ -39,6 +39,20 @@ describe("browser model selection matchers", () => {
     expect(testIdTokens.some((t) => t.includes("model-switcher-gpt-5.2-pro"))).toBe(true);
   });
 
+  it("treats GPT-5.5 Pro as a versioned target, not a generic Pro match", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("GPT-5.5 Pro");
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
+    expect(labelTokens.some((t) => t.includes("5.5") || t.includes("5-5"))).toBe(true);
+    expectContains(testIdTokens, "gpt-5.5-pro");
+    expect(expression).toContain("desiredVersion === '5-5'");
+    expect(expression).toContain("const has55 =");
+  });
+
+  it("recognizes the composer pill as the current ChatGPT model switcher", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
+    expect(expression).toContain("button.__composer-pill");
+  });
+
   it("includes pro + 5.2 tokens for gpt-5.2-pro", () => {
     const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.2-pro");
     expect(labelTokens.some((t) => t.includes("pro"))).toBe(true);
