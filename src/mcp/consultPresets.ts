@@ -1,6 +1,6 @@
 import type { ConsultInput } from "./types.js";
 
-const CHATGPT_PRO_HEAVY_MODEL = "gpt-5.4-pro";
+const CHATGPT_PRO_HEAVY_MODEL = "gpt-5-pro";
 
 export function applyConsultPreset(input: ConsultInput): ConsultInput {
   if (!input.preset) {

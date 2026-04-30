@@ -16,7 +16,7 @@ describe("summarizeModelRunsForConsult", () => {
       }),
     ).toMatchObject({
       engine: "browser",
-      model: "gpt-5.4-pro",
+      model: "gpt-5-pro",
       browserThinkingTime: "heavy",
     });
 
