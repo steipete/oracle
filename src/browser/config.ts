@@ -1,4 +1,9 @@
-import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
+import {
+  CHATGPT_URL,
+  DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
+  DEFAULT_MODEL_STRATEGY,
+  DEFAULT_MODEL_TARGET,
+} from "./constants.js";
 import { normalizeBrowserModelStrategy } from "./modelStrategy.js";
 import {
   DEFAULT_MAX_CONCURRENT_CHATGPT_TABS,
@@ -98,12 +103,15 @@ export function resolveBrowserConfig(
     config?.manualLoginProfileDir,
     process.env.ORACLE_BROWSER_PROFILE_DIR,
   );
+  const researchMode = normalizeResearchMode(config?.researchMode);
+  const defaultTimeoutMs =
+    researchMode === "deep" ? DEEP_RESEARCH_DEFAULT_TIMEOUT_MS : DEFAULT_BROWSER_CONFIG.timeoutMs;
   return {
     ...DEFAULT_BROWSER_CONFIG,
     ...config,
     url: normalizedUrl,
     chatgptUrl: normalizedUrl,
-    timeoutMs: config?.timeoutMs ?? DEFAULT_BROWSER_CONFIG.timeoutMs,
+    timeoutMs: config?.timeoutMs ?? defaultTimeoutMs,
     debugPort: config?.debugPort ?? debugPortEnv ?? DEFAULT_BROWSER_CONFIG.debugPort,
     inputTimeoutMs: config?.inputTimeoutMs ?? DEFAULT_BROWSER_CONFIG.inputTimeoutMs,
     assistantRecheckDelayMs:
@@ -143,7 +151,7 @@ export function resolveBrowserConfig(
     remoteChromeProfileRoot:
       config?.remoteChromeProfileRoot ?? DEFAULT_BROWSER_CONFIG.remoteChromeProfileRoot,
     thinkingTime: config?.thinkingTime,
-    researchMode: normalizeResearchMode(config?.researchMode),
+    researchMode,
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
     manualLoginCookieSync:
