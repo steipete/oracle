@@ -129,6 +129,12 @@ oracle --engine browser \
 - Cookie copy is skipped by default in this mode. To automate manual-login runs, set `browser.manualLoginCookieSync=true` in `~/.oracle/config.json` to seed the persistent profile from your existing Chrome cookies; inline cookies apply when cookie sync is enabled.
 - If Chrome is already running with that profile and DevTools remote debugging enabled (see `DevToolsActivePort` in the profile dir), you can reuse it instead of relaunching by pointing Oracle at it with `--remote-chrome <host:port>`.
 
+### Concurrent agents and long Pro runs
+
+When Codex, Claude Code, or another Oracle caller share the same manual-login profile, each browser run now acquires a tab slot before opening a ChatGPT tab. The default allows three simultaneous ChatGPT tabs; the fourth caller waits instead of failing because another agent is already using the browser. This is most useful for long Pro/Thinking runs where one agent may wait for a response while another agent needs to start a separate consult.
+
+Use `--browser-max-concurrent-tabs <n>` or `browser.maxConcurrentTabs` to tune the soft limit. Keep the value modest: too many concurrent ChatGPT tabs can make the UI unstable or trigger account-side throttling. The short profile lock still serializes the send/upload moment so separate agents do not type into the same composer.
+
 ## Remote Chrome Sessions (headless/server workflows)
 
 Oracle can reuse an already-running Chrome/Edge instance on another machine by tunneling over the Chrome DevTools Protocol. This is handy when:

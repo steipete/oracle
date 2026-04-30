@@ -254,6 +254,8 @@ Put defaults in `~/.oracle/config.json` (JSON5). Example:
 Use `browser.chatgptUrl` (or the legacy alias `browser.url`) to target a specific ChatGPT workspace/folder for browser automation.
 See [docs/configuration.md](docs/configuration.md) for precedence and full schema.
 
+When several agents share one manual-login ChatGPT profile, Oracle coordinates browser tab slots through that profile. Extra runs wait and log that they are waiting for a ChatGPT browser slot instead of crashing because another Codex/Claude/CLI run is already using the browser.
+
 Advanced flags
 
 | Area         | Flags                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
