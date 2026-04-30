@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- Browser: add ChatGPT `gpt-5.5-pro` / `gpt-5.5` selection labels, make browser-mode runs without an explicit model target `GPT-5.5 Pro`, and keep the API default unchanged.
+
+### Fixed
+
+- Browser: recognize ChatGPT's composer-pill model picker and the model-menu thinking-effort control so current ChatGPT UI changes do not break Pro browser runs.
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed

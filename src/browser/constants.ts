@@ -1,7 +1,8 @@
 import type { BrowserModelStrategy } from "./types.js";
+import { DEFAULT_CHATGPT_BROWSER_MODEL_LABEL } from "./chatgptModelCatalog.js";
 
 export const CHATGPT_URL = "https://chatgpt.com/";
-export const DEFAULT_MODEL_TARGET = "GPT-5.4 Pro";
+export const DEFAULT_MODEL_TARGET = DEFAULT_CHATGPT_BROWSER_MODEL_LABEL;
 export const DEFAULT_MODEL_STRATEGY: BrowserModelStrategy = "select";
 export const COOKIE_URLS = [
   "https://chatgpt.com",
@@ -78,7 +79,8 @@ export const SEND_BUTTON_SELECTORS = [
   'button[aria-label*="Send"]',
 ];
 export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
-export const MODEL_BUTTON_SELECTOR = '[data-testid="model-switcher-dropdown-button"]';
+export const MODEL_BUTTON_SELECTOR =
+  '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
 // Action buttons that only appear once a turn has finished rendering.
 export const FINISHED_ACTIONS_SELECTOR =

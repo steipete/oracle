@@ -39,7 +39,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     autoReattachIntervalMs: 0, // interval between auto-reattach attempts (0 = disabled)
     autoReattachTimeoutMs: 120000, // time budget per auto-reattach attempt (default: 2m)
     modelStrategy: "select", // select | current | ignore (ChatGPT only; ignored for Gemini web)
-    thinkingTime: "extended", // light | standard | extended | heavy (ChatGPT Thinking/Pro models)
+    thinkingTime: "extended", // light | standard | extended | heavy (availability depends on the selected ChatGPT model)
     manualLogin: false, // set true to reuse a persistent automation profile and sign in once (Windows defaults to true when unset)
     manualLoginProfileDir: null, // override profile dir (or set ORACLE_BROWSER_PROFILE_DIR)
     headless: false,
@@ -70,6 +70,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
 CLI flags → `config.json` → environment → built-in defaults.
 
 - `engine`, `model`, `search`, `filesReport`, `heartbeatSeconds`, `maxFileSizeBytes`, and `apiBaseUrl` in `config.json` override the auto-detected values unless explicitly set on the CLI.
+- When browser mode is selected and neither CLI nor config specifies `model`, Oracle targets ChatGPT `gpt-5.5-pro`; the API default remains `gpt-5.4-pro`.
 - `ORACLE_ENGINE=api|browser` is a global override for engine selection (useful for MCP/Codex setups); it wins over `config.json`.
 - If `azure.endpoint` (or `--azure-endpoint`) is set, Oracle reads `AZURE_OPENAI_API_KEY` first and falls back to `OPENAI_API_KEY` for GPT models.
 - Remote browser defaults follow the same order: `--remote-host/--remote-token` win, then `browser.remoteHost` / `browser.remoteToken` in the config, then `ORACLE_REMOTE_HOST` / `ORACLE_REMOTE_TOKEN` if still unset.

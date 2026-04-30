@@ -51,6 +51,6 @@
   ```
 - Bridge helper snippets:
   - Codex CLI: `oracle bridge codex-config`
-  - Claude Code: `oracle bridge claude-config`
+- Claude Code: `oracle bridge claude-config`
 - Tools and resources operate on the same session store as `oracle status|session`.
 - Defaults (model/engine/etc.) come from your Oracle CLI config; see `docs/configuration.md` or `~/.oracle/config.json`.
