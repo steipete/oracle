@@ -57,6 +57,7 @@ import {
   writeChromePid,
   writeDevToolsActivePort,
 } from "./profileState.js";
+import { acquireBrowserTabLease, type BrowserTabLease } from "./tabLeaseRegistry.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
 
@@ -189,8 +190,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const runtimeHintCb = options.runtimeHintCb;
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
+  let tabLease: BrowserTabLease | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
-    if (!runtimeHintCb || !chrome?.port) {
+    if (!chrome?.port) {
       return;
     }
     const conversationId = lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
@@ -205,7 +207,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       controllerPid: process.pid,
     };
     try {
-      await runtimeHintCb(hint);
+      await runtimeHintCb?.(hint);
+      await tabLease?.update({
+        chromeHost,
+        chromePort: chrome.port,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger(`Failed to persist runtime hint: ${message}`);
@@ -315,6 +323,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   try {
     try {
+      if (manualLogin) {
+        tabLease = await acquireBrowserTabLease(userDataDir, {
+          maxConcurrentTabs: config.maxConcurrentTabs,
+          timeoutMs: config.profileLockTimeoutMs,
+          logger,
+          sessionId: options.sessionId,
+          chromeHost,
+          chromePort: chrome.port,
+        });
+      }
       const strictTabIsolation = Boolean(manualLogin && reusedChrome);
       const connection = await connectWithNewTab(chrome.port, logger, config.url, chromeHost, {
         fallbackToDefault: !strictTabIsolation,
@@ -323,6 +341,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       });
       client = connection.client;
       isolatedTargetId = connection.targetId ?? null;
+      if (tabLease && isolatedTargetId) {
+        await tabLease.update({
+          chromeHost,
+          chromePort: chrome.port,
+          chromeTargetId: isolatedTargetId,
+        });
+      }
     } catch (error) {
       const hint = describeDevtoolsFirewallHint(chromeHost, chrome.port);
       if (hint) {
@@ -1084,6 +1109,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // so reattach can recover the response.
     if (runStatus === "complete" && isolatedTargetId && chrome?.port) {
       await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
+    }
+    if (tabLease) {
+      const handle = tabLease;
+      tabLease = null;
+      await handle.release().catch(() => undefined);
     }
     removeDialogHandler?.();
     removeTerminationHooks?.();
