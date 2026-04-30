@@ -117,7 +117,6 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 
 - Run the stdio server via `oracle-mcp`.
 - Configure clients via [steipete/mcporter](https://github.com/steipete/mcporter) or `.mcp.json`; see [docs/mcp.md](docs/mcp.md) for connection examples.
-- MCP `consult` supports `dryRun: true`, so clients such as Claude Code can preview token/file delivery before starting a browser-backed GPT-5.5 Pro consult.
 
 ```bash
 npx -y @steipete/oracle oracle-mcp

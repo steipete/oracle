@@ -26,6 +26,7 @@ import {
 import { isKnownModel } from "../src/oracle/modelResolver.js";
 import type { ModelName, PreviewMode, RunOracleOptions } from "../src/oracle.js";
 import { CHATGPT_URL } from "../src/browserMode.js";
+import { LATEST_CHATGPT_BROWSER_PRO_MODEL } from "../src/browser/chatgptModelCatalog.js";
 import { createRemoteBrowserExecutor } from "../src/remote/client.js";
 import { createGeminiWebExecutor } from "../src/gemini-web/index.js";
 import { applyHelpStyling } from "../src/cli/help.js";
@@ -1366,7 +1367,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     : [];
   const browserDefaultModel =
     engine === "browser" && !multiModelProvided && optionUsesDefault("model") && !userConfig.model
-      ? "gpt-5.5-pro"
+      ? LATEST_CHATGPT_BROWSER_PRO_MODEL
       : undefined;
   const cliModelArg =
     normalizeModelOption(browserDefaultModel ?? options.model) ||

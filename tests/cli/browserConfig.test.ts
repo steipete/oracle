@@ -1,15 +1,5 @@
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { buildBrowserConfig, resolveBrowserModelLabel } from "../../src/cli/browserConfig.js";
-
-const originalProfileDir = process.env.ORACLE_BROWSER_PROFILE_DIR;
-
-afterEach(() => {
-  if (originalProfileDir === undefined) {
-    delete process.env.ORACLE_BROWSER_PROFILE_DIR;
-  } else {
-    process.env.ORACLE_BROWSER_PROFILE_DIR = originalProfileDir;
-  }
-});
 
 describe("buildBrowserConfig", () => {
   test("uses defaults when optional flags omitted", async () => {
@@ -51,15 +41,6 @@ describe("buildBrowserConfig", () => {
       browserModelStrategy: "current",
     });
     expect(config.modelStrategy).toBe("current");
-  });
-
-  test("persists env manual-login profile dir into browser session config", async () => {
-    process.env.ORACLE_BROWSER_PROFILE_DIR = "/tmp/oracle-browser-profile";
-    const config = await buildBrowserConfig({
-      model: "gpt-5.5-pro",
-      browserManualLogin: true,
-    });
-    expect(config.manualLoginProfileDir).toBe("/tmp/oracle-browser-profile");
   });
 
   test("honors overrides and converts durations + booleans", async () => {

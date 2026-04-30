@@ -1,7 +1,8 @@
 import type { BrowserModelStrategy } from "./types.js";
+import { DEFAULT_CHATGPT_BROWSER_MODEL_LABEL } from "./chatgptModelCatalog.js";
 
 export const CHATGPT_URL = "https://chatgpt.com/";
-export const DEFAULT_MODEL_TARGET = "GPT-5.5 Pro";
+export const DEFAULT_MODEL_TARGET = DEFAULT_CHATGPT_BROWSER_MODEL_LABEL;
 export const DEFAULT_MODEL_STRATEGY: BrowserModelStrategy = "select";
 export const COOKIE_URLS = [
   "https://chatgpt.com",

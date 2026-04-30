@@ -4,6 +4,10 @@ import path from "node:path";
 import fg from "fast-glob";
 import type { ModelName, PreviewMode } from "../oracle.js";
 import { DEFAULT_MODEL, MODEL_CONFIGS } from "../oracle.js";
+import {
+  inferChatGptBrowserModelFromLabel,
+  LATEST_CHATGPT_BROWSER_PRO_MODEL,
+} from "../browser/chatgptModelCatalog.js";
 
 export function collectPaths(
   value: string | string[] | undefined,
@@ -297,61 +301,15 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (normalized.includes("classic")) {
     return "gpt-5-pro";
   }
-  if ((normalized.includes("5.5") || normalized.includes("5_5")) && normalized.includes("pro")) {
-    return "gpt-5.5-pro";
+  const browserModel = inferChatGptBrowserModelFromLabel(normalized);
+  if (browserModel) {
+    return browserModel;
   }
-  if (normalized.includes("5.5") || normalized.includes("5_5")) {
-    return "gpt-5.5";
-  }
-  if ((normalized.includes("5.4") || normalized.includes("5_4")) && normalized.includes("pro")) {
-    return "gpt-5.4-pro";
-  }
-  if (normalized.includes("5.4") || normalized.includes("5_4")) {
-    return "gpt-5.4";
-  }
-  if ((normalized.includes("5.2") || normalized.includes("5_2")) && normalized.includes("pro")) {
-    return "gpt-5.2-pro";
-  }
-  // Browser-only: pass through 5.2 thinking/instant variants for browser label mapping
-  if (
-    (normalized.includes("5.2") || normalized.includes("5_2")) &&
-    normalized.includes("thinking")
-  ) {
-    return "gpt-5.2-thinking" as ModelName;
-  }
-  if (
-    (normalized.includes("5.2") || normalized.includes("5_2")) &&
-    normalized.includes("instant")
-  ) {
-    return "gpt-5.2-instant";
-  }
-  if (normalized.includes("5.0") || normalized.includes("5-pro")) {
+  if (normalized.includes("gpt-5") && normalized.includes("pro")) {
     return "gpt-5-pro";
-  }
-  if (
-    normalized.includes("gpt-5") &&
-    normalized.includes("pro") &&
-    !normalized.includes("5.1") &&
-    !normalized.includes("5.2") &&
-    !normalized.includes("5.5") &&
-    !normalized.includes("5.4")
-  ) {
-    return "gpt-5-pro";
-  }
-  if ((normalized.includes("5.1") || normalized.includes("5_1")) && normalized.includes("pro")) {
-    return "gpt-5.1-pro";
   }
   if (normalized.includes("pro")) {
-    return "gpt-5.5-pro";
-  }
-  if (normalized.includes("5.1") || normalized.includes("5_1")) {
-    return "gpt-5.1";
-  }
-  if (normalized.includes("thinking")) {
-    return "gpt-5.2-thinking" as ModelName;
-  }
-  if (normalized.includes("instant") || normalized.includes("fast")) {
-    return "gpt-5.2-instant";
+    return LATEST_CHATGPT_BROWSER_PRO_MODEL;
   }
   return "gpt-5.2";
 }

@@ -11,6 +11,10 @@ import {
   parseDuration,
 } from "../browserMode.js";
 import { normalizeBrowserModelStrategy } from "../browser/modelStrategy.js";
+import {
+  mapChatGptModelToBrowserLabel,
+  normalizeChatGptBrowserModelForBrowser,
+} from "../browser/chatgptModelCatalog.js";
 import type { BrowserModelStrategy } from "../browser/types.js";
 import type { CookieParam } from "../browser/types.js";
 import { getOracleHomeDir } from "../oracleHome.js";
@@ -21,22 +25,7 @@ const DEFAULT_BROWSER_RECHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_BROWSER_AUTO_REATTACH_TIMEOUT_MS = 120_000;
 const DEFAULT_CHROME_PROFILE = "Default";
 
-// Ordered array: most specific models first to ensure correct selection.
-// The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
-const BROWSER_MODEL_LABELS: [ModelName, string][] = [
-  // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
-  ["gpt-5.5-pro", "GPT-5.5 Pro"],
-  ["gpt-5.4-pro", "GPT-5.4 Pro"],
-  ["gpt-5.2-thinking", "GPT-5.2 Thinking"],
-  ["gpt-5.2-instant", "GPT-5.2 Instant"],
-  ["gpt-5.2-pro", "GPT-5.5 Pro"],
-  ["gpt-5.1-pro", "GPT-5.5 Pro"],
-  ["gpt-5-pro", "GPT-5.5 Pro"],
-  // Base models last (least specific)
-  ["gpt-5.5", "Thinking 5.5"],
-  ["gpt-5.4", "Thinking 5.4"],
-  ["gpt-5.2", "GPT-5.2"], // Selects "Auto" in ChatGPT UI
-  ["gpt-5.1", "GPT-5.2"], // Legacy alias → Auto
+const GEMINI_BROWSER_MODEL_LABELS: [ModelName, string][] = [
   ["gemini-3-pro", "Gemini 3 Pro"],
   ["gemini-3-pro-deep-think", "gemini-3-deep-think"],
 ];
@@ -79,35 +68,7 @@ export interface BrowserFlagOptions {
 }
 
 export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
-  const normalized = model.toLowerCase() as ModelName;
-  if (!normalized.startsWith("gpt-") || normalized.includes("codex")) {
-    return model;
-  }
-
-  if (normalized === "gpt-5.5-pro" || normalized === "gpt-5.5") {
-    return normalized;
-  }
-
-  if (normalized === "gpt-5.4-pro" || normalized === "gpt-5.4") {
-    return normalized;
-  }
-
-  // Pro variants: resolve to the latest Pro model in ChatGPT.
-  if (normalized === "gpt-5-pro" || normalized === "gpt-5.1-pro" || normalized === "gpt-5.2-pro") {
-    return "gpt-5.5-pro";
-  }
-
-  // Explicit model variants: keep as-is (they have their own browser labels)
-  if (normalized === "gpt-5.2-thinking" || normalized === "gpt-5.2-instant") {
-    return normalized;
-  }
-
-  // Legacy aliases: map to base GPT-5.2 (Auto)
-  if (normalized === "gpt-5.1") {
-    return "gpt-5.2";
-  }
-
-  return model;
+  return normalizeChatGptBrowserModelForBrowser(model);
 }
 
 export async function buildBrowserConfig(
@@ -203,8 +164,7 @@ export async function buildBrowserConfig(
     headless: undefined, // disable headless; Cloudflare blocks it
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
-    manualLoginProfileDir:
-      options.browserManualLoginProfileDir ?? process.env.ORACLE_BROWSER_PROFILE_DIR ?? undefined,
+    manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,
     modelStrategy,
@@ -226,9 +186,12 @@ function selectBrowserPort(options: BrowserFlagOptions): number | null {
 }
 
 export function mapModelToBrowserLabel(model: ModelName): string {
-  const normalized = normalizeChatGptModelForBrowser(model);
-  // Iterate ordered array to find first match (most specific first)
-  for (const [key, label] of BROWSER_MODEL_LABELS) {
+  const chatGptLabel = mapChatGptModelToBrowserLabel(model);
+  if (chatGptLabel) {
+    return chatGptLabel;
+  }
+  const normalized = model.toLowerCase();
+  for (const [key, label] of GEMINI_BROWSER_MODEL_LABELS) {
     if (key === normalized) {
       return label;
     }

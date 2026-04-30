@@ -137,19 +137,20 @@ describe("browser model selection matchers", () => {
     );
 
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
-    expect(expression).toContain("normalizedTarget.includes('5 5')");
-    expect(expression).toContain("desiredVersion === '5-5'");
+    expect(expression).toContain('const TARGET_VERSION = "5-5"');
+    expect(expression).toContain('const TARGET_KIND = "pro"');
+    expect(expression).toContain("const VERSION_PATTERNS");
     expect(expression).toContain("const findModelButton = () =>");
     expect(expression).toContain("score += 1000");
     expect(expression).toContain("const isEffortOnly = label === 'pro' || label === 'thinking'");
-    expect(expression).toContain("isTargetGpt55VisibleAlias");
+    expect(expression).toContain("matchesVisibleAlias");
     expect(expression).toContain("best.score >= 100");
     expect(expression).toContain("return { status: 'button-missing' }");
     expect(expression).toContain("candidateTextVersion && candidateTextVersion !== desiredVersion");
     expect(expression).toContain(
       "candidateTestIdVersion && candidateTestIdVersion !== desiredVersion",
     );
-    expect(expression).toContain("!candidateGpt55VisibleAlias");
+    expect(expression).toContain("!candidateVisibleAlias");
   });
 
   it("does not accept a generic Pro pill as gpt-5.5-pro under select strategy", async () => {

@@ -13,6 +13,7 @@ import { resolveGeminiModelId } from "../oracle/gemini.js";
 import { PromptValidationError } from "../oracle/errors.js";
 import { normalizeChatGptModelForBrowser } from "./browserConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "./fileSize.js";
+import { LATEST_CHATGPT_BROWSER_PRO_MODEL } from "../browser/chatgptModelCatalog.js";
 
 export interface ResolveRunOptionsInput {
   prompt: string;
@@ -52,7 +53,7 @@ export function resolveRunOptionsFromConfig({
     normalizedRequestedModels.length === 0 &&
     model === undefined &&
     userConfig?.model === undefined
-      ? "gpt-5.5-pro"
+      ? LATEST_CHATGPT_BROWSER_PRO_MODEL
       : undefined;
   const cliModelArg =
     normalizeModelOption(model ?? userConfig?.model ?? browserDefaultModel) || DEFAULT_MODEL;

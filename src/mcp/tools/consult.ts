@@ -26,7 +26,6 @@ import { consultInputSchema } from "../types.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
 import { mapModelToBrowserLabel, resolveBrowserModelLabel } from "../../cli/browserConfig.js";
-import { runDryRunSummary } from "../../cli/dryRun.js";
 
 // Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
 const consultInputShape = {
@@ -77,12 +76,6 @@ const consultInputShape = {
     .boolean()
     .optional()
     .describe("Browser-only: keep Chrome running after completion (useful for debugging)."),
-  dryRun: z
-    .boolean()
-    .optional()
-    .describe(
-      "Preview the resolved model, token/file summary, and browser delivery plan without starting a model session. Useful before allowing another agent to call GPT-5.5 Pro.",
-    ),
   search: z
     .boolean()
     .optional()
@@ -235,7 +228,6 @@ export function registerConsultTool(server: McpServer): void {
         browserBundleFiles,
         browserThinkingTime,
         browserKeepBrowser,
-        dryRun,
         slug,
       } = consultInputSchema.parse(input);
       const { config: userConfig } = await loadUserConfig();
@@ -252,40 +244,6 @@ export function registerConsultTool(server: McpServer): void {
         env: process.env,
       });
       const cwd = process.cwd();
-
-      let browserConfig: BrowserSessionConfig | undefined;
-      if (resolvedEngine === "browser") {
-        browserConfig = buildConsultBrowserConfig({
-          userConfig,
-          env: process.env,
-          runModel: runOptions.model,
-          inputModel: model,
-          browserModelLabel,
-          browserThinkingTime,
-          browserKeepBrowser,
-        });
-      }
-
-      if (dryRun) {
-        const lines: string[] = [];
-        await runDryRunSummary({
-          engine: resolvedEngine,
-          runOptions,
-          cwd,
-          version: getCliVersion(),
-          log: (line) => lines.push(line),
-          browserConfig,
-        });
-        const output = lines.join("\n").trim();
-        return {
-          content: textContent(output || "(dry-run produced no output)"),
-          structuredContent: {
-            sessionId: "dry-run",
-            status: "dry-run",
-            output,
-          },
-        };
-      }
 
       const resolvedRemote = resolveRemoteServiceConfig({ userConfig, env: process.env });
       const browserGuard = ensureBrowserAvailable(resolvedEngine, {
@@ -314,6 +272,19 @@ export function registerConsultTool(server: McpServer): void {
             token: resolvedRemote.token,
           }),
         };
+      }
+
+      let browserConfig: BrowserSessionConfig | undefined;
+      if (resolvedEngine === "browser") {
+        browserConfig = buildConsultBrowserConfig({
+          userConfig,
+          env: process.env,
+          runModel: runOptions.model,
+          inputModel: model,
+          browserModelLabel,
+          browserThinkingTime,
+          browserKeepBrowser,
+        });
       }
 
       const notifications = resolveNotificationSettings({
