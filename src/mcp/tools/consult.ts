@@ -87,6 +87,10 @@ const consultInputShape = {
     .describe(
       "Browser-only: model picker strategy. Mirrors the CLI --browser-model-strategy flag.",
     ),
+  browserResearchMode: z
+    .enum(["deep"])
+    .optional()
+    .describe("Browser-only: activate ChatGPT Deep Research mode for broad web research."),
   browserKeepBrowser: z
     .boolean()
     .optional()
@@ -188,6 +192,7 @@ export function buildConsultBrowserConfig({
   browserModelLabel,
   browserThinkingTime,
   browserModelStrategy,
+  browserResearchMode,
   browserKeepBrowser,
 }: {
   userConfig: UserConfig;
@@ -197,6 +202,7 @@ export function buildConsultBrowserConfig({
   browserModelLabel?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
   browserModelStrategy?: BrowserModelStrategy;
+  browserResearchMode?: "deep";
   browserKeepBrowser?: boolean;
 }): BrowserSessionConfig {
   const configuredBrowser = userConfig.browser ?? {};
@@ -224,6 +230,7 @@ export function buildConsultBrowserConfig({
       : null,
     thinkingTime: browserThinkingTime ?? configuredBrowser.thinkingTime,
     modelStrategy: browserModelStrategy ?? configuredBrowser.modelStrategy,
+    researchMode: browserResearchMode ?? configuredBrowser.researchMode,
     desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
   };
 }
@@ -262,6 +269,7 @@ export function registerConsultTool(server: McpServer): void {
         browserBundleFiles,
         browserThinkingTime,
         browserModelStrategy,
+        browserResearchMode,
         browserKeepBrowser,
         dryRun,
         slug,
@@ -302,6 +310,7 @@ export function registerConsultTool(server: McpServer): void {
           browserModelLabel,
           browserThinkingTime,
           browserModelStrategy,
+          browserResearchMode,
           browserKeepBrowser,
         });
       }

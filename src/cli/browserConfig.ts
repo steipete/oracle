@@ -11,7 +11,7 @@ import {
   parseDuration,
 } from "../browserMode.js";
 import { normalizeBrowserModelStrategy } from "../browser/modelStrategy.js";
-import type { BrowserModelStrategy } from "../browser/types.js";
+import type { BrowserModelStrategy, BrowserResearchMode } from "../browser/types.js";
 import type { CookieParam } from "../browser/types.js";
 import { getOracleHomeDir } from "../oracleHome.js";
 
@@ -70,6 +70,7 @@ export interface BrowserFlagOptions {
   browserManualLoginProfileDir?: string | null;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
+  browserResearch?: BrowserResearchMode;
   browserModelLabel?: string;
   browserModelStrategy?: BrowserModelStrategy;
   browserAllowCookieErrors?: boolean;
@@ -222,6 +223,7 @@ export async function buildBrowserConfig(
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
     thinkingTime: options.browserThinkingTime,
+    researchMode: options.browserResearch === "deep" ? "deep" : "off",
   };
 }
 

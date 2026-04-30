@@ -6,6 +6,7 @@ import type { ThinkingTimeLevel } from "../oracle/types.js";
 export type ChromeClient = Awaited<ReturnType<typeof CDP>>;
 export type CookieParam = Protocol.Network.CookieParam;
 export type BrowserModelStrategy = "select" | "current" | "ignore";
+export type BrowserResearchMode = "off" | "deep";
 
 export type BrowserLogger = ((message: string) => void) & {
   verbose?: boolean;
@@ -64,6 +65,8 @@ export interface BrowserAutomationConfig {
   manualLoginCookieSync?: boolean;
   /** Thinking time intensity level for Thinking/Pro models: light, standard, extended, heavy */
   thinkingTime?: ThinkingTimeLevel;
+  /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
+  researchMode?: BrowserResearchMode;
 }
 
 export interface BrowserRunOptions {
@@ -116,6 +119,7 @@ export type ResolvedBrowserConfig = Required<
     | "thinkingTime"
     | "modelStrategy"
     | "maxConcurrentTabs"
+    | "researchMode"
   >
 > & {
   chromeProfile?: string | null;
@@ -134,4 +138,5 @@ export type ResolvedBrowserConfig = Required<
   manualLoginProfileDir?: string | null;
   manualLoginCookieSync?: boolean;
   maxConcurrentTabs: number;
+  researchMode: BrowserResearchMode;
 };

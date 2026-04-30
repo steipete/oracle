@@ -57,6 +57,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   manualLogin: false,
   manualLoginProfileDir: null,
   manualLoginCookieSync: false,
+  researchMode: "off",
 };
 
 export function resolveBrowserConfig(
@@ -142,11 +143,16 @@ export function resolveBrowserConfig(
     remoteChromeProfileRoot:
       config?.remoteChromeProfileRoot ?? DEFAULT_BROWSER_CONFIG.remoteChromeProfileRoot,
     thinkingTime: config?.thinkingTime,
+    researchMode: normalizeResearchMode(config?.researchMode),
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
     manualLoginCookieSync:
       config?.manualLoginCookieSync ?? DEFAULT_BROWSER_CONFIG.manualLoginCookieSync,
   };
+}
+
+function normalizeResearchMode(value: unknown): "off" | "deep" {
+  return value === "deep" ? "deep" : "off";
 }
 
 function parseDebugPort(raw?: string | null): number | null {
