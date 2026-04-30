@@ -70,8 +70,56 @@ export async function createRemoteServer(
   const color = process.stdout.isTTY
     ? (formatter: (msg: string) => string, msg: string) => formatter(msg)
     : (_formatter: (msg: string) => string, msg: string) => msg;
-  // Single-flight guard: remote Chrome can only host one run at a time, so we serialize requests.
+  // FIFO run queue: Chrome can only host one run at a time, so we serialize.
+  // Instead of rejecting with 409, queued requests wait until the active run finishes.
   let busy = false;
+  const MAX_QUEUE_SIZE = 8;
+  type QueuedRun = {
+    req: http.IncomingMessage;
+    res: http.ServerResponse;
+    resolve: () => void;
+  };
+  const runQueue: QueuedRun[] = [];
+
+  function dequeueNext(): void {
+    const next = runQueue.shift();
+    if (next) {
+      next.resolve();
+    }
+  }
+
+  async function waitForSlot(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<"proceed" | "rejected"> {
+    if (!busy) {
+      busy = true;
+      return "proceed";
+    }
+    if (runQueue.length >= MAX_QUEUE_SIZE) {
+      logger(
+        `[serve] Queue full (${MAX_QUEUE_SIZE}): rejecting run from ${formatSocket(req)}`,
+      );
+      res.writeHead(429, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "queue_full", maxQueueSize: MAX_QUEUE_SIZE }));
+      return "rejected";
+    }
+    const position = runQueue.length + 1;
+    logger(
+      `[serve] Queued run from ${formatSocket(req)} (position ${position}, ${runQueue.length} ahead)`,
+    );
+    // Send 200 + ndjson immediately so the client stays connected while waiting.
+    res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+    res.write(
+      `${JSON.stringify({ type: "log", message: `Queued at position ${position}; waiting for current run to finish…` })}\n`,
+    );
+    await new Promise<void>((resolve) => {
+      runQueue.push({ req, res, resolve });
+    });
+    // Woken up — we now own the slot.
+    busy = true;
+    return "proceed";
+  }
 
   if (!process.listenerCount("unhandledRejection")) {
     process.on("unhandledRejection", (reason) => {
@@ -127,19 +175,7 @@ export async function createRemoteServer(
       res.end(JSON.stringify({ error: "unauthorized" }));
       return;
     }
-    if (busy) {
-      if (verbose) {
-        logger(
-          `[serve] Busy: rejecting new run from ${formatSocket(req)} while another run is active`,
-        );
-      }
-      res.writeHead(409, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "busy" }));
-      return;
-    }
-    busy = true;
-    const runStartedAt = Date.now();
-
+    // Parse the request body before entering the queue so malformed requests fail fast.
     let payload: RemoteRunPayload | null = null;
     try {
       const body = await readRequestBody(req);
@@ -148,13 +184,19 @@ export async function createRemoteServer(
         payload.browserConfig.url = normalizeChatgptUrl(payload.browserConfig.url, CHATGPT_URL);
       }
     } catch {
-      busy = false;
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "invalid_request" }));
       return;
     }
 
-    res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+    const slotResult = await waitForSlot(req, res);
+    if (slotResult === "rejected") return;
+
+    const runStartedAt = Date.now();
+    // If we were queued, headers are already sent; otherwise send them now.
+    if (!res.headersSent) {
+      res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+    }
 
     const runId = randomUUID();
     logger(
@@ -230,6 +272,8 @@ export async function createRemoteServer(
     } finally {
       busy = false;
       res.end();
+      // Wake the next queued run before cleaning up so it can start immediately.
+      dequeueNext();
       try {
         await rm(runDir, { recursive: true, force: true });
       } catch {

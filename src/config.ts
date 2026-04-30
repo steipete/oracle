@@ -69,6 +69,19 @@ export interface RemoteViaSshReverseTunnelConfig {
   extraArgs?: string;
 }
 
+export interface McpPolicyConfig {
+  /** Prepended to the consult tool description so LLM callers always see it. */
+  toolHint?: string;
+  /** Allowlist for browserThinkingTime values; any other value is rejected. */
+  allowedThinkingTimes?: ThinkingTimeLevel[];
+  /** Override browserThinkingTime to this value when the caller passes a disallowed one. */
+  thinkingTimeFallback?: ThinkingTimeLevel;
+  /** Force model to this value when the caller omits it or passes an unknown one. */
+  defaultModel?: string;
+  /** Maximum number of files the caller can attach. */
+  maxFiles?: number;
+}
+
 export interface UserConfig {
   engine?: EnginePreference;
   model?: string;
@@ -83,6 +96,8 @@ export interface UserConfig {
   apiBaseUrl?: string;
   azure?: AzureConfig;
   sessionRetentionHours?: number;
+  /** MCP-layer policy: constrains what callers of `consult` can pass. */
+  mcp?: McpPolicyConfig;
 }
 
 function resolveConfigPath(): string {

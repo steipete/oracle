@@ -7,8 +7,11 @@ import { getCliVersion } from "../version.js";
 import { registerConsultTool } from "./tools/consult.js";
 import { registerSessionsTool } from "./tools/sessions.js";
 import { registerSessionResources } from "./tools/sessionResources.js";
+import { loadUserConfig } from "../config.js";
 
 export async function startMcpServer(): Promise<void> {
+  const { config: userConfig } = await loadUserConfig();
+
   const server = new McpServer(
     {
       name: "oracle-mcp",
@@ -21,7 +24,7 @@ export async function startMcpServer(): Promise<void> {
     },
   );
 
-  registerConsultTool(server);
+  registerConsultTool(server, { toolHint: userConfig.mcp?.toolHint });
   registerSessionsTool(server);
   registerSessionResources(server);
 
@@ -40,7 +43,7 @@ export async function startMcpServer(): Promise<void> {
   await closed;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("oracle-mcp")) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   startMcpServer().catch((error) => {
     console.error("Failed to start oracle-mcp:", error);
     process.exitCode = 1;
