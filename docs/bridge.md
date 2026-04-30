@@ -101,6 +101,25 @@ Notes:
 - The snippet includes `ORACLE_ENGINE="browser"` so MCP consult calls use browser mode even if `OPENAI_API_KEY` is set.
 - By default the snippets leave `ORACLE_REMOTE_TOKEN` as `<YOUR_TOKEN>` to avoid printing secrets; rerun with `--print-token` if you explicitly want it included.
 
+### macOS local browser: Let Them Fight
+
+If Claude Code and the signed-in Chrome profile are on the same Mac, skip the remote bridge and generate a local config:
+
+```bash
+oracle bridge claude-config --local-browser > .mcp.json
+```
+
+This points Claude Code at `oracle-mcp`, sets `ORACLE_ENGINE="browser"`, and reuses the shared manual-login profile at `~/.oracle/browser-profile`. From Claude Code, call `consult` with `preset:"chatgpt-pro-heavy"` for the “Let Them Fight” workflow: Claude asks Oracle, Oracle asks ChatGPT Pro in browser mode, and the answer comes back through MCP. Use `dryRun:true` first when you only want to validate the resolved request.
+
+Override local paths when needed:
+
+```bash
+oracle bridge claude-config \
+  --local-browser \
+  --oracle-home-dir ~/.oracle \
+  --browser-profile-dir ~/.oracle/browser-profile > .mcp.json
+```
+
 ## 4) Troubleshooting
 
 Run:
