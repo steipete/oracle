@@ -85,6 +85,7 @@ describe("summarizeModelRunsForConsult", () => {
           manualLogin: true,
           manualLoginProfileDir: "/tmp/oracle-profile",
           thinkingTime: "extended",
+          researchMode: "deep",
         },
       },
       env: {},
@@ -100,6 +101,7 @@ describe("summarizeModelRunsForConsult", () => {
       manualLogin: true,
       manualLoginProfileDir: "/tmp/oracle-profile",
       thinkingTime: "extended",
+      researchMode: "deep",
       desiredModel: "GPT-5.2",
       cookieSync: false,
     });
@@ -124,6 +126,7 @@ describe("summarizeModelRunsForConsult", () => {
       browserKeepBrowser: true,
       browserThinkingTime: "heavy",
       browserModelStrategy: "current",
+      browserResearchMode: "deep",
     });
 
     expect(config).toMatchObject({
@@ -132,6 +135,7 @@ describe("summarizeModelRunsForConsult", () => {
       manualLoginProfileDir: "/tmp/env-profile",
       thinkingTime: "heavy",
       modelStrategy: "current",
+      researchMode: "deep",
       desiredModel: "Claude Sonnet",
       cookieSync: false,
     });
