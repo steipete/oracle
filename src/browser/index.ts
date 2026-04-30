@@ -234,7 +234,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       if (manualLogin) {
         tabLease = await acquireBrowserTabLease(userDataDir, {
           maxConcurrentTabs: config.maxConcurrentTabs,
-          timeoutMs: config.profileLockTimeoutMs,
+          timeoutMs: config.timeoutMs,
           logger,
           sessionId: options.sessionId,
           chromeHost,
