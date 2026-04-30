@@ -214,6 +214,13 @@ export async function submitPrompt(
       ...ENTER_KEY_EVENT,
     });
     logger("Submitted prompt via Enter key");
+    await delay(1000);
+    if (await isPromptStillInComposer(runtime, prompt)) {
+      const clickedAfterEnter = await attemptSendButton(runtime, logger, deps?.attachmentNames);
+      if (clickedAfterEnter) {
+        logger("Clicked send button after Enter fallback");
+      }
+    }
   } else {
     logger("Clicked send button");
   }
@@ -400,6 +407,40 @@ async function attemptSendButton(
   return false;
 }
 
+async function isPromptStillInComposer(
+  Runtime: ChromeClient["Runtime"],
+  prompt: string,
+): Promise<boolean> {
+  const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
+  const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
+  const promptLiteral = JSON.stringify(prompt.trim());
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const normalize = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const prompt = normalize(${promptLiteral});
+      if (!prompt) return false;
+      const prefix = prompt.slice(0, 120);
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+        return node.innerText ?? '';
+      };
+      const nodes = [
+        document.querySelector(${primarySelectorLiteral}),
+        document.querySelector(${fallbackSelectorLiteral}),
+        ...${inputSelectorsLiteral}.map((selector) => document.querySelector(selector)),
+      ].filter(Boolean);
+      return nodes.some((node) => {
+        const value = normalize(readValue(node));
+        return value === prompt || (prefix.length > 30 && value.includes(prefix));
+      });
+    })()`,
+    returnByValue: true,
+  });
+  return Boolean(result?.value);
+}
+
 async function verifyPromptCommitted(
   Runtime: ChromeClient["Runtime"],
   prompt: string,
@@ -567,5 +608,6 @@ async function verifyPromptCommitted(
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  isPromptStillInComposer,
   verifyPromptCommitted,
 };

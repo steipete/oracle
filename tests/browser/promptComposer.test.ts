@@ -72,4 +72,25 @@ describe("promptComposer", () => {
       promptComposer.verifyPromptCommitted(runtime as never, "hello", 150),
     ).resolves.toBe(1);
   });
+
+  test("detects when Enter fallback left the prompt in the composer", async () => {
+    const runtime = {
+      evaluate: vi.fn(async () => ({
+        result: { value: true },
+      })),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.isPromptStillInComposer(
+        runtime as never,
+        "Reply exactly with ORACLE_55_PRO_OK and nothing else.",
+      ),
+    ).resolves.toBe(true);
+
+    const expression = vi.mocked(runtime.evaluate).mock.calls[0]?.[0]?.expression ?? "";
+    expect(expression).toContain("prompt.slice(0, 120)");
+    expect(expression).toContain("value.includes(prefix)");
+  });
 });
