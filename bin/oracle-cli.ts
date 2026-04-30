@@ -130,6 +130,7 @@ interface CliOptions extends OptionValues {
   browserTimeout?: string;
   browserInputTimeout?: string;
   browserProfileLockTimeout?: string;
+  browserMaxConcurrentTabs?: string;
   browserCookieWait?: string;
   browserNoCookieSync?: boolean;
   browserInlineCookiesFile?: string;
@@ -506,6 +507,12 @@ program
     new Option(
       "--browser-profile-lock-timeout <ms|s|m|h>",
       "Wait for the shared manual-login profile lock before sending (serializes parallel runs).",
+    ).hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--browser-max-concurrent-tabs <n>",
+      "Soft limit for concurrent ChatGPT tabs sharing one manual-login profile (default 3).",
     ).hideHelp(),
   )
   .addOption(
