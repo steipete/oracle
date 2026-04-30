@@ -53,6 +53,7 @@ export interface BrowserFlagOptions {
   browserRecheckTimeout?: string;
   browserReuseWait?: string;
   browserProfileLockTimeout?: string;
+  browserMaxConcurrentTabs?: string;
   browserAutoReattachDelay?: string;
   browserAutoReattachInterval?: string;
   browserAutoReattachTimeout?: string;
@@ -185,6 +186,7 @@ export async function buildBrowserConfig(
     profileLockTimeoutMs: options.browserProfileLockTimeout
       ? parseDuration(options.browserProfileLockTimeout, 0)
       : undefined,
+    maxConcurrentTabs: parseMaxConcurrentTabs(options.browserMaxConcurrentTabs),
     autoReattachDelayMs: options.browserAutoReattachDelay
       ? parseDuration(options.browserAutoReattachDelay, 0)
       : undefined,
@@ -223,6 +225,15 @@ function selectBrowserPort(options: BrowserFlagOptions): number | null {
     throw new Error(`Invalid browser port: ${candidate}. Expected a number between 1 and 65535.`);
   }
   return candidate;
+}
+
+function parseMaxConcurrentTabs(raw?: string): number | undefined {
+  if (!raw) return undefined;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`Invalid browser max concurrent tabs: ${raw}. Expected a positive integer.`);
+  }
+  return Math.trunc(value);
 }
 
 export function mapModelToBrowserLabel(model: ModelName): string {

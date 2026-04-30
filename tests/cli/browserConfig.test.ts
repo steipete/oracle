@@ -44,6 +44,7 @@ describe("buildBrowserConfig", () => {
       browserTimeout: "120s",
       browserInputTimeout: "5s",
       browserProfileLockTimeout: "2m",
+      browserMaxConcurrentTabs: "5",
       browserCookieWait: "4s",
       browserNoCookieSync: true,
       browserHeadless: true,
@@ -60,6 +61,7 @@ describe("buildBrowserConfig", () => {
       timeoutMs: 120_000,
       inputTimeoutMs: 5_000,
       profileLockTimeoutMs: 120_000,
+      maxConcurrentTabs: 5,
       cookieSyncWaitMs: 4_000,
       cookieSync: false,
       headless: undefined,
@@ -77,6 +79,15 @@ describe("buildBrowserConfig", () => {
       browserModelLabel: "Instant",
     });
     expect(config.desiredModel).toBe("GPT-5.5 Pro");
+  });
+
+  test("rejects invalid browser max concurrent tabs", async () => {
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.1",
+        browserMaxConcurrentTabs: "0",
+      }),
+    ).rejects.toThrow(/max concurrent tabs/i);
   });
 
   test("falls back to canonical label when override matches base model", async () => {

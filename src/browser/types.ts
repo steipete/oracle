@@ -35,6 +35,8 @@ export interface BrowserAutomationConfig {
   reuseChromeWaitMs?: number;
   /** Max time to wait for a shared manual-login profile lock (serializes parallel runs). */
   profileLockTimeoutMs?: number;
+  /** Soft limit for concurrent ChatGPT tabs sharing one manual-login profile. */
+  maxConcurrentTabs?: number;
   /** Delay before starting periodic auto-reattach attempts after a timeout. */
   autoReattachDelayMs?: number;
   /** Interval between auto-reattach attempts (0 disables). */
@@ -73,6 +75,8 @@ export interface BrowserRunOptions {
   log?: BrowserLogger;
   heartbeatIntervalMs?: number;
   verbose?: boolean;
+  /** Session id used for cross-process browser slot diagnostics. */
+  sessionId?: string;
   /** Optional hook to persist runtime info (port/url/target) as soon as Chrome is ready. */
   runtimeHintCb?: (hint: BrowserRuntimeMetadata) => void | Promise<void>;
 }
@@ -103,6 +107,7 @@ export type ResolvedBrowserConfig = Required<
     | "remoteChrome"
     | "thinkingTime"
     | "modelStrategy"
+    | "maxConcurrentTabs"
   >
 > & {
   chromeProfile?: string | null;
@@ -117,4 +122,5 @@ export type ResolvedBrowserConfig = Required<
   manualLogin?: boolean;
   manualLoginProfileDir?: string | null;
   manualLoginCookieSync?: boolean;
+  maxConcurrentTabs: number;
 };
