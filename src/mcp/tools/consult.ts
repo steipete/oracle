@@ -21,14 +21,23 @@ async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<
   }
 }
 import { performSessionRun } from "../../cli/sessionRunner.js";
+import { runDryRunSummary } from "../../cli/dryRun.js";
 import { CHATGPT_URL } from "../../browser/constants.js";
-import { consultInputSchema } from "../types.js";
+import { CONSULT_PRESETS, consultInputSchema } from "../types.js";
+import { applyConsultPreset } from "../consultPresets.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
 import { mapModelToBrowserLabel, resolveBrowserModelLabel } from "../../cli/browserConfig.js";
+import type { BrowserModelStrategy } from "../../browser/types.js";
 
 // Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
 const consultInputShape = {
+  preset: z
+    .enum(CONSULT_PRESETS)
+    .optional()
+    .describe(
+      'Optional MCP convenience preset. "chatgpt-pro-heavy" selects ChatGPT browser mode, the current Pro model alias, and heavy thinking unless overridden.',
+    ),
   prompt: z.string().min(1, "Prompt is required.").describe("User prompt to run."),
   files: z
     .array(z.string())
@@ -72,10 +81,22 @@ const consultInputShape = {
     .enum(["light", "standard", "extended", "heavy"])
     .optional()
     .describe("Browser-only: set ChatGPT thinking time when supported by the chosen model."),
+  browserModelStrategy: z
+    .enum(["select", "current", "ignore"])
+    .optional()
+    .describe(
+      "Browser-only: model picker strategy. Mirrors the CLI --browser-model-strategy flag.",
+    ),
   browserKeepBrowser: z
     .boolean()
     .optional()
     .describe("Browser-only: keep Chrome running after completion (useful for debugging)."),
+  dryRun: z
+    .boolean()
+    .optional()
+    .describe(
+      "Preview the resolved Oracle run without creating a session or touching the browser.",
+    ),
   search: z
     .boolean()
     .optional()
@@ -117,9 +138,10 @@ const consultModelSummaryShape = z.object({
 });
 
 const consultOutputShape = {
-  sessionId: z.string(),
+  sessionId: z.string().optional(),
   status: z.string(),
   output: z.string(),
+  dryRun: z.boolean().optional(),
   models: z.array(consultModelSummaryShape).optional(),
 } satisfies z.ZodRawShape;
 
@@ -165,6 +187,7 @@ export function buildConsultBrowserConfig({
   inputModel,
   browserModelLabel,
   browserThinkingTime,
+  browserModelStrategy,
   browserKeepBrowser,
 }: {
   userConfig: UserConfig;
@@ -173,6 +196,7 @@ export function buildConsultBrowserConfig({
   inputModel?: string;
   browserModelLabel?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  browserModelStrategy?: BrowserModelStrategy;
   browserKeepBrowser?: boolean;
 }): BrowserSessionConfig {
   const configuredBrowser = userConfig.browser ?? {};
@@ -199,6 +223,7 @@ export function buildConsultBrowserConfig({
       ? ((envProfileDir || configuredBrowser.manualLoginProfileDir) ?? null)
       : null,
     thinkingTime: browserThinkingTime ?? configuredBrowser.thinkingTime,
+    modelStrategy: browserModelStrategy ?? configuredBrowser.modelStrategy,
     desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
   };
 }
@@ -216,6 +241,15 @@ export function registerConsultTool(server: McpServer): void {
     },
     async (input: unknown) => {
       const textContent = (text: string) => [{ type: "text" as const, text }];
+      let parsedInput;
+      try {
+        parsedInput = applyConsultPreset(consultInputSchema.parse(input));
+      } catch (error) {
+        return {
+          isError: true,
+          content: textContent(error instanceof Error ? error.message : String(error)),
+        };
+      }
       const {
         prompt,
         files,
@@ -227,9 +261,11 @@ export function registerConsultTool(server: McpServer): void {
         browserAttachments,
         browserBundleFiles,
         browserThinkingTime,
+        browserModelStrategy,
         browserKeepBrowser,
+        dryRun,
         slug,
-      } = consultInputSchema.parse(input);
+      } = parsedInput;
       const { config: userConfig } = await loadUserConfig();
       const { runOptions, resolvedEngine } = mapConsultToRunOptions({
         prompt,
@@ -244,8 +280,57 @@ export function registerConsultTool(server: McpServer): void {
         env: process.env,
       });
       const cwd = process.cwd();
+      const sendLog = (text: string, level: "info" | "debug" = "info") =>
+        server.server
+          .sendLoggingMessage(
+            LoggingMessageNotificationParamsSchema.parse({
+              level,
+              data: { text, bytes: Buffer.byteLength(text, "utf8") },
+            }),
+          )
+          .catch(() => {});
 
       const resolvedRemote = resolveRemoteServiceConfig({ userConfig, env: process.env });
+
+      let browserConfig: BrowserSessionConfig | undefined;
+      if (resolvedEngine === "browser") {
+        browserConfig = buildConsultBrowserConfig({
+          userConfig,
+          env: process.env,
+          runModel: runOptions.model,
+          inputModel: model,
+          browserModelLabel,
+          browserThinkingTime,
+          browserModelStrategy,
+          browserKeepBrowser,
+        });
+      }
+
+      if (dryRun) {
+        const lines: string[] = [];
+        const log = (line: string): void => {
+          lines.push(line);
+          sendLog(line);
+        };
+        await runDryRunSummary({
+          engine: resolvedEngine,
+          runOptions,
+          cwd,
+          version: getCliVersion(),
+          log,
+          browserConfig,
+        });
+        const output = lines.join("\n").trim();
+        return {
+          content: textContent(output),
+          structuredContent: {
+            status: "dry-run",
+            output,
+            dryRun: true,
+          },
+        };
+      }
+
       const browserGuard = ensureBrowserAvailable(resolvedEngine, {
         remoteHost: resolvedRemote.host,
       });
@@ -274,19 +359,6 @@ export function registerConsultTool(server: McpServer): void {
         };
       }
 
-      let browserConfig: BrowserSessionConfig | undefined;
-      if (resolvedEngine === "browser") {
-        browserConfig = buildConsultBrowserConfig({
-          userConfig,
-          env: process.env,
-          runModel: runOptions.model,
-          inputModel: model,
-          browserModelLabel,
-          browserThinkingTime,
-          browserKeepBrowser,
-        });
-      }
-
       const notifications = resolveNotificationSettings({
         cliNotify: undefined,
         cliNotifySound: undefined,
@@ -307,17 +379,6 @@ export function registerConsultTool(server: McpServer): void {
       );
 
       const logWriter = sessionStore.createLogWriter(sessionMeta.id);
-      // Best-effort: emit MCP logging notifications for live chunks but never block the run.
-      const sendLog = (text: string, level: "info" | "debug" = "info") =>
-        server.server
-          .sendLoggingMessage(
-            LoggingMessageNotificationParamsSchema.parse({
-              level,
-              data: { text, bytes: Buffer.byteLength(text, "utf8") },
-            }),
-          )
-          .catch(() => {});
-
       // Stream logs to both the session log and MCP logging notifications, but avoid buffering in memory
       const log = (line?: string): void => {
         logWriter.logLine(line);

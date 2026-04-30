@@ -1,11 +1,51 @@
 import { describe, expect, test } from "vitest";
 import type { SessionModelRun } from "../../src/sessionStore.js";
+import { applyConsultPreset } from "../../src/mcp/consultPresets.ts";
 import {
   buildConsultBrowserConfig,
   summarizeModelRunsForConsult,
 } from "../../src/mcp/tools/consult.ts";
 
 describe("summarizeModelRunsForConsult", () => {
+  test("applies the ChatGPT Pro Heavy consult preset as overridable defaults", () => {
+    expect(
+      applyConsultPreset({
+        preset: "chatgpt-pro-heavy",
+        prompt: "review this plan",
+        files: [],
+      }),
+    ).toMatchObject({
+      engine: "browser",
+      model: "gpt-5-pro",
+      browserThinkingTime: "heavy",
+    });
+
+    expect(
+      applyConsultPreset({
+        preset: "chatgpt-pro-heavy",
+        prompt: "use current picker",
+        files: [],
+        model: "gpt-5.2",
+        browserThinkingTime: "extended",
+      }),
+    ).toMatchObject({
+      engine: "browser",
+      model: "gpt-5.2",
+      browserThinkingTime: "extended",
+    });
+  });
+
+  test("rejects the ChatGPT Pro Heavy preset with multi-model fan-out", () => {
+    expect(() =>
+      applyConsultPreset({
+        preset: "chatgpt-pro-heavy",
+        prompt: "review this plan",
+        files: [],
+        models: ["gpt-5.1", "gpt-5.2"],
+      }),
+    ).toThrow(/cannot be combined with models/i);
+  });
+
   test("maps per-model metadata into consult summaries", () => {
     const runs: SessionModelRun[] = [
       {
@@ -83,6 +123,7 @@ describe("summarizeModelRunsForConsult", () => {
       browserModelLabel: "Claude Sonnet",
       browserKeepBrowser: true,
       browserThinkingTime: "heavy",
+      browserModelStrategy: "current",
     });
 
     expect(config).toMatchObject({
@@ -90,6 +131,7 @@ describe("summarizeModelRunsForConsult", () => {
       manualLogin: true,
       manualLoginProfileDir: "/tmp/env-profile",
       thinkingTime: "heavy",
+      modelStrategy: "current",
       desiredModel: "Claude Sonnet",
       cookieSync: false,
     });
