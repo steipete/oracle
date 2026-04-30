@@ -426,3 +426,4 @@ function buildThinkingStatusExpression(): string {
 
 export const startThinkingStatusMonitorForTest = startThinkingStatusMonitor;
 export const readThinkingStatusForTest = readThinkingStatus;
+export const buildThinkingStatusExpressionForTest = buildThinkingStatusExpression;
