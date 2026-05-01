@@ -16,6 +16,8 @@ import {
 import { buildClickDispatcher } from "./domEvents.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
+const COPY_RESPONSE_FALLBACK_AFTER_MS = 15 * 60_000;
+const COPY_RESPONSE_FALLBACK_RETRY_MS = 30_000;
 
 function isAnswerNowPlaceholderText(normalized: string): boolean {
   const text = normalized.trim();
@@ -69,6 +71,7 @@ export async function waitForAssistantResponse(
     timeoutMs,
     minTurnIndex,
     pollerAbort.signal,
+    logger,
   ).then(
     (value) => ({ kind: "poll" as const, value }),
     (error) => {
@@ -156,11 +159,17 @@ export async function waitForAssistantResponse(
   if (remainingMs > 0) {
     const [stopVisible, completionVisible] = await Promise.all([
       isStopButtonVisible(Runtime),
-      isCompletionVisible(Runtime),
+      isCompletionVisible(Runtime, minTurnIndex),
     ]);
     if (stopVisible) {
       logger("Assistant still generating; waiting for completion");
-      const completed = await pollAssistantCompletion(Runtime, remainingMs, minTurnIndex);
+      const completed = await pollAssistantCompletion(
+        Runtime,
+        remainingMs,
+        minTurnIndex,
+        undefined,
+        logger,
+      );
       if (completed) {
         return completed;
       }
@@ -201,9 +210,10 @@ export async function captureAssistantMarkdown(
   Runtime: ChromeClient["Runtime"],
   meta: { messageId?: string | null; turnId?: string | null },
   logger: BrowserLogger,
+  minTurnIndex?: number,
 ): Promise<string | null> {
   const { result } = await Runtime.evaluate({
-    expression: buildCopyExpression(meta),
+    expression: buildCopyExpression(meta, minTurnIndex),
     returnByValue: true,
     awaitPromise: true,
   });
@@ -235,8 +245,9 @@ export function buildMarkdownFallbackExtractorForTest(minTurnLiteral = "0"): str
 
 export function buildCopyExpressionForTest(
   meta: { messageId?: string | null; turnId?: string | null } = {},
+  minTurnIndex?: number,
 ): string {
-  return buildCopyExpression(meta);
+  return buildCopyExpression(meta, minTurnIndex);
 }
 
 async function recoverAssistantResponse(
@@ -265,8 +276,44 @@ async function recoverAssistantResponse(
     logger("Recovered assistant response via polling fallback");
     return recovered;
   }
+  const copied = await captureAssistantResponseViaCopy(
+    Runtime,
+    logger,
+    minTurnIndex,
+    "snapshot recovery exhausted",
+  );
+  if (copied) {
+    return copied;
+  }
   await logConversationSnapshot(Runtime, logger).catch(() => undefined);
   return null;
+}
+
+async function captureAssistantResponseViaCopy(
+  Runtime: ChromeClient["Runtime"],
+  logger: BrowserLogger,
+  minTurnIndex?: number,
+  reason = "copy-response fallback",
+): Promise<{
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+} | null> {
+  const stopVisible = await isStopButtonVisible(Runtime);
+  if (stopVisible) {
+    return null;
+  }
+  const completionVisible = await isCompletionVisible(Runtime, minTurnIndex);
+  if (!completionVisible) {
+    return null;
+  }
+  const markdown = await captureAssistantMarkdown(Runtime, {}, logger, minTurnIndex);
+  const text = markdown ? cleanAssistantText(markdown) : "";
+  if (!text.trim() || isAnswerNowPlaceholderText(text.toLowerCase())) {
+    return null;
+  }
+  logger(`Recovered assistant response via copy button fallback (${reason})`);
+  return { text, html: undefined, meta: {} };
 }
 
 async function parseAssistantEvaluationResult(
@@ -298,6 +345,9 @@ async function parseAssistantEvaluationResult(
         ? ((result.value as { messageId?: string }).messageId ?? undefined)
         : undefined;
     const text = cleanAssistantText(String((result.value as { text: unknown }).text ?? ""));
+    if (!text.trim()) {
+      return null;
+    }
     const normalized = text.toLowerCase();
     if (isAnswerNowPlaceholderText(normalized)) {
       return null;
@@ -389,15 +439,18 @@ async function pollAssistantCompletion(
   timeoutMs: number,
   minTurnIndex?: number,
   abortSignal?: AbortSignal,
+  logger?: BrowserLogger,
 ): Promise<{
   text: string;
   html?: string;
   meta: { turnId?: string | null; messageId?: string | null };
 } | null> {
   const watchdogDeadline = Date.now() + timeoutMs;
+  const startedAt = Date.now();
   let previousLength = 0;
   let stableCycles = 0;
   let lastChangeAt = Date.now();
+  let lastCopyFallbackAt = startedAt - COPY_RESPONSE_FALLBACK_RETRY_MS;
   while (Date.now() < watchdogDeadline) {
     // Check abort signal to stop polling when another path won the race
     if (abortSignal?.aborted) {
@@ -416,7 +469,7 @@ async function pollAssistantCompletion(
       }
       const [stopVisible, completionVisible] = await Promise.all([
         isStopButtonVisible(Runtime),
-        isCompletionVisible(Runtime),
+        isCompletionVisible(Runtime, minTurnIndex),
       ]);
       const shortAnswer = currentLength > 0 && currentLength < 16;
       const mediumAnswer = currentLength >= 16 && currentLength < 40;
@@ -440,6 +493,27 @@ async function pollAssistantCompletion(
     } else {
       previousLength = 0;
       stableCycles = 0;
+      const now = Date.now();
+      const fallbackAfterMs = Math.min(
+        COPY_RESPONSE_FALLBACK_AFTER_MS,
+        Math.max(0, timeoutMs - 5_000),
+      );
+      if (
+        logger &&
+        now - startedAt >= fallbackAfterMs &&
+        now - lastCopyFallbackAt >= COPY_RESPONSE_FALLBACK_RETRY_MS
+      ) {
+        lastCopyFallbackAt = now;
+        const copied = await captureAssistantResponseViaCopy(
+          Runtime,
+          logger,
+          minTurnIndex,
+          "blank rendered response",
+        );
+        if (copied) {
+          return copied;
+        }
+      }
     }
     await delay(400);
   }
@@ -458,10 +532,18 @@ async function isStopButtonVisible(Runtime: ChromeClient["Runtime"]): Promise<bo
   }
 }
 
-async function isCompletionVisible(Runtime: ChromeClient["Runtime"]): Promise<boolean> {
+async function isCompletionVisible(
+  Runtime: ChromeClient["Runtime"],
+  minTurnIndex?: number,
+): Promise<boolean> {
+  const minTurnLiteral =
+    typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
+      ? Math.floor(minTurnIndex)
+      : -1;
   try {
     const { result } = await Runtime.evaluate({
       expression: `(() => {
+        const MIN_TURN_INDEX = ${minTurnLiteral};
         // Find the LAST assistant turn to check completion status
         // Must match the same logic as buildAssistantExtractor for consistency
         const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
@@ -479,6 +561,7 @@ async function isCompletionVisible(Runtime: ChromeClient["Runtime"]): Promise<bo
         const turns = Array.from(document.querySelectorAll('${CONVERSATION_TURN_SELECTOR}'));
         let lastAssistantTurn = null;
         for (let i = turns.length - 1; i >= 0; i--) {
+          if (MIN_TURN_INDEX >= 0 && i < MIN_TURN_INDEX) continue;
           if (isAssistantTurn(turns[i])) {
             lastAssistantTurn = turns[i];
             break;
@@ -996,11 +1079,19 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
   })`;
 }
 
-function buildCopyExpression(meta: { messageId?: string | null; turnId?: string | null }): string {
+function buildCopyExpression(
+  meta: { messageId?: string | null; turnId?: string | null },
+  minTurnIndex?: number,
+): string {
+  const minTurnLiteral =
+    typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
+      ? Math.floor(minTurnIndex)
+      : -1;
   return `(() => {
     ${buildClickDispatcher()}
     const BUTTON_SELECTOR = '${COPY_BUTTON_SELECTOR}';
     const TIMEOUT_MS = 10000;
+    const MIN_TURN_INDEX = ${minTurnLiteral};
 
     const locateButton = () => {
       const hint = ${JSON.stringify(meta ?? {})};
@@ -1034,6 +1125,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
       };
       const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
       for (let i = turns.length - 1; i >= 0; i -= 1) {
+        if (MIN_TURN_INDEX >= 0 && i < MIN_TURN_INDEX) continue;
         const turn = turns[i];
         if (!isAssistantTurn(turn)) continue;
         const button = turn.querySelector(BUTTON_SELECTOR);
@@ -1046,6 +1138,10 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
         const button = all[i];
         const turn = button?.closest?.(CONVERSATION_SELECTOR);
         if (turn && isAssistantTurn(turn)) {
+          const turnIndex = turns.indexOf(turn);
+          if (MIN_TURN_INDEX >= 0 && turnIndex >= 0 && turnIndex < MIN_TURN_INDEX) {
+            continue;
+          }
           return button;
         }
       }
