@@ -255,9 +255,15 @@ export function parseGeminiStreamGenerateResponse(rawText: string): {
       const parsed = JSON.parse(partBody) as unknown;
       const candidateList = getNestedValue<unknown[]>(parsed, [4], []);
       if (Array.isArray(candidateList) && candidateList.length > 0) {
-        bodyIndex = i;
-        body = parsed;
-        break;
+        // Streaming: later chunks extend earlier ones; the first chunk with a
+        // candidate is often an empty placeholder. Prefer the latest chunk
+        // whose text is non-empty.
+        const candidateText = getNestedValue<unknown>(candidateList[0], [1, 0], "");
+        const hasText = typeof candidateText === "string" && candidateText.length > 0;
+        if (body === null || hasText) {
+          bodyIndex = i;
+          body = parsed;
+        }
       }
     } catch {
       // ignore
