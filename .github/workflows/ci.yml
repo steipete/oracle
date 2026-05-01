@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
       - run: pnpm run test
