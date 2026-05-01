@@ -72,10 +72,16 @@ export const UPLOAD_STATUS_SELECTORS = [
 export const STOP_BUTTON_SELECTOR = '[data-testid="stop-button"]';
 export const SEND_BUTTON_SELECTORS = [
   'button[data-testid="send-button"]',
+  'button[data-testid="composer-submit-button"]',
+  'button[data-testid*="send-button"]',
   'button[data-testid*="composer-send"]',
+  'button[data-testid*="composer-submit"]',
   'form button[type="submit"]',
   'button[type="submit"][data-testid*="send"]',
   'button[aria-label*="Send"]',
+  'button[aria-label*="send"]',
+  'button[aria-label*="Submit"]',
+  'button[aria-label*="submit"]',
 ];
 export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR =

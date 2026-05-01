@@ -2,6 +2,35 @@ import { describe, expect, test, vi } from "vitest";
 import { __test__ as promptComposer } from "../../src/browser/actions/promptComposer.js";
 
 describe("promptComposer", () => {
+  test("clicks enabled send button even when attachment readiness probe misses", async () => {
+    const logger = vi.fn();
+    const runtime = {
+      evaluate: vi.fn(async (params: { expression: string; returnByValue?: boolean }) => {
+        if (params.expression.includes("const names =")) {
+          return { result: { value: false } };
+        }
+        return {
+          result: {
+            value: {
+              status: "clicked",
+              selector: 'button[data-testid="send-button"]',
+              candidates: 1,
+              visibleCandidates: 1,
+            },
+          },
+        };
+      }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.attemptSendButton(runtime as never, logger, ["sufficiency_training_gate.py"]),
+    ).resolves.toBe(true);
+
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("attachment-name probe"));
+  });
+
   test("does not treat cleared composer + stop button as committed without a new turn", async () => {
     vi.useFakeTimers();
     try {
