@@ -142,6 +142,7 @@ interface CliOptions extends OptionValues {
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  browserResearch?: "off" | "deep";
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;
   browserInlineFiles?: boolean;
@@ -591,6 +592,12 @@ program
     )
       .choices(["light", "standard", "extended", "heavy"])
       .hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--browser-research <mode>",
+      "Browser research mode: deep activates ChatGPT Deep Research.",
+    ).choices(["off", "deep"]),
   )
   .addOption(
     new Option(

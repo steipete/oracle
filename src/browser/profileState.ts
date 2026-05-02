@@ -255,9 +255,6 @@ export async function shouldCleanupManualLoginProfileState(
     probe?: typeof verifyDevToolsReachable;
   } = {},
 ): Promise<boolean> {
-  if (!options.connectionClosedUnexpectedly) {
-    return true;
-  }
   const port = await readDevToolsPort(userDataDir);
   if (!port) {
     return true;

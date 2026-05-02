@@ -91,6 +91,19 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserThinkingTime).toBe("extended");
   });
 
+  test("applies browser research mode when CLI flag is untouched", () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = {
+      browser: {
+        researchMode: "deep",
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => "default");
+
+    expect(options.browserResearch).toBe("deep");
+  });
+
   test("does not override thinking time when CLI provided a value", () => {
     const options: BrowserDefaultsOptions = { browserThinkingTime: "light" };
     const config: UserConfig = {
