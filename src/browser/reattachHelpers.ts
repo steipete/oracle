@@ -4,6 +4,7 @@ import { delay } from "./utils.js";
 import { readAssistantSnapshot } from "./pageActions.js";
 
 export type TargetInfoLite = {
+  id?: string;
   targetId?: string;
   type?: string;
   url?: string;
@@ -26,7 +27,7 @@ export function pickTarget(
     return undefined;
   }
   if (runtime.chromeTargetId) {
-    const byId = targets.find((t) => t.targetId === runtime.chromeTargetId);
+    const byId = targets.find((t) => (t.targetId ?? t.id) === runtime.chromeTargetId);
     if (byId) return byId;
   }
   if (runtime.tabUrl) {

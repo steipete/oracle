@@ -81,6 +81,21 @@ describe("profileState", () => {
     }
   });
 
+  test("skips normal manual-login cleanup when reused Chrome is still reachable", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-profile-"));
+    try {
+      await profileState.writeDevToolsActivePort(dir, 12345);
+      await expect(
+        profileState.shouldCleanupManualLoginProfileState(dir, undefined, {
+          connectionClosedUnexpectedly: false,
+          probe: async () => ({ ok: true }),
+        }),
+      ).resolves.toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("runs manual-login cleanup when DevTools port is unreachable", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-profile-"));
     try {

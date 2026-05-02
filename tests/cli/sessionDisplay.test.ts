@@ -147,6 +147,18 @@ describe("trimBeforeFirstAnswer", () => {
     const input = "no answer yet";
     expect(trimBeforeFirstAnswer(input)).toBe(input);
   });
+
+  test("skips stale tool-only capture when a later reattach answer exists", () => {
+    const input =
+      "Launching browser mode\n" +
+      "Answer:\n" +
+      "Called tool\n" +
+      "[reattach] captured assistant response from existing Chrome tab\n" +
+      "Answer:\n" +
+      "Recovered report";
+
+    expect(trimBeforeFirstAnswer(input)).toBe("Answer:\nRecovered report");
+  });
 });
 
 describe("attachSession rendering", () => {
