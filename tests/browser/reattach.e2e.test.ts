@@ -78,6 +78,73 @@ describe("browser reattach end-to-end (simulated)", () => {
     }
   }, 20_000);
 
+  test("reattaches completed Deep Research sessions that only captured a tool placeholder", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-reattach-"));
+    const { setOracleHomeDirOverrideForTest } = await import("../../src/oracleHome.js");
+    setOracleHomeDirOverrideForTest(tmpHome);
+
+    try {
+      const { resumeBrowserSession } = await import("../../src/browser/reattach.js");
+      const resumeMock = vi.mocked(resumeBrowserSession);
+      resumeMock.mockResolvedValue({
+        answerText: "# Deep report\n\nRecovered report body.",
+        answerMarkdown: "# Deep report\n\nRecovered report body.",
+      });
+
+      const { sessionStore } = await import("../../src/sessionStore.js");
+      const { attachSession } = await import("../../src/cli/sessionDisplay.js");
+
+      await sessionStore.ensureStorage();
+      const sessionMeta = await sessionStore.createSession(
+        {
+          prompt: "Deep research prompt",
+          model: "gpt-5.5-pro",
+          mode: "browser",
+          browserConfig: { researchMode: "deep" },
+        },
+        "/repo",
+      );
+      await sessionStore.updateModelRun(sessionMeta.id, "gpt-5.5-pro", {
+        status: "completed",
+        usage: { inputTokens: 0, outputTokens: 3, reasoningTokens: 0, totalTokens: 3 },
+      });
+      await sessionStore.updateSession(sessionMeta.id, {
+        status: "completed",
+        mode: "browser",
+        usage: { inputTokens: 0, outputTokens: 3, reasoningTokens: 0, totalTokens: 3 },
+        browser: {
+          config: { researchMode: "deep" },
+          runtime: {
+            chromePort: 51559,
+            chromeHost: "127.0.0.1",
+            chromeTargetId: "t-1",
+            tabUrl: "https://chatgpt.com/c/deep",
+          },
+        },
+        response: { status: "completed" },
+      });
+      const paths = await sessionStore.getPaths(sessionMeta.id);
+      await fs.writeFile(paths.log, "Answer:\nCalled tool\n", "utf8");
+
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await attachSession(sessionMeta.id, { suppressMetadata: true, renderPrompt: false });
+
+      logSpy.mockRestore();
+
+      const updated = await sessionStore.readSession(sessionMeta.id);
+      const log = await sessionStore.readLog(sessionMeta.id);
+      expect(updated?.status).toBe("completed");
+      expect(updated?.response?.status).toBe("completed");
+      expect(resumeMock).toHaveBeenCalledTimes(1);
+      expect(log).toContain("Recovered report body");
+      expect(log).not.toContain("Called tool");
+    } finally {
+      await fs.rm(tmpHome, { recursive: true, force: true });
+      setOracleHomeDirOverrideForTest(null);
+    }
+  }, 20_000);
+
   test("reattaches when controller pid is gone even without incompleteReason", async () => {
     const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-reattach-"));
     const { setOracleHomeDirOverrideForTest } = await import("../../src/oracleHome.js");

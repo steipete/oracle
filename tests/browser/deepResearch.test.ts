@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import vm from "node:vm";
 
 // Mock delay to resolve instantly in tests
 vi.mock("../../src/browser/utils.js", async (importOriginal) => {
@@ -152,6 +153,35 @@ describe("Deep Research iframe helpers", () => {
     expect(expression).toContain("deep research report");
     expect(expression).toContain("research completed");
     expect(expression).toContain("reportText");
+  });
+
+  it("captures completed localized reports without the English report heading", () => {
+    const expression = buildDeepResearchFrameStatusExpressionForTest();
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: {
+          innerText:
+            "Research completed in 44m ·\n" +
+            "19\n" +
+            "citations ·\n" +
+            "328\n" +
+            "searches\n" +
+            "Audyt możliwości eksportu danych z profilu Steam\n" +
+            "Audyt możliwości eksportu danych z profilu Steam\n" +
+            "Data audytu: 2026-05-02\n" +
+            "Ten raport opisuje dostępne ścieżki eksportu danych profilu Steam.",
+          innerHTML: "<article>Audyt możliwości eksportu danych z profilu Steam</article>",
+        },
+      },
+    }) as { completed?: boolean; text?: string; textLength?: number };
+
+    expect(result.completed).toBe(true);
+    expect(result.text).toContain("Audyt możliwości eksportu danych z profilu Steam");
+    expect(result.text?.match(/Audyt możliwości eksportu danych/g)).toHaveLength(1);
+    expect(result.text).not.toContain("Research completed");
+    expect(result.text).not.toContain("citations");
+    expect(result.text).not.toContain("searches");
+    expect(result.textLength).toBeGreaterThan(40);
   });
 });
 
