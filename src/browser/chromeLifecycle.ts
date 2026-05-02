@@ -373,6 +373,7 @@ export async function connectWithNewTab(
         `Failed to close unused browser tab ${targetId}: ${message}`,
     });
     if (targetConnection) {
+      await closeUnusedBlankTargets(effectiveHost, port, targetConnection.targetId, logger);
       return targetConnection;
     }
     if (attempt >= retries) {
@@ -387,6 +388,47 @@ export async function connectWithNewTab(
   }
   const client = await connectToChrome(port, logger, effectiveHost);
   return { client };
+}
+
+async function closeUnusedBlankTargets(
+  host: string,
+  port: number,
+  activeTargetId: string,
+  logger: BrowserLogger,
+): Promise<void> {
+  try {
+    const listTargets = (
+      CDP as unknown as {
+        List?: (params: {
+          host: string;
+          port: number;
+        }) => Promise<Array<{ id?: string; targetId?: string; type?: string; url?: string }>>;
+      }
+    ).List;
+    if (typeof listTargets !== "function") {
+      return;
+    }
+    const targets = await listTargets({ host, port });
+    for (const target of targets) {
+      const id = target.id ?? target.targetId;
+      if (!id || id === activeTargetId || target.type !== "page") {
+        continue;
+      }
+      const url = (target.url ?? "").trim();
+      if (url && url !== "about:blank") {
+        continue;
+      }
+      await CDP.Close({ host, port, id });
+      if (logger.verbose) {
+        logger(`Closed unused blank browser tab (target=${id})`);
+      }
+    }
+  } catch (error) {
+    if (logger.verbose) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger(`Failed to close unused blank browser tabs: ${message}`);
+    }
+  }
 }
 
 export async function closeTab(

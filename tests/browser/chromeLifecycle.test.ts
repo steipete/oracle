@@ -4,11 +4,14 @@ const cdpNewMock = vi.fn();
 const cdpCloseMock = vi.fn();
 const cdpCreateTargetMock = vi.fn();
 const cdpClientCloseMock = vi.fn();
+const cdpListMock = vi.fn();
 const cdpMock = Object.assign(vi.fn(), {
   // biome-ignore lint/style/useNamingConvention: CDP API uses capitalized members.
   New: cdpNewMock,
   // biome-ignore lint/style/useNamingConvention: CDP API uses capitalized members.
   Close: cdpCloseMock,
+  // biome-ignore lint/style/useNamingConvention: CDP API uses capitalized members.
+  List: cdpListMock,
 });
 
 vi.mock("chrome-remote-interface", () => ({ default: cdpMock }));
@@ -65,6 +68,7 @@ describe("connectWithNewTab", () => {
     cdpCloseMock.mockReset();
     cdpCreateTargetMock.mockReset();
     cdpClientCloseMock.mockReset();
+    cdpListMock.mockReset();
   });
 
   test("falls back to default target when new tab cannot be opened", async () => {
@@ -154,5 +158,34 @@ describe("connectWithNewTab", () => {
     });
     expect(cdpNewMock).not.toHaveBeenCalled();
     expect(cdpMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222, target: "target-2" });
+  });
+
+  test("closes launch-created blank tab after isolated target attaches", async () => {
+    cdpMock
+      .mockResolvedValueOnce({
+        Target: { createTarget: cdpCreateTargetMock.mockResolvedValue({ targetId: "target-2" }) },
+        close: cdpClientCloseMock,
+      })
+      .mockResolvedValueOnce({});
+    cdpListMock.mockResolvedValue([
+      { id: "target-1", type: "page", url: "about:blank" },
+      { id: "target-2", type: "page", url: "about:blank" },
+      { id: "target-3", type: "page", url: "https://chatgpt.com/" },
+    ]);
+    cdpCloseMock.mockResolvedValue(undefined);
+
+    const { connectWithNewTab } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+
+    const result = await connectWithNewTab(9222, logger);
+
+    expect(result.targetId).toBe("target-2");
+    expect(cdpListMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222 });
+    expect(cdpCloseMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222, id: "target-1" });
+    expect(cdpCloseMock).not.toHaveBeenCalledWith({
+      host: "127.0.0.1",
+      port: 9222,
+      id: "target-3",
+    });
   });
 });
