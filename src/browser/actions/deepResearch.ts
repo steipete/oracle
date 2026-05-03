@@ -171,8 +171,6 @@ export async function waitForDeepResearchCompletion(
   const start = Date.now();
   let lastLogTime = start;
   let lastTextLength = 0;
-  const finishedSelector = JSON.stringify(FINISHED_ACTIONS_SELECTOR);
-  const stopSelector = JSON.stringify(STOP_BUTTON_SELECTOR);
   const minTurnLiteral =
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
       ? Math.floor(minTurnIndex)
@@ -182,28 +180,7 @@ export async function waitForDeepResearchCompletion(
 
   while (Date.now() - start < timeoutMs) {
     const { result } = await Runtime.evaluate({
-      expression: `(() => {
-        const MIN_TURN_INDEX = ${minTurnLiteral};
-        const stopVisible = Boolean(document.querySelector(${stopSelector}));
-        const turns = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
-        const candidateTurns = MIN_TURN_INDEX >= 0 ? turns.slice(MIN_TURN_INDEX) : turns;
-        const lastTurn = candidateTurns[candidateTurns.length - 1] || turns[turns.length - 1];
-        const text = (lastTurn?.textContent || '').trim();
-        const normalized = text.toLowerCase().replace(/\\s+/g, ' ').trim();
-        const textLength = text.length;
-        const isToolStub = normalized === 'called tool' ||
-          normalized === 'used tool' ||
-          normalized === 'użyto narzędzia' ||
-          normalized === 'narzędzie wywołane';
-        const finished = Boolean(lastTurn?.querySelector(${finishedSelector})) &&
-          textLength >= 40 &&
-          !isToolStub;
-        const hasIframe = Array.from(document.querySelectorAll('iframe')).some(f => {
-          const rect = f.getBoundingClientRect();
-          return rect.width > 200 && rect.height > 200;
-        });
-        return { finished, stopVisible, textLength, hasIframe, isToolStub };
-      })()`,
+      expression: buildDeepResearchCompletionPollExpression(minTurnLiteral),
       returnByValue: true,
     });
 
@@ -216,10 +193,13 @@ export async function waitForDeepResearchCompletion(
         }
       | undefined;
 
-    const frameResult =
-      (Page ? await readDeepResearchFrameResult(Runtime, Page).catch(() => null) : null) ??
-      (client ? await readDeepResearchTargetResult(client).catch(() => null) : null);
-    if (frameResult?.completed && frameResult.text) {
+    const frameResult = Page
+      ? await readDeepResearchFrameResult(Runtime, Page).catch(() => null)
+      : client
+        ? await readDeepResearchTargetResult(client).catch(() => null)
+        : null;
+    const scopedToNewTurns = minTurnLiteral >= 0;
+    if (!scopedToNewTurns && frameResult?.completed && frameResult.text) {
       logger(`Deep Research completed (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
       return {
         text: frameResult.text,
@@ -672,28 +652,10 @@ export async function checkDeepResearchStatus(
   inProgress: boolean;
   hasIframe: boolean;
   textLength: number;
+  placeholderOnly: boolean;
 }> {
-  const finishedSelector = JSON.stringify(FINISHED_ACTIONS_SELECTOR);
-  const stopSelector = JSON.stringify(STOP_BUTTON_SELECTOR);
-
   const { result } = await Runtime.evaluate({
-    expression: `(() => {
-      const finished = Boolean(document.querySelector(${finishedSelector}));
-      const stopVisible = Boolean(document.querySelector(${stopSelector}));
-      const iframes = Array.from(document.querySelectorAll('iframe')).filter(f => {
-        const rect = f.getBoundingClientRect();
-        return rect.width > 200 && rect.height > 200;
-      });
-      const turns = document.querySelectorAll('[data-message-author-role="assistant"]');
-      const lastTurn = turns[turns.length - 1];
-      const textLength = (lastTurn?.textContent || '').length;
-      return {
-        completed: finished,
-        inProgress: stopVisible || iframes.length > 0,
-        hasIframe: iframes.length > 0,
-        textLength,
-      };
-    })()`,
+    expression: buildDeepResearchStatusExpression(),
     returnByValue: true,
   });
 
@@ -703,6 +665,7 @@ export async function checkDeepResearchStatus(
         inProgress?: boolean;
         hasIframe?: boolean;
         textLength?: number;
+        placeholderOnly?: boolean;
       }
     | undefined;
 
@@ -711,12 +674,76 @@ export async function checkDeepResearchStatus(
     inProgress: val?.inProgress ?? false,
     hasIframe: val?.hasIframe ?? false,
     textLength: val?.textLength ?? 0,
+    placeholderOnly: val?.placeholderOnly ?? false,
   };
 }
 
 // ---------------------------------------------------------------------------
 // DOM expression builder
 // ---------------------------------------------------------------------------
+
+function buildDeepResearchStatusExpression(): string {
+  const finishedSelector = JSON.stringify(FINISHED_ACTIONS_SELECTOR);
+  const stopSelector = JSON.stringify(STOP_BUTTON_SELECTOR);
+
+  return `(() => {
+    const stopVisible = Boolean(document.querySelector(${stopSelector}));
+    const iframes = Array.from(document.querySelectorAll('iframe')).filter(f => {
+      const rect = f.getBoundingClientRect();
+      return rect.width > 200 && rect.height > 200;
+    });
+    const turns = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const lastTurn = turns[turns.length - 1];
+    const finished = Boolean(lastTurn?.querySelector?.(${finishedSelector}));
+    const text = (lastTurn?.textContent || '').trim();
+    const normalized = text.toLowerCase().replace(/\\s+/g, ' ').trim();
+    const placeholderOnly = /^(called tool|used tool|użyto narzędzia|narzędzie wywołane)$/.test(normalized);
+    const textLength = text.length;
+    return {
+      completed: finished && !placeholderOnly && textLength >= 40,
+      inProgress: stopVisible || iframes.length > 0,
+      hasIframe: iframes.length > 0,
+      textLength,
+      placeholderOnly,
+    };
+  })()`;
+}
+
+function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string {
+  const finishedSelector = JSON.stringify(FINISHED_ACTIONS_SELECTOR);
+  const stopSelector = JSON.stringify(STOP_BUTTON_SELECTOR);
+  return `(() => {
+    const MIN_TURN_INDEX = ${minTurnIndex};
+    const stopVisible = Boolean(document.querySelector(${stopSelector}));
+    const turns = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+    const scopedToNewTurns = MIN_TURN_INDEX >= 0;
+    const candidateTurns = scopedToNewTurns ? turns.slice(MIN_TURN_INDEX) : turns;
+    const lastTurn = candidateTurns[candidateTurns.length - 1] || (scopedToNewTurns ? null : turns[turns.length - 1]);
+    const text = (lastTurn?.textContent || '').trim();
+    const normalized = text.toLowerCase().replace(/\\s+/g, ' ').trim();
+    const textLength = text.length;
+    const isToolStub = normalized === 'called tool' ||
+      normalized === 'used tool' ||
+      normalized === 'użyto narzędzia' ||
+      normalized === 'narzędzie wywołane';
+    const finished = Boolean(lastTurn?.querySelector(${finishedSelector})) &&
+      textLength >= 40 &&
+      !isToolStub;
+    const hasIframe = Array.from(document.querySelectorAll('iframe')).some(f => {
+      const rect = f.getBoundingClientRect();
+      return rect.width > 200 && rect.height > 200;
+    });
+    return { finished, stopVisible, textLength, hasIframe, isToolStub };
+  })()`;
+}
+
+export function buildDeepResearchStatusExpressionForTest(): string {
+  return buildDeepResearchStatusExpression();
+}
+
+export function buildDeepResearchCompletionPollExpressionForTest(minTurnIndex = -1): string {
+  return buildDeepResearchCompletionPollExpression(minTurnIndex);
+}
 
 function buildActivateDeepResearchExpression(): string {
   const plusBtnSelector = JSON.stringify(DEEP_RESEARCH_PLUS_BUTTON);

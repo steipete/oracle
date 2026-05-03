@@ -13,7 +13,9 @@ vi.mock("../../src/browser/utils.js", async (importOriginal) => {
 import {
   activateDeepResearch,
   buildActivateDeepResearchExpressionForTest,
+  buildDeepResearchCompletionPollExpressionForTest,
   buildDeepResearchFrameStatusExpressionForTest,
+  buildDeepResearchStatusExpressionForTest,
   findDeepResearchFrameIdForTest,
   isDeepResearchPlaceholderTextForTest,
   waitForResearchPlanAutoConfirm,
@@ -334,7 +336,7 @@ describe("waitForDeepResearchCompletion", () => {
       mockRuntime as never,
       mockLogger,
       60_000,
-      0,
+      undefined,
       mockPage as never,
     );
 
@@ -421,7 +423,7 @@ describe("waitForDeepResearchCompletion", () => {
       mockRuntime as never,
       mockLogger,
       60_000,
-      0,
+      undefined,
       undefined,
       mockClient as never,
     );
@@ -432,6 +434,84 @@ describe("waitForDeepResearchCompletion", () => {
       expect.objectContaining({ contextId: 12, returnByValue: true }),
       "deep-session",
     );
+  });
+
+  it("does not complete from an unscoped frame result during a scoped run", async () => {
+    mockRuntime.evaluate.mockImplementation(async (params?: { contextId?: number }) => {
+      if (typeof params?.contextId === "number") {
+        return {
+          result: {
+            value: {
+              completed: true,
+              inProgress: false,
+              textLength: 80,
+              text: "OLD_REPORT_SHOULD_NOT_BE_RETURNED https://example.com/report",
+            },
+          },
+        };
+      }
+      return {
+        result: {
+          value: { finished: false, stopVisible: false, textLength: 0, hasIframe: true },
+        },
+      };
+    });
+    const mockPage = {
+      getFrameTree: vi.fn().mockResolvedValue({
+        frameTree: {
+          frame: { id: "root", url: "https://chatgpt.com/" },
+          childFrames: [
+            {
+              frame: {
+                id: "old-deep-frame",
+                url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+              },
+            },
+          ],
+        },
+      }),
+      createIsolatedWorld: vi.fn().mockResolvedValue({ executionContextId: 42 }),
+    };
+    let nowCalls = 0;
+    const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      nowCalls += 1;
+      return nowCalls < 6 ? 1_000 : 2_000;
+    });
+
+    try {
+      await expect(
+        waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 100, 1, mockPage as never),
+      ).rejects.toThrow(/did not complete/);
+      expect(mockPage.createIsolatedWorld).toHaveBeenCalledWith(
+        expect.objectContaining({ frameId: "old-deep-frame" }),
+      );
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it("does not fall back to an older completed turn when scoped to new turns", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(2);
+    const priorFinishedTurn = {
+      textContent: "Earlier complete Deep Research report with enough text to look finished.",
+      querySelector: () => ({}),
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [];
+          if (selector === '[data-message-author-role="assistant"]') {
+            return [priorFinishedTurn];
+          }
+          return [];
+        },
+      },
+    }) as { finished?: boolean; textLength?: number; isToolStub?: boolean };
+
+    expect(result.finished).toBe(false);
+    expect(result.textLength).toBe(0);
+    expect(result.isToolStub).toBe(false);
   });
 
   it("throws on timeout with metadata", async () => {
@@ -461,13 +541,20 @@ describe("checkDeepResearchStatus", () => {
   it("reports completed when finished actions visible", async () => {
     mockRuntime.evaluate.mockResolvedValueOnce({
       result: {
-        value: { completed: true, inProgress: false, hasIframe: false, textLength: 5000 },
+        value: {
+          completed: true,
+          inProgress: false,
+          hasIframe: false,
+          textLength: 5000,
+          placeholderOnly: false,
+        },
       },
     });
     const status = await checkDeepResearchStatus(mockRuntime as never, mockLogger);
     expect(status.completed).toBe(true);
     expect(status.inProgress).toBe(false);
     expect(status.textLength).toBe(5000);
+    expect(status.placeholderOnly).toBe(false);
   });
 
   it("reports in-progress when iframe present", async () => {
@@ -490,5 +577,57 @@ describe("checkDeepResearchStatus", () => {
     expect(status.completed).toBe(false);
     expect(status.inProgress).toBe(false);
     expect(status.textLength).toBe(0);
+    expect(status.placeholderOnly).toBe(false);
+  });
+
+  it("does not report completed for a tool-only Deep Research placeholder", () => {
+    const expression = buildDeepResearchStatusExpressionForTest();
+    const assistantTurn = {
+      textContent: "Called tool",
+      querySelector: () => ({}),
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        querySelector: (selector: string) => (selector.includes("copy") ? {} : null),
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [];
+          if (selector === '[data-message-author-role="assistant"]') return [assistantTurn];
+          return [];
+        },
+      },
+    }) as { completed?: boolean; placeholderOnly?: boolean; textLength?: number };
+
+    expect(result.completed).toBe(false);
+    expect(result.placeholderOnly).toBe(true);
+    expect(result.textLength).toBe("Called tool".length);
+  });
+
+  it("scopes completion actions to the latest assistant turn", () => {
+    const expression = buildDeepResearchStatusExpressionForTest();
+    const priorFinishedTurn = {
+      textContent: "Earlier complete answer with enough text to look finished.",
+      querySelector: () => ({}),
+    };
+    const currentResearchTurn = {
+      textContent:
+        "Researching current browser support and collecting citations, but not complete yet.",
+      querySelector: () => null,
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        querySelector: (selector: string) => (selector.includes("copy") ? {} : null),
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [];
+          if (selector === '[data-message-author-role="assistant"]') {
+            return [priorFinishedTurn, currentResearchTurn];
+          }
+          return [];
+        },
+      },
+    }) as { completed?: boolean; placeholderOnly?: boolean; textLength?: number };
+
+    expect(result.completed).toBe(false);
+    expect(result.placeholderOnly).toBe(false);
+    expect(result.textLength).toBe(currentResearchTurn.textContent.length);
   });
 });
