@@ -13,6 +13,7 @@ export {
   uploadAttachmentFile,
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
+  buildUserTurnAttachmentExpressionForTest,
 } from "./actions/attachments.js";
 export {
   waitForAssistantResponse,

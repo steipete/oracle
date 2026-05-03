@@ -661,6 +661,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             attachmentNames,
             20_000,
             logger,
+            {
+              minTurnIndex: baselineTurns ?? undefined,
+              expectedPrompt: prompt,
+              expectedConversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+            },
           );
           if (!verified) {
             throw new Error("Sent user message did not expose attachment UI after upload.");

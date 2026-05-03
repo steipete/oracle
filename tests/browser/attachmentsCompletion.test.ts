@@ -222,4 +222,91 @@ describe("sent turn attachment verification", () => {
       ),
     ).resolves.toBe(true);
   });
+
+  test("waitForUserTurnAttachments ignores turns before the expected baseline", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: false,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForUserTurnAttachments(
+      runtime,
+      ["oracle-attach-verify.txt"],
+      600,
+      undefined,
+      {
+        minTurnIndex: 4,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(promise).resolves.toBe(false);
+    useRealTime();
+  });
+
+  test("waitForUserTurnAttachments requires prompt evidence when provided", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: true,
+            text: "You said: unrelated prompt oracle-attach-verify.txt",
+            attrs: [],
+            hasAttachmentUi: true,
+            promptMatches: false,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForUserTurnAttachments(
+      runtime,
+      ["oracle-attach-verify.txt"],
+      600,
+      undefined,
+      {
+        expectedPrompt: "expected prompt text",
+      },
+    );
+    const assertion = expect(promise).rejects.toThrow(/Attachment was not present/i);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+    useRealTime();
+  });
+
+  test("waitForUserTurnAttachments ignores mismatched conversations", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: false,
+            conversationMismatch: true,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForUserTurnAttachments(
+      runtime,
+      ["oracle-attach-verify.txt"],
+      600,
+      undefined,
+      {
+        expectedConversationId: "conv-123",
+      },
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(promise).resolves.toBe(false);
+    useRealTime();
+  });
 });
