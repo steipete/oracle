@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildComposerSignalMatchersForTest,
   buildModelMatchersLiteralForTest,
   buildModelSelectionExpressionForTest,
 } from "../../src/browser/actions/modelSelection.js";
@@ -85,6 +86,43 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("isTargetGpt55VisibleAlias");
     expect(expression).toContain("label.includes('pro') && label.includes('extended')");
     expect(expression).toContain("desiredVersion === '5-5'");
+  });
+
+  it("builds composer footer matchers for generic ChatGPT header states", () => {
+    expect(buildComposerSignalMatchersForTest("GPT-5.5 Pro")).toEqual({
+      includesAny: ["pro"],
+      excludesAny: ["thinking"],
+      allowBlank: false,
+    });
+    expect(buildComposerSignalMatchersForTest("Thinking 5.5")).toEqual({
+      includesAny: ["thinking"],
+      excludesAny: ["pro"],
+      allowBlank: false,
+    });
+    expect(buildComposerSignalMatchersForTest("GPT-5.2 Instant")).toEqual({
+      includesAny: [],
+      excludesAny: ["thinking", "pro"],
+      allowBlank: true,
+    });
+  });
+
+  it("waits for composer footer state when the header button stays generic", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
+    expect(expression).toContain("const readComposerModelSignal = () =>");
+    expect(expression).toContain("const activeSelectionMatchesTarget = () =>");
+    expect(expression).toContain(
+      "const waitForTargetSelection = (previousButtonLabel, previousComposerSignal) =>",
+    );
+  });
+
+  it("accepts a post-click state change even when the footer text is localized", () => {
+    const expression = buildModelSelectionExpressionForTest("Thinking 5.5");
+    expect(expression).toContain(
+      "const selectionStateChanged = (previousButtonLabel, previousComposerSignal) =>",
+    );
+    expect(expression).toContain("const previousComposerSignal = readComposerModelSignal();");
+    expect(expression).toContain("const previousButtonLabel = normalizeText(getButtonLabel());");
+    expect(expression).toContain(".trailing svg");
   });
 
   it("finds the rewritten ChatGPT composer pill model button", () => {
