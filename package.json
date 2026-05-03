@@ -110,7 +110,7 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1619965"
+      "devtools-protocol": "0.0.1624250"
     },
     "onlyBuiltDependencies": [
       "esbuild"
