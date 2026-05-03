@@ -25,6 +25,11 @@ async function hasChatGptSession(): Promise<boolean> {
   }
 }
 
+function isMissingChatGptSessionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ChatGPT session not detected|Login button detected|login appears missing/i.test(message);
+}
+
 (LIVE && FAST ? describe : describe.skip)("ChatGPT browser fast live", () => {
   test(
     "falls back when a project URL is missing",
@@ -36,14 +41,23 @@ async function hasChatGptSession(): Promise<boolean> {
       await acquireLiveTestLock("chatgpt-browser");
       try {
         const promptToken = `fast fallback ${Date.now()}`;
-        const result = await runBrowserMode({
-          prompt: `${promptToken}\nReply with OK only.`,
-          config: {
-            url: "https://chatgpt.com/g/does-not-exist/project",
-            timeoutMs: 180_000,
-            inputTimeoutMs: 20_000,
-          },
-        });
+        let result: Awaited<ReturnType<typeof runBrowserMode>>;
+        try {
+          result = await runBrowserMode({
+            prompt: `${promptToken}\nReply with OK only.`,
+            config: {
+              url: "https://chatgpt.com/g/does-not-exist/project",
+              timeoutMs: 180_000,
+              inputTimeoutMs: 20_000,
+            },
+          });
+        } catch (error) {
+          if (isMissingChatGptSessionError(error)) {
+            console.warn("Skipping fast live test (stale ChatGPT session cookie).");
+            return;
+          }
+          throw error;
+        }
         expect(result.answerText.toLowerCase()).toContain("ok");
       } finally {
         await releaseLiveTestLock("chatgpt-browser");
@@ -68,17 +82,26 @@ async function hasChatGptSession(): Promise<boolean> {
         await writeFile(fileB, `fast file b ${Date.now()}`);
         const [statA, statB] = await Promise.all([stat(fileA), stat(fileB)]);
         const promptToken = `fast upload ${Date.now()}`;
-        const result = await runBrowserMode({
-          prompt: `${promptToken}\nReply with OK only.`,
-          attachments: [
-            { path: fileA, displayPath: "oracle-fast-a.txt", sizeBytes: statA.size },
-            { path: fileB, displayPath: "oracle-fast-b.txt", sizeBytes: statB.size },
-          ],
-          config: {
-            timeoutMs: 240_000,
-            inputTimeoutMs: 60_000,
-          },
-        });
+        let result: Awaited<ReturnType<typeof runBrowserMode>>;
+        try {
+          result = await runBrowserMode({
+            prompt: `${promptToken}\nReply with OK only.`,
+            attachments: [
+              { path: fileA, displayPath: "oracle-fast-a.txt", sizeBytes: statA.size },
+              { path: fileB, displayPath: "oracle-fast-b.txt", sizeBytes: statB.size },
+            ],
+            config: {
+              timeoutMs: 240_000,
+              inputTimeoutMs: 60_000,
+            },
+          });
+        } catch (error) {
+          if (isMissingChatGptSessionError(error)) {
+            console.warn("Skipping fast live upload test (stale ChatGPT session cookie).");
+            return;
+          }
+          throw error;
+        }
         expect(result.answerText.toLowerCase()).toContain("ok");
       } finally {
         await releaseLiveTestLock("chatgpt-browser");

@@ -40,6 +40,11 @@ function normalizeLabel(label: string): string {
   return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function isMissingChatGptSessionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ChatGPT session not detected|Login button detected|login appears missing/i.test(message);
+}
+
 const CASES = [
   {
     name: "auto",
@@ -100,6 +105,12 @@ const CASES = [
               break;
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
+              if (isMissingChatGptSessionError(error)) {
+                console.warn(
+                  "Skipping ChatGPT browser model selection live test (stale ChatGPT session cookie).",
+                );
+                return;
+              }
               if (message.includes("Unable to find model option")) {
                 console.warn(
                   `Skipping ${entry.name} model selection (not available for this account): ${message}`,

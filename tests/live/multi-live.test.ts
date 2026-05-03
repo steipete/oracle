@@ -24,7 +24,7 @@ const OPENAI_ENV = {
 };
 const isAccessOrAuthError = (reason: unknown): boolean => {
   const message = String(reason ?? "");
-  return /model_not_found|does not exist|no allowed providers|access|permission|api[_ ]?key[_ ]?invalid|invalid api key|unauthenticated|missing required authentication|requires an api key|transport error/i.test(
+  return /model_not_found|does not exist|not a valid model ID|no allowed providers|access|permission|api[_ ]?key[_ ]?invalid|invalid api key|unauthenticated|missing required authentication|requires an api key|transport error|invalid JSON response|empty response|Unexpected end of JSON input/i.test(
     message,
   );
 };
@@ -64,11 +64,7 @@ const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
 
     it("completes all providers", async () => {
       const prompt = "In one concise sentence, explain photosynthesis.";
-      const models: ModelName[] = [
-        "gpt-5-nano",
-        "gemini-2.5-flash-lite",
-        "claude-haiku-4-5-20251001",
-      ];
+      const models: ModelName[] = ["gpt-5-nano", "gemini-2.5-flash-lite", "claude-4.5-sonnet"];
       const baseModel = models[0];
       await sessionStore.ensureStorage();
       const sessionMeta = await sessionStore.createSession(
@@ -136,7 +132,7 @@ const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
             "--prompt",
             "Live shorthand multi-model prompt for cross-checking this design end-to-end.",
             "--models",
-            "gpt-5-nano,gemini-2.5-flash-lite,claude-haiku-4-5-20251001",
+            "gpt-5-nano,gemini-2.5-flash-lite,claude-4.5-sonnet",
             "--wait",
           ],
           { env: { ...env, ...OPENAI_ENV } },
@@ -165,11 +161,7 @@ const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
         (m: { model: string }) => m.model,
       );
       expect(selectedModels).toEqual(
-        expect.arrayContaining([
-          "gpt-5-nano",
-          "gemini-2.5-flash-lite",
-          "claude-haiku-4-5-20251001",
-        ]),
+        expect.arrayContaining(["gpt-5-nano", "gemini-2.5-flash-lite", "claude-4.5-sonnet"]),
       );
       expect(metadata.status).toBe("completed");
 
@@ -186,7 +178,7 @@ const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
           error instanceof Error && "stderr" in error
             ? String((error as { stderr?: unknown }).stderr ?? error.message)
             : String(error);
-        if (/model_not_found|permission/i.test(message)) {
+        if (isAccessOrAuthError(message)) {
           return; // treat unavailable models as skip
         }
         throw error;

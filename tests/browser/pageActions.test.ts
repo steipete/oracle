@@ -224,6 +224,24 @@ describe("ensureLoggedIn", () => {
       /remote Chrome session/i,
     );
   });
+
+  test("treats welcome-back navigation during account click as login progress", async () => {
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({
+          result: { value: { ok: false, status: 401, url: "/backend-api/me" } },
+        })
+        .mockRejectedValueOnce(new Error("Inspected target navigated or closed"))
+        .mockResolvedValueOnce({
+          result: { value: { ok: true, status: 200, url: "/backend-api/me" } },
+        }),
+    } as unknown as ChromeClient["Runtime"];
+
+    await expect(ensureLoggedIn(runtime, logger, { appliedCookies: 2 })).resolves.toBeUndefined();
+    expect(logger).toHaveBeenCalledWith("Welcome back account click triggered navigation.");
+    expect(logger).toHaveBeenCalledWith("Login restored via Welcome back account picker");
+  });
 });
 
 describe("waitForAssistantResponse", () => {

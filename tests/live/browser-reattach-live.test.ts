@@ -41,6 +41,11 @@ function createLogger(): BrowserLogger {
   return (() => {}) as BrowserLogger;
 }
 
+function isMissingChatGptSessionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /ChatGPT session not detected|Login button detected|login appears missing/i.test(message);
+}
+
 (LIVE ? describe : describe.skip)("ChatGPT browser live reattach", () => {
   test(
     "reattaches from project list after closing Chrome (pro request)",
@@ -92,6 +97,10 @@ function createLogger(): BrowserLogger {
             } catch (error) {
               const message = error instanceof Error ? error.message : String(error);
               lastErrorMessage = message;
+              if (isMissingChatGptSessionError(error)) {
+                console.warn("Skipping live reattach test (stale ChatGPT session cookie).");
+                return;
+              }
               if (/Unable to find model option/i.test(message)) {
                 console.warn(`Skipping live reattach (pro model unavailable): ${message}`);
                 return;

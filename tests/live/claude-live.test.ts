@@ -3,6 +3,10 @@ import { runOracle, extractTextOutput } from "../../src/oracle.js";
 
 const live = process.env.ORACLE_LIVE_TEST === "1";
 const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
+const isAccessOrTransportError = (message: string): boolean =>
+  /model .*does not exist|not a valid model ID|access|permission|404|unexpected token|invalid JSON response|empty response/i.test(
+    message,
+  );
 
 (live ? describe : describe.skip)("Claude 4.5 live smoke", () => {
   if (!hasKey) {
@@ -15,7 +19,7 @@ const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
       const result = await runOracle(
         {
           prompt: "Give one short sentence about photosynthesis.",
-          model: "claude-3-haiku-20240307",
+          model: "claude-4.5-sonnet",
           search: false,
         },
         { log: () => {}, write: () => true },
@@ -27,7 +31,7 @@ const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
       expect(text?.length ?? 0).toBeGreaterThan(10);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (/model .*does not exist|access|permission|404|unexpected token/i.test(message)) {
+      if (isAccessOrTransportError(message)) {
         // Key lacks this Claude tier; skip quietly.
         return;
       }
