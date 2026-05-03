@@ -17,6 +17,7 @@
 - MCP: prevent the stdio server from auto-starting a second time when imported by an `oracle-mcp` bin shim. (#137) — thanks @SyntaxSmith.
 - Gemini web: honor resolved manual-login browser profile directories when launching Gemini browser sessions. (#124) — thanks @blackopsrepl.
 - Browser: avoid Linux hidden-home temp dirs for ephemeral Chrome profiles and redact inline cookie values in low-level debug config logs. (#136) — thanks @lodekeeper.
+- Browser: fail attachment submissions before send instead of falling back to Enter after upload/send-readiness timeouts. (#115, #116) — thanks @HeMuling.
 
 ## 0.9.0 — 2026-03-08
 

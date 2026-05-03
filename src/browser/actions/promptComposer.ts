@@ -397,6 +397,16 @@ async function attemptSendButton(
     }
     await delay(100);
   }
+  if (Array.isArray(attachmentNames) && attachmentNames.length > 0) {
+    throw new BrowserAutomationError(
+      "Attachments never reached a clickable send button before timeout.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-send-not-ready",
+        attachmentNames,
+      },
+    );
+  }
   return false;
 }
 
@@ -567,5 +577,6 @@ async function verifyPromptCommitted(
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  attemptSendButton,
   verifyPromptCommitted,
 };
