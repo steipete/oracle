@@ -6,6 +6,7 @@ import type { ThinkingTimeLevel } from "../oracle/types.js";
 export type ChromeClient = Awaited<ReturnType<typeof CDP>>;
 export type CookieParam = Protocol.Network.CookieParam;
 export type BrowserModelStrategy = "select" | "current" | "ignore";
+export type BrowserResearchMode = "off" | "deep";
 
 export type BrowserLogger = ((message: string) => void) & {
   verbose?: boolean;
@@ -49,6 +50,8 @@ export interface BrowserAutomationConfig {
   headless?: boolean;
   keepBrowser?: boolean;
   hideWindow?: boolean;
+  /** Best-effort focus restoration after launching/opening browser tabs. */
+  preventFocus?: boolean;
   desiredModel?: string | null;
   modelStrategy?: BrowserModelStrategy;
   debug?: boolean;
@@ -59,6 +62,8 @@ export interface BrowserAutomationConfig {
   manualLoginCookieSync?: boolean;
   /** Thinking time intensity level for Thinking/Pro models: light, standard, extended, heavy */
   thinkingTime?: ThinkingTimeLevel;
+  /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
+  researchMode?: BrowserResearchMode;
 }
 
 export interface BrowserRunOptions {
@@ -103,6 +108,7 @@ export type ResolvedBrowserConfig = Required<
     | "remoteChrome"
     | "thinkingTime"
     | "modelStrategy"
+    | "researchMode"
   >
 > & {
   chromeProfile?: string | null;
@@ -117,4 +123,5 @@ export type ResolvedBrowserConfig = Required<
   manualLogin?: boolean;
   manualLoginProfileDir?: string | null;
   manualLoginCookieSync?: boolean;
+  researchMode: BrowserResearchMode;
 };

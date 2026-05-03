@@ -31,12 +31,14 @@ import {
   alignPromptEchoMarkdown,
   type TargetInfoLite,
 } from "./reattachHelpers.js";
+import { waitForDeepResearchCompletion } from "./actions/deepResearch.js";
 
 export interface ReattachDeps {
   listTargets?: () => Promise<TargetInfoLite[]>;
   connect?: (options?: unknown) => Promise<ChromeClient>;
   waitForAssistantResponse?: typeof waitForAssistantResponse;
   captureAssistantMarkdown?: typeof captureAssistantMarkdown;
+  waitForDeepResearchCompletion?: typeof waitForDeepResearchCompletion;
   recoverSession?: (
     runtime: BrowserRuntimeMetadata,
     config: BrowserSessionConfig | undefined,
@@ -79,14 +81,17 @@ export async function resumeBrowserSession(
     const client: ChromeClient = (await connect({
       host,
       port: runtime.chromePort,
-      target: target?.targetId,
+      target: target?.targetId ?? target?.id,
     })) as unknown as ChromeClient;
-    const { Runtime, DOM } = client;
+    const { Runtime, DOM, Page } = client;
     if (Runtime?.enable) {
       await Runtime.enable();
     }
     if (DOM && typeof DOM.enable === "function") {
       await DOM.enable();
+    }
+    if (Page && typeof Page.enable === "function") {
+      await Page.enable();
     }
 
     const ensureConversationOpen = async () => {
@@ -128,6 +133,26 @@ export async function resumeBrowserSession(
     );
     await ensureConversationOpen();
     const minTurnIndex = await readConversationTurnIndex(Runtime, logger);
+    if (config?.researchMode === "deep") {
+      const waitForDeepResearch =
+        deps.waitForDeepResearchCompletion ?? waitForDeepResearchCompletion;
+      const researchResult = await withTimeout(
+        waitForDeepResearch(Runtime, logger, timeoutMs, minTurnIndex ?? undefined, Page, client),
+        timeoutMs + 5_000,
+        "Reattach Deep Research response timed out",
+      );
+      if (client && typeof client.close === "function") {
+        try {
+          await client.close();
+        } catch {
+          // ignore
+        }
+      }
+      return {
+        answerText: researchResult.text,
+        answerMarkdown: researchResult.text,
+      };
+    }
     const promptEcho = buildPromptEchoMatcher(deps.promptPreview);
     const answer = await withTimeout(
       waitForResponse(Runtime, timeoutMs, logger, minTurnIndex ?? undefined),
@@ -247,7 +272,46 @@ async function resumeBrowserSessionViaNewChrome(
   const waitForResponse = deps.waitForAssistantResponse ?? waitForAssistantResponse;
   const captureMarkdown = deps.captureAssistantMarkdown ?? captureAssistantMarkdown;
   const timeoutMs = resolved.timeoutMs ?? 120_000;
+  const cleanup = async () => {
+    if (client && typeof client.close === "function") {
+      try {
+        await client.close();
+      } catch {
+        // ignore
+      }
+    }
+    if (!resolved.keepBrowser) {
+      try {
+        await chrome.kill();
+      } catch {
+        // ignore
+      }
+      if (manualLogin) {
+        await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "never" }).catch(
+          () => undefined,
+        );
+      } else {
+        await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
+  };
   const minTurnIndex = await readConversationTurnIndex(Runtime, logger);
+  if (resolved.researchMode === "deep") {
+    const waitForDeepResearch = deps.waitForDeepResearchCompletion ?? waitForDeepResearchCompletion;
+    const researchResult = await waitForDeepResearch(
+      Runtime,
+      logger,
+      timeoutMs,
+      minTurnIndex ?? undefined,
+      Page,
+      client,
+    );
+    await cleanup();
+    return {
+      answerText: researchResult.text,
+      answerMarkdown: researchResult.text,
+    };
+  }
   const promptEcho = buildPromptEchoMatcher(deps.promptPreview);
   const answer = await waitForResponse(Runtime, timeoutMs, logger, minTurnIndex ?? undefined);
   const recovered = await recoverPromptEcho(
@@ -261,27 +325,7 @@ async function resumeBrowserSessionViaNewChrome(
   const markdown = (await captureMarkdown(Runtime, recovered.meta, logger)) ?? recovered.text;
   const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
 
-  if (client && typeof client.close === "function") {
-    try {
-      await client.close();
-    } catch {
-      // ignore
-    }
-  }
-  if (!resolved.keepBrowser) {
-    try {
-      await chrome.kill();
-    } catch {
-      // ignore
-    }
-    if (manualLogin) {
-      await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "never" }).catch(
-        () => undefined,
-      );
-    } else {
-      await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
-    }
-  }
+  await cleanup();
 
   return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
 }

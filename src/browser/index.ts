@@ -40,6 +40,11 @@ import {
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
 import { ensureThinkingTime } from "./actions/thinkingTime.js";
+import {
+  activateDeepResearch,
+  waitForDeepResearchCompletion,
+  waitForResearchPlanAutoConfirm,
+} from "./actions/deepResearch.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
 import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from "./constants.js";
@@ -64,17 +69,113 @@ export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } fro
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from "./utils.js";
 
-function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
-  if (!(error instanceof BrowserAutomationError)) return false;
-  return (error.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
+function getBrowserAutomationStage(error: unknown): string | null {
+  if (!(error instanceof BrowserAutomationError)) return null;
+  return (error.details as { stage?: string } | undefined)?.stage ?? null;
 }
 
 function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolean {
-  return !headless && isCloudflareChallengeError(error);
+  if (headless) return false;
+  const stage = getBrowserAutomationStage(error);
+  return (
+    stage === "cloudflare-challenge" ||
+    stage === "assistant-timeout" ||
+    stage === "auth-required" ||
+    stage === "model-selection"
+  );
+}
+
+function unrefChromeProcess(chrome: unknown): void {
+  const child = (chrome as { process?: { unref?: () => void } } | null)?.process;
+  if (typeof child?.unref === "function") {
+    child.unref();
+  }
+}
+
+function shouldProbeManualLoginCleanup({
+  manualLogin,
+  reusedChrome,
+  connectionClosedUnexpectedly,
+}: {
+  manualLogin: boolean;
+  reusedChrome: boolean;
+  connectionClosedUnexpectedly: boolean;
+}): boolean {
+  if (!manualLogin) return false;
+  if (!reusedChrome) return true;
+  return connectionClosedUnexpectedly;
+}
+
+function shouldReattachForLikelyTruncatedAnswer({
+  promptText,
+  answerText,
+  tookMs,
+  attachmentCount,
+  desiredModel,
+  thinkingTime,
+}: {
+  promptText: string;
+  answerText: string;
+  tookMs: number;
+  attachmentCount: number;
+  desiredModel?: string | null;
+  thinkingTime?: string | null;
+}): boolean {
+  const promptLength = promptText.trim().length;
+  const answerLength = answerText.trim().length;
+  if (answerLength === 0 || answerLength >= 500) {
+    return false;
+  }
+
+  const promptHeavy =
+    promptLength >= 4_000 ||
+    (attachmentCount > 0 && promptLength >= 1_500) ||
+    /return exactly these sections|executive answer|detailed architecture|implementation plan/i.test(
+      promptText,
+    );
+  if (!promptHeavy) {
+    return false;
+  }
+
+  const longRunning = tookMs >= 120_000;
+  const proModel = /\bpro\b/i.test(desiredModel ?? "");
+  const highThinking = /extended|heavy/i.test(thinkingTime ?? "");
+  if (!longRunning && !proModel && !highThinking) {
+    return false;
+  }
+
+  const likelyIntentionalShortReply =
+    /reply with (only )?(ok|yes|no|one word|one sentence|a single word)|answer in one sentence/i.test(
+      promptText,
+    );
+  if (likelyIntentionalShortReply) {
+    return false;
+  }
+
+  return true;
 }
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+export function shouldProbeManualLoginCleanupForTest(args: {
+  manualLogin: boolean;
+  reusedChrome: boolean;
+  connectionClosedUnexpectedly: boolean;
+}): boolean {
+  return shouldProbeManualLoginCleanup(args);
+}
+
+export function shouldReattachForLikelyTruncatedAnswerForTest(args: {
+  promptText: string;
+  answerText: string;
+  tookMs: number;
+  attachmentCount: number;
+  desiredModel?: string | null;
+  thinkingTime?: string | null;
+}): boolean {
+  return shouldReattachForLikelyTruncatedAnswer(args);
 }
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
@@ -142,10 +243,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   // Remote Chrome mode - connect to existing browser
   if (config.remoteChrome) {
     // Warn about ignored local-only options
-    if (config.headless || config.hideWindow || config.keepBrowser || config.chromePath) {
+    if (
+      config.headless ||
+      config.hideWindow ||
+      config.preventFocus ||
+      config.keepBrowser ||
+      config.chromePath
+    ) {
       logger(
         "Note: --remote-chrome ignores local Chrome flags " +
-          "(--browser-headless, --browser-hide-window, --browser-keep-browser, --browser-chrome-path).",
+          "(--browser-headless, --browser-hide-window, --browser-prevent-focus, --browser-keep-browser, --browser-chrome-path).",
       );
     }
 
@@ -229,6 +336,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         retries: strictTabIsolation ? 3 : 0,
         retryDelayMs: 500,
       });
+      await (
+        chrome as { focusRestorer?: { restore(reason: string): Promise<void> } | null }
+      ).focusRestorer?.restore("isolated tab open");
       client = connection.client;
       isolatedTargetId = connection.targetId ?? null;
     } catch (error) {
@@ -311,25 +421,53 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
 
+    const baseUrl = CHATGPT_URL;
     if (cookieSyncEnabled && !manualLogin && (appliedCookies ?? 0) === 0 && !config.inlineCookies) {
       // Learned: if the profile has no ChatGPT cookies, browser mode will just bounce to login.
-      // Fail early so the user knows to sign in.
+      // In headful mode, leave the browser on ChatGPT so the user can sign in instead of
+      // watching Chromium open to a blank tab and immediately close.
+      if (!config.headless) {
+        logger(
+          "No ChatGPT cookies were applied; opening ChatGPT login and preserving this browser.",
+        );
+        try {
+          await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
+          lastUrl = baseUrl;
+        } catch (navigateError) {
+          logger(
+            `Could not open ChatGPT login before preserving browser: ${
+              navigateError instanceof Error ? navigateError.message : String(navigateError)
+            }`,
+          );
+        }
+      }
       throw new BrowserAutomationError(
         "No ChatGPT cookies were applied from your Chrome profile; cannot proceed in browser mode. " +
-          "Make sure ChatGPT is signed in in the selected profile, use --browser-manual-login / inline cookies, " +
-          "or retry with --browser-cookie-wait 5s if Keychain prompts are slow.",
+          "Sign in using the browser left open, then rerun with --browser-manual-login / inline cookies, " +
+          "or retry with --browser-cookie-wait 5s if cookie extraction was slow.",
         {
-          stage: "execute-browser",
+          stage: "auth-required",
+          runtime: {
+            chromePid: chrome.pid,
+            chromePort: chrome.port,
+            chromeHost,
+            userDataDir,
+            chromeTargetId: lastTargetId,
+            tabUrl: lastUrl,
+            controllerPid: process.pid,
+          },
+          reuseProfileHint:
+            `oracle --engine browser --browser-manual-login ` +
+            `--browser-manual-login-profile-dir ${JSON.stringify(userDataDir)}`,
           details: {
             profile: config.chromeProfile ?? "Default",
             cookiePath: config.chromeCookiePath ?? null,
-            hint: "If macOS Keychain prompts or denies access, run oracle from a GUI session or use --copy/--render for the manual flow.",
+            hint: "If cookie extraction fails, complete login in the preserved browser and rerun with the reuse-profile command.",
           },
         },
       );
     }
 
-    const baseUrl = CHATGPT_URL;
     // First load the base ChatGPT homepage to satisfy potential interstitials,
     // then hop to the requested URL if it differs.
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
@@ -454,11 +592,21 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         ),
       ).catch((error) => {
         const base = error instanceof Error ? error.message : String(error);
-        const hint =
-          appliedCookies === 0
+        const hint = manualLogin
+          ? " Manual-login profile is active; make sure ChatGPT is fully signed in in the Oracle browser profile, then rerun."
+          : appliedCookies === 0
             ? " No cookies were applied; log in to ChatGPT in Chrome or provide inline cookies (--browser-inline-cookies[(-file)] or ORACLE_BROWSER_COOKIES_JSON)."
             : "";
-        throw new Error(`${base}${hint}`);
+        throw new BrowserAutomationError(`${base}${hint}`, {
+          stage: "model-selection",
+          details: {
+            desiredModel: config.desiredModel,
+            modelStrategy,
+            manualLogin,
+            appliedCookies,
+            tabUrl: lastUrl,
+          },
+        });
       });
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       logger(
@@ -467,9 +615,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     } else if (modelStrategy === "ignore") {
       logger("Model picker: skipped (strategy=ignore)");
     }
-    // Handle thinking time selection if specified
+    const deepResearch = config.researchMode === "deep";
+    // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
-    if (thinkingTime) {
+    if (thinkingTime && !deepResearch) {
       await raceWithDisconnect(
         withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
           retries: 2,
@@ -482,6 +631,25 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             }
           },
         }),
+      );
+    }
+    if (deepResearch) {
+      await raceWithDisconnect(
+        withRetries(() => activateDeepResearch(Runtime, Input, logger), {
+          retries: 2,
+          delayMs: 500,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
+        }),
+      );
+      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+      logger(
+        `Prompt textarea ready (after Deep Research activation, ${promptText.length.toLocaleString()} chars queued)`,
       );
     }
     const profileLockTimeoutMs = manualLogin ? (config.profileLockTimeoutMs ?? 0) : 0;
@@ -625,6 +793,38 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
     } finally {
       await releaseProfileLockIfHeld();
+    }
+    if (deepResearch) {
+      await raceWithDisconnect(waitForResearchPlanAutoConfirm(Runtime, logger));
+      const researchResult = await raceWithDisconnect(
+        waitForDeepResearchCompletion(
+          Runtime,
+          logger,
+          config.timeoutMs,
+          baselineTurns,
+          Page,
+          client,
+        ),
+      );
+      await updateConversationHint("post-deep-research", 15_000).catch(() => false);
+      runStatus = "complete";
+      const durationMs = Date.now() - startedAt;
+      const tokens = estimateTokenCount(researchResult.text);
+      return {
+        answerText: researchResult.text,
+        answerMarkdown: researchResult.text,
+        answerHtml: researchResult.html,
+        tookMs: durationMs,
+        answerTokens: tokens,
+        answerChars: researchResult.text.length,
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
     }
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
@@ -917,9 +1117,37 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       // Bail out on mid-run disconnects so the session stays reattachable.
       throw new Error("Chrome disconnected before completion");
     }
+    const durationMs = Date.now() - startedAt;
+    if (
+      shouldReattachForLikelyTruncatedAnswer({
+        promptText,
+        answerText,
+        tookMs: durationMs,
+        attachmentCount: attachments.length,
+        desiredModel: config.desiredModel,
+        thinkingTime: config.thinkingTime,
+      })
+    ) {
+      const runtime = {
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
+      logger(
+        "Assistant response looks suspiciously short for a long/pro browser run; preserving browser for reattach.",
+      );
+      await emitRuntimeHint();
+      throw new BrowserAutomationError(
+        "Assistant response may be truncated; reattach later to capture the full answer.",
+        { stage: "assistant-timeout", runtime },
+      );
+    }
     stopThinkingMonitor?.();
     runStatus = "complete";
-    const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
     return {
@@ -944,6 +1172,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
     if (shouldPreserveBrowserOnError(normalizedError, config.headless)) {
       preserveBrowserOnError = true;
+      const stage = getBrowserAutomationStage(normalizedError) ?? "execute-browser";
       const runtime = {
         chromePid: chrome.pid,
         chromePort: chrome.port,
@@ -957,12 +1186,24 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         `oracle --engine browser --browser-manual-login ` +
         `--browser-manual-login-profile-dir ${JSON.stringify(userDataDir)}`;
       await emitRuntimeHint();
-      logger("Cloudflare challenge detected; leaving browser open so you can complete the check.");
+      const preserveMessage =
+        stage === "cloudflare-challenge"
+          ? "Cloudflare challenge detected; leaving browser open so you can complete the check."
+          : stage === "auth-required"
+            ? "ChatGPT login required; leaving browser open so you can sign in."
+            : "Browser run needs reattach; leaving browser open so Oracle can recover it.";
+      logger(preserveMessage);
       logger(`Reuse this browser profile with: ${reuseProfileHint}`);
+      const errorMessage =
+        stage === "cloudflare-challenge"
+          ? "Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun."
+          : stage === "auth-required"
+            ? "ChatGPT login required. Sign in using the open browser, then rerun with the reuse-profile command."
+            : normalizedError.message;
       throw new BrowserAutomationError(
-        "Cloudflare challenge detected. Complete the “Just a moment…” check in the open browser, then rerun.",
+        errorMessage,
         {
-          stage: "cloudflare-challenge",
+          stage,
           runtime,
           reuseProfileHint,
         },
@@ -1014,15 +1255,22 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     removeDialogHandler?.();
     removeTerminationHooks?.();
     const keepBrowserOpen = effectiveKeepBrowser || preserveBrowserOnError;
+    const ownsChrome = !reusedChrome;
     if (!keepBrowserOpen) {
-      if (!connectionClosedUnexpectedly) {
+      if (!connectionClosedUnexpectedly && ownsChrome) {
         try {
           await chrome.kill();
         } catch {
           // ignore kill failures
         }
       }
-      if (manualLogin) {
+      if (
+        shouldProbeManualLoginCleanup({
+          manualLogin,
+          reusedChrome: Boolean(reusedChrome),
+          connectionClosedUnexpectedly,
+        })
+      ) {
         const shouldCleanup = await shouldCleanupManualLoginProfileState(
           userDataDir,
           logger.verbose ? logger : undefined,
@@ -1037,7 +1285,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             () => undefined,
           );
         }
-      } else {
+      } else if (!manualLogin) {
         await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
       }
       if (!connectionClosedUnexpectedly) {
@@ -1045,6 +1293,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         logger(`Cleanup ${runStatus} • ${totalSeconds.toFixed(1)}s total`);
       }
     } else if (!connectionClosedUnexpectedly) {
+      unrefChromeProcess(chrome);
       logger(`Chrome left running on port ${chrome.port} with profile ${userDataDir}`);
     }
   }
@@ -1363,9 +1612,10 @@ async function runRemoteBrowserMode(
     } else if (modelStrategy === "ignore") {
       logger("Model picker: skipped (strategy=ignore)");
     }
-    // Handle thinking time selection if specified
+    const deepResearch = config.researchMode === "deep";
+    // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
-    if (thinkingTime) {
+    if (thinkingTime && !deepResearch) {
       await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
         retries: 2,
         delayMs: 300,
@@ -1377,6 +1627,23 @@ async function runRemoteBrowserMode(
           }
         },
       });
+    }
+    if (deepResearch) {
+      await withRetries(() => activateDeepResearch(Runtime, Input, logger), {
+        retries: 2,
+        delayMs: 500,
+        onRetry: (attempt, error) => {
+          if (options.verbose) {
+            logger(
+              `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        },
+      });
+      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+      logger(
+        `Prompt textarea ready (after Deep Research activation, ${promptText.length.toLocaleString()} chars queued)`,
+      );
     }
 
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
@@ -1450,6 +1717,33 @@ async function runRemoteBrowserMode(
       } else {
         throw error;
       }
+    }
+    if (deepResearch) {
+      await waitForResearchPlanAutoConfirm(Runtime, logger);
+      const researchResult = await waitForDeepResearchCompletion(
+        Runtime,
+        logger,
+        config.timeoutMs,
+        baselineTurns,
+        Page,
+        client,
+      );
+      await emitRuntimeHint();
+      const durationMs = Date.now() - startedAt;
+      const tokens = estimateTokenCount(researchResult.text);
+      return {
+        answerText: researchResult.text,
+        answerMarkdown: researchResult.text,
+        answerHtml: researchResult.html,
+        tookMs: durationMs,
+        answerTokens: tokens,
+        answerChars: researchResult.text.length,
+        chromePort: port,
+        chromeHost: host,
+        chromeTargetId: remoteTargetId ?? undefined,
+        tabUrl: lastUrl,
+        controllerPid: process.pid,
+      };
     }
     stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, options.verbose ?? false);
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)

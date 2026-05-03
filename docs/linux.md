@@ -7,4 +7,5 @@
   - `--browser-chrome-path /path/to/chrome`
   - `--browser-cookie-path /path/to/profile/Default/Cookies`
 - Browser runs are headful (Cloudflare blocks headless). Keep a compositor/virtual display running if you don’t have a desktop session.
+- To keep the browser visible but reduce focus stealing, use `--browser-prevent-focus` or set `browser.preventFocus: true`. Oracle opens automation tabs with DevTools `focus: false` and then tries to restore focus with `xdotool`; Wayland compositors may still block restoring focus to native Wayland windows.
 - If cookie sync still can’t find your DB, rerun with `--browser-allow-cookie-errors --browser-no-cookie-sync` and sign in manually, or dump the session cookies with `--browser-inline-cookies-file`.

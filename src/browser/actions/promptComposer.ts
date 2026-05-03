@@ -20,6 +20,7 @@ const ENTER_KEY_EVENT = {
   nativeVirtualKeyCode: 13,
 } as const;
 const ENTER_KEY_TEXT = "\r";
+const SEND_BUTTON_CLICK_TIMEOUT_MS = 30_000;
 
 export async function submitPrompt(
   deps: {
@@ -214,6 +215,13 @@ export async function submitPrompt(
       ...ENTER_KEY_EVENT,
     });
     logger("Submitted prompt via Enter key");
+    await delay(1000);
+    if (await isPromptStillInComposer(runtime, prompt)) {
+      const clickedAfterEnter = await attemptSendButton(runtime, logger, deps?.attachmentNames);
+      if (clickedAfterEnter) {
+        logger("Clicked send button after Enter fallback");
+      }
+    }
   } else {
     logger("Clicked send button");
   }
@@ -347,18 +355,32 @@ export function buildAttachmentReadyExpressionForTest(attachmentNames: string[])
 
 async function attemptSendButton(
   Runtime: ChromeClient["Runtime"],
-  _logger?: BrowserLogger,
+  logger?: BrowserLogger,
   attachmentNames?: string[],
 ): Promise<boolean> {
   const script = `(() => {
     ${buildClickDispatcher()}
     const selectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
-    let button = null;
+    const seen = new Set();
+    const candidates = [];
     for (const selector of selectors) {
-      button = document.querySelector(selector);
-      if (button) break;
+      for (const node of Array.from(document.querySelectorAll(selector))) {
+        if (!seen.has(node)) {
+          seen.add(node);
+          candidates.push({ node, selector });
+        }
+      }
     }
-    if (!button) return 'missing';
+    const isVisible = (node) => {
+      if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const visible = candidates.filter(({ node }) => isVisible(node));
+    const selected = visible[0] ?? candidates[0] ?? null;
+    if (!selected) return { status: 'missing', candidates: 0 };
+    const { node: button, selector } = selected;
     const ariaDisabled = button.getAttribute('aria-disabled');
     const dataDisabled = button.getAttribute('data-disabled');
     const style = window.getComputedStyle(button);
@@ -369,35 +391,103 @@ async function attemptSendButton(
       style.pointerEvents === 'none' ||
       style.display === 'none';
     // Learned: some send buttons render but are inert; only click when truly enabled.
-    if (disabled) return 'disabled';
+    if (disabled) {
+      return {
+        status: 'disabled',
+        selector,
+        candidates: candidates.length,
+        visibleCandidates: visible.length,
+        ariaDisabled,
+        dataDisabled,
+        pointerEvents: style.pointerEvents,
+      };
+    }
     // Use unified pointer/mouse sequence to satisfy React handlers.
     dispatchClickSequence(button);
-    return 'clicked';
+    if (typeof button.click === 'function') {
+      button.click();
+    }
+    return {
+      status: 'clicked',
+      selector,
+      candidates: candidates.length,
+      visibleCandidates: visible.length,
+      ariaLabel: button.getAttribute('aria-label'),
+      testId: button.getAttribute('data-testid'),
+    };
   })()`;
 
-  const deadline = Date.now() + 8_000;
+  const deadline = Date.now() + SEND_BUTTON_CLICK_TIMEOUT_MS;
+  let lastStatus: unknown = null;
+  let attachmentReady = !Array.isArray(attachmentNames) || attachmentNames.length === 0;
   while (Date.now() < deadline) {
     const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
     if (needAttachment) {
       const ready = await Runtime.evaluate({
         expression: buildAttachmentReadyExpression(attachmentNames),
         returnByValue: true,
-      });
-      if (!ready?.result?.value) {
-        await delay(150);
-        continue;
-      }
+      }).catch(() => null);
+      attachmentReady = Boolean(ready?.result?.value);
     }
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
-    if (result.value === "clicked") {
+    lastStatus = result.value;
+    const status =
+      result.value && typeof result.value === "object"
+        ? (result.value as { status?: unknown }).status
+        : result.value;
+    if (status === "clicked") {
+      if (needAttachment && !attachmentReady) {
+        logger?.(
+          "Clicked send button even though attachment-name probe did not confirm readiness; relying on enabled ChatGPT send control.",
+        );
+      }
       return true;
     }
-    if (result.value === "missing") {
-      break;
-    }
-    await delay(100);
+    await delay(status === "missing" ? 250 : 150);
+  }
+  if (logger) {
+    logger(
+      `Send button was not clicked before timeout; latest state: ${JSON.stringify({
+        attachmentReady,
+        lastStatus,
+      })}`,
+    );
   }
   return false;
+}
+
+async function isPromptStillInComposer(
+  Runtime: ChromeClient["Runtime"],
+  prompt: string,
+): Promise<boolean> {
+  const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
+  const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
+  const promptLiteral = JSON.stringify(prompt.trim());
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const normalize = (value) => String(value ?? '').replace(/\\s+/g, ' ').trim();
+      const prompt = normalize(${promptLiteral});
+      if (!prompt) return false;
+      const prefix = prompt.slice(0, 120);
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+        return node.innerText ?? '';
+      };
+      const nodes = [
+        document.querySelector(${primarySelectorLiteral}),
+        document.querySelector(${fallbackSelectorLiteral}),
+        ...${inputSelectorsLiteral}.map((selector) => document.querySelector(selector)),
+      ].filter(Boolean);
+      return nodes.some((node) => {
+        const value = normalize(readValue(node));
+        return value === prompt || (prefix.length > 30 && value.includes(prefix));
+      });
+    })()`,
+    returnByValue: true,
+  });
+  return Boolean(result?.value);
 }
 
 async function verifyPromptCommitted(
@@ -567,5 +657,7 @@ async function verifyPromptCommitted(
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  attemptSendButton,
+  isPromptStillInComposer,
   verifyPromptCommitted,
 };

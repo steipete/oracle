@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Browser: add `--browser-prevent-focus` / `browser.preventFocus` to open automation tabs without requesting focus and restore focus to the previously active Linux/X11 window after Chrome launch or tab creation.
+
+### Changed
+
+- OpenAI: add `gpt-5.5` / `gpt-5.5-pro` aliases, make `gpt-5.5-pro` the default, and map ChatGPT browser selection to `GPT-5.5 Pro` / `Thinking 5.5`.
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed

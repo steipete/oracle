@@ -2,6 +2,35 @@ import { describe, expect, test, vi } from "vitest";
 import { __test__ as promptComposer } from "../../src/browser/actions/promptComposer.js";
 
 describe("promptComposer", () => {
+  test("clicks enabled send button even when attachment readiness probe misses", async () => {
+    const logger = vi.fn();
+    const runtime = {
+      evaluate: vi.fn(async (params: { expression: string; returnByValue?: boolean }) => {
+        if (params.expression.includes("const names =")) {
+          return { result: { value: false } };
+        }
+        return {
+          result: {
+            value: {
+              status: "clicked",
+              selector: 'button[data-testid="send-button"]',
+              candidates: 1,
+              visibleCandidates: 1,
+            },
+          },
+        };
+      }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.attemptSendButton(runtime as never, logger, ["sufficiency_training_gate.py"]),
+    ).resolves.toBe(true);
+
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("attachment-name probe"));
+  });
+
   test("does not treat cleared composer + stop button as committed without a new turn", async () => {
     vi.useFakeTimers();
     try {
@@ -71,5 +100,26 @@ describe("promptComposer", () => {
     await expect(
       promptComposer.verifyPromptCommitted(runtime as never, "hello", 150),
     ).resolves.toBe(1);
+  });
+
+  test("detects when Enter fallback left the prompt in the composer", async () => {
+    const runtime = {
+      evaluate: vi.fn(async () => ({
+        result: { value: true },
+      })),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.isPromptStillInComposer(
+        runtime as never,
+        "Reply exactly with ORACLE_55_PRO_OK and nothing else.",
+      ),
+    ).resolves.toBe(true);
+
+    const expression = vi.mocked(runtime.evaluate).mock.calls[0]?.[0]?.expression ?? "";
+    expect(expression).toContain("prompt.slice(0, 120)");
+    expect(expression).toContain("value.includes(prefix)");
   });
 });

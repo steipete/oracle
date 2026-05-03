@@ -1,7 +1,7 @@
 import type { BrowserModelStrategy } from "./types.js";
 
 export const CHATGPT_URL = "https://chatgpt.com/";
-export const DEFAULT_MODEL_TARGET = "GPT-5.4 Pro";
+export const DEFAULT_MODEL_TARGET = "GPT-5.5 Pro";
 export const DEFAULT_MODEL_STRATEGY: BrowserModelStrategy = "select";
 export const COOKIE_URLS = [
   "https://chatgpt.com",
@@ -55,7 +55,8 @@ export const FILE_INPUT_SELECTORS = [
 // Legacy single selectors kept for compatibility with older call-sites
 export const FILE_INPUT_SELECTOR = FILE_INPUT_SELECTORS[0];
 export const GENERIC_FILE_INPUT_SELECTOR = FILE_INPUT_SELECTORS[3];
-export const MENU_CONTAINER_SELECTOR = '[role="menu"], [data-radix-collection-root]';
+export const MENU_CONTAINER_SELECTOR =
+  '[role="menu"], [role="listbox"], [role="dialog"], [data-radix-collection-root]';
 export const MENU_ITEM_SELECTOR =
   'button, [role="menuitem"], [role="menuitemradio"], [data-testid*="model-switcher-"]';
 export const UPLOAD_STATUS_SELECTORS = [
@@ -72,14 +73,27 @@ export const UPLOAD_STATUS_SELECTORS = [
 export const STOP_BUTTON_SELECTOR = '[data-testid="stop-button"]';
 export const SEND_BUTTON_SELECTORS = [
   'button[data-testid="send-button"]',
+  'button[data-testid="composer-submit-button"]',
+  'button[data-testid*="send-button"]',
   'button[data-testid*="composer-send"]',
+  'button[data-testid*="composer-submit"]',
   'form button[type="submit"]',
   'button[type="submit"][data-testid*="send"]',
   'button[aria-label*="Send"]',
+  'button[aria-label*="send"]',
+  'button[aria-label*="Submit"]',
+  'button[aria-label*="submit"]',
 ];
 export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
-export const MODEL_BUTTON_SELECTOR = '[data-testid="model-switcher-dropdown-button"]';
+export const MODEL_BUTTON_SELECTOR =
+  '[data-testid="model-switcher-dropdown-button"], button[data-testid*="model-switcher"], button.__composer-pill[aria-haspopup="menu"], button[class*="__composer-pill"][aria-haspopup="menu"], button[aria-label*="model"], button[aria-label*="Model"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
 // Action buttons that only appear once a turn has finished rendering.
+export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
+export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";
+export const DEEP_RESEARCH_PILL_LABEL = "Deep research";
+export const DEEP_RESEARCH_POLL_INTERVAL_MS = 5_000;
+export const DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS = 70_000;
+export const DEEP_RESEARCH_DEFAULT_TIMEOUT_MS = 2_400_000;
 export const FINISHED_ACTIONS_SELECTOR =
   'button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';

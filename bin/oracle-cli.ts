@@ -142,6 +142,7 @@ interface CliOptions extends OptionValues {
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  browserResearch?: "off" | "deep";
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;
   browserInlineFiles?: boolean;
@@ -246,7 +247,7 @@ program.hook("preAction", (thisCommand) => {
 program
   .name("oracle")
   .description(
-    "One-shot GPT-5.4 Pro / GPT-5.4 / GPT-5.1 Codex tool for hard questions that benefit from large file context and server-side search.",
+    "One-shot GPT-5.5 Pro / GPT-5.5 / GPT-5.1 Codex tool for hard questions that benefit from large file context and server-side search.",
   )
   .version(VERSION)
   .argument("[prompt]", "Prompt text (shorthand for --prompt).")
@@ -300,13 +301,13 @@ program
   .option("-s, --slug <words>", "Custom session slug (3-5 words).")
   .option(
     "-m, --model <model>",
-    'Model to target (gpt-5.4-pro default). Also gpt-5.4, gpt-5.1-pro, gpt-5-pro, gpt-5.1, gpt-5.1-codex API-only, gpt-5.2, gpt-5.2-instant, gpt-5.2-pro, gemini-3.1-pro API-only, gemini-3-pro, claude-4.5-sonnet, claude-4.1-opus, or ChatGPT labels like "5.2 Thinking" for browser runs).',
+    'Model to target (gpt-5.5-pro default). Also gpt-5.5, gpt-5.5-pro, gpt-5.4, gpt-5.1-pro, gpt-5-pro, gpt-5.1, gpt-5.1-codex API-only, gpt-5.2, gpt-5.2-instant, gpt-5.2-pro, gemini-3.1-pro API-only, gemini-3-pro, claude-4.5-sonnet, claude-4.1-opus, or ChatGPT labels like "5.2 Thinking" for browser runs).',
     normalizeModelOption,
   )
   .addOption(
     new Option(
       "--models <models>",
-      'Comma-separated API model list to query in parallel (e.g., "gpt-5.4-pro,gemini-3-pro").',
+      'Comma-separated API model list to query in parallel (e.g., "gpt-5.5-pro,gemini-3-pro").',
     )
       .argParser(collectModelList)
       .default([]),
@@ -344,7 +345,7 @@ program
   .addOption(
     new Option(
       "--timeout <seconds|auto>",
-      "Overall timeout before aborting the API call (auto = 60m for gpt-5.4-pro, 120s otherwise).",
+      "Overall timeout before aborting the API call (auto = 60m for gpt-5.5-pro, 120s otherwise).",
     )
       .argParser(parseTimeoutOption)
       .default("auto"),
@@ -576,6 +577,12 @@ program
     ).hideHelp(),
   )
   .addOption(
+    new Option(
+      "--browser-prevent-focus",
+      "Best-effort restore focus to the previously active window after Chrome launch/tab creation (Linux/X11).",
+    ).hideHelp(),
+  )
+  .addOption(
     new Option("--browser-keep-browser", "Keep Chrome running after completion.").hideHelp(),
   )
   .addOption(
@@ -591,6 +598,12 @@ program
     )
       .choices(["light", "standard", "extended", "heavy"])
       .hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--browser-research <mode>",
+      "Browser research mode: deep activates ChatGPT Deep Research.",
+    ).choices(["off", "deep"]),
   )
   .addOption(
     new Option(
@@ -2127,6 +2140,7 @@ function printDebugHelp(cliName: string): void {
     ],
     ["--browser-headless", "Launch Chrome in headless mode."],
     ["--browser-hide-window", "Hide the Chrome window (macOS headful only)."],
+    ["--browser-prevent-focus", "Restore focus after Chrome launch/tab creation (Linux/X11)."],
     ["--browser-keep-browser", "Leave Chrome running after completion."],
   ]);
   console.log("");

@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import kleur from "kleur";
+import fs from "node:fs/promises";
 import type {
   SessionMetadata,
   SessionTransportMetadata,
@@ -43,6 +44,48 @@ function isProcessAlive(pid?: number): boolean {
     }
     return true;
   }
+}
+
+function isDeepResearchBrowserSession(metadata: SessionMetadata): boolean {
+  return metadata.mode === "browser" && metadata.browser?.config?.researchMode === "deep";
+}
+
+function isDeepResearchPlaceholderCapture(metadata: SessionMetadata, logText: string): boolean {
+  const answer = trimBeforeFirstAnswer(logText)
+    .replace(/^Answer:\s*/i, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  const isToolOnly =
+    answer === "called tool" ||
+    answer === "used tool" ||
+    answer === "użyto narzędzia" ||
+    answer === "narzędzie wywołane";
+  const modelUsage = metadata.models?.find((run) => run.model === metadata.model)?.usage;
+  const outputTokens = metadata.usage?.outputTokens ?? modelUsage?.outputTokens;
+  return isToolOnly && (outputTokens == null || outputTokens <= 8);
+}
+
+async function writeReattachAnswer(
+  sessionId: string,
+  result: { answerText: string; answerMarkdown: string },
+  replaceExistingLog: boolean,
+): Promise<void> {
+  const body = result.answerMarkdown || result.answerText;
+  if (replaceExistingLog) {
+    const paths = await sessionStore.getPaths(sessionId);
+    await fs.writeFile(
+      paths.log,
+      `[reattach] replaced incomplete Deep Research capture from existing Chrome tab\nAnswer:\n${body}\n`,
+      "utf8",
+    );
+    return;
+  }
+  const logWriter = sessionStore.createLogWriter(sessionId);
+  logWriter.logLine("[reattach] captured assistant response from existing Chrome tab");
+  logWriter.logLine("Answer:");
+  logWriter.logLine(body);
+  logWriter.stream.end();
 }
 
 export interface ShowStatusOptions {
@@ -159,16 +202,30 @@ export async function attachSession(
   const controllerAlive = isProcessAlive(runtime?.controllerPid);
 
   const hasChromeDisconnect = metadata.response?.incompleteReason === "chrome-disconnected";
+  const hasIncompleteCapture = metadata.response?.incompleteReason === "incomplete-capture";
   const statusAllowsReattach =
-    metadata.status === "running" || (metadata.status === "error" && hasChromeDisconnect);
+    metadata.status === "running" ||
+    (metadata.status === "error" && (hasChromeDisconnect || hasIncompleteCapture));
   const hasFallbackSessionInfo = Boolean(
     runtime?.chromePort || runtime?.tabUrl || runtime?.conversationId,
   );
+  const deepResearchPlaceholderCapture =
+    isDeepResearchBrowserSession(metadata) &&
+    hasFallbackSessionInfo &&
+    isDeepResearchPlaceholderCapture(
+      metadata,
+      await sessionStore.readLog(sessionId).catch(() => ""),
+    );
+  const completedDeepResearchPlaceholder =
+    metadata.status === "completed" && deepResearchPlaceholderCapture;
   const canReattach =
-    statusAllowsReattach &&
+    (statusAllowsReattach || completedDeepResearchPlaceholder) &&
     metadata.mode === "browser" &&
     hasFallbackSessionInfo &&
-    (hasChromeDisconnect || (runtime?.controllerPid && !controllerAlive));
+    (hasChromeDisconnect ||
+      hasIncompleteCapture ||
+      completedDeepResearchPlaceholder ||
+      (runtime?.controllerPid && !controllerAlive));
 
   if (canReattach) {
     const portInfo = runtime?.chromePort ? `port ${runtime.chromePort}` : "unknown port";
@@ -193,11 +250,12 @@ export async function attachSession(
         { promptPreview: metadata.promptPreview },
       );
       const outputTokens = estimateTokenCount(result.answerMarkdown);
-      const logWriter = sessionStore.createLogWriter(sessionId);
-      logWriter.logLine("[reattach] captured assistant response from existing Chrome tab");
-      logWriter.logLine("Answer:");
-      logWriter.logLine(result.answerMarkdown || result.answerText);
-      logWriter.stream.end();
+      await writeReattachAnswer(
+        sessionId,
+        result,
+        completedDeepResearchPlaceholder ||
+          (hasIncompleteCapture && deepResearchPlaceholderCapture),
+      );
       if (metadata.model) {
         await sessionStore.updateModelRun(metadata.id, metadata.model, {
           status: "completed",
@@ -232,6 +290,28 @@ export async function attachSession(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.log(chalk.red(`Reattach failed: ${message}`));
+      if (completedDeepResearchPlaceholder) {
+        if (metadata.model) {
+          await sessionStore.updateModelRun(metadata.id, metadata.model, {
+            status: "error",
+            response: { status: "incomplete", incompleteReason: "incomplete-capture" },
+            error: {
+              category: "browser-automation",
+              message: `Deep Research capture incomplete: ${message}`,
+            },
+          });
+        }
+        await sessionStore.updateSession(sessionId, {
+          status: "error",
+          errorMessage: `Deep Research capture incomplete: ${message}`,
+          response: { status: "incomplete", incompleteReason: "incomplete-capture" },
+          error: {
+            category: "browser-automation",
+            message: `Deep Research capture incomplete: ${message}`,
+          },
+        });
+        metadata = (await sessionStore.readSession(sessionId)) ?? metadata;
+      }
     }
   }
   if (!options?.suppressMetadata) {
@@ -506,6 +586,17 @@ export function trimBeforeFirstAnswer(logText: string): string {
   const index = logText.indexOf(marker);
   if (index === -1) {
     return logText;
+  }
+  const fromFirstAnswer = logText.slice(index);
+  if (
+    /^Answer:\s*(called tool|used tool|użyto narzędzia|narzędzie wywołane)\s*\n\[reattach\]/i.test(
+      fromFirstAnswer,
+    )
+  ) {
+    const laterIndex = logText.lastIndexOf(marker);
+    if (laterIndex > index) {
+      return logText.slice(laterIndex);
+    }
   }
   return logText.slice(index);
 }

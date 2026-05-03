@@ -60,6 +60,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
         cookieSyncWaitMs: 4_000,
         headless: true,
         hideWindow: true,
+        preventFocus: true,
         keepBrowser: true,
       },
     };
@@ -75,6 +76,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserCookieWait).toBe("4000");
     expect(options.browserHeadless).toBe(true);
     expect(options.browserHideWindow).toBe(true);
+    expect(options.browserPreventFocus).toBe(true);
     expect(options.browserKeepBrowser).toBe(true);
   });
 
@@ -89,6 +91,19 @@ describe("applyBrowserDefaultsFromConfig", () => {
     applyBrowserDefaultsFromConfig(options, config, (_key) => "default");
 
     expect(options.browserThinkingTime).toBe("extended");
+  });
+
+  test("applies browser research mode when CLI flag is untouched", () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = {
+      browser: {
+        researchMode: "deep",
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => "default");
+
+    expect(options.browserResearch).toBe("deep");
   });
 
   test("does not override thinking time when CLI provided a value", () => {

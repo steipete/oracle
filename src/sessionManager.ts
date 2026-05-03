@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
 import net from "node:net";
-import type { BrowserModelStrategy, CookieParam } from "./browser/types.js";
+import type { BrowserModelStrategy, BrowserResearchMode, CookieParam } from "./browser/types.js";
 import type {
   TransportFailureReason,
   AzureOptions,
@@ -47,6 +47,7 @@ export interface BrowserSessionConfig {
   headless?: boolean;
   keepBrowser?: boolean;
   hideWindow?: boolean;
+  preventFocus?: boolean;
   desiredModel?: string | null;
   modelStrategy?: BrowserModelStrategy;
   debug?: boolean;
@@ -57,6 +58,8 @@ export interface BrowserSessionConfig {
   manualLoginCookieSync?: boolean;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   thinkingTime?: ThinkingTimeLevel;
+  /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
+  researchMode?: BrowserResearchMode;
 }
 
 export interface BrowserRuntimeMetadata {

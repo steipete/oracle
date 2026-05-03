@@ -435,6 +435,9 @@ export async function performSessionRun({
     const cloudflareChallenge =
       userError?.category === "browser-automation" &&
       (userError.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
+    const authRequired =
+      userError?.category === "browser-automation" &&
+      (userError.details as { stage?: string } | undefined)?.stage === "auth-required";
     if (connectionLost && mode === "browser") {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
@@ -501,6 +504,13 @@ export async function performSessionRun({
       log(
         dim("Cloudflare challenge detected; browser left running so you can complete the check."),
       );
+      if (details?.reuseProfileHint) {
+        log(dim(`Reuse this browser profile with: ${details.reuseProfileHint}`));
+      }
+    }
+    if (authRequired && mode === "browser") {
+      const details = userError.details as { reuseProfileHint?: string } | undefined;
+      log(dim("ChatGPT login required; browser left running so you can sign in."));
       if (details?.reuseProfileHint) {
         log(dim(`Reuse this browser profile with: ${details.reuseProfileHint}`));
       }

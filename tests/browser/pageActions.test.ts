@@ -9,6 +9,7 @@ import {
   ensurePromptReady,
   ensureNotBlocked,
   ensureLoggedIn,
+  buildCopyExpressionForTest,
 } from "../../src/browser/pageActions.js";
 import * as attachments from "../../src/browser/actions/attachments.js";
 import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDataTransfer.js";
@@ -329,6 +330,42 @@ describe("waitForAssistantResponse", () => {
     const result = await waitForAssistantResponse(runtime, 200, logger);
     expect(result.text).toBe("Recovered");
     expect(evaluate).toHaveBeenCalled();
+  });
+
+  test("recovers via copy button when rendered assistant text stays blank", async () => {
+    const evaluate = vi
+      .fn()
+      .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+        const expression = String(params?.expression ?? "");
+        if (expression.includes("const BUTTON_SELECTOR")) {
+          return { result: { value: { success: true, markdown: "Recovered copied answer" } } };
+        }
+        if (expression.includes("Find the LAST assistant turn")) {
+          return { result: { value: true } };
+        }
+        if (expression.startsWith("Boolean(document.querySelector")) {
+          return { result: { value: false } };
+        }
+        if (expression.includes("extractAssistantTurn")) {
+          return { result: { value: null } };
+        }
+        if (params?.awaitPromise && expression.includes("captureViaObserver")) {
+          return new Promise(() => undefined);
+        }
+        return { result: { value: null } };
+      });
+    const runtime = { evaluate } as unknown as ChromeClient["Runtime"];
+
+    const result = await waitForAssistantResponse(runtime, 200, logger);
+
+    expect(result.text).toBe("Recovered copied answer");
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("copy button fallback"));
+  });
+
+  test("copy expression can skip assistant turns before minTurnIndex", () => {
+    const expression = buildCopyExpressionForTest({}, 3);
+    expect(expression).toContain("const MIN_TURN_INDEX = 3");
+    expect(expression).toContain("if (MIN_TURN_INDEX >= 0 && i < MIN_TURN_INDEX) continue;");
   });
 });
 
