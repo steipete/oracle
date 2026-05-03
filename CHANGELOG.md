@@ -8,6 +8,11 @@
 - Browser: target ChatGPT `GPT-5.5 Pro` by default for Pro browser runs and recognize current GPT-5.5 picker labels such as `Pro Extended` and `Thinking Heavy`.
 - Dependencies: update the npm dependency set.
 
+### Fixed
+
+- Gemini web: prefer the latest non-empty streaming response chunk so `gemini-3-pro` and `gemini-3.1-pro` browser runs do not report `(no text output)` when the first chunk is an empty placeholder. (#153, #154) — thanks @manhtruong03.
+- CLI: avoid loading `clipboardy` during startup and add `/usr/sbin` before lazy clipboard loading on Intel macOS, preventing `spawnSync sysctl ENOENT` crashes from transitive architecture detection. (#129)
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed

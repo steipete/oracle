@@ -5,8 +5,23 @@ import {
 } from "../../src/gemini-web/client.js";
 
 function makeRawResponseWithBody(body: unknown): string {
-  const responseJson = [[null, null, JSON.stringify(body)]];
+  return makeRawResponseWithBodies([body]);
+}
+
+function makeRawResponseWithBodies(bodies: unknown[]): string {
+  const responseJson = bodies.map((body) => [null, null, JSON.stringify(body)]);
   return `)]}'\n\n${JSON.stringify(responseJson)}`;
+}
+
+function makeBodyWithText(rcid: string, text: string): unknown[] {
+  const candidate: unknown[] = [];
+  candidate[0] = rcid;
+  candidate[1] = [text];
+
+  const body: unknown[] = [];
+  body[1] = ["cid", "rid", rcid];
+  body[4] = [candidate];
+  return body;
 }
 
 describe("gemini-web parseGeminiStreamGenerateResponse", () => {
@@ -66,6 +81,35 @@ describe("gemini-web parseGeminiStreamGenerateResponse", () => {
 
     const parsed = parseGeminiStreamGenerateResponse(makeRawResponseWithBody(body));
     expect(parsed.text).toBe("Expanded card content");
+  });
+
+  it("picks the latest non-empty text across streaming chunks", () => {
+    const raw = makeRawResponseWithBodies([
+      makeBodyWithText("rcid-1", ""),
+      makeBodyWithText("rcid-1", "partial"),
+      makeBodyWithText("rcid-1", "partial answer with more"),
+      makeBodyWithText("rcid-1", "partial answer with more final"),
+    ]);
+
+    const parsed = parseGeminiStreamGenerateResponse(raw);
+    expect(parsed.text).toBe("partial answer with more final");
+  });
+
+  it("still parses a single coalesced chunk", () => {
+    const raw = makeRawResponseWithBody(makeBodyWithText("rcid-1", "single-chunk reply"));
+
+    const parsed = parseGeminiStreamGenerateResponse(raw);
+    expect(parsed.text).toBe("single-chunk reply");
+  });
+
+  it("preserves the previous non-empty chunk when a later chunk has empty text", () => {
+    const raw = makeRawResponseWithBodies([
+      makeBodyWithText("rcid-1", "first answer"),
+      makeBodyWithText("rcid-1", ""),
+    ]);
+
+    const parsed = parseGeminiStreamGenerateResponse(raw);
+    expect(parsed.text).toBe("first answer");
   });
 
   it("extracts model-unavailable error code 1052 from response json", () => {
