@@ -1,7 +1,7 @@
 {
   "name": "@steipete/oracle",
   "version": "0.9.0",
-  "description": "CLI wrapper around OpenAI Responses API with GPT-5.4 Pro, GPT-5.4, GPT-5.2, GPT-5.1, and GPT-5.1 Codex high reasoning modes.",
+  "description": "CLI wrapper around OpenAI Responses API with GPT-5.5 Pro, GPT-5.5, GPT-5.4, GPT-5.2, GPT-5.1, and GPT-5.1 Codex high reasoning modes.",
   "keywords": [],
   "homepage": "https://github.com/steipete/oracle#readme",
   "bugs": {
@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
-    "@google/genai": "^1.50.1",
+    "@google/genai": "^1.51.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@steipete/sweet-cookie": "^0.2.0",
@@ -71,23 +71,23 @@
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
-    "openai": "^6.34.0",
+    "openai": "^6.35.0",
     "osc-progress": "^0.3.0",
     "qs": "^6.15.1",
     "shiki": "^4.0.2",
     "toasted-notifier": "^10.1.0",
     "tokentally": "^0.1.1",
-    "zod": "^4.3.6"
+    "zod": "^4.4.2"
   },
   "devDependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.6.0",
-    "@typescript/native-preview": "7.0.0-dev.20260427.1",
+    "@typescript/native-preview": "7.0.0-dev.20260503.1",
     "@vitest/coverage-v8": "4.1.5",
-    "devtools-protocol": "0.0.1619965",
-    "es-toolkit": "^1.46.0",
+    "devtools-protocol": "0.0.1624250",
+    "es-toolkit": "^1.46.1",
     "esbuild": "^0.28.0",
     "oxfmt": "0.47.0",
     "oxlint": "^1.62.0",

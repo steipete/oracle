@@ -8,7 +8,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
 {
   // Default engine when neither CLI flag nor env decide
   engine: "api", // or "browser"
-  model: "gpt-5.4-pro", // older gpt-5.x-pro aliases → gpt-5.4-pro
+  model: "gpt-5.5-pro", // older gpt-5.x-pro aliases → gpt-5.5-pro
   search: "on", // "on" | "off"
 
   notify: {
@@ -119,7 +119,7 @@ oracle \
 
 - `--timeout <seconds|auto>` controls the overall API deadline for a run.
 - `--http-timeout <ms|s|m|h>` overrides the HTTP client timeout for API requests (default 20m).
-- Defaults: `auto` = 60 m for `gpt-5.4-pro` (and CLI aliases that resolve to it); non-pro API models use `120s` if you don’t set a value.
+- Defaults: `auto` = 60 m for Pro models; non-pro API models use `120s` if you don’t set a value.
 - Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.
 
 ## Zombie/session staleness

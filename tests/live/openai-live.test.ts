@@ -66,12 +66,12 @@ if (!ENABLE_LIVE || !LIVE_API_KEY) {
     );
 
     test(
-      "gpt-5.4-pro background flow eventually completes",
+      "gpt-5.5-pro background flow eventually completes",
       async () => {
         const result = await runOracle(
           {
-            prompt: 'Reply with "live 5.4 pro smoke test" on a single line.',
-            model: "gpt-5.4-pro",
+            prompt: 'Reply with "live 5.5 pro smoke test" on a single line.',
+            model: "gpt-5.5-pro",
             silent: true,
             heartbeatIntervalMs: 2000,
             maxOutput: 64,
@@ -82,7 +82,7 @@ if (!ENABLE_LIVE || !LIVE_API_KEY) {
           throw new Error("Expected live result");
         }
         const text = extractTextOutput(result.response);
-        expect(text.toLowerCase()).toContain("live 5.4 pro smoke test");
+        expect(text.toLowerCase()).toContain("live 5.5 pro smoke test");
         expect(result.response.status ?? "completed").toBe("completed");
       },
       30 * 60 * 1000,
