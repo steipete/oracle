@@ -86,4 +86,10 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("label.includes('pro') && label.includes('extended')");
     expect(expression).toContain("desiredVersion === '5-5'");
   });
+
+  it("finds the rewritten ChatGPT composer pill model button", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
+    expect(expression).toContain('data-testid="model-switcher-dropdown-button"');
+    expect(expression).toContain("button.__composer-pill[aria-haspopup=");
+  });
 });
