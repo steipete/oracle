@@ -19,6 +19,7 @@ export {
   readAssistantSnapshot,
   captureAssistantMarkdown,
   buildAssistantExtractorForTest,
+  buildAssistantSnapshotExpressionForTest,
   buildConversationDebugExpressionForTest,
   buildMarkdownFallbackExtractorForTest,
   buildCopyExpressionForTest,

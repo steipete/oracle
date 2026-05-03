@@ -704,6 +704,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
     const normalizeForComparison = (text: string): string =>
       text.toLowerCase().replace(/\s+/g, " ").trim();
+    const expectedConversationId = () =>
+      lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
     const waitForFreshAssistantResponse = async (baselineNormalized: string, timeoutMs: number) => {
       const baselinePrefix =
         baselineNormalized.length >= 80
@@ -711,9 +713,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           : "";
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-          () => null,
-        );
+        const snapshot = await readAssistantSnapshot(
+          Runtime,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ).catch(() => null);
         const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
         if (text) {
           const normalized = normalizeForComparison(text);
@@ -794,12 +798,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           timeoutMs,
           logger,
           baselineTurns ?? undefined,
+          expectedConversationId(),
         ),
       );
       logger("Recovered assistant response after delayed recheck");
       return rechecked;
     };
     try {
+      await updateConversationHint("assistant-wait", 15_000).catch(() => false);
       answer = await raceWithDisconnect(
         waitForAssistantResponseWithReload(
           Runtime,
@@ -807,6 +813,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           config.timeoutMs,
           logger,
           baselineTurns ?? undefined,
+          expectedConversationId(),
         ),
       );
     } catch (error) {
@@ -896,9 +903,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }));
 
     // Final sanity check: ensure we didn't accidentally capture the user prompt instead of the assistant turn.
-    const finalSnapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-      () => null,
-    );
+    const finalSnapshot = await readAssistantSnapshot(
+      Runtime,
+      baselineTurns ?? undefined,
+      expectedConversationId(),
+    ).catch(() => null);
     const finalText = typeof finalSnapshot?.text === "string" ? finalSnapshot.text.trim() : "";
     if (finalText && finalText !== promptText.trim()) {
       const trimmedMarkdown = answerMarkdown.trim();
@@ -936,9 +945,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       let bestText: string | null = null;
       let stableCount = 0;
       while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-          () => null,
-        );
+        const snapshot = await readAssistantSnapshot(
+          Runtime,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ).catch(() => null);
         const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
         const isStillEcho = !text || Boolean(promptEchoMatcher?.isEcho(text));
         if (!isStillEcho) {
@@ -966,9 +977,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       let bestText = answerText.trim();
       let stableCycles = 0;
       while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-          () => null,
-        );
+        const snapshot = await readAssistantSnapshot(
+          Runtime,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ).catch(() => null);
         const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
         if (text && text.length > bestText.length) {
           bestText = text;
@@ -1526,6 +1539,8 @@ async function runRemoteBrowserMode(
     // Helper to normalize text for echo detection (collapse whitespace, lowercase)
     const normalizeForComparison = (text: string): string =>
       text.toLowerCase().replace(/\s+/g, " ").trim();
+    const expectedConversationId = () =>
+      lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
     const waitForFreshAssistantResponse = async (baselineNormalized: string, timeoutMs: number) => {
       const baselinePrefix =
         baselineNormalized.length >= 80
@@ -1533,9 +1548,11 @@ async function runRemoteBrowserMode(
           : "";
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-          () => null,
-        );
+        const snapshot = await readAssistantSnapshot(
+          Runtime,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ).catch(() => null);
         const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
         if (text) {
           const normalized = normalizeForComparison(text);
@@ -1613,17 +1630,24 @@ async function runRemoteBrowserMode(
         timeoutMs,
         logger,
         baselineTurns ?? undefined,
+        expectedConversationId(),
       );
       logger("Recovered assistant response after delayed recheck");
       return rechecked;
     };
     try {
+      const conversationUrl = await readConversationUrl(Runtime).catch(() => null);
+      if (conversationUrl && isConversationUrl(conversationUrl)) {
+        lastUrl = conversationUrl;
+        await emitRuntimeHint();
+      }
       answer = await waitForAssistantResponseWithReload(
         Runtime,
         Page,
         config.timeoutMs,
         logger,
         baselineTurns ?? undefined,
+        expectedConversationId(),
       );
     } catch (error) {
       if (isAssistantResponseTimeoutError(error)) {
@@ -1713,9 +1737,11 @@ async function runRemoteBrowserMode(
     }));
 
     // Final sanity check: ensure we didn't accidentally capture the user prompt instead of the assistant turn.
-    const finalSnapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-      () => null,
-    );
+    const finalSnapshot = await readAssistantSnapshot(
+      Runtime,
+      baselineTurns ?? undefined,
+      expectedConversationId(),
+    ).catch(() => null);
     const finalText = typeof finalSnapshot?.text === "string" ? finalSnapshot.text.trim() : "";
     if (
       finalText &&
@@ -1749,9 +1775,11 @@ async function runRemoteBrowserMode(
       let bestText: string | null = null;
       let stableCount = 0;
       while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(Runtime, baselineTurns ?? undefined).catch(
-          () => null,
-        );
+        const snapshot = await readAssistantSnapshot(
+          Runtime,
+          baselineTurns ?? undefined,
+          expectedConversationId(),
+        ).catch(() => null);
         const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
         const isStillEcho = !text || Boolean(promptEchoMatcher?.isEcho(text));
         if (!isStillEcho) {
@@ -1890,9 +1918,16 @@ async function waitForAssistantResponseWithReload(
   timeoutMs: number,
   logger: BrowserLogger,
   minTurnIndex?: number,
+  expectedConversationId?: string,
 ) {
   try {
-    return await waitForAssistantResponse(Runtime, timeoutMs, logger, minTurnIndex);
+    return await waitForAssistantResponse(
+      Runtime,
+      timeoutMs,
+      logger,
+      minTurnIndex,
+      expectedConversationId,
+    );
   } catch (error) {
     if (!shouldReloadAfterAssistantError(error)) {
       throw error;
@@ -1904,7 +1939,13 @@ async function waitForAssistantResponseWithReload(
     logger("Assistant response stalled; reloading conversation and retrying once");
     await Page.navigate({ url: conversationUrl });
     await delay(1000);
-    return await waitForAssistantResponse(Runtime, timeoutMs, logger, minTurnIndex);
+    return await waitForAssistantResponse(
+      Runtime,
+      timeoutMs,
+      logger,
+      minTurnIndex,
+      expectedConversationId,
+    );
   }
 }
 
