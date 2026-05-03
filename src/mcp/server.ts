@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import "dotenv/config";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getCliVersion } from "../version.js";
@@ -40,7 +41,14 @@ export async function startMcpServer(): Promise<void> {
   await closed;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("oracle-mcp")) {
+export function shouldStartMcpServerFromModule(
+  moduleUrl: string = import.meta.url,
+  argv1: string | undefined = process.argv[1],
+): boolean {
+  return argv1 ? moduleUrl === pathToFileURL(argv1).href : false;
+}
+
+if (shouldStartMcpServerFromModule()) {
   startMcpServer().catch((error) => {
     console.error("Failed to start oracle-mcp:", error);
     process.exitCode = 1;
