@@ -19,6 +19,7 @@ describe("buildBrowserConfig", () => {
       desiredModel: "GPT-5.4 Pro",
       debug: undefined,
       allowCookieErrors: true,
+      researchMode: "off",
     });
   });
 
@@ -33,6 +34,14 @@ describe("buildBrowserConfig", () => {
       browserModelStrategy: "current",
     });
     expect(config.modelStrategy).toBe("current");
+  });
+
+  test("enables Deep Research browser mode when requested", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.4-pro",
+      browserResearch: "deep",
+    });
+    expect(config.researchMode).toBe("deep");
   });
 
   test("honors overrides and converts durations + booleans", async () => {

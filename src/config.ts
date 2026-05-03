@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import JSON5 from "json5";
 import { getOracleHomeDir } from "./oracleHome.js";
-import type { BrowserModelStrategy } from "./browser/types.js";
+import type { BrowserModelStrategy, BrowserResearchMode } from "./browser/types.js";
 import type { ThinkingTimeLevel } from "./oracle/types.js";
 
 export type EnginePreference = "api" | "browser";
@@ -51,6 +51,8 @@ export interface BrowserConfigDefaults {
   modelStrategy?: BrowserModelStrategy;
   /** Thinking time intensity (ChatGPT Thinking/Pro models): 'light', 'standard', 'extended', 'heavy' */
   thinkingTime?: ThinkingTimeLevel;
+  /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
+  researchMode?: BrowserResearchMode;
   /** Skip cookie sync and reuse a persistent automation profile (waits for manual ChatGPT login). */
   manualLogin?: boolean;
   /** Manual-login profile directory override (also available via ORACLE_BROWSER_PROFILE_DIR). */

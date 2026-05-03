@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
-import { CHATGPT_URL } from "../../src/browser/constants.js";
+import { CHATGPT_URL, DEEP_RESEARCH_DEFAULT_TIMEOUT_MS } from "../../src/browser/constants.js";
 
 describe("resolveBrowserConfig", () => {
   test("returns defaults when config missing", () => {
@@ -12,6 +12,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.preventFocus).toBe(false);
     expect(resolved.manualLogin).toBe(isWindows);
     expect(resolved.profileLockTimeoutMs).toBe(300_000);
+    expect(resolved.researchMode).toBe("off");
   });
 
   test("applies overrides", () => {
@@ -26,6 +27,7 @@ describe("resolveBrowserConfig", () => {
       chromeProfile: "Profile 1",
       chromePath: "/Applications/Chrome",
       debug: true,
+      researchMode: "deep",
     });
     expect(resolved.url).toBe("https://example.com/");
     expect(resolved.timeoutMs).toBe(123);
@@ -37,6 +39,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.chromeProfile).toBe("Profile 1");
     expect(resolved.chromePath).toBe("/Applications/Chrome");
     expect(resolved.debug).toBe(true);
+    expect(resolved.researchMode).toBe("deep");
   });
 
   test("rejects temporary chat URLs when desiredModel is Pro", () => {
@@ -46,5 +49,12 @@ describe("resolveBrowserConfig", () => {
         desiredModel: "GPT-5.2 Pro",
       }),
     ).toThrow(/Temporary Chat/i);
+  });
+
+  test("uses the longer Deep Research timeout unless explicitly overridden", () => {
+    expect(resolveBrowserConfig({ researchMode: "deep" }).timeoutMs).toBe(
+      DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
+    );
+    expect(resolveBrowserConfig({ researchMode: "deep", timeoutMs: 123 }).timeoutMs).toBe(123);
   });
 });
