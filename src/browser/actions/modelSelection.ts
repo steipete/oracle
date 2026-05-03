@@ -1,5 +1,6 @@
 import type { ChromeClient, BrowserLogger, BrowserModelStrategy } from "../types.js";
 import {
+  COMPOSER_MODEL_SIGNAL_SELECTOR,
   MENU_CONTAINER_SELECTOR,
   MENU_ITEM_SELECTOR,
   MODEL_BUTTON_SELECTOR,
@@ -67,23 +68,33 @@ function buildModelSelectionExpression(
   strategy: BrowserModelStrategy,
 ): string {
   const matchers = buildModelMatchersLiteral(targetModel);
+  const composerSignalMatchers = buildComposerSignalMatchers(targetModel);
   const labelLiteral = JSON.stringify(matchers.labelTokens);
   const idLiteral = JSON.stringify(matchers.testIdTokens);
   const primaryLabelLiteral = JSON.stringify(targetModel);
   const strategyLiteral = JSON.stringify(strategy);
+  const composerSignalSelectorLiteral = JSON.stringify(COMPOSER_MODEL_SIGNAL_SELECTOR);
+  const composerIncludesLiteral = JSON.stringify(composerSignalMatchers.includesAny);
+  const composerExcludesLiteral = JSON.stringify(composerSignalMatchers.excludesAny);
+  const composerAllowBlankLiteral = JSON.stringify(composerSignalMatchers.allowBlank);
   const menuContainerLiteral = JSON.stringify(MENU_CONTAINER_SELECTOR);
   const menuItemLiteral = JSON.stringify(MENU_ITEM_SELECTOR);
   return `(() => {
     ${buildClickDispatcher()}
     // Capture the selectors and matcher literals up front so the browser expression stays pure.
     const BUTTON_SELECTOR = '${MODEL_BUTTON_SELECTOR}';
+    const COMPOSER_MODEL_SIGNAL_SELECTOR = ${composerSignalSelectorLiteral};
     const LABEL_TOKENS = ${labelLiteral};
     const TEST_IDS = ${idLiteral};
     const PRIMARY_LABEL = ${primaryLabelLiteral};
     const MODEL_STRATEGY = ${strategyLiteral};
+    const COMPOSER_SIGNAL_INCLUDES = ${composerIncludesLiteral};
+    const COMPOSER_SIGNAL_EXCLUDES = ${composerExcludesLiteral};
+    const COMPOSER_SIGNAL_ALLOW_BLANK = ${composerAllowBlankLiteral};
     const INITIAL_WAIT_MS = 150;
     const REOPEN_INTERVAL_MS = 400;
     const MAX_WAIT_MS = 20000;
+    const SETTLE_WAIT_MS = 1500;
     const normalizeText = (value) => {
       if (!value) {
         return '';
@@ -152,8 +163,12 @@ function buildModelSelectionExpression(
     };
 
     const getButtonLabel = () => (button.textContent ?? '').trim();
+    const getComposerModelLabel = () =>
+      (document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR)?.textContent ?? '').trim();
+    const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
+    const getResolvedLabel = (fallback) => getComposerModelLabel() || getButtonLabel() || fallback;
     if (MODEL_STRATEGY === 'current') {
-      return { status: 'already-selected', label: getButtonLabel() };
+      return { status: 'already-selected', label: getResolvedLabel(PRIMARY_LABEL) };
     }
     const buttonMatchesTarget = () => {
       const normalizedLabel = normalizeText(getButtonLabel());
@@ -175,9 +190,47 @@ function buildModelSelectionExpression(
       if (!wantsThinking && normalizedLabel.includes('thinking')) return false;
       return true;
     };
+    const buttonHasGenericLabel = () => {
+      const normalizedLabel = normalizeText(getButtonLabel());
+      return !normalizedLabel || normalizedLabel === 'chatgpt';
+    };
+    const composerSignalMatchesTarget = () => {
+      const signal = readComposerModelSignal();
+      if (!signal) {
+        return COMPOSER_SIGNAL_ALLOW_BLANK;
+      }
+      if (COMPOSER_SIGNAL_EXCLUDES.some((token) => token && signal.includes(token))) {
+        return false;
+      }
+      if (COMPOSER_SIGNAL_INCLUDES.length === 0) {
+        return true;
+      }
+      return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
+    };
+    const activeSelectionMatchesTarget = () => {
+      if (buttonMatchesTarget()) {
+        return true;
+      }
+      if (!buttonHasGenericLabel()) {
+        return false;
+      }
+      return composerSignalMatchesTarget();
+    };
+    const selectionStateChanged = (previousButtonLabel, previousComposerSignal) => {
+      const currentButtonLabel = normalizeText(getButtonLabel());
+      const currentComposerSignal = readComposerModelSignal();
+      if (
+        currentButtonLabel &&
+        currentButtonLabel !== previousButtonLabel &&
+        !buttonHasGenericLabel()
+      ) {
+        return true;
+      }
+      return currentComposerSignal !== previousComposerSignal;
+    };
 
-    if (buttonMatchesTarget()) {
-      return { status: 'already-selected', label: getButtonLabel() };
+    if (activeSelectionMatchesTarget()) {
+      return { status: 'already-selected', label: getResolvedLabel(PRIMARY_LABEL) };
     }
 
     let lastPointerClick = 0;
@@ -204,7 +257,7 @@ function buildModelSelectionExpression(
       if (dataSelected === 'true' || selectedStates.includes(dataState)) {
         return true;
       }
-      if (node.querySelector('[data-testid*="check"], [role="img"][data-icon="check"], svg[data-icon="check"]')) {
+      if (node.querySelector('[data-testid*="check"], [role="img"][data-icon="check"], svg[data-icon="check"], .trailing svg')) {
         return true;
       }
       return false;
@@ -365,6 +418,24 @@ function buildModelSelectionExpression(
       }
       return bestMatch;
     };
+    const waitForTargetSelection = (previousButtonLabel, previousComposerSignal) => new Promise((resolve) => {
+      const waitStart = performance.now();
+      const check = () => {
+        if (
+          activeSelectionMatchesTarget() ||
+          selectionStateChanged(previousButtonLabel, previousComposerSignal)
+        ) {
+          resolve(true);
+          return;
+        }
+        if (performance.now() - waitStart > SETTLE_WAIT_MS) {
+          resolve(false);
+          return;
+        }
+        setTimeout(check, 100);
+      };
+      check();
+    });
 
     return new Promise((resolve) => {
       const start = performance.now();
@@ -409,11 +480,13 @@ function buildModelSelectionExpression(
         ensureMenuOpen();
         const match = findBestOption();
         if (match) {
-          if (optionIsSelected(match.node)) {
+          if (optionIsSelected(match.node) || activeSelectionMatchesTarget()) {
             closeMenu();
-            resolve({ status: 'already-selected', label: getButtonLabel() || match.label });
+            resolve({ status: 'already-selected', label: getResolvedLabel(match.label) });
             return;
           }
+          const previousButtonLabel = normalizeText(getButtonLabel());
+          const previousComposerSignal = readComposerModelSignal();
           dispatchClickSequence(match.node);
           // Submenus (e.g. "Legacy models") need a second pass to pick the actual model option.
           // Keep scanning once the submenu opens instead of treating the submenu click as a final switch.
@@ -422,15 +495,15 @@ function buildModelSelectionExpression(
             setTimeout(attempt, REOPEN_INTERVAL_MS / 2);
             return;
           }
-          // Wait for the top bar label to reflect the requested model; otherwise keep scanning.
-          setTimeout(() => {
-            if (buttonMatchesTarget()) {
+          // Wait for the selected model signal to settle before reopening the picker.
+          waitForTargetSelection(previousButtonLabel, previousComposerSignal).then((selectionSettled) => {
+            if (selectionSettled) {
               closeMenu();
-              resolve({ status: 'switched', label: getButtonLabel() || match.label });
+              resolve({ status: 'switched', label: getResolvedLabel(match.label) });
               return;
             }
             attempt();
-          }, Math.max(120, INITIAL_WAIT_MS));
+          });
           return;
         }
         if (performance.now() - start > MAX_WAIT_MS) {
@@ -449,6 +522,36 @@ function buildModelSelectionExpression(
 
 export function buildModelMatchersLiteralForTest(targetModel: string) {
   return buildModelMatchersLiteral(targetModel);
+}
+
+type ComposerSignalMatchers = {
+  includesAny: string[];
+  excludesAny: string[];
+  allowBlank: boolean;
+};
+
+function buildComposerSignalMatchers(targetModel: string): ComposerSignalMatchers {
+  const normalized = targetModel
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (normalized.includes("pro")) {
+    return { includesAny: ["pro"], excludesAny: ["thinking"], allowBlank: false };
+  }
+  if (normalized.includes("thinking")) {
+    return { includesAny: ["thinking"], excludesAny: ["pro"], allowBlank: false };
+  }
+  if (normalized.includes("instant")) {
+    return { includesAny: [], excludesAny: ["thinking", "pro"], allowBlank: true };
+  }
+  return { includesAny: [], excludesAny: ["thinking", "pro"], allowBlank: true };
+}
+
+export function buildComposerSignalMatchersForTest(targetModel: string): ComposerSignalMatchers {
+  return buildComposerSignalMatchers(targetModel);
 }
 
 function buildModelMatchersLiteral(targetModel: string): {
