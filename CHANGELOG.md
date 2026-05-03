@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- OpenAI: switch the default model to `gpt-5.5-pro`, add explicit `gpt-5.5` support, and roll older Pro CLI aliases (`gpt-5.1-pro`, `gpt-5.2-pro`) forward to the current Pro API target.
+- Browser: target ChatGPT `GPT-5.5 Pro` by default for Pro browser runs and recognize current GPT-5.5 picker labels such as `Pro Extended` and `Thinking Heavy`.
+- Dependencies: update the npm dependency set.
+
 ## 0.9.0 — 2026-03-08
 
 ### Changed
