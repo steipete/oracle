@@ -224,7 +224,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   try {
     try {
       const strictTabIsolation = Boolean(manualLogin && reusedChrome);
-      const connection = await connectWithNewTab(chrome.port, logger, undefined, chromeHost, {
+      const connection = await connectWithNewTab(chrome.port, logger, config.url, chromeHost, {
         fallbackToDefault: !strictTabIsolation,
         retries: strictTabIsolation ? 3 : 0,
         retryDelayMs: 500,
