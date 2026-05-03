@@ -48,6 +48,26 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const has55 =");
   });
 
+  it("hard-rejects Thinking and Instant picker rows for a Pro target", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
+    expect(expression).toContain("const candidateCompatible = () =>");
+    expect(expression).toContain("if (!candidateHasPro) return false;");
+    expect(expression).toContain("if (candidateHasThinking || candidateHasInstant) return false;");
+  });
+
+  it("does not accept a selected picker row unless the composer label matches the target", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
+    expect(expression).toContain("if (optionIsSelected(match.node))");
+    expect(expression).toContain("if (buttonMatchesTarget())");
+  });
+
+  it("accepts ChatGPT's generic Pro pill for the latest Pro target", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
+    expect(expression).toContain("const genericProPill =");
+    expect(expression).toContain("wantsPro && labelHasPro");
+    expect(expression).toContain("!labelHasThinking && !labelHasInstant");
+  });
+
   it("recognizes the composer pill as the current ChatGPT model switcher", () => {
     const expression = buildModelSelectionExpressionForTest("GPT-5.5 Pro");
     expect(expression).toContain("button.__composer-pill");

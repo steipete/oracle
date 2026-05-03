@@ -232,20 +232,37 @@ function buildModelSelectionExpression(
       if (!button) return false;
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
+      const labelWords = normalizedLabel.split(' ').filter(Boolean);
+      const labelHasPro =
+        labelWords.includes('pro') ||
+        normalizedLabel.includes('proresearch') ||
+        normalizedLabel.includes('research grade') ||
+        normalizedLabel.includes('advanced reasoning');
+      const labelHasThinking = labelWords.includes('thinking');
+      const labelHasInstant = labelWords.includes('instant');
+      const labelHasVersion =
+        normalizedLabel.includes('5 5') ||
+        normalizedLabel.includes('5 4') ||
+        normalizedLabel.includes('5 2') ||
+        normalizedLabel.includes('5 1') ||
+        normalizedLabel.includes('5 0');
       if (desiredVersion) {
-        if (desiredVersion === '5-5' && !normalizedLabel.includes('5 5')) return false;
-        if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
-        if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
-        if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;
-        if (desiredVersion === '5-0' && !normalizedLabel.includes('5 0')) return false;
+        const genericProPill = wantsPro && labelHasPro && !labelHasThinking && !labelHasInstant && !labelHasVersion;
+        if (!genericProPill) {
+          if (desiredVersion === '5-5' && !normalizedLabel.includes('5 5')) return false;
+          if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
+          if (desiredVersion === '5-2' && !normalizedLabel.includes('5 2')) return false;
+          if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;
+          if (desiredVersion === '5-0' && !normalizedLabel.includes('5 0')) return false;
+        }
       }
-      if (wantsPro && !normalizedLabel.includes(' pro')) return false;
-      if (wantsInstant && !normalizedLabel.includes('instant')) return false;
-      if (wantsThinking && !normalizedLabel.includes('thinking')) return false;
+      if (wantsPro && !labelHasPro) return false;
+      if (wantsInstant && !labelHasInstant) return false;
+      if (wantsThinking && !labelHasThinking) return false;
       // Also reject if button has variants we DON'T want
-      if (!wantsPro && normalizedLabel.includes(' pro')) return false;
-      if (!wantsInstant && normalizedLabel.includes('instant')) return false;
-      if (!wantsThinking && normalizedLabel.includes('thinking')) return false;
+      if (!wantsPro && labelHasPro) return false;
+      if (!wantsInstant && labelHasInstant) return false;
+      if (!wantsThinking && labelHasThinking) return false;
       return true;
     };
 
@@ -294,50 +311,93 @@ function buildModelSelectionExpression(
       }
       let score = 0;
       const normalizedTestId = (testid ?? '').toLowerCase();
+      const hasWord = (value, word) => value.split(' ').includes(word);
+      const detectVersion = (value) => {
+        if (!value) return null;
+        const normalized = value.toLowerCase();
+        const has55 =
+          normalized.includes('5 5') ||
+          normalized.includes('5-5') ||
+          normalized.includes('5.5') ||
+          normalized.includes('gpt-5-5') ||
+          normalized.includes('gpt-5.5') ||
+          normalized.includes('gpt55');
+        const has54 =
+          normalized.includes('5 4') ||
+          normalized.includes('5-4') ||
+          normalized.includes('5.4') ||
+          normalized.includes('gpt-5-4') ||
+          normalized.includes('gpt-5.4') ||
+          normalized.includes('gpt54');
+        const has52 =
+          normalized.includes('5 2') ||
+          normalized.includes('5-2') ||
+          normalized.includes('5.2') ||
+          normalized.includes('gpt-5-2') ||
+          normalized.includes('gpt-5.2') ||
+          normalized.includes('gpt52');
+        const has51 =
+          normalized.includes('5 1') ||
+          normalized.includes('5-1') ||
+          normalized.includes('5.1') ||
+          normalized.includes('gpt-5-1') ||
+          normalized.includes('gpt-5.1') ||
+          normalized.includes('gpt51');
+        const has50 =
+          normalized.includes('5 0') ||
+          normalized.includes('5-0') ||
+          normalized.includes('5.0') ||
+          normalized.includes('gpt-5-0') ||
+          normalized.includes('gpt-5.0') ||
+          normalized.includes('gpt50');
+        return has55
+          ? '5-5'
+          : has54
+            ? '5-4'
+            : has52
+              ? '5-2'
+              : has51
+                ? '5-1'
+                : has50
+                  ? '5-0'
+                  : null;
+      };
+      const candidateText = [normalizedText, normalizedTestId].join(' ');
+      const candidateVersion = detectVersion(candidateText);
+      const candidateHasPro =
+        hasWord(normalizedText, 'pro') ||
+        normalizedTestId.includes('pro') ||
+        normalizedText.includes('proresearch') ||
+        normalizedText.includes('research grade') ||
+        normalizedText.includes('advanced reasoning');
+      const candidateHasThinking =
+        hasWord(normalizedText, 'thinking') || normalizedTestId.includes('thinking');
+      const candidateHasInstant =
+        hasWord(normalizedText, 'instant') || normalizedTestId.includes('instant');
+      const candidateCompatible = () => {
+        if (desiredVersion && candidateVersion && candidateVersion !== desiredVersion) {
+          return false;
+        }
+        if (wantsPro) {
+          if (!candidateHasPro) return false;
+          if (candidateHasThinking || candidateHasInstant) return false;
+        }
+        if (wantsThinking) {
+          if (!candidateHasThinking) return false;
+          if (candidateHasPro || candidateHasInstant) return false;
+        }
+        if (wantsInstant) {
+          if (!candidateHasInstant) return false;
+          if (candidateHasPro || candidateHasThinking) return false;
+        }
+        return true;
+      };
+      if (!candidateCompatible()) {
+        return 0;
+      }
       if (normalizedTestId) {
         if (desiredVersion) {
           // data-testid strings have been observed with both dotted and dashed versions (e.g. gpt-5.2-pro vs gpt-5-2-pro).
-          const has55 =
-            normalizedTestId.includes('5-5') ||
-            normalizedTestId.includes('5.5') ||
-            normalizedTestId.includes('gpt-5-5') ||
-            normalizedTestId.includes('gpt-5.5') ||
-            normalizedTestId.includes('gpt55');
-          const has52 =
-            normalizedTestId.includes('5-2') ||
-            normalizedTestId.includes('5.2') ||
-            normalizedTestId.includes('gpt-5-2') ||
-            normalizedTestId.includes('gpt-5.2') ||
-            normalizedTestId.includes('gpt52');
-          const has54 =
-            normalizedTestId.includes('5-4') ||
-            normalizedTestId.includes('5.4') ||
-            normalizedTestId.includes('gpt-5-4') ||
-            normalizedTestId.includes('gpt-5.4') ||
-            normalizedTestId.includes('gpt54');
-          const has51 =
-            normalizedTestId.includes('5-1') ||
-            normalizedTestId.includes('5.1') ||
-            normalizedTestId.includes('gpt-5-1') ||
-            normalizedTestId.includes('gpt-5.1') ||
-            normalizedTestId.includes('gpt51');
-          const has50 =
-            normalizedTestId.includes('5-0') ||
-            normalizedTestId.includes('5.0') ||
-            normalizedTestId.includes('gpt-5-0') ||
-            normalizedTestId.includes('gpt-5.0') ||
-            normalizedTestId.includes('gpt50');
-          const candidateVersion = has55
-            ? '5-5'
-            : has54
-              ? '5-4'
-              : has52
-                ? '5-2'
-                : has51
-                  ? '5-1'
-                  : has50
-                    ? '5-0'
-                    : null;
           // If a candidate advertises a different version, ignore it entirely.
           if (candidateVersion && candidateVersion !== desiredVersion) {
             return 0;
@@ -502,11 +562,16 @@ function buildModelSelectionExpression(
         const match = findBestOption();
         if (match) {
           if (optionIsSelected(match.node)) {
-            closeMenu();
-            resolve({ status: 'already-selected', label: getButtonLabel() || match.label });
-            return;
+            if (buttonMatchesTarget()) {
+              closeMenu();
+              resolve({ status: 'already-selected', label: getButtonLabel() || match.label });
+              return;
+            }
+            dispatchClickSequence(match.node);
           }
-          dispatchClickSequence(match.node);
+          if (!optionIsSelected(match.node)) {
+            dispatchClickSequence(match.node);
+          }
           // Submenus (e.g. "Legacy models") need a second pass to pick the actual model option.
           // Keep scanning once the submenu opens instead of treating the submenu click as a final switch.
           const isSubmenu = (match.testid ?? '').toLowerCase().includes('submenu');
