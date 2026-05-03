@@ -64,6 +64,21 @@ export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } fro
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
 export { parseDuration, delay, normalizeChatgptUrl, isTemporaryChatUrl } from "./utils.js";
 
+function redactBrowserConfigForDebugLog(config: Record<string, unknown>): Record<string, unknown> {
+  const redacted = { ...config };
+  if (Array.isArray(config.inlineCookies)) {
+    redacted.inlineCookies = `[redacted:${config.inlineCookies.length} cookies]`;
+    redacted.inlineCookieCount = config.inlineCookies.length;
+  }
+  return redacted;
+}
+
+export function redactBrowserConfigForDebugLogForTest(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  return redactBrowserConfigForDebugLog(config);
+}
+
 function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
   if (!(error instanceof BrowserAutomationError)) return false;
   return (error.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
@@ -122,7 +137,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   if (config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") {
     logger(
       `[browser-mode] config: ${JSON.stringify({
-        ...config,
+        ...redactBrowserConfigForDebugLog(config),
         promptLength: promptText.length,
       })}`,
     );
@@ -2145,7 +2160,38 @@ async function resolveUserDataBaseDir(): Promise<string> {
       }
     }
   }
-  return os.tmpdir();
+  const tmpDir = os.tmpdir();
+  if (shouldPreferSystemTmpDir(process.platform, tmpDir, os.homedir())) {
+    try {
+      await mkdir("/tmp", { recursive: true });
+      return "/tmp";
+    } catch {
+      // Fall back to the inherited tmpdir if /tmp is unavailable.
+    }
+  }
+  return tmpDir;
+}
+
+function shouldPreferSystemTmpDir(
+  platform: NodeJS.Platform,
+  tmpDir: string,
+  homeDir: string,
+): boolean {
+  if (platform !== "linux" || !tmpDir || !homeDir) return false;
+  const relativeToHome = path.relative(homeDir, tmpDir);
+  if (!relativeToHome || relativeToHome.startsWith("..") || path.isAbsolute(relativeToHome)) {
+    return false;
+  }
+  const firstSegment = relativeToHome.split(path.sep, 1)[0];
+  return Boolean(firstSegment?.startsWith("."));
+}
+
+export function shouldPreferSystemTmpDirForTest(
+  platform: NodeJS.Platform,
+  tmpDir: string,
+  homeDir: string,
+): boolean {
+  return shouldPreferSystemTmpDir(platform, tmpDir, homeDir);
 }
 
 function buildThinkingStatusExpression(): string {

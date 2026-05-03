@@ -16,6 +16,7 @@
 - Browser: open isolated local browser tabs directly on the configured ChatGPT URL instead of starting at `about:blank` and navigating later. (#139) — thanks @betamod.
 - MCP: prevent the stdio server from auto-starting a second time when imported by an `oracle-mcp` bin shim. (#137) — thanks @SyntaxSmith.
 - Gemini web: honor resolved manual-login browser profile directories when launching Gemini browser sessions. (#124) — thanks @blackopsrepl.
+- Browser: avoid Linux hidden-home temp dirs for ephemeral Chrome profiles and redact inline cookie values in low-level debug config logs. (#136) — thanks @lodekeeper.
 
 ## 0.9.0 — 2026-03-08
 
