@@ -19,6 +19,7 @@
 - Browser: avoid Linux hidden-home temp dirs for ephemeral Chrome profiles and redact inline cookie values in low-level debug config logs. (#136) — thanks @lodekeeper.
 - Browser: fail attachment submissions before send instead of falling back to Enter after upload/send-readiness timeouts. (#115, #116) — thanks @HeMuling.
 - Browser: stabilize localized ChatGPT model selection when the header stays generic by waiting on composer-footer model state changes. (#118) — thanks @dedene.
+- CLI: accept `-p -` / `--prompt -` to read the prompt from stdin. (#117) — thanks @frankekn.
 
 ## 0.9.0 — 2026-03-08
 
