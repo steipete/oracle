@@ -15,6 +15,7 @@
 - Browser: track ChatGPT's composer rewrite by matching the new `__composer-pill` model button and selecting thinking effort from the model menu's per-row effort control, with bilingual label matching and old-chip fallback. (#146) — thanks @SyntaxSmith.
 - Browser: open isolated local browser tabs directly on the configured ChatGPT URL instead of starting at `about:blank` and navigating later. (#139) — thanks @betamod.
 - MCP: prevent the stdio server from auto-starting a second time when imported by an `oracle-mcp` bin shim. (#137) — thanks @SyntaxSmith.
+- Gemini web: honor resolved manual-login browser profile directories when launching Gemini browser sessions. (#124) — thanks @blackopsrepl.
 
 ## 0.9.0 — 2026-03-08
 
