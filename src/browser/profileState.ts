@@ -75,6 +75,56 @@ export async function writeChromePid(userDataDir: string, pid: number): Promise<
   }
 }
 
+export interface RunningChromeDebugTarget {
+  pid: number;
+  port: number;
+}
+
+export async function findRunningChromeDebugTargetForProfile(
+  userDataDir: string,
+): Promise<RunningChromeDebugTarget | null> {
+  if (process.platform === "win32") {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("ps", ["-ax", "-o", "pid=", "-o", "command="], {
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return findChromeDebugTargetForProfileFromProcessList(String(stdout ?? ""), userDataDir);
+  } catch {
+    return null;
+  }
+}
+
+function findChromeDebugTargetForProfileFromProcessList(
+  processList: string,
+  userDataDir: string,
+): RunningChromeDebugTarget | null {
+  for (const line of processList.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!match) continue;
+    const pid = Number.parseInt(match[1] ?? "", 10);
+    const command = match[2] ?? "";
+    const lower = command.toLowerCase();
+    if (!Number.isFinite(pid) || pid <= 0) continue;
+    if (!lower.includes("chrome") && !lower.includes("chromium")) continue;
+    if (!lower.includes("user-data-dir") || !command.includes(userDataDir)) continue;
+    const portMatch = command.match(/--remote-debugging-port(?:=|\s+)(\d+)/);
+    const port = Number.parseInt(portMatch?.[1] ?? "", 10);
+    if (!Number.isFinite(port) || port <= 0) continue;
+    return { pid, port };
+  }
+  return null;
+}
+
+export function findChromeDebugTargetForProfileFromProcessListForTest(
+  processList: string,
+  userDataDir: string,
+): RunningChromeDebugTarget | null {
+  return findChromeDebugTargetForProfileFromProcessList(processList, userDataDir);
+}
+
 export async function terminateRecordedChromeForProfile(
   userDataDir: string,
   logger?: ProfileStateLogger,

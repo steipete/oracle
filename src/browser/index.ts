@@ -50,6 +50,7 @@ import type { ProfileRunLock } from "./profileState.js";
 import {
   cleanupStaleProfileState,
   acquireProfileRunLock,
+  findRunningChromeDebugTargetForProfile,
   readChromePid,
   readDevToolsPort,
   shouldCleanupManualLoginProfileState,
@@ -1450,7 +1451,33 @@ async function maybeReuseRunningChrome(
       port = await readDevToolsPort(userDataDir);
     }
   }
-  if (!port) return null;
+  let pid = await readChromePid(userDataDir);
+  if (!port) {
+    const discovered = await findRunningChromeDebugTargetForProfile(userDataDir);
+    if (!discovered) return null;
+    const discoveredProbe = await (options.probe ?? verifyDevToolsReachable)({
+      port: discovered.port,
+    });
+    if (!discoveredProbe.ok) {
+      logger(
+        `Discovered Chrome for ${userDataDir} on port ${discovered.port} but it was unreachable (${discoveredProbe.error}); launching new Chrome.`,
+      );
+      return null;
+    }
+    await writeDevToolsActivePort(userDataDir, discovered.port);
+    await writeChromePid(userDataDir, discovered.pid);
+    port = discovered.port;
+    pid = discovered.pid;
+    logger(
+      `Discovered running Chrome for ${userDataDir}; reusing (DevTools port ${port}, pid ${pid})`,
+    );
+    return {
+      port,
+      pid,
+      kill: async () => {},
+      process: undefined,
+    } as unknown as LaunchedChrome;
+  }
 
   const probe = await (options.probe ?? verifyDevToolsReachable)({ port });
   if (!probe.ok) {
@@ -1462,7 +1489,6 @@ async function maybeReuseRunningChrome(
     return null;
   }
 
-  const pid = await readChromePid(userDataDir);
   logger(
     `Found running Chrome for ${userDataDir}; reusing (DevTools port ${port}${pid ? `, pid ${pid}` : ""})`,
   );
