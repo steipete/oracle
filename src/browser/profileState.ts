@@ -75,6 +75,47 @@ export async function writeChromePid(userDataDir: string, pid: number): Promise<
   }
 }
 
+export async function terminateRecordedChromeForProfile(
+  userDataDir: string,
+  logger?: ProfileStateLogger,
+): Promise<boolean> {
+  const pid = await readChromePid(userDataDir);
+  if (!pid || !isProcessAlive(pid)) {
+    return false;
+  }
+  const command = await readProcessCommand(pid);
+  if (!isChromeCommandForUserDataDir(command, userDataDir)) {
+    logger?.(`Recorded Chrome pid ${pid} does not match ${userDataDir}; skipping termination`);
+    return false;
+  }
+  try {
+    process.kill(pid, "SIGTERM");
+    logger?.(`Terminated shared manual-login Chrome pid ${pid}`);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.(`Failed to terminate shared manual-login Chrome pid ${pid}: ${message}`);
+    return false;
+  }
+}
+
+function isChromeCommandForUserDataDir(command: string | null, userDataDir: string): boolean {
+  if (!command) return false;
+  const lower = command.toLowerCase();
+  return (
+    (lower.includes("chrome") || lower.includes("chromium")) &&
+    lower.includes("user-data-dir") &&
+    command.includes(userDataDir)
+  );
+}
+
+export function isChromeCommandForUserDataDirForTest(
+  command: string | null,
+  userDataDir: string,
+): boolean {
+  return isChromeCommandForUserDataDir(command, userDataDir);
+}
+
 export function isProcessAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 0) return false;
   try {
@@ -342,4 +383,20 @@ async function isChromeUsingUserDataDir(userDataDir: string): Promise<boolean> {
     // best effort
   }
   return false;
+}
+
+async function readProcessCommand(pid: number): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      "ps",
+      ["-p", String(Math.trunc(pid)), "-o", "command="],
+      {
+        maxBuffer: 1024 * 1024,
+      },
+    );
+    const command = String(stdout ?? "").trim();
+    return command || null;
+  } catch {
+    return null;
+  }
 }

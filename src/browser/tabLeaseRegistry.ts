@@ -162,6 +162,31 @@ export async function releaseBrowserTabLease(
   logger?.(`[browser] Released ChatGPT browser slot ${leaseId.slice(0, 8)}.`);
 }
 
+export async function hasOtherActiveBrowserTabLeases(
+  profileDir: string,
+  leaseId: string,
+  options: {
+    staleMs?: number;
+    now?: () => number;
+    isProcessAlive?: (pid: number) => boolean;
+  } = {},
+): Promise<boolean> {
+  const now = options.now ?? Date.now;
+  const staleMs = Math.max(60_000, options.staleMs ?? DEFAULT_STALE_MS);
+  return withRegistryLock(profileDir, async () => {
+    const registry = await readRegistry(profileDir);
+    const active = pruneStaleLeases(registry.leases, {
+      nowMs: now(),
+      staleMs,
+      isProcessAlive: options.isProcessAlive ?? isProcessAlive,
+    });
+    if (active.length !== registry.leases.length) {
+      await writeRegistry(profileDir, { version: 1, leases: active });
+    }
+    return active.some((lease) => lease.id !== leaseId);
+  });
+}
+
 async function withRegistryLock<T>(profileDir: string, callback: () => Promise<T>): Promise<T> {
   const lockDir = path.join(profileDir, REGISTRY_LOCK_DIRNAME);
   const startedAt = Date.now();

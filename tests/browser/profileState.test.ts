@@ -159,4 +159,21 @@ describe("profileState", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("matches recorded Chrome commands to the expected profile", () => {
+    const dir = "/Users/example/.oracle/browser-profile";
+    expect(
+      profileState.isChromeCommandForUserDataDirForTest(
+        `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=${dir}`,
+        dir,
+      ),
+    ).toBe(true);
+    expect(
+      profileState.isChromeCommandForUserDataDirForTest(
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/tmp/other",
+        dir,
+      ),
+    ).toBe(false);
+    expect(profileState.isChromeCommandForUserDataDirForTest("node worker.js", dir)).toBe(false);
+  });
 });

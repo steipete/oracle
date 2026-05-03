@@ -134,7 +134,9 @@ oracle --engine browser \
 
 When Codex, Claude Code, or another Oracle caller share the same manual-login profile, each browser run now acquires a tab slot before opening a ChatGPT tab. The default allows three simultaneous ChatGPT tabs; the fourth caller waits instead of failing because another agent is already using the browser. This is most useful for long Pro/Thinking runs where one agent may wait for a response while another agent needs to start a separate consult.
 
-Use `--browser-max-concurrent-tabs <n>` or `browser.maxConcurrentTabs` to tune the soft limit. Keep the value modest: too many concurrent ChatGPT tabs can make the UI unstable or trigger account-side throttling. The short profile lock still serializes the send/upload moment so separate agents do not type into the same composer.
+Use `--browser-max-concurrent-tabs <n>` or `browser.maxConcurrentTabs` to tune the soft limit. Keep the value modest: too many concurrent ChatGPT tabs can make the UI unstable or trigger account-side throttling. Oracle also serializes manual-login Chrome startup for the shared profile, then reuses the first reachable DevTools session instead of racing multiple Chrome launches against the same `user-data-dir`. The short profile lock still serializes the send/upload moment so separate agents do not type into the same composer.
+
+For live concurrency smoke, the most stable path is one already-running signed-in Chrome with remote debugging enabled, plus `--remote-chrome <host:port>`. Direct parallel launch is supported defensively, but a persistent shared Chrome gives clearer ownership and avoids account/login churn across agents.
 
 ## Remote Chrome Sessions (headless/server workflows)
 

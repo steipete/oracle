@@ -4,6 +4,7 @@ import path from "node:path";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import {
   acquireBrowserTabLease,
+  hasOtherActiveBrowserTabLeases,
   normalizeMaxConcurrentTabs,
 } from "../../src/browser/tabLeaseRegistry.js";
 
@@ -94,6 +95,31 @@ describe("tabLeaseRegistry", () => {
       });
 
       await fresh.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("detects other active leases before releasing a shared Chrome owner", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    try {
+      const first = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 3,
+        timeoutMs: 500,
+        sessionId: "first-session",
+      });
+      const second = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 3,
+        timeoutMs: 500,
+        sessionId: "second-session",
+      });
+
+      expect(await hasOtherActiveBrowserTabLeases(dir, first.id)).toBe(true);
+
+      await second.release();
+      expect(await hasOtherActiveBrowserTabLeases(dir, first.id)).toBe(false);
+
+      await first.release();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
