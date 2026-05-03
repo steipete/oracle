@@ -1,8 +1,20 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
+import os from "node:os";
+import path from "node:path";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
 import { CHATGPT_URL } from "../../src/browser/constants.js";
 
 describe("resolveBrowserConfig", () => {
+  const originalProfileDir = process.env.ORACLE_BROWSER_PROFILE_DIR;
+
+  afterEach(() => {
+    if (originalProfileDir === undefined) {
+      delete process.env.ORACLE_BROWSER_PROFILE_DIR;
+    } else {
+      process.env.ORACLE_BROWSER_PROFILE_DIR = originalProfileDir;
+    }
+  });
+
   test("returns defaults when config missing", () => {
     const resolved = resolveBrowserConfig(undefined);
     expect(resolved.url).toBe(CHATGPT_URL);
@@ -43,5 +55,27 @@ describe("resolveBrowserConfig", () => {
         desiredModel: "GPT-5.2 Pro",
       }),
     ).toThrow(/Temporary Chat/i);
+  });
+
+  test("resolves manual-login profile dirs from config, env, and default", () => {
+    process.env.ORACLE_BROWSER_PROFILE_DIR = "/tmp/env-profile";
+
+    expect(
+      resolveBrowserConfig({
+        manualLogin: true,
+        manualLoginProfileDir: " /tmp/config-profile ",
+      }).manualLoginProfileDir,
+    ).toBe("/tmp/config-profile");
+
+    expect(resolveBrowserConfig({ manualLogin: true }).manualLoginProfileDir).toBe(
+      "/tmp/env-profile",
+    );
+
+    process.env.ORACLE_BROWSER_PROFILE_DIR = "   ";
+    expect(resolveBrowserConfig({ manualLogin: true }).manualLoginProfileDir).toBe(
+      path.join(os.homedir(), ".oracle", "browser-profile"),
+    );
+
+    expect(resolveBrowserConfig({ manualLogin: false }).manualLoginProfileDir).toBeNull();
   });
 });

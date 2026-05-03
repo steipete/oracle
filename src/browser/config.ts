@@ -73,10 +73,10 @@ export function resolveBrowserConfig(
   const manualLogin =
     config?.manualLogin ?? (isWindows ? true : DEFAULT_BROWSER_CONFIG.manualLogin);
   const cookieSyncDefault = isWindows ? false : DEFAULT_BROWSER_CONFIG.cookieSync;
-  const resolvedProfileDir =
-    config?.manualLoginProfileDir ??
-    process.env.ORACLE_BROWSER_PROFILE_DIR ??
-    path.join(os.homedir(), ".oracle", "browser-profile");
+  const resolvedProfileDir = resolveManualLoginProfileDir(
+    config?.manualLoginProfileDir,
+    process.env.ORACLE_BROWSER_PROFILE_DIR,
+  );
   return {
     ...DEFAULT_BROWSER_CONFIG,
     ...config,
@@ -128,4 +128,12 @@ function parseDebugPort(raw?: string | null): number | null {
     return null;
   }
   return value;
+}
+
+function resolveManualLoginProfileDir(...candidates: Array<string | null | undefined>): string {
+  for (const candidate of candidates) {
+    const profileDir = candidate?.trim();
+    if (profileDir) return profileDir;
+  }
+  return path.join(os.homedir(), ".oracle", "browser-profile");
 }
