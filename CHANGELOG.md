@@ -13,6 +13,7 @@
 - Gemini web: prefer the latest non-empty streaming response chunk so `gemini-3-pro` and `gemini-3.1-pro` browser runs do not report `(no text output)` when the first chunk is an empty placeholder. (#153, #154) — thanks @manhtruong03.
 - CLI: avoid loading `clipboardy` during startup and add `/usr/sbin` before lazy clipboard loading on Intel macOS, preventing `spawnSync sysctl ENOENT` crashes from transitive architecture detection. (#129)
 - Browser: track ChatGPT's composer rewrite by matching the new `__composer-pill` model button and selecting thinking effort from the model menu's per-row effort control, with bilingual label matching and old-chip fallback. (#146) — thanks @SyntaxSmith.
+- Browser: open isolated local browser tabs directly on the configured ChatGPT URL instead of starting at `about:blank` and navigating later. (#139) — thanks @betamod.
 
 ## 0.9.0 — 2026-03-08
 
