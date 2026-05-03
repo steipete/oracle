@@ -29,9 +29,12 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
   });
 
   test("preserves the browser for headful model-selection errors", () => {
-    const error = new BrowserAutomationError("Unable to locate the ChatGPT model selector button.", {
-      stage: "model-selection",
-    });
+    const error = new BrowserAutomationError(
+      "Unable to locate the ChatGPT model selector button.",
+      {
+        stage: "model-selection",
+      },
+    );
     expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(true);
   });
 
