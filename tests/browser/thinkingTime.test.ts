@@ -23,4 +23,18 @@ describe("browser thinking-time selection expression", () => {
       expect(expression).toContain(`"${level}"`);
     }
   });
+
+  it("supports ChatGPT's model-menu thinking effort control", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended");
+    expect(expression).toContain("MODEL_BUTTON_SELECTOR");
+    expect(expression).toContain("data-model-picker-thinking-effort-action");
+    expect(expression).toContain("aria-controls");
+    expect(expression).toContain("LEVEL_TOKENS");
+  });
+
+  it("preserves Chinese thinking-effort labels while normalizing", () => {
+    const expression = buildThinkingTimeExpressionForTest("heavy");
+    expect(expression).toContain("\\u4e00-\\u9fa5");
+    expect(expression).toContain("'重度'");
+  });
 });
