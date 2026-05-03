@@ -72,4 +72,31 @@ describe("promptComposer", () => {
       promptComposer.verifyPromptCommitted(runtime as never, "hello", 150),
     ).resolves.toBe(1);
   });
+
+  test("attachment sends time out instead of allowing Enter fallback", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("dispatchClickSequence")) {
+            return { result: { value: "disabled" } };
+          }
+          return { result: { value: true } };
+        }),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.attemptSendButton(
+        runtime as never,
+        (() => undefined) as never,
+        ["oracle-attach-verify.txt"],
+      );
+      const assertion = expect(promise).rejects.toThrow(/clickable send button/i);
+      await vi.advanceTimersByTimeAsync(9_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
