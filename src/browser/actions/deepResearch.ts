@@ -190,6 +190,9 @@ export async function waitForDeepResearchCompletion(
           stopVisible?: boolean;
           textLength?: number;
           hasIframe?: boolean;
+          candidateTurnCount?: number;
+          candidateHasIframe?: boolean;
+          isToolStub?: boolean;
         }
       | undefined;
 
@@ -199,7 +202,13 @@ export async function waitForDeepResearchCompletion(
         ? await readDeepResearchTargetResult(client).catch(() => null)
         : null;
     const scopedToNewTurns = minTurnLiteral >= 0;
-    if (!scopedToNewTurns && frameResult?.completed && frameResult.text) {
+    const hasNewDeepResearchTurn =
+      !scopedToNewTurns ||
+      ((val?.candidateTurnCount ?? 0) > 0 &&
+        (val?.isToolStub === true ||
+          val?.candidateHasIframe === true ||
+          ((val?.textLength ?? 0) > 0 && val?.hasIframe === true)));
+    if (frameResult?.completed && frameResult.text && hasNewDeepResearchTurn) {
       logger(`Deep Research completed (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
       return {
         text: frameResult.text,
@@ -733,7 +742,19 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
     });
-    return { finished, stopVisible, textLength, hasIframe, isToolStub };
+    const candidateHasIframe = Boolean(lastTurn) && Array.from(lastTurn.querySelectorAll?.('iframe') || []).some(f => {
+      const rect = f.getBoundingClientRect();
+      return rect.width > 200 && rect.height > 200;
+    });
+    return {
+      finished,
+      stopVisible,
+      textLength,
+      hasIframe,
+      isToolStub,
+      candidateTurnCount: candidateTurns.length,
+      candidateHasIframe,
+    };
   })()`;
 }
 

@@ -68,6 +68,7 @@ export interface BrowserFlagOptions {
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
+  browserManualLoginCookieSync?: boolean;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
   browserResearch?: BrowserResearchMode;
@@ -120,9 +121,7 @@ export async function buildBrowserConfig(
   const desiredModelOverride = options.browserModelLabel?.trim();
   const normalizedOverride = desiredModelOverride?.toLowerCase() ?? "";
   const baseModel = options.model.toLowerCase();
-  const isChatGptModel = baseModel.startsWith("gpt-") && !baseModel.includes("codex");
-  const shouldUseOverride =
-    !isChatGptModel && normalizedOverride.length > 0 && normalizedOverride !== baseModel;
+  const shouldUseOverride = normalizedOverride.length > 0 && normalizedOverride !== baseModel;
   const modelStrategy =
     normalizeBrowserModelStrategy(options.browserModelStrategy) ?? DEFAULT_MODEL_STRATEGY;
   const cookieNames = parseCookieNames(
@@ -151,11 +150,9 @@ export async function buildBrowserConfig(
   const rawUrl = options.chatgptUrl ?? options.browserUrl;
   const url = rawUrl ? normalizeChatgptUrl(rawUrl, CHATGPT_URL) : undefined;
 
-  const desiredModel = isChatGptModel
-    ? mapModelToBrowserLabel(options.model)
-    : shouldUseOverride
-      ? desiredModelOverride
-      : mapModelToBrowserLabel(options.model);
+  const desiredModel = shouldUseOverride
+    ? desiredModelOverride
+    : mapModelToBrowserLabel(options.model);
 
   if (
     modelStrategy === "select" &&
@@ -215,6 +212,7 @@ export async function buildBrowserConfig(
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
     manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
+    manualLoginCookieSync: options.browserManualLoginCookieSync,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,
     modelStrategy,

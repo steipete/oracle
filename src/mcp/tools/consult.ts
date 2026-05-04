@@ -211,7 +211,7 @@ export function buildConsultBrowserConfig({
   const preferredLabel = (browserModelLabel ?? inputModel)?.trim();
   const isChatGptModel = runModel.startsWith("gpt-") && !runModel.includes("codex");
   const desiredModelLabel = isChatGptModel
-    ? mapModelToBrowserLabel(runModel)
+    ? browserModelLabel?.trim() || mapModelToBrowserLabel(runModel)
     : resolveBrowserModelLabel(preferredLabel, runModel);
   const configuredUrl = configuredBrowser.chatgptUrl ?? configuredBrowser.url ?? CHATGPT_URL;
   const manualLogin = hasProfileDir ? true : (configuredBrowser.manualLogin ?? false);

@@ -490,6 +490,66 @@ describe("waitForDeepResearchCompletion", () => {
     }
   });
 
+  it("returns a completed frame result during a scoped run when a new tool turn exists", async () => {
+    mockRuntime.evaluate.mockImplementation(async (params?: { contextId?: number }) => {
+      if (typeof params?.contextId === "number") {
+        return {
+          result: {
+            value: {
+              completed: true,
+              inProgress: false,
+              textLength: 80,
+              text: "NEW_SCOPED_REPORT https://example.com/report",
+              html: "<p>NEW_SCOPED_REPORT https://example.com/report</p>",
+            },
+          },
+        };
+      }
+      return {
+        result: {
+          value: {
+            finished: false,
+            stopVisible: false,
+            textLength: "Called tool".length,
+            hasIframe: true,
+            isToolStub: true,
+            candidateTurnCount: 1,
+            candidateHasIframe: false,
+          },
+        },
+      };
+    });
+    const mockPage = {
+      getFrameTree: vi.fn().mockResolvedValue({
+        frameTree: {
+          frame: { id: "root", url: "https://chatgpt.com/" },
+          childFrames: [
+            {
+              frame: {
+                id: "new-deep-frame",
+                url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+              },
+            },
+          ],
+        },
+      }),
+      createIsolatedWorld: vi.fn().mockResolvedValue({ executionContextId: 42 }),
+    };
+
+    const result = await waitForDeepResearchCompletion(
+      mockRuntime as never,
+      mockLogger,
+      60_000,
+      1,
+      mockPage as never,
+    );
+
+    expect(result.text).toBe("NEW_SCOPED_REPORT https://example.com/report");
+    expect(mockPage.createIsolatedWorld).toHaveBeenCalledWith(
+      expect.objectContaining({ frameId: "new-deep-frame" }),
+    );
+  });
+
   it("does not fall back to an older completed turn when scoped to new turns", () => {
     const expression = buildDeepResearchCompletionPollExpressionForTest(2);
     const priorFinishedTurn = {

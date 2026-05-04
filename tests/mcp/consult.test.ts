@@ -140,4 +140,16 @@ describe("summarizeModelRunsForConsult", () => {
       cookieSync: false,
     });
   });
+
+  test("honors explicit browser model labels for GPT consults", () => {
+    const config = buildConsultBrowserConfig({
+      userConfig: {},
+      env: {},
+      runModel: "gpt-5.2-pro",
+      inputModel: "gpt-5.2-pro",
+      browserModelLabel: "GPT-5.2 Thinking",
+    });
+
+    expect(config.desiredModel).toBe("GPT-5.2 Thinking");
+  });
 });
