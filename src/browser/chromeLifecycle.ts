@@ -163,7 +163,19 @@ export async function connectToRemoteChrome(
   port: number,
   logger: BrowserLogger,
   targetUrl?: string,
+  browserWSEndpoint?: string,
+  options?: {
+    approvalWaitMs?: number;
+  },
 ): Promise<RemoteChromeConnection> {
+  if (browserWSEndpoint) {
+    return await connectToRemoteChromeTarget(host, port, logger, {
+      browserWSEndpoint,
+      targetUrl: targetUrl ?? "about:blank",
+      closeTargetOnDispose: true,
+      approvalWaitMs: options?.approvalWaitMs,
+    });
+  }
   if (targetUrl) {
     const targetConnection = await connectToNewTarget(host, port, targetUrl, logger, {
       opened: () => `Opened dedicated remote Chrome tab targeting ${targetUrl}`,
@@ -175,12 +187,24 @@ export async function connectToRemoteChrome(
         `Failed to close unused remote Chrome tab ${targetId}: ${message}`,
     });
     if (targetConnection) {
-      return { client: targetConnection.client, targetId: targetConnection.targetId };
+      return {
+        client: targetConnection.client,
+        targetId: targetConnection.targetId,
+        close: async () => {
+          await targetConnection.client.close().catch(() => undefined);
+          await closeRemoteChromeTarget(host, port, targetConnection.targetId, logger);
+        },
+      };
     }
   }
   const fallbackClient = await CDP({ host, port });
   logger(`Connected to remote Chrome DevTools protocol at ${host}:${port}`);
-  return { client: fallbackClient };
+  return {
+    client: fallbackClient,
+    close: async () => {
+      await fallbackClient.close().catch(() => undefined);
+    },
+  };
 }
 
 export async function closeRemoteChromeTarget(
@@ -206,6 +230,8 @@ export async function closeRemoteChromeTarget(
 export interface RemoteChromeConnection {
   client: ChromeClient;
   targetId?: string;
+  browserWSEndpoint?: string;
+  close: () => Promise<void>;
 }
 
 export interface IsolatedTabConnection {
@@ -218,6 +244,137 @@ interface TargetConnectMessages {
   openFailed: (message: string) => string;
   attachFailed: (targetId: string, message: string) => string;
   closeFailed: (targetId: string, message: string) => string;
+}
+
+export interface RemoteTargetInfo {
+  targetId?: string;
+  type?: string;
+  url?: string;
+}
+
+export async function listRemoteChromeTargets(options: {
+  host: string;
+  port: number;
+  browserWSEndpoint?: string;
+}): Promise<RemoteTargetInfo[]> {
+  if (!options.browserWSEndpoint) {
+    const targets = await CDP.List({ host: options.host, port: options.port });
+    return targets as unknown as RemoteTargetInfo[];
+  }
+  const browser = await CDP({ target: options.browserWSEndpoint, local: true });
+  try {
+    const result = await browser.Target.getTargets();
+    return (result.targetInfos ?? []).map((target) => ({
+      targetId: target.targetId,
+      type: target.type,
+      url: target.url,
+    }));
+  } finally {
+    await browser.close().catch(() => undefined);
+  }
+}
+
+export async function connectToRemoteChromeTarget(
+  host: string,
+  port: number,
+  logger: BrowserLogger,
+  options: {
+    targetId?: string;
+    targetUrl?: string;
+    browserWSEndpoint?: string;
+    closeTargetOnDispose?: boolean;
+    approvalWaitMs?: number;
+  },
+): Promise<RemoteChromeConnection> {
+  if (!options.browserWSEndpoint) {
+    const client = await CDP({ host, port, target: options.targetId });
+    return {
+      client,
+      targetId: options.targetId,
+      close: async () => {
+        await client.close().catch(() => undefined);
+      },
+    };
+  }
+
+  const browser = await connectToBrowserWebSocket(
+    host,
+    port,
+    options.browserWSEndpoint,
+    logger,
+    options.approvalWaitMs,
+  );
+  let targetId = options.targetId;
+  try {
+    if (!targetId) {
+      const created = await browser.Target.createTarget({
+        url: options.targetUrl ?? "about:blank",
+      });
+      targetId = created.targetId;
+      logger(`Opened dedicated remote Chrome tab targeting ${options.targetUrl ?? "about:blank"}`);
+    }
+    const attached = await browser.Target.attachToTarget({ targetId, flatten: true });
+    const client = createSessionBoundChromeClient(browser, attached.sessionId);
+    return {
+      client,
+      targetId,
+      browserWSEndpoint: options.browserWSEndpoint,
+      close: async () => {
+        await browser.Target.detachFromTarget({ sessionId: attached.sessionId }).catch(
+          () => undefined,
+        );
+        if (options.closeTargetOnDispose && targetId) {
+          await browser.Target.closeTarget({ targetId }).catch(() => undefined);
+        }
+        await browser.close().catch(() => undefined);
+      },
+    };
+  } catch (error) {
+    await browser.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function connectToBrowserWebSocket(
+  host: string,
+  port: number,
+  browserWSEndpoint: string,
+  logger: BrowserLogger,
+  approvalWaitMs?: number,
+): Promise<ChromeClient> {
+  const connectPromise = CDP({ target: browserWSEndpoint, local: true }) as Promise<ChromeClient>;
+  if (!approvalWaitMs || approvalWaitMs <= 0) {
+    return await connectPromise;
+  }
+
+  logger(`Waiting for Chrome remote debugging approval for ${host}:${port}...`);
+
+  let timeoutId: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      connectPromise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(
+            new Error(
+              `Oracle waited ${formatApprovalWait(approvalWaitMs)} for Chrome remote debugging approval at ${host}:${port}. Allow the Chrome prompt or retry after toggling remote debugging.`,
+            ),
+          );
+        }, approvalWaitMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+function formatApprovalWait(waitMs: number): string {
+  if (waitMs % 1000 === 0) {
+    return `${waitMs / 1000}s`;
+  }
+  return `${waitMs}ms`;
 }
 
 async function connectToNewTarget(
@@ -250,6 +407,66 @@ async function connectToNewTarget(
     logger(messages.openFailed(message));
   }
   return null;
+}
+
+function createSessionBoundChromeClient(browser: ChromeClient, sessionId: string): ChromeClient {
+  const browserWithEvents = browser as ChromeClient & {
+    on: (event: string, listener: (...args: unknown[]) => void) => void;
+    once: (event: string, listener: (...args: unknown[]) => void) => void;
+    off?: (event: string, listener: (...args: unknown[]) => void) => void;
+    removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
+  };
+  const bindDomain = <T extends object>(domainName: string): T => {
+    const domain = (browser as unknown as Record<string, Record<string, unknown>>)[domainName] as
+      | Record<string, unknown>
+      | undefined;
+    const eventName = (name: string) => `${domainName}.${name}.${sessionId}`;
+    return new Proxy((domain ?? {}) as T, {
+      get(target, prop, receiver) {
+        if (prop === "on") {
+          return (name: string, listener: (...args: unknown[]) => void) => {
+            const domainEvent = (target as Record<string, unknown>)[name];
+            if (typeof domainEvent === "function") {
+              return (domainEvent as (...args: unknown[]) => unknown)(sessionId, listener);
+            }
+            browserWithEvents.on(eventName(name), listener);
+            return () => browserWithEvents.removeListener(eventName(name), listener);
+          };
+        }
+        if (prop === "off" || prop === "removeListener") {
+          return (name: string, listener: (...args: unknown[]) => void) => {
+            const off =
+              browserWithEvents.off ?? browserWithEvents.removeListener.bind(browserWithEvents);
+            off(eventName(name), listener);
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof value !== "function") {
+          return value;
+        }
+        return (...args: unknown[]) =>
+          (value as (...callArgs: unknown[]) => unknown)(...args, sessionId);
+      },
+    });
+  };
+
+  return {
+    ...browser,
+    Network: bindDomain("Network"),
+    Page: bindDomain("Page"),
+    Runtime: bindDomain("Runtime"),
+    Input: bindDomain("Input"),
+    DOM: bindDomain("DOM"),
+    on: browserWithEvents.on.bind(browserWithEvents),
+    once: browserWithEvents.once.bind(browserWithEvents),
+    off:
+      browserWithEvents.off?.bind(browserWithEvents) ??
+      browserWithEvents.removeListener.bind(browserWithEvents),
+    removeListener: browserWithEvents.removeListener.bind(browserWithEvents),
+    close: async () => {
+      await browser.Target.detachFromTarget({ sessionId }).catch(() => undefined);
+    },
+  } as ChromeClient;
 }
 
 export async function connectWithNewTab(

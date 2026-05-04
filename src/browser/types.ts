@@ -22,6 +22,7 @@ export interface BrowserAutomationConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
+  attachRunning?: boolean;
   url?: string;
   chatgptUrl?: string | null;
   timeoutMs?: number;
@@ -54,6 +55,8 @@ export interface BrowserAutomationConfig {
   debug?: boolean;
   allowCookieErrors?: boolean;
   remoteChrome?: { host: string; port: number } | null;
+  remoteChromeBrowserWSEndpoint?: string | null;
+  remoteChromeProfileRoot?: string | null;
   manualLogin?: boolean;
   manualLoginProfileDir?: string | null;
   manualLoginCookieSync?: boolean;
@@ -84,9 +87,12 @@ export interface BrowserRunResult {
   tookMs: number;
   answerTokens: number;
   answerChars: number;
+  browserTransport?: "cdp";
   chromePid?: number;
   chromePort?: number;
   chromeHost?: string;
+  chromeBrowserWSEndpoint?: string;
+  chromeProfileRoot?: string;
   userDataDir?: string;
   chromeTargetId?: string;
   tabUrl?: string;
@@ -101,6 +107,8 @@ export type ResolvedBrowserConfig = Required<
     | "chromeCookiePath"
     | "desiredModel"
     | "remoteChrome"
+    | "remoteChromeBrowserWSEndpoint"
+    | "remoteChromeProfileRoot"
     | "thinkingTime"
     | "modelStrategy"
   >
@@ -108,12 +116,15 @@ export type ResolvedBrowserConfig = Required<
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
+  attachRunning?: boolean;
   desiredModel?: string | null;
   modelStrategy?: BrowserModelStrategy;
   thinkingTime?: ThinkingTimeLevel;
   debugPort?: number | null;
   inlineCookiesSource?: string | null;
   remoteChrome?: { host: string; port: number } | null;
+  remoteChromeBrowserWSEndpoint?: string | null;
+  remoteChromeProfileRoot?: string | null;
   manualLogin?: boolean;
   manualLoginProfileDir?: string | null;
   manualLoginCookieSync?: boolean;

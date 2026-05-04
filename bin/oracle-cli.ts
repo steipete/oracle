@@ -126,6 +126,7 @@ interface CliOptions extends OptionValues {
   browserChromeProfile?: string;
   browserChromePath?: string;
   browserCookiePath?: string;
+  browserAttachRunning?: boolean;
   chatgptUrl?: string;
   browserUrl?: string;
   browserTimeout?: string;
@@ -468,6 +469,12 @@ program
   )
   .addOption(
     new Option(
+      "--browser-attach-running",
+      "Attach to a running local browser session instead of launching Chrome (defaults to 127.0.0.1:9222; combine with --remote-chrome to hint a different host:port).",
+    ),
+  )
+  .addOption(
+    new Option(
       "--chatgpt-url <url>",
       `Override the ChatGPT web URL (e.g., workspace/folder like https://chatgpt.com/g/.../project; default ${CHATGPT_URL}).`,
     ),
@@ -615,7 +622,7 @@ program
   .addOption(
     new Option(
       "--remote-chrome <host:port>",
-      "Connect to remote Chrome DevTools Protocol (e.g., 192.168.1.10:9222 or [2001:db8::1]:9222 for IPv6).",
+      "Connect to remote Chrome DevTools Protocol, or when combined with --browser-attach-running use this host:port as the local attach hint.",
     ),
   )
   .addOption(
@@ -2097,6 +2104,10 @@ function printDebugHelp(cliName: string): void {
     ["--browser-chrome-profile <name>", "Reuse cookies from a specific Chrome profile."],
     ["--browser-chrome-path <path>", "Point to a custom Chrome/Chromium binary."],
     ["--browser-cookie-path <path>", "Use a specific Chrome/Chromium cookie store file."],
+    [
+      "--browser-attach-running",
+      "Attach to your current Chrome session through its local remote debugging toggle.",
+    ],
     ["--browser-url <url>", "Alias for --chatgpt-url."],
     ["--browser-timeout <ms|s|m>", "Cap total wait time for the assistant response."],
     ["--browser-input-timeout <ms|s|m>", "Cap how long we wait for the composer textarea."],

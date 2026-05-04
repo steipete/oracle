@@ -17,6 +17,7 @@ export interface BrowserConfigDefaults {
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
+  attachRunning?: boolean;
   chatgptUrl?: string | null;
   url?: string;
   /** Delegate browser automation to a remote `oracle serve` instance (host:port). */

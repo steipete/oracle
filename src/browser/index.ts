@@ -9,13 +9,13 @@ import type {
   BrowserLogger,
   ChromeClient,
   BrowserAttachment,
+  ResolvedBrowserConfig,
 } from "./types.js";
 import {
   launchChrome,
   registerTerminationHooks,
   hideChromeWindow,
   connectToRemoteChrome,
-  closeRemoteChromeTarget,
   connectWithNewTab,
   closeTab,
 } from "./chromeLifecycle.js";
@@ -60,6 +60,7 @@ import {
 } from "./profileState.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
+import { resolveAttachRunningConnection } from "./attachRunning.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -99,6 +100,21 @@ function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolea
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+function listIgnoredRemoteChromeFlags(config: {
+  attachRunning?: ResolvedBrowserConfig["attachRunning"];
+  headless?: ResolvedBrowserConfig["headless"];
+  hideWindow?: ResolvedBrowserConfig["hideWindow"];
+  keepBrowser?: ResolvedBrowserConfig["keepBrowser"];
+  chromePath?: ResolvedBrowserConfig["chromePath"];
+}): string[] {
+  return [
+    config.headless ? "--browser-headless" : null,
+    config.hideWindow ? "--browser-hide-window" : null,
+    config.keepBrowser ? "--browser-keep-browser" : null,
+    !config.attachRunning && config.chromePath ? "--browser-chrome-path" : null,
+  ].filter((value): value is string => Boolean(value));
 }
 
 function hasBrowserErrorCode(error: unknown, code: string): boolean {
@@ -229,6 +245,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     );
   }
 
+  if (config.attachRunning) {
+    const attached = await resolveAttachRunningConnection(config, logger);
+    config = {
+      ...config,
+      remoteChrome: { host: attached.host, port: attached.port },
+      remoteChromeBrowserWSEndpoint: attached.browserWSEndpoint,
+      remoteChromeProfileRoot: attached.profileRoot,
+    };
+  }
+
   if (!config.remoteChrome && !config.manualLogin) {
     const preferredPort = config.debugPort ?? DEFAULT_DEBUG_PORT;
     const availablePort = await pickAvailableDebugPort(preferredPort, logger);
@@ -243,11 +269,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   // Remote Chrome mode - connect to existing browser
   if (config.remoteChrome) {
     // Warn about ignored local-only options
-    if (config.headless || config.hideWindow || config.keepBrowser || config.chromePath) {
-      logger(
-        "Note: --remote-chrome ignores local Chrome flags " +
-          "(--browser-headless, --browser-hide-window, --browser-keep-browser, --browser-chrome-path).",
-      );
+    const ignoredFlags = listIgnoredRemoteChromeFlags(config);
+    if (ignoredFlags.length > 0) {
+      logger(`Note: --remote-chrome ignores local Chrome flags (${ignoredFlags.join(", ")}).`);
     }
 
     return runRemoteBrowserMode(promptText, attachments, config, logger, options);
@@ -1399,6 +1423,8 @@ async function runRemoteBrowserMode(
       await runtimeHintCb({
         chromePort: port,
         chromeHost: host,
+        chromeBrowserWSEndpoint: browserWSEndpoint,
+        chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         controllerPid: process.pid,
@@ -1415,9 +1441,14 @@ async function runRemoteBrowserMode(
   let connectionClosedUnexpectedly = false;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
+  let connection: Awaited<ReturnType<typeof connectToRemoteChrome>> | null = null;
+  const browserWSEndpoint = config.remoteChromeBrowserWSEndpoint ?? undefined;
+  const chromeProfileRoot = config.remoteChromeProfileRoot ?? undefined;
 
   try {
-    const connection = await connectToRemoteChrome(host, port, logger, config.url);
+    connection = await connectToRemoteChrome(host, port, logger, config.url, browserWSEndpoint, {
+      approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
+    });
     client = connection.client;
     remoteTargetId = connection.targetId ?? null;
     await emitRuntimeHint();
@@ -1655,6 +1686,8 @@ async function runRemoteBrowserMode(
             runtime: {
               chromeHost: host,
               chromePort: port,
+              chromeBrowserWSEndpoint: browserWSEndpoint,
+              chromeProfileRoot,
               chromeTargetId: remoteTargetId ?? undefined,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
@@ -1712,6 +1745,8 @@ async function runRemoteBrowserMode(
           const runtime = {
             chromePort: port,
             chromeHost: host,
+            chromeBrowserWSEndpoint: browserWSEndpoint,
+            chromeProfileRoot,
             chromeTargetId: remoteTargetId ?? undefined,
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
@@ -1857,9 +1892,12 @@ async function runRemoteBrowserMode(
       tookMs: durationMs,
       answerTokens,
       answerChars,
+      browserTransport: "cdp",
       chromePid: undefined,
       chromePort: port,
       chromeHost: host,
+      chromeBrowserWSEndpoint: browserWSEndpoint,
+      chromeProfileRoot,
       userDataDir: undefined,
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
@@ -1883,6 +1921,8 @@ async function runRemoteBrowserMode(
       runtime: {
         chromeHost: host,
         chromePort: port,
+        chromeBrowserWSEndpoint: browserWSEndpoint,
+        chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         controllerPid: process.pid,
@@ -1890,14 +1930,13 @@ async function runRemoteBrowserMode(
     });
   } finally {
     try {
-      if (!connectionClosedUnexpectedly && client) {
-        await client.close();
+      if (!connectionClosedUnexpectedly && connection) {
+        await connection.close();
       }
     } catch {
       // ignore
     }
     removeDialogHandler?.();
-    await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
     // Don't kill remote Chrome - it's not ours to manage
     const totalSeconds = (Date.now() - startedAt) / 1000;
     logger(`Remote session complete • ${totalSeconds.toFixed(1)}s total`);
@@ -1906,6 +1945,11 @@ async function runRemoteBrowserMode(
 
 export { estimateTokenCount } from "./utils.js";
 export { resolveBrowserConfig, DEFAULT_BROWSER_CONFIG } from "./config.js";
+
+// biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
+export const __test__ = {
+  listIgnoredRemoteChromeFlags,
+};
 export { syncCookies } from "./cookies.js";
 export {
   navigateToChatGPT,

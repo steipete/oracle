@@ -67,6 +67,73 @@ describe("runBrowserSessionExecution", () => {
     expect(log).toHaveBeenCalled();
   });
 
+  test("persists attach-mode runtime metadata from the browser runner", async () => {
+    const log = vi.fn();
+    const persistRuntimeHint = vi.fn();
+    const executeBrowser = vi.fn(async (options) => {
+      await options.runtimeHintCb?.({
+        browserTransport: "cdp" as const,
+        chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+        chromeProfileRoot: "/Users/peter/Library/Application Support/Google/Chrome",
+        chromeTargetId: "target-2",
+        tabUrl: "https://chatgpt.com/c/attached",
+      });
+      return {
+        answerText: "ok",
+        answerMarkdown: "ok",
+        tookMs: 100,
+        answerTokens: 2,
+        answerChars: 2,
+        browserTransport: "cdp" as const,
+        chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+        chromeProfileRoot: "/Users/peter/Library/Application Support/Google/Chrome",
+        chromeTargetId: "target-2",
+        tabUrl: "https://chatgpt.com/c/attached",
+      };
+    });
+
+    const result = await runBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: { attachRunning: true },
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 10,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser,
+        persistRuntimeHint,
+      },
+    );
+
+    expect(persistRuntimeHint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        browserTransport: "cdp",
+        chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+        chromeProfileRoot: "/Users/peter/Library/Application Support/Google/Chrome",
+        chromeTargetId: "target-2",
+        tabUrl: "https://chatgpt.com/c/attached",
+      }),
+    );
+    expect(result.runtime).toMatchObject({
+      browserTransport: "cdp",
+      chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+      chromeProfileRoot: "/Users/peter/Library/Application Support/Google/Chrome",
+      chromeTargetId: "target-2",
+      tabUrl: "https://chatgpt.com/c/attached",
+    });
+  });
+
   test("suppresses automation noise when not verbose", async () => {
     const log = vi.fn();
     const noisyLogger = vi.fn();
