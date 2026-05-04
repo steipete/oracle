@@ -195,7 +195,9 @@ describe("api key logging", () => {
             write: () => true,
           },
         ),
-      ).rejects.toThrow(/Missing OPENAI_API_KEY|Missing OPENROUTER_API_KEY|valid model ID/);
+      ).rejects.toThrow(
+        /Missing OPENAI_API_KEY.*retry with --engine browser.*preset:"chatgpt-pro-heavy"|Missing OPENROUTER_API_KEY|valid model ID/s,
+      );
     } finally {
       if (originalOpenai !== undefined) {
         process.env.OPENAI_API_KEY = originalOpenai;
