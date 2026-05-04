@@ -178,8 +178,11 @@ export async function runOracle(
               : options.model.startsWith("grok")
                 ? "XAI_API_KEY"
                 : "OPENROUTER_API_KEY";
+    const browserModeHint = options.model.startsWith("gpt")
+      ? ' If you have a ChatGPT Pro subscription, retry with --engine browser (or MCP engine:"browser" / preset:"chatgpt-pro-heavy"); browser mode uses your signed-in ChatGPT session instead of an API key.'
+      : "";
     throw new PromptValidationError(
-      `Missing ${envVar}. Set it via the environment or a .env file.`,
+      `Missing ${envVar}. Set it via the environment or a .env file.${browserModeHint}`,
       {
         env: envVar,
       },
