@@ -70,6 +70,12 @@ import {
   hasOtherActiveBrowserTabLeases,
   type BrowserTabLease,
 } from "./tabLeaseRegistry.js";
+import {
+  appendArtifacts,
+  saveBrowserTranscriptArtifact,
+  saveDeepResearchReportArtifact,
+} from "./artifacts.js";
+import { collectGeneratedImageArtifacts } from "./chatgptImages.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
 import { resolveAttachRunningConnection } from "./attachRunning.js";
@@ -134,6 +140,19 @@ function hasBrowserErrorCode(error: unknown, code: string): boolean {
     error instanceof BrowserAutomationError &&
     (error.details as { code?: string } | undefined)?.code === code
   );
+}
+
+async function saveOptionalArtifact<T>(
+  operation: () => Promise<T | null>,
+  logger: BrowserLogger,
+): Promise<T | null> {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`[browser] Failed to save session artifact: ${message}`);
+    return null;
+  }
 }
 
 type BrowserSubmissionResult = {
@@ -851,10 +870,34 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       runStatus = "complete";
       const durationMs = Date.now() - startedAt;
       const tokens = estimateTokenCount(researchResult.text);
+      const reportArtifact = await saveOptionalArtifact(
+        () =>
+          saveDeepResearchReportArtifact({
+            sessionId: options.sessionId,
+            reportMarkdown: researchResult.text,
+            conversationUrl: lastUrl,
+            logger,
+          }),
+        logger,
+      );
+      const transcriptArtifact = await saveOptionalArtifact(
+        () =>
+          saveBrowserTranscriptArtifact({
+            sessionId: options.sessionId,
+            prompt: promptText,
+            answerMarkdown: researchResult.text,
+            conversationUrl: lastUrl,
+            artifacts: appendArtifacts(undefined, [reportArtifact]),
+            logger,
+          }),
+        logger,
+      );
+      const savedArtifacts = appendArtifacts(undefined, [reportArtifact, transcriptArtifact]);
       return {
         answerText: researchResult.text,
         answerMarkdown: researchResult.text,
         answerHtml: researchResult.html,
+        artifacts: savedArtifacts,
         tookMs: durationMs,
         answerTokens: tokens,
         answerChars: researchResult.text.length,
@@ -1186,6 +1229,35 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       // Bail out on mid-run disconnects so the session stays reattachable.
       throw new Error("Chrome disconnected before completion");
     }
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex: baselineTurns,
+      sessionId: options.sessionId,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: options.config?.timeoutMs,
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
+    const savedImageArtifacts = appendArtifacts(undefined, imageArtifacts.savedImages);
+    const transcriptArtifact = await saveOptionalArtifact(
+      () =>
+        saveBrowserTranscriptArtifact({
+          sessionId: options.sessionId,
+          prompt: promptText,
+          answerMarkdown,
+          conversationUrl: lastUrl,
+          artifacts: savedImageArtifacts,
+          logger,
+        }),
+      logger,
+    );
+    const savedArtifacts = appendArtifacts(savedImageArtifacts, [transcriptArtifact]);
     runStatus = "complete";
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
@@ -1194,6 +1266,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       answerText,
       answerMarkdown,
       answerHtml: answerHtml.length > 0 ? answerHtml : undefined,
+      artifacts: savedArtifacts,
+      generatedImages: imageArtifacts.generatedImages,
+      savedImages: imageArtifacts.savedImages,
       tookMs: durationMs,
       answerTokens,
       answerChars,

@@ -161,6 +161,22 @@ If ChatGPT initially exposes only `Called tool` / `Used tool`, Oracle treats tha
 
 Deep Research is browser-only. It does not use connected apps in v1; give it public-web scope, uploaded files, and any domain/source guidance in the prompt. For deep thinking over code or architecture without web search, prefer a normal browser run with a Pro/Thinking model and `--browser-thinking-time heavy`.
 
+Completed browser sessions also save durable artifacts under `~/.oracle/sessions/<id>/artifacts/`. Deep Research writes the extracted report to `deep-research-report.md`, and every browser run writes `transcript.md` with the prompt, final answer, conversation URL, and saved artifact references. Use `--write-output <path>` when you also need a copy of just the final answer at a specific path.
+
+### ChatGPT generated images
+
+When ChatGPT returns downloadable generated images in browser mode, Oracle downloads them using the active browser cookies and records them as session artifacts. To choose an output path, pass `--generate-image <file>`:
+
+```bash
+oracle --engine browser \
+  --browser-manual-login \
+  --model "GPT-5.5 Pro" \
+  --generate-image /tmp/oracle-image.png \
+  -p "Create a simple product icon on a transparent background."
+```
+
+If ChatGPT returns multiple images, the first image saves to the requested path and the rest save as numbered siblings. Without `--generate-image`, Oracle writes images to the session `artifacts/` directory.
+
 ### Manual login mode (persistent profile, no cookie copy)
 
 Use `--browser-manual-login` when cookie decrypt is blocked (e.g., Windows app-bound cookies) or you prefer to sign in explicitly. You can also make it the default via `browser.manualLogin` in `~/.oracle/config.json`.

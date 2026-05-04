@@ -718,6 +718,7 @@ describe("performSessionRun", () => {
       elapsedMs: 2000,
       runtime: { chromePid: 123, chromePort: 9222, userDataDir: "/tmp/profile" },
       answerText: "Answer",
+      artifacts: [{ kind: "transcript", path: "/tmp/transcript.md" }],
     });
 
     await performSessionRun({
@@ -737,6 +738,7 @@ describe("performSessionRun", () => {
     expect(finalUpdate).toMatchObject({
       status: "completed",
       browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePid: 123 }) }),
+      artifacts: [{ kind: "transcript", path: "/tmp/transcript.md" }],
     });
     expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
       baseSessionMeta.id,

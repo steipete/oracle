@@ -138,6 +138,7 @@ export type {
   SessionMode,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
+  SessionArtifact,
   SessionTransportMetadata,
   SessionUserErrorMetadata,
   SessionStatus,

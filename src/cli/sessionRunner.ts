@@ -6,6 +6,7 @@ import type {
   SessionMode,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
+  SessionArtifact,
 } from "../sessionStore.js";
 import type { RunOracleOptions, UsageSummary } from "../oracle.js";
 import {
@@ -135,6 +136,7 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: result.runtime,
         },
+        artifacts: mergeArtifacts(sessionMeta.artifacts, result.artifacts),
         response: undefined,
         transport: undefined,
         error: undefined,
@@ -557,6 +559,21 @@ export async function performSessionRun({
     }
     throw error;
   }
+}
+
+function mergeArtifacts(
+  existing: SessionArtifact[] | undefined,
+  additions: SessionArtifact[] | undefined,
+): SessionArtifact[] | undefined {
+  const merged = new Map<string, SessionArtifact>();
+  for (const artifact of existing ?? []) {
+    merged.set(`${artifact.kind}:${artifact.path}`, artifact);
+  }
+  for (const artifact of additions ?? []) {
+    merged.set(`${artifact.kind}:${artifact.path}`, artifact);
+  }
+  const values = Array.from(merged.values());
+  return values.length > 0 ? values : undefined;
 }
 
 function formatError(error: unknown): string {

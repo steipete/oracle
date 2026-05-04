@@ -26,6 +26,7 @@ describe("runBrowserSessionExecution", () => {
       return {
         answerText: "ok",
         answerMarkdown: "ok",
+        artifacts: [{ kind: "transcript" as const, path: "/tmp/transcript.md" }],
         tookMs: 1000,
         answerTokens: 12,
         answerChars: 20,
@@ -61,10 +62,58 @@ describe("runBrowserSessionExecution", () => {
       totalTokens: 54,
     });
     expect(result.runtime).toMatchObject({ chromePid: undefined });
+    expect(result.artifacts).toEqual([{ kind: "transcript", path: "/tmp/transcript.md" }]);
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
     );
     expect(log).toHaveBeenCalled();
+  });
+
+  test("passes ChatGPT image output paths into the browser runner", async () => {
+    const executeBrowser = vi.fn(async () => ({
+      answerText: "ok",
+      answerMarkdown: "ok",
+      artifacts: [{ kind: "transcript" as const, path: "/tmp/transcript.md" }],
+      tookMs: 1000,
+      answerTokens: 1,
+      answerChars: 2,
+    }));
+
+    await runBrowserSessionExecution(
+      {
+        runOptions: {
+          ...baseRunOptions,
+          sessionId: "image-session",
+          generateImage: "/tmp/generated.png",
+          outputPath: "/tmp/output.png",
+        },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log: vi.fn(),
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser,
+      },
+    );
+
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "image-session",
+        generateImagePath: "/tmp/generated.png",
+        outputPath: "/tmp/output.png",
+      }),
+    );
   });
 
   test("persists attach-mode runtime metadata from the browser runner", async () => {

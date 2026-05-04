@@ -13,6 +13,11 @@ import { sessionStore, wait } from "../sessionStore.js";
 import { formatTokenCount, formatTokenValue } from "../oracle/runUtils.js";
 import type { BrowserLogger } from "../browser/types.js";
 import { resumeBrowserSession } from "../browser/reattach.js";
+import {
+  appendArtifacts,
+  saveBrowserTranscriptArtifact,
+  saveDeepResearchReportArtifact,
+} from "../browser/artifacts.js";
 import { estimateTokenCount } from "../browser/utils.js";
 import {
   formatSessionTableHeader,
@@ -44,6 +49,12 @@ function isProcessAlive(pid?: number): boolean {
     }
     return true;
   }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function isDeepResearchBrowserSession(metadata: SessionMetadata): boolean {
@@ -86,6 +97,34 @@ async function writeReattachAnswer(
   logWriter.logLine("Answer:");
   logWriter.logLine(body);
   logWriter.stream.end();
+}
+
+async function saveReattachBrowserArtifacts(
+  sessionId: string,
+  metadata: SessionMetadata,
+  result: { answerText: string; answerMarkdown: string },
+): Promise<SessionMetadata["artifacts"]> {
+  const body = result.answerMarkdown || result.answerText;
+  const conversationUrl = metadata.browser?.runtime?.tabUrl;
+  const logger = ((message: string) => console.log(dim(message))) as BrowserLogger;
+  const reportArtifact = isDeepResearchBrowserSession(metadata)
+    ? await saveDeepResearchReportArtifact({
+        sessionId,
+        reportMarkdown: body,
+        conversationUrl,
+        logger,
+      }).catch(() => null)
+    : null;
+  const prompt = (await readStoredPrompt(sessionId)) ?? metadata.promptPreview ?? "";
+  const transcriptArtifact = await saveBrowserTranscriptArtifact({
+    sessionId,
+    prompt,
+    answerMarkdown: body,
+    conversationUrl,
+    artifacts: appendArtifacts(undefined, [reportArtifact]),
+    logger,
+  }).catch(() => null);
+  return appendArtifacts(metadata.artifacts, [reportArtifact, transcriptArtifact]);
 }
 
 export interface ShowStatusOptions {
@@ -254,6 +293,7 @@ export async function attachSession(
         { promptPreview: metadata.promptPreview },
       );
       const outputTokens = estimateTokenCount(result.answerMarkdown);
+      const artifacts = await saveReattachBrowserArtifacts(sessionId, metadata, result);
       await writeReattachAnswer(
         sessionId,
         result,
@@ -285,6 +325,7 @@ export async function attachSession(
           config: metadata.browser?.config,
           runtime,
         },
+        artifacts,
         response: { status: "completed" },
         error: undefined,
         transport: undefined,
@@ -339,6 +380,14 @@ export async function attachSession(
       }
     } else if (metadata.model) {
       console.log(`Model: ${metadata.model}`);
+    }
+    if (metadata.artifacts && metadata.artifacts.length > 0) {
+      console.log("Artifacts:");
+      for (const artifact of metadata.artifacts) {
+        const label = artifact.label ?? artifact.kind;
+        const size = artifact.sizeBytes ? ` (${formatBytes(artifact.sizeBytes)})` : "";
+        console.log(`- ${chalk.cyan(label)} — ${artifact.path}${size}`);
+      }
     }
     const responseSummary = formatResponseMetadata(metadata.response);
     if (responseSummary) {

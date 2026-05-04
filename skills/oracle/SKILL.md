@@ -82,6 +82,7 @@ Recommended defaults:
 ## Sessions + slugs (don’t lose work)
 
 - Stored under `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
+- Browser runs save durable files under `~/.oracle/sessions/<id>/artifacts/`, including `transcript.md`, Deep Research reports, and downloaded ChatGPT-generated images when available.
 - Runs may detach or take a long time (browser + GPT‑5.4 Pro often does). If the CLI times out: don’t re-run; reattach.
   - List: `oracle status --hours 72`
   - Attach: `oracle session <id> --render`

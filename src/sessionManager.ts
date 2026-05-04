@@ -84,6 +84,15 @@ export interface BrowserMetadata {
   runtime?: BrowserRuntimeMetadata;
 }
 
+export interface SessionArtifact {
+  kind: "transcript" | "deep-research-report" | "image";
+  path: string;
+  label?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  sourceUrl?: string;
+}
+
 export interface SessionResponseMetadata {
   id?: string;
   requestId?: string | null;
@@ -170,6 +179,7 @@ export interface SessionMetadata {
   errorMessage?: string;
   elapsedMs?: number;
   browser?: BrowserMetadata;
+  artifacts?: SessionArtifact[];
   response?: SessionResponseMetadata;
   transport?: SessionTransportMetadata;
   error?: SessionUserErrorMetadata;

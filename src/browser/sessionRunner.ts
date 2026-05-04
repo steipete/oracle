@@ -2,12 +2,21 @@ import chalk from "chalk";
 import type { RunOracleOptions } from "../oracle.js";
 import { formatTokenCount } from "../oracle/runUtils.js";
 import { formatFinishLine } from "../oracle/finishLine.js";
-import type { BrowserSessionConfig, BrowserRuntimeMetadata } from "../sessionStore.js";
+import type {
+  BrowserSessionConfig,
+  BrowserRuntimeMetadata,
+  SessionArtifact,
+} from "../sessionStore.js";
 import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
 import type { BrowserLogger } from "./types.js";
+import {
+  appendArtifacts,
+  saveBrowserTranscriptArtifact,
+  saveDeepResearchReportArtifact,
+} from "./artifacts.js";
 
 export interface BrowserExecutionResult {
   usage: {
@@ -19,6 +28,7 @@ export interface BrowserExecutionResult {
   elapsedMs: number;
   runtime: BrowserRuntimeMetadata;
   answerText: string;
+  artifacts?: SessionArtifact[];
 }
 
 interface RunBrowserSessionArgs {
@@ -111,6 +121,8 @@ export async function runBrowserSessionExecution(
       heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
       verbose: runOptions.verbose,
       sessionId: runOptions.sessionId,
+      generateImagePath: runOptions.generateImage,
+      outputPath: runOptions.outputPath,
       runtimeHintCb: async (runtime) => {
         await persistRuntimeHint({
           ...runtime,
@@ -131,6 +143,15 @@ export async function runBrowserSessionExecution(
     log("");
   }
   const answerText = browserResult.answerMarkdown || browserResult.answerText || "";
+  const savedArtifacts = await ensureSessionArtifacts({
+    sessionId: runOptions.sessionId,
+    prompt: promptArtifacts.composerText,
+    answerMarkdown: answerText,
+    conversationUrl: browserResult.tabUrl,
+    browserConfig,
+    existingArtifacts: browserResult.artifacts,
+    logger: automationLogger,
+  });
   const usage = {
     inputTokens: promptArtifacts.estimatedInputTokens,
     outputTokens: browserResult.answerTokens,
@@ -178,5 +199,44 @@ export async function runBrowserSessionExecution(
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     answerText,
+    artifacts: savedArtifacts,
   };
+}
+
+async function ensureSessionArtifacts(params: {
+  sessionId?: string;
+  prompt: string;
+  answerMarkdown: string;
+  conversationUrl?: string;
+  browserConfig: BrowserSessionConfig;
+  existingArtifacts?: SessionArtifact[];
+  logger: BrowserLogger;
+}): Promise<SessionArtifact[] | undefined> {
+  if (!params.sessionId || !params.answerMarkdown.trim()) {
+    return params.existingArtifacts;
+  }
+  let artifacts = params.existingArtifacts;
+  const hasReport = artifacts?.some((artifact) => artifact.kind === "deep-research-report");
+  if (params.browserConfig.researchMode === "deep" && !hasReport) {
+    const report = await saveDeepResearchReportArtifact({
+      sessionId: params.sessionId,
+      reportMarkdown: params.answerMarkdown,
+      conversationUrl: params.conversationUrl,
+      logger: params.logger,
+    }).catch(() => null);
+    artifacts = appendArtifacts(artifacts, [report]);
+  }
+  const hasTranscript = artifacts?.some((artifact) => artifact.kind === "transcript");
+  if (!hasTranscript) {
+    const transcript = await saveBrowserTranscriptArtifact({
+      sessionId: params.sessionId,
+      prompt: params.prompt,
+      answerMarkdown: params.answerMarkdown,
+      conversationUrl: params.conversationUrl,
+      artifacts,
+      logger: params.logger,
+    }).catch(() => null);
+    artifacts = appendArtifacts(artifacts, [transcript]);
+  }
+  return artifacts;
 }
