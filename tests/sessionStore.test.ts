@@ -43,6 +43,7 @@ describe("sessionStore", () => {
         generateImage: "in.png",
         editImage: "edit.png",
         outputPath: "out.png",
+        browserFollowUps: ["second turn"],
         aspectRatio: "1:1",
         geminiShowThoughts: true,
       },
@@ -54,6 +55,7 @@ describe("sessionStore", () => {
     expect(fetched?.options.generateImage).toBe("in.png");
     expect(fetched?.options.editImage).toBe("edit.png");
     expect(fetched?.options.outputPath).toBe("out.png");
+    expect(fetched?.options.browserFollowUps).toEqual(["second turn"]);
     expect(fetched?.options.aspectRatio).toBe("1:1");
     expect(fetched?.options.geminiShowThoughts).toBe(true);
   });

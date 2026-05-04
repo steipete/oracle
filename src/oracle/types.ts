@@ -170,6 +170,11 @@ export interface RunOracleOptions {
   generateImage?: string;
   /** Optional output path used by browser image operations. */
   outputPath?: string;
+  /**
+   * Browser-only: submit these prompts sequentially after the initial answer in
+   * the same ChatGPT conversation.
+   */
+  browserFollowUps?: string[];
   background?: boolean;
   /** Optional absolute path to save only the assistant's final text output. */
   writeOutputPath?: string;

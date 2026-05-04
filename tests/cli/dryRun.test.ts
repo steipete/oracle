@@ -84,6 +84,57 @@ describe("runDryRunSummary", () => {
     ).toBe(true);
   });
 
+  test("prints browser follow-up summary", async () => {
+    const log = vi.fn();
+    await runDryRunSummary(
+      {
+        engine: "browser",
+        runOptions: { ...baseRunOptions, browserFollowUps: ["challenge it", "summarize it"] },
+        cwd: "/repo",
+        version: "2.0.0",
+        log,
+        browserConfig: {},
+      },
+      {
+        assembleBrowserPromptImpl: async () => ({
+          markdown: "bundle",
+          composerText: "prompt",
+          estimatedInputTokens: 77,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+      },
+    );
+
+    expect(log.mock.calls.some(([entry]) => String(entry).includes("Browser follow-ups: 2"))).toBe(
+      true,
+    );
+  });
+
+  test("rejects browser follow-ups with Deep Research during dry-run", async () => {
+    await expect(
+      runDryRunSummary(
+        {
+          engine: "browser",
+          runOptions: { ...baseRunOptions, browserFollowUps: ["challenge it"] },
+          cwd: "/repo",
+          version: "2.0.0",
+          log: vi.fn(),
+          browserConfig: { researchMode: "deep" },
+        },
+        {
+          assembleBrowserPromptImpl: async () => {
+            throw new Error("should not assemble invalid browser follow-up run");
+          },
+        },
+      ),
+    ).rejects.toThrow(/follow-ups are not supported with Deep Research/i);
+  });
+
   test("logs inline cookie strategy", async () => {
     const log = vi.fn();
     await runDryRunSummary(

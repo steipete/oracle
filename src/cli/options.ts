@@ -80,6 +80,11 @@ export function collectModelList(value: string, previous: string[] = []): string
   return previous.concat(entries);
 }
 
+export function collectTextValues(value: string, previous: string[] = []): string[] {
+  const trimmed = value.trim();
+  return trimmed ? previous.concat(trimmed) : previous;
+}
+
 export function parseFloatOption(value: string): number {
   const parsed = Number.parseFloat(value);
   if (Number.isNaN(parsed)) {

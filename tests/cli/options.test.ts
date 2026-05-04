@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { InvalidArgumentError } from "commander";
 import {
   collectPaths,
+  collectTextValues,
   parseFloatOption,
   parseIntOption,
   parseSearchOption,
@@ -22,6 +23,17 @@ describe("collectPaths", () => {
 
   test("returns previous list when value is undefined", () => {
     expect(collectPaths(undefined, ["keep"])).toEqual(["keep"]);
+  });
+});
+
+describe("collectTextValues", () => {
+  test("preserves repeated text values without comma splitting", () => {
+    const result = collectTextValues("second pass, keep comma", ["first pass"]);
+    expect(result).toEqual(["first pass", "second pass, keep comma"]);
+  });
+
+  test("ignores empty values", () => {
+    expect(collectTextValues("   ", ["keep"])).toEqual(["keep"]);
   });
 });
 

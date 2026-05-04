@@ -92,7 +92,7 @@ export async function runBrowserSessionExecution(
     if (typeof message !== "string") return;
     const shouldAlwaysPrint =
       message.startsWith("[browser] ") &&
-      /fallback|retry|thinking|waiting for chatgpt|browser slot/i.test(message);
+      /fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot/i.test(message);
     if (!runOptions.verbose && !shouldAlwaysPrint) return;
     log(message);
   }) as BrowserLogger;
@@ -123,6 +123,7 @@ export async function runBrowserSessionExecution(
       sessionId: runOptions.sessionId,
       generateImagePath: runOptions.generateImage,
       outputPath: runOptions.outputPath,
+      followUpPrompts: runOptions.browserFollowUps,
       runtimeHintCb: async (runtime) => {
         await persistRuntimeHint({
           ...runtime,
@@ -196,6 +197,7 @@ export async function runBrowserSessionExecution(
       userDataDir: browserResult.userDataDir,
       chromeTargetId: browserResult.chromeTargetId,
       tabUrl: browserResult.tabUrl,
+      conversationId: browserResult.conversationId,
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     answerText,

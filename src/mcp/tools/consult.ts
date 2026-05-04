@@ -91,6 +91,12 @@ const consultInputShape = {
     .enum(["deep"])
     .optional()
     .describe("Browser-only: activate ChatGPT Deep Research mode for broad web research."),
+  browserFollowUps: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Browser-only: additional prompts to submit sequentially in the same ChatGPT conversation after the initial answer.",
+    ),
   browserKeepBrowser: z
     .boolean()
     .optional()
@@ -241,7 +247,7 @@ export function registerConsultTool(server: McpServer): void {
     {
       title: "Run an oracle session",
       description:
-        'Run a one-shot Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. For browser-based image/file uploads, set `browserAttachments:"always"`. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
+        'Run an Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. For browser-based image/file uploads, set `browserAttachments:"always"`. Browser consults can include `browserFollowUps` for a multi-turn ChatGPT review in one conversation. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
       // Cast to any to satisfy SDK typings across differing Zod versions.
       inputSchema: consultInputShape,
       outputSchema: consultOutputShape,
@@ -270,6 +276,7 @@ export function registerConsultTool(server: McpServer): void {
         browserThinkingTime,
         browserModelStrategy,
         browserResearchMode,
+        browserFollowUps,
         browserKeepBrowser,
         dryRun,
         slug,
@@ -284,6 +291,7 @@ export function registerConsultTool(server: McpServer): void {
         search,
         browserAttachments,
         browserBundleFiles,
+        browserFollowUps,
         userConfig,
         env: process.env,
       });

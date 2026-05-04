@@ -163,6 +163,13 @@ Run these four smoke tests whenever we touch browser automation:
    `pnpm run oracle -- --engine browser --browser-manual-login --browser-research deep --prompt "Research one current public source about WebGPU browser support and cite it"`
    Confirm the logs show Deep Research activation/progress and the final report includes citations or source links. Do not use connected apps or private data.
 
+6. **Multi-turn browser consult smoke**
+   `pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5-pro --browser-thinking-time heavy --prompt "Give one architectural recommendation for a tiny CLI cache." --browser-follow-up "Challenge your previous recommendation with one concrete failure mode." --browser-follow-up "Now return the final recommendation in one sentence, starting with CHECK_MULTI_TURN_OK."`
+   Confirm the output contains all captured turns, includes `CHECK_MULTI_TURN_OK`, and the saved `transcript.md` records both follow-up prompts.
+
+7. **Multi-turn value check**
+   Run the same initial prompt once without follow-ups and once with the challenge/final-decision follow-ups above. In the PR notes, record concrete differences such as extra failure modes, sharper rollback steps, or test cases. Do not claim a fixed quality percentage.
+
 Record session IDs and outcomes in the PR description (pass/fail, notable delays). This ensures reviewers can audit real runs.
 
 ### Remote Chrome smoke test (CDP)

@@ -22,6 +22,7 @@ describe("runBrowserSessionExecution", () => {
         chromeHost: "127.0.0.1",
         chromeTargetId: "t-1",
         tabUrl: "https://chatgpt.com/c/foo",
+        conversationId: "foo",
       });
       return {
         answerText: "ok",
@@ -30,6 +31,7 @@ describe("runBrowserSessionExecution", () => {
         tookMs: 1000,
         answerTokens: 12,
         answerChars: 20,
+        conversationId: "foo",
       };
     });
     const result = await runBrowserSessionExecution(
@@ -61,7 +63,7 @@ describe("runBrowserSessionExecution", () => {
       reasoningTokens: 0,
       totalTokens: 54,
     });
-    expect(result.runtime).toMatchObject({ chromePid: undefined });
+    expect(result.runtime).toMatchObject({ chromePid: undefined, conversationId: "foo" });
     expect(result.artifacts).toEqual([{ kind: "transcript", path: "/tmp/transcript.md" }]);
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
@@ -112,6 +114,48 @@ describe("runBrowserSessionExecution", () => {
         sessionId: "image-session",
         generateImagePath: "/tmp/generated.png",
         outputPath: "/tmp/output.png",
+      }),
+    );
+  });
+
+  test("passes browser follow-up prompts into the browser runner", async () => {
+    const executeBrowser = vi.fn(async () => ({
+      answerText: "ok",
+      answerMarkdown: "ok",
+      tookMs: 1000,
+      answerTokens: 1,
+      answerChars: 2,
+    }));
+
+    await runBrowserSessionExecution(
+      {
+        runOptions: {
+          ...baseRunOptions,
+          browserFollowUps: ["challenge the recommendation", "summarize the final decision"],
+        },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log: vi.fn(),
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser,
+      },
+    );
+
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        followUpPrompts: ["challenge the recommendation", "summarize the final decision"],
       }),
     );
   });
@@ -299,6 +343,42 @@ describe("runBrowserSessionExecution", () => {
       },
     );
     expect(log.mock.calls.some((call) => String(call[0]).includes("ChatGPT thinking"))).toBe(true);
+  });
+
+  test("prints browser follow-up progress logs even when not verbose", async () => {
+    const log = vi.fn();
+    await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async ({ log: automationLog }) => {
+          automationLog?.("[browser] Sending follow-up 1/1");
+          return {
+            answerText: "text",
+            answerMarkdown: "markdown",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 4,
+          };
+        },
+      },
+    );
+    expect(log.mock.calls.some((call) => String(call[0]).includes("Sending follow-up"))).toBe(true);
   });
 
   test("passes fallback submission through to browser runner", async () => {

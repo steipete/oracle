@@ -13,6 +13,7 @@ export function mapConsultToRunOptions({
   search,
   browserAttachments,
   browserBundleFiles,
+  browserFollowUps,
   userConfig,
   env = process.env,
 }: {
@@ -24,6 +25,7 @@ export function mapConsultToRunOptions({
   search?: boolean;
   browserAttachments?: "auto" | "never" | "always";
   browserBundleFiles?: boolean;
+  browserFollowUps?: string[];
   userConfig?: UserConfig;
   env?: NodeJS.ProcessEnv;
 }): { runOptions: RunOracleOptions; resolvedEngine: EngineMode } {
@@ -50,6 +52,11 @@ export function mapConsultToRunOptions({
   }
   if (typeof browserBundleFiles === "boolean") {
     result.runOptions.browserBundleFiles = browserBundleFiles;
+  }
+  if (Array.isArray(browserFollowUps)) {
+    result.runOptions.browserFollowUps = browserFollowUps
+      .map((entry) => entry.trim())
+      .filter(Boolean);
   }
   return result;
 }

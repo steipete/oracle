@@ -2,8 +2,10 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
   __test__,
+  formatBrowserTurnTranscript,
   redactBrowserConfigForDebugLogForTest,
   resolveRemoteTabLeaseProfileDirForTest,
+  runBrowserMode,
   runSubmissionWithRecoveryForTest,
   shouldPreferSystemTmpDirForTest,
   shouldPreserveBrowserOnErrorForTest,
@@ -31,6 +33,59 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
       stage: "execute-browser",
     });
     expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(false);
+  });
+});
+
+describe("formatBrowserTurnTranscript", () => {
+  test("keeps single-turn browser output unchanged", () => {
+    expect(
+      formatBrowserTurnTranscript([
+        {
+          label: "Initial response",
+          answerText: "plain answer",
+          answerMarkdown: "**plain answer**",
+        },
+      ]),
+    ).toEqual({
+      answerText: "plain answer",
+      answerMarkdown: "**plain answer**",
+    });
+  });
+
+  test("formats multi-turn consult output with follow-up prompts", () => {
+    const result = formatBrowserTurnTranscript([
+      {
+        label: "Initial response",
+        answerText: "initial answer",
+        answerMarkdown: "initial answer",
+      },
+      {
+        label: "Follow-up 1",
+        prompt: "Challenge your previous recommendation.",
+        answerText: "revised answer",
+        answerMarkdown: "revised answer",
+      },
+    ]);
+
+    expect(result.answerMarkdown).toContain("## Initial response");
+    expect(result.answerMarkdown).toContain("## Follow-up 1");
+    expect(result.answerMarkdown).toContain(
+      "### Prompt\n\nChallenge your previous recommendation.",
+    );
+    expect(result.answerMarkdown).toContain("### Answer\n\nrevised answer");
+    expect(result.answerText).toBe(result.answerMarkdown);
+  });
+});
+
+describe("browser follow-ups", () => {
+  test("rejects Deep Research follow-ups before launching Chrome", async () => {
+    await expect(
+      runBrowserMode({
+        prompt: "research this",
+        followUpPrompts: ["now challenge the report"],
+        config: { researchMode: "deep" },
+      }),
+    ).rejects.toThrow(/follow-ups are not supported with Deep Research/i);
   });
 });
 

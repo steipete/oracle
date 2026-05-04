@@ -73,6 +73,7 @@ describe("session lifecycle", () => {
         previousResponseId: "resp-parent-123",
         followupSessionId: "parent-session",
         followupModel: "gpt-5.1",
+        browserFollowUps: ["challenge the plan", "summarize final recommendation"],
         maxFileSizeBytes: 2_097_152,
         maxInput: 123,
         system: "SYS",
@@ -90,6 +91,10 @@ describe("session lifecycle", () => {
     expect(storedMeta.options.previousResponseId).toBe("resp-parent-123");
     expect(storedMeta.options.followupSessionId).toBe("parent-session");
     expect(storedMeta.options.followupModel).toBe("gpt-5.1");
+    expect(storedMeta.options.browserFollowUps).toEqual([
+      "challenge the plan",
+      "summarize final recommendation",
+    ]);
     await expect(readFile(path.join(baseDir, "request.json"), "utf8")).rejects.toThrow();
     const modelMeta = JSON.parse(
       await readFile(path.join(baseDir, "models", "gpt-5.2-pro.json"), "utf8"),

@@ -102,6 +102,7 @@ Notes:
 - `--browser-model-strategy <select|current|ignore>`: control ChatGPT model selection. `select` (default) switches to the requested model; `current` keeps the active model and logs its label; `ignore` skips the picker entirely. (Ignored for Gemini web runs.)
 - `--browser-thinking-time <light|standard|extended|heavy>`: set the ChatGPT thinking-time intensity (Thinking/Pro models only). You can also set a default in `~/.oracle/config.json` via `browser.thinkingTime`.
 - `--browser-research deep`: activate ChatGPT Deep Research before submitting the prompt. Use this for broad public-web research and final cited reports, not as a replacement for GPT-5.x Pro Heavy code review or pure reasoning.
+- `--browser-follow-up <prompt>`: submit another prompt in the same ChatGPT conversation after the initial answer. Repeat the flag for multi-turn reviews such as “challenge your recommendation”, “compare against this constraint”, then “give the final decision”. Deep Research has its own report lifecycle, so browser follow-ups are rejected when `--browser-research deep` is enabled.
 - `--browser-port <port>` (alias: `--browser-debug-port`; env: `ORACLE_BROWSER_PORT`/`ORACLE_BROWSER_DEBUG_PORT`): pin the DevTools port (handy on WSL/Windows firewalls). When omitted, a random open port is chosen.
 - `--browser-no-cookie-sync`, `--browser-manual-login` (persistent automation profile + user-driven login), `--browser-headless`, `--browser-hide-window`, `--browser-keep-browser`, and the global `-v/--verbose` flag for detailed automation logs.
 - `--browser-url`: override ChatGPT base URL if needed.
@@ -162,6 +163,22 @@ If ChatGPT initially exposes only `Called tool` / `Used tool`, Oracle treats tha
 Deep Research is browser-only. It does not use connected apps in v1; give it public-web scope, uploaded files, and any domain/source guidance in the prompt. For deep thinking over code or architecture without web search, prefer a normal browser run with a Pro/Thinking model and `--browser-thinking-time heavy`.
 
 Completed browser sessions also save durable artifacts under `~/.oracle/sessions/<id>/artifacts/`. Deep Research writes the extracted report to `deep-research-report.md`, and every browser run writes `transcript.md` with the prompt, final answer, conversation URL, and saved artifact references. Use `--write-output <path>` when you also need a copy of just the final answer at a specific path.
+
+### Multi-turn browser consults
+
+Use browser follow-ups when a one-shot review would be too easy for the model to answer shallowly. Oracle keeps the same ChatGPT conversation open, waits for each answer, then submits the next follow-up:
+
+```bash
+oracle --engine browser \
+  --model gpt-5.5-pro \
+  --browser-thinking-time heavy \
+  -p "Review this migration plan and identify the top risks." \
+  --file docs/migration-plan.md \
+  --browser-follow-up "Challenge your previous recommendation. What would fail in production?" \
+  --browser-follow-up "Now give the final decision with the smallest safe next step."
+```
+
+The CLI output and saved `transcript.md` include each captured turn. For PR validation, compare a one-shot run with the same initial prompt against a two-turn run that asks the model to challenge itself; record concrete differences such as additional failure modes, test cases, or rollback steps rather than claiming a fixed quality percentage.
 
 ### ChatGPT generated images
 

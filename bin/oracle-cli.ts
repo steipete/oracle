@@ -33,6 +33,7 @@ import { applyHelpStyling } from "../src/cli/help.js";
 import {
   collectPaths,
   collectModelList,
+  collectTextValues,
   parseFloatOption,
   parseIntOption,
   parseSearchOption,
@@ -146,6 +147,7 @@ interface CliOptions extends OptionValues {
   browserManualLoginProfileDir?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
   browserResearch?: "off" | "deep";
+  browserFollowUp?: string[];
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;
   browserInlineFiles?: boolean;
@@ -625,6 +627,14 @@ program
   )
   .addOption(
     new Option(
+      "--browser-follow-up <prompt>",
+      "Submit an additional prompt in the same ChatGPT browser conversation after the initial answer; repeat for multi-turn consults.",
+    )
+      .argParser(collectTextValues)
+      .default([]),
+  )
+  .addOption(
+    new Option(
       "--browser-allow-cookie-errors",
       "Continue even if Chrome cookies cannot be copied.",
     ).hideHelp(),
@@ -1001,6 +1011,7 @@ function buildRunOptions(
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
     generateImage: overrides.generateImage ?? options.generateImage,
     outputPath: overrides.outputPath ?? options.output,
+    browserFollowUps: overrides.browserFollowUps ?? options.browserFollowUp ?? [],
     background: overrides.background ?? undefined,
     renderPlain: overrides.renderPlain ?? options.renderPlain ?? false,
     writeOutputPath: overrides.writeOutputPath ?? options.writeOutputPath,
@@ -1226,6 +1237,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserAttachments: stored.browserAttachments,
     browserInlineFiles: stored.browserInlineFiles,
     browserBundleFiles: stored.browserBundleFiles,
+    browserFollowUps: stored.browserFollowUps,
     background: stored.background,
     renderPlain: stored.renderPlain,
     writeOutputPath: stored.writeOutputPath,
@@ -1450,6 +1462,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     console.log(chalk.dim("gemini-3.1-pro is API-only today; switching to API."));
     engine = "api";
   }
+  const browserFollowUpCount =
+    options.browserFollowUp?.filter((entry) => entry.trim().length > 0).length ?? 0;
+  if (engine !== "browser" && browserFollowUpCount > 0) {
+    throw new Error("--browser-follow-up requires --engine browser.");
+  }
   const effectiveModelId = resolvedModel.startsWith("gemini")
     ? resolveGeminiModelId(resolvedModel)
     : isKnownModel(resolvedModel)
@@ -1638,6 +1655,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   const duplicateBlocked = await shouldBlockDuplicatePrompt({
     prompt: resolvedOptions.prompt,
+    browserFollowUps: resolvedOptions.browserFollowUp,
     force: options.force,
     sessionStore,
     log: console.log,

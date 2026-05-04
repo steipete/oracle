@@ -40,6 +40,29 @@ describe("shouldBlockDuplicatePrompt", () => {
     expect(log).toHaveBeenCalled();
   });
 
+  test("treats browser follow-ups as part of the duplicate signature", async () => {
+    const store = makeStore([
+      { options: { prompt: "same prompt", browserFollowUps: ["challenge it"] } },
+    ]);
+    const blockedDifferentFollowup = await shouldBlockDuplicatePrompt({
+      prompt: "same prompt",
+      browserFollowUps: ["summarize it"],
+      force: false,
+      sessionStore: store,
+      log: vi.fn(),
+    });
+    const blockedSameFollowup = await shouldBlockDuplicatePrompt({
+      prompt: "same prompt",
+      browserFollowUps: ["challenge it"],
+      force: false,
+      sessionStore: store,
+      log: vi.fn(),
+    });
+
+    expect(blockedDifferentFollowup).toBe(false);
+    expect(blockedSameFollowup).toBe(true);
+  });
+
   test("allows duplicate prompt when force is true", async () => {
     const store = makeStore([{ options: { prompt: "same prompt" } }]);
     const blocked = await shouldBlockDuplicatePrompt({

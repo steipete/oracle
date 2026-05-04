@@ -152,6 +152,7 @@ export interface StoredRunOptions {
   generateImage?: string;
   editImage?: string;
   outputPath?: string;
+  browserFollowUps?: string[];
   aspectRatio?: string;
   geminiShowThoughts?: boolean;
 }
@@ -471,6 +472,7 @@ export async function initializeSession(
       generateImage: options.generateImage,
       editImage: options.editImage,
       outputPath: options.outputPath,
+      browserFollowUps: options.browserFollowUps,
       aspectRatio: options.aspectRatio,
       geminiShowThoughts: options.geminiShowThoughts,
     },

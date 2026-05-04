@@ -106,6 +106,8 @@ export interface BrowserRunOptions {
   generateImagePath?: string;
   /** Optional output path for image operations. */
   outputPath?: string;
+  /** Additional prompts to submit in the same browser conversation after the initial answer. */
+  followUpPrompts?: string[];
   /** Optional hook to persist runtime info (port/url/target) as soon as Chrome is ready. */
   runtimeHintCb?: (hint: BrowserRuntimeMetadata) => void | Promise<void>;
 }
