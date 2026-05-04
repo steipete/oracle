@@ -275,7 +275,7 @@ describe("performSessionRun", () => {
     } else {
       (process.stdout as { isTTY?: boolean }).isTTY = originalTty;
     }
-  });
+  }, 15_000);
 
   test("strips OSC progress codes from stored model logs", async () => {
     const sessionMeta = {

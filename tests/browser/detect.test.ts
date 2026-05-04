@@ -53,7 +53,7 @@ describe("attach-running browser detection", () => {
     const roots = resolveAttachRunningProfileRoots("darwin", "/Users/peter");
 
     expect(roots.map((entry) => entry.family)).toEqual(["chrome", "chromium", "edge", "brave"]);
-    expect(roots[0]?.root).toContain("Google/Chrome");
+    expect(roots[0]?.root.split(path.sep).join("/")).toContain("Google/Chrome");
   });
 
   test("discovers DevToolsActivePort files recursively and derives profile roots", async () => {
