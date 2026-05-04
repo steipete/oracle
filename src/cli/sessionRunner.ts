@@ -18,6 +18,7 @@ import {
   extractTextOutput,
 } from "../oracle.js";
 import {
+  ensureSessionArtifacts,
   runBrowserSessionExecution,
   type BrowserSessionRunnerDeps,
 } from "../browser/sessionRunner.js";
@@ -704,6 +705,15 @@ async function autoReattachUntilComplete({
       });
       const answerText = result.answerMarkdown || result.answerText || "";
       const outputTokens = estimateTokenCount(answerText);
+      const artifacts = await ensureSessionArtifacts({
+        sessionId: sessionMeta.id,
+        prompt: runOptions.prompt,
+        answerMarkdown: answerText,
+        conversationUrl: runtime.tabUrl,
+        browserConfig,
+        existingArtifacts: sessionMeta.artifacts,
+        logger,
+      });
       const logWriter = sessionStore.createLogWriter(sessionMeta.id);
       logWriter.logLine(`[auto-reattach] captured assistant response on attempt ${attempt}`);
       logWriter.logLine("Answer:");
@@ -734,6 +744,7 @@ async function autoReattachUntilComplete({
           config: browserConfig,
           runtime,
         },
+        artifacts: mergeArtifacts(sessionMeta.artifacts, artifacts),
         response: { status: "completed" },
         error: undefined,
         transport: undefined,

@@ -203,7 +203,7 @@ export async function runBrowserSessionExecution(
   };
 }
 
-async function ensureSessionArtifacts(params: {
+export async function ensureSessionArtifacts(params: {
   sessionId?: string;
   prompt: string;
   answerMarkdown: string;

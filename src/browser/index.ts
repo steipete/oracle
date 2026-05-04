@@ -1278,6 +1278,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       userDataDir,
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -2275,6 +2276,22 @@ async function runRemoteBrowserMode(
         answerMarkdown = bestText;
       }
     }
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex: baselineTurns,
+      sessionId: options.sessionId,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: options.config?.timeoutMs,
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
+    const savedImageArtifacts = appendArtifacts(undefined, imageArtifacts.savedImages);
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -2296,6 +2313,8 @@ async function runRemoteBrowserMode(
       userDataDir: undefined,
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+      artifacts: savedImageArtifacts,
       controllerPid: process.pid,
     };
   } catch (error) {
