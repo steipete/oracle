@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Browser: emit `--heartbeat` status while waiting for ChatGPT browser responses, including safe Thinking/Reasoning sidecar liveness metadata without logging reasoning text. (#148) — thanks @pdurlej.
+
 ## 0.10.0 — 2026-05-04
 
 ### Changed
