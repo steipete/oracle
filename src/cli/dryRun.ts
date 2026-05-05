@@ -246,6 +246,11 @@ function logBrowserFollowUpSummary(
   const count = followUps?.filter((entry) => entry.trim().length > 0).length ?? 0;
   if (count > 0) {
     log(chalk.bold(`[${label}] Browser follow-ups: ${count} additional prompt(s).`));
+    log(
+      chalk.dim(
+        `[${label}] Multi-turn is explicit only: Oracle will send these prompts in order, but it never invents follow-ups automatically.`,
+      ),
+    );
   }
 }
 
