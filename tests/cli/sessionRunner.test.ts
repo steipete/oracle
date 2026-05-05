@@ -748,6 +748,7 @@ describe("performSessionRun", () => {
       browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePid: 123 }) }),
       artifacts: [{ kind: "transcript", path: "/tmp/transcript.md" }],
     });
+    expect(finalUpdate).toHaveProperty("errorMessage", undefined);
     expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
       baseSessionMeta.id,
       "gpt-5.2-pro",

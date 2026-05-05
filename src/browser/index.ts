@@ -148,6 +148,29 @@ export function classifyPreservedBrowserErrorForTest(
   return classifyPreservedBrowserError(error, headless);
 }
 
+function shouldSkipThinkingTimeSelection(
+  desiredModel: string | null | undefined,
+  thinkingTime: ResolvedBrowserConfig["thinkingTime"],
+): boolean {
+  if (thinkingTime !== "extended" || !desiredModel) {
+    return false;
+  }
+  const normalized = desiredModel.toLowerCase();
+  return (
+    normalized === "gpt-5.5-pro" ||
+    normalized.includes("gpt-5.5 pro") ||
+    normalized.includes("gpt 5.5 pro") ||
+    normalized.includes("gpt 5 5 pro")
+  );
+}
+
+export function shouldSkipThinkingTimeSelectionForTest(
+  desiredModel: string | null | undefined,
+  thinkingTime: ResolvedBrowserConfig["thinkingTime"],
+): boolean {
+  return shouldSkipThinkingTimeSelection(desiredModel, thinkingTime);
+}
+
 function listIgnoredRemoteChromeFlags(config: {
   attachRunning?: ResolvedBrowserConfig["attachRunning"];
   headless?: ResolvedBrowserConfig["headless"];
@@ -894,19 +917,23 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
-      await raceWithDisconnect(
-        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
-          retries: 2,
-          delayMs: 300,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
-          },
-        }),
-      );
+      if (shouldSkipThinkingTimeSelection(config.desiredModel, thinkingTime)) {
+        logger("Thinking time: Pro Extended (via model selection)");
+      } else {
+        await raceWithDisconnect(
+          withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
+            retries: 2,
+            delayMs: 300,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
+          }),
+        );
+      }
     }
     if (deepResearch) {
       await raceWithDisconnect(
@@ -2199,17 +2226,21 @@ async function runRemoteBrowserMode(
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
-      await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
-        retries: 2,
-        delayMs: 300,
-        onRetry: (attempt, error) => {
-          if (options.verbose) {
-            logger(
-              `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-            );
-          }
-        },
-      });
+      if (shouldSkipThinkingTimeSelection(config.desiredModel, thinkingTime)) {
+        logger("Thinking time: Pro Extended (via model selection)");
+      } else {
+        await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
+          retries: 2,
+          delayMs: 300,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
+        });
+      }
     }
     if (deepResearch) {
       await withRetries(() => activateDeepResearch(Runtime, Input, logger), {

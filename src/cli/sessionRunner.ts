@@ -133,6 +133,7 @@ export async function performSessionRun({
         completedAt: new Date().toISOString(),
         usage: result.usage,
         elapsedMs: result.elapsedMs,
+        errorMessage: undefined,
         browser: {
           config: browserConfig,
           runtime: result.runtime,
@@ -338,6 +339,7 @@ export async function performSessionRun({
         completedAt: new Date().toISOString(),
         usage: aggregateUsage,
         elapsedMs: summary.elapsedMs,
+        errorMessage: undefined,
         response: undefined,
         transport: undefined,
         error: undefined,
@@ -403,6 +405,7 @@ export async function performSessionRun({
       completedAt: new Date().toISOString(),
       usage: result.usage,
       elapsedMs: result.elapsedMs,
+      errorMessage: undefined,
       response: extractResponseMetadata(result.response),
       transport: undefined,
       error: undefined,
@@ -752,6 +755,7 @@ async function autoReattachUntilComplete({
           reasoningTokens: 0,
           totalTokens: outputTokens,
         },
+        errorMessage: undefined,
         browser: {
           config: browserConfig,
           runtime,

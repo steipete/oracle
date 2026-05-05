@@ -8,6 +8,7 @@ import {
   resolveRemoteTabLeaseProfileDirForTest,
   runBrowserMode,
   runSubmissionWithRecoveryForTest,
+  shouldSkipThinkingTimeSelectionForTest,
   shouldPreferSystemTmpDirForTest,
   shouldPreserveBrowserOnErrorForTest,
 } from "../../src/browser/index.js";
@@ -66,6 +67,19 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
     });
 
     expect(classifyPreservedBrowserErrorForTest(error, false)).toBe("cloudflare-challenge");
+  });
+});
+
+describe("shouldSkipThinkingTimeSelectionForTest", () => {
+  test("treats GPT-5.5 Pro Extended as resolved by model selection", () => {
+    expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.5 Pro", "extended")).toBe(true);
+    expect(shouldSkipThinkingTimeSelectionForTest("gpt-5.5-pro", "extended")).toBe(true);
+  });
+
+  test("keeps explicit effort selection for non-Pro or non-extended requests", () => {
+    expect(shouldSkipThinkingTimeSelectionForTest("gpt-5.5", "heavy")).toBe(false);
+    expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.5 Pro", "heavy")).toBe(false);
+    expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.2", "extended")).toBe(false);
   });
 });
 
