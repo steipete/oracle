@@ -48,8 +48,20 @@ describe("captureBrowserDiagnostics", () => {
         },
       );
 
-      expect(result.domPath).toContain("debug-session/artifacts/assistant-timeout");
-      expect(result.screenshotPath).toContain("debug-session/artifacts/assistant-timeout");
+      const domRelativePath = path.relative(tmpHome, result.domPath ?? "");
+      const screenshotRelativePath = path.relative(tmpHome, result.screenshotPath ?? "");
+      expect(domRelativePath.split(path.sep)).toEqual([
+        "sessions",
+        "debug-session",
+        "artifacts",
+        expect.stringMatching(/^assistant-timeout-.+\.dom\.json$/),
+      ]);
+      expect(screenshotRelativePath.split(path.sep)).toEqual([
+        "sessions",
+        "debug-session",
+        "artifacts",
+        expect.stringMatching(/^assistant-timeout-.+\.png$/),
+      ]);
       await expect(fs.readFile(result.domPath ?? "", "utf8")).resolves.toContain("visible answer");
       await expect(fs.readFile(result.screenshotPath ?? "")).resolves.toEqual(
         Buffer.from("png bytes"),
