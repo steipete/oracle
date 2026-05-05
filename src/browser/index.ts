@@ -87,6 +87,7 @@ import {
   archiveChatGptConversation,
   resolveBrowserArchiveDecision,
 } from "./actions/archiveConversation.js";
+import { describeBrowserControlPlan, formatBrowserControlPlan } from "./controlPlan.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -586,6 +587,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         promptLength: promptText.length,
       })}`,
     );
+  }
+  for (const line of formatBrowserControlPlan(describeBrowserControlPlan(config), "browser")) {
+    logger(line);
   }
 
   if (config.attachRunning) {

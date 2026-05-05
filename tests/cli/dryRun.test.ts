@@ -75,6 +75,11 @@ describe("runDryRunSummary", () => {
       String(entry).includes("would launch browser mode"),
     );
     expect(header?.[0]).toContain("browser mode");
+    expect(
+      log.mock.calls.some(([entry]) =>
+        String(entry).includes("Browser control: launch visible Chrome"),
+      ),
+    ).toBe(true);
     expect(log.mock.calls.some(([entry]) => String(entry).includes("Attachments to upload"))).toBe(
       true,
     );
@@ -184,6 +189,48 @@ describe("runDryRunSummary", () => {
     );
     expect(
       log.mock.calls.some(([entry]) => String(entry).includes("Cookies: inline payload")),
+    ).toBe(true);
+  });
+
+  test("prints calmer browser control guidance for attach-running dry-runs", async () => {
+    const log = vi.fn();
+    await runDryRunSummary(
+      {
+        engine: "browser",
+        runOptions: { ...baseRunOptions, model: "gpt-5.2" },
+        cwd: "/repo",
+        version: "3.0.0",
+        log,
+        browserConfig: {
+          attachRunning: true,
+        },
+      },
+      {
+        assembleBrowserPromptImpl: async () => ({
+          markdown: "bundle",
+          composerText: "prompt",
+          estimatedInputTokens: 10,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+      },
+    );
+
+    expect(
+      log.mock.calls.some(([entry]) =>
+        String(entry).includes(
+          "Browser control: attach to an already-running local Chrome session",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      log.mock.calls.some(([entry]) =>
+        String(entry).includes("leaves the existing browser process alone"),
+      ),
     ).toBe(true);
   });
 });

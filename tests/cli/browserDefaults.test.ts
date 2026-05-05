@@ -149,6 +149,39 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserAttachRunning).toBe(true);
   });
 
+  test("attach-running skips conflicting launch-only defaults from config", () => {
+    const options: BrowserDefaultsOptions = { browserAttachRunning: true };
+    const config: UserConfig = {
+      browser: {
+        chromeProfile: "Default",
+        chromeCookiePath: "/tmp/cookies",
+        attachRunning: false,
+        debugPort: 9222,
+        timeoutMs: 120_000,
+        hideWindow: true,
+        keepBrowser: true,
+        manualLogin: true,
+        manualLoginProfileDir: "/tmp/oracle-profile",
+        thinkingTime: "extended",
+      },
+    };
+    const source = (key: keyof BrowserDefaultsOptions) =>
+      key === "browserAttachRunning" ? "cli" : "default";
+
+    applyBrowserDefaultsFromConfig(options, config, source);
+
+    expect(options.browserAttachRunning).toBe(true);
+    expect(options.browserChromeProfile).toBeUndefined();
+    expect(options.browserCookiePath).toBeUndefined();
+    expect(options.browserPort).toBeUndefined();
+    expect(options.browserHideWindow).toBeUndefined();
+    expect(options.browserKeepBrowser).toBeUndefined();
+    expect(options.browserManualLogin).toBeUndefined();
+    expect(options.browserManualLoginProfileDir).toBeUndefined();
+    expect(options.browserTimeout).toBe("120000");
+    expect(options.browserThinkingTime).toBe("extended");
+  });
+
   test("does not override manual-login when CLI enabled it", () => {
     const options: BrowserDefaultsOptions = { browserManualLogin: true };
     const config: UserConfig = {

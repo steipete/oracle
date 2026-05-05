@@ -212,6 +212,15 @@ oracle --engine browser \
   -p "Run the long UI audit" --file "src/**/*.ts"
 ```
 
+## Calmer browser runs
+
+Browser automation can open or control Chrome, so dry-runs and live runs print a short browser control plan before touching ChatGPT. Use it to choose the least disruptive path for shared desktops and agent-driven consults.
+
+- `--dry-run summary --engine browser ...` previews whether Oracle will launch visible Chrome, hide a new window, attach to an existing browser, or use remote Chrome.
+- `--browser-attach-running` and `--remote-chrome <host:port>` are the calmest options when a signed-in Chrome is already running with DevTools enabled.
+- `--browser-hide-window` is best-effort: Chrome can briefly take focus before Oracle hides it.
+- Long GPT-5.5 Pro browser consults are normal. Use `--heartbeat`, `oracle status`, and `oracle session <id>` instead of starting a duplicate run if the host agent appears to be waiting.
+
 ## Flags you’ll actually use
 
 | Flag                                                            | Purpose                                                                                                                                                                                                                                                                                                                                   |

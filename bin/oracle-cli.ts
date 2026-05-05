@@ -1610,6 +1610,22 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     return;
   }
 
+  const getSource = (key: keyof CliOptions) =>
+    program.getOptionValueSource?.(key as string) ?? undefined;
+  applyBrowserDefaultsFromConfig(options, userConfig, getSource);
+
+  const sessionMode: SessionMode = engine === "browser" ? "browser" : "api";
+  const browserModelLabelOverride =
+    sessionMode === "browser" ? resolveBrowserModelLabel(cliModelArg, resolvedModel) : undefined;
+  const browserConfig =
+    sessionMode === "browser"
+      ? await buildBrowserConfig({
+          ...options,
+          model: resolvedModel,
+          browserModelLabel: browserModelLabelOverride,
+        })
+      : undefined;
+
   if (previewMode) {
     if (!options.prompt) {
       throw new Error("Prompt is required when using --dry-run/preview.");
@@ -1646,6 +1662,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
           version: VERSION,
           previewMode,
           log: console.log,
+          browserConfig,
         },
         {},
       );
@@ -1727,28 +1744,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
   }
 
-  const getSource = (key: keyof CliOptions) =>
-    program.getOptionValueSource?.(key as string) ?? undefined;
-  applyBrowserDefaultsFromConfig(options, userConfig, getSource);
-
   const notifications = resolveNotificationSettings({
     cliNotify: options.notify,
     cliNotifySound: options.notifySound,
     env: process.env,
     config: userConfig.notify,
   });
-
-  const sessionMode: SessionMode = engine === "browser" ? "browser" : "api";
-  const browserModelLabelOverride =
-    sessionMode === "browser" ? resolveBrowserModelLabel(cliModelArg, resolvedModel) : undefined;
-  const browserConfig =
-    sessionMode === "browser"
-      ? await buildBrowserConfig({
-          ...options,
-          model: resolvedModel,
-          browserModelLabel: browserModelLabelOverride,
-        })
-      : undefined;
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
   if (browserConfig && remoteHost) {

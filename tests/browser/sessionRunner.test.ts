@@ -428,6 +428,53 @@ describe("runBrowserSessionExecution", () => {
     });
   });
 
+  test("prints browser control guidance even when not verbose", async () => {
+    const log = vi.fn();
+    await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async ({ log: automationLog }) => {
+          automationLog?.(
+            "[browser] Browser control: launch visible Chrome; may focus/control the browser UI.",
+          );
+          automationLog?.(
+            "[browser] Browser guidance: Use --browser-attach-running to reduce desktop disruption.",
+          );
+          automationLog?.("[browser] Prompt textarea ready");
+          return {
+            answerText: "text",
+            answerMarkdown: "markdown",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 4,
+          };
+        },
+      },
+    );
+
+    expect(log.mock.calls.some((call) => String(call[0]).includes("Browser control"))).toBe(true);
+    expect(log.mock.calls.some((call) => String(call[0]).includes("Browser guidance"))).toBe(true);
+    expect(log.mock.calls.some((call) => String(call[0]).includes("Prompt textarea ready"))).toBe(
+      false,
+    );
+  });
+
   test("passes fallback submission through to browser runner", async () => {
     const log = vi.fn();
     const executeBrowser = vi.fn(async () => ({
