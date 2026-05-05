@@ -194,6 +194,17 @@ Guardrails for agents:
 - Use Deep Research for broad public-web research that needs citations; Deep Research has its own lifecycle and is not combined with browser follow-ups.
 - Oracle never invents follow-ups automatically. Agents may suggest a short follow-up sequence, but the caller must pass each prompt explicitly with `--browser-follow-up` or `browserFollowUps`.
 
+### Conversation mode recommendations
+
+Browser dry-runs include an advisory conversation mode recommendation:
+
+- `one-shot`: isolated bug reports, quick code review, exact file sets, or short decisions.
+- `multi-turn`: explicit browser follow-ups are present, so Oracle will keep one ChatGPT conversation open and send those prompts in order.
+- `deep-research`: Deep Research is active for broad public-web work with citations.
+- `project`: the ChatGPT URL points at a Project, or the prompt clearly describes an ongoing architecture/product stream.
+
+This recommendation never changes behavior by itself. Oracle does not switch projects, create follow-ups, upload Project Sources, or change archive behavior unless the caller explicitly requests those actions. When using ChatGPT Projects for agent work, Developer Mode / Memory Off is recommended, and Project Sources remain in the project until the user removes them.
+
 ### ChatGPT generated images
 
 When ChatGPT returns downloadable generated images in browser mode, Oracle downloads them using the active browser cookies and records them as session artifacts. To choose an output path, pass `--generate-image <file>`:

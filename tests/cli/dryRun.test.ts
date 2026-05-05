@@ -80,6 +80,11 @@ describe("runDryRunSummary", () => {
         String(entry).includes("Browser control: launch visible Chrome"),
       ),
     ).toBe(true);
+    expect(
+      log.mock.calls.some(([entry]) =>
+        String(entry).includes("Recommended conversation mode: one-shot"),
+      ),
+    ).toBe(true);
     expect(log.mock.calls.some(([entry]) => String(entry).includes("Attachments to upload"))).toBe(
       true,
     );
@@ -123,6 +128,11 @@ describe("runDryRunSummary", () => {
     );
     expect(
       log.mock.calls.some(([entry]) => String(entry).includes("Multi-turn is explicit only")),
+    ).toBe(true);
+    expect(
+      log.mock.calls.some(([entry]) =>
+        String(entry).includes("Recommended conversation mode: multi-turn"),
+      ),
     ).toBe(true);
   });
 

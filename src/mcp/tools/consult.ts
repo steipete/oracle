@@ -28,6 +28,8 @@ import { applyConsultPreset } from "../consultPresets.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
 import { mapModelToBrowserLabel, resolveBrowserModelLabel } from "../../cli/browserConfig.js";
+import { recommendConversationMode } from "../../cli/conversationMode.js";
+import type { RunOracleOptions } from "../../oracle.js";
 import type { BrowserModelStrategy } from "../../browser/types.js";
 
 // Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
@@ -182,6 +184,9 @@ const consultOutputShape = {
   output: z.string(),
   dryRun: z.boolean().optional(),
   resolved: consultDryRunResolvedShape.optional(),
+  recommendedConversationMode: z
+    .enum(["one-shot", "multi-turn", "deep-research", "project"])
+    .optional(),
   models: z.array(consultModelSummaryShape).optional(),
 } satisfies z.ZodRawShape;
 
@@ -219,6 +224,38 @@ export function summarizeModelRunsForConsult(
       logPath: run.log?.path,
     };
   });
+}
+
+export function buildConsultDryRunStructuredContent({
+  output,
+  resolvedEngine,
+  runOptions,
+  browserConfig,
+  resolved,
+}: {
+  output: string;
+  resolvedEngine: "api" | "browser";
+  runOptions: RunOracleOptions;
+  browserConfig?: BrowserSessionConfig;
+  resolved?: ConsultDryRunResolved;
+}): {
+  status: "dry-run";
+  output: string;
+  dryRun: true;
+  resolved?: ConsultDryRunResolved;
+  recommendedConversationMode?: "one-shot" | "multi-turn" | "deep-research" | "project";
+} {
+  const recommendation =
+    resolvedEngine === "browser"
+      ? recommendConversationMode({ runOptions, browserConfig })
+      : undefined;
+  return {
+    status: "dry-run",
+    output,
+    dryRun: true,
+    resolved,
+    recommendedConversationMode: recommendation?.mode,
+  };
 }
 
 export function buildConsultBrowserConfig({
@@ -481,12 +518,13 @@ export function registerConsultTool(server: McpServer): void {
         const output = lines.join("\n").trim();
         return {
           content: textContent(output),
-          structuredContent: {
-            status: "dry-run",
+          structuredContent: buildConsultDryRunStructuredContent({
             output,
-            dryRun: true,
             resolved,
-          },
+            resolvedEngine,
+            runOptions,
+            browserConfig,
+          }),
         };
       }
 

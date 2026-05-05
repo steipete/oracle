@@ -17,6 +17,10 @@ import type { BrowserSessionConfig } from "../sessionStore.js";
 import { buildTokenEstimateSuffix, formatAttachmentLabel } from "../browser/promptSummary.js";
 import { buildCookiePlan } from "../browser/policies.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "../browser/controlPlan.js";
+import {
+  recommendConversationMode,
+  type ConversationModeRecommendation,
+} from "./conversationMode.js";
 
 interface DryRunDeps {
   readFilesImpl?: typeof readFiles;
@@ -116,6 +120,8 @@ async function runBrowserDryRun(
   const headerLine = `[dry-run] Oracle (${version}) would launch browser mode (${runOptions.model}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
   log(chalk.cyan(headerLine));
   logBrowserControlPlan(browserConfig, log, "dry-run");
+  const recommendedConversationMode = recommendConversationMode({ runOptions, browserConfig });
+  logConversationModeRecommendation(recommendedConversationMode, log, "dry-run");
   logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "dry-run");
   logBrowserCookieStrategy(browserConfig, log, "dry-run");
   logBrowserArchivePolicy(browserConfig, log, "dry-run");
@@ -209,6 +215,8 @@ export async function runBrowserPreview(
   const headerLine = `[preview] Oracle (${version}) browser mode (${runOptions.model}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
   log(chalk.cyan(headerLine));
   logBrowserControlPlan(browserConfig, log, "preview");
+  const recommendedConversationMode = recommendConversationMode({ runOptions, browserConfig });
+  logConversationModeRecommendation(recommendedConversationMode, log, "preview");
   logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "preview");
   logBrowserFileSummary(artifacts, log, "preview");
   if (previewMode === "json" || previewMode === "full") {
@@ -226,6 +234,7 @@ export async function runBrowserPreview(
       bundled: artifacts.bundled,
       tokenEstimate: artifacts.estimatedInputTokens,
       browserFollowUps: runOptions.browserFollowUps ?? [],
+      recommendedConversationMode,
     };
     log("");
     log(chalk.bold("Preview JSON"));
@@ -236,6 +245,15 @@ export async function runBrowserPreview(
     log(chalk.bold("Composer Text"));
     log(artifacts.composerText || chalk.dim("(empty prompt)"));
   }
+}
+
+function logConversationModeRecommendation(
+  recommendation: ConversationModeRecommendation,
+  log: (message: string) => void,
+  label: string,
+): void {
+  log(chalk.bold(`[${label}] Recommended conversation mode: ${recommendation.mode}`));
+  log(chalk.dim(`  ${recommendation.reason}`));
 }
 
 function logBrowserFollowUpSummary(

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { SessionModelRun } from "../../src/sessionStore.js";
 import { applyConsultPreset } from "../../src/mcp/consultPresets.ts";
 import {
+  buildConsultDryRunStructuredContent,
   buildConsultBrowserConfig,
   buildConsultDryRunResolved,
   formatConsultDryRunResolved,
@@ -234,5 +235,56 @@ describe("summarizeModelRunsForConsult", () => {
       },
     });
     expect(result.content[0]?.text).toContain("[dry-run] MCP resolved request:");
+  });
+
+  test("adds browser dry-run conversation mode to MCP structured content", () => {
+    expect(
+      buildConsultDryRunStructuredContent({
+        output: "preview",
+        resolvedEngine: "browser",
+        runOptions: {
+          prompt: "review the implementation",
+          model: "gpt-5.5-pro",
+          file: [],
+          browserFollowUps: ["challenge the plan"],
+        },
+        resolved: {
+          resolvedEngine: "browser",
+          model: "gpt-5.5-pro",
+          files: [],
+          followUpCount: 1,
+          guidance: [],
+        },
+      }),
+    ).toMatchObject({
+      status: "dry-run",
+      output: "preview",
+      dryRun: true,
+      resolved: expect.objectContaining({
+        resolvedEngine: "browser",
+        followUpCount: 1,
+      }),
+      recommendedConversationMode: "multi-turn",
+    });
+  });
+
+  test("omits conversation mode for API dry-runs", () => {
+    expect(
+      buildConsultDryRunStructuredContent({
+        output: "preview",
+        resolvedEngine: "api",
+        runOptions: {
+          prompt: "review the implementation",
+          model: "gpt-5.5-pro",
+          file: [],
+        },
+      }),
+    ).toEqual({
+      status: "dry-run",
+      output: "preview",
+      dryRun: true,
+      resolved: undefined,
+      recommendedConversationMode: undefined,
+    });
   });
 });
