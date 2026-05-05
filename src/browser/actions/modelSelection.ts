@@ -36,6 +36,9 @@ export async function ensureModelSelection(
     case "switched":
     case "switched-best-effort": {
       const label = result.label ?? desiredModel;
+      if (strategy !== "current") {
+        assertResolvedModelSelection(desiredModel, label);
+      }
       logger(`Model picker: ${label}`);
       return;
     }
@@ -57,6 +60,38 @@ export async function ensureModelSelection(
       throw new Error("Unable to locate the ChatGPT model selector button.");
     }
   }
+}
+
+function assertResolvedModelSelection(desiredModel: string, resolvedLabel: string): void {
+  const desired = desiredModel.toLowerCase();
+  const resolved = resolvedLabel.toLowerCase();
+  const wantsGpt55Pro =
+    desired === "gpt-5.5-pro" ||
+    desired.includes("5.5 pro") ||
+    desired.includes("5-5 pro") ||
+    (desired.includes("pro") && desired.includes("extended"));
+  if (!wantsGpt55Pro || !resolved) {
+    return;
+  }
+  const hasProSignal =
+    resolved.includes(" pro") ||
+    resolved.endsWith("pro") ||
+    resolved.includes("pro ") ||
+    resolved.includes("extended") ||
+    resolved.includes("gpt-5.5-pro") ||
+    resolved.includes("gpt 5 5 pro");
+  if (!hasProSignal || (resolved.includes("thinking") && !resolved.includes("pro"))) {
+    throw new Error(
+      `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires GPT-5.5 Pro Extended. Use model "gpt-5.5" with browser thinking time "heavy" for Thinking Heavy.`,
+    );
+  }
+}
+
+export function assertResolvedModelSelectionForTest(
+  desiredModel: string,
+  resolvedLabel: string,
+): void {
+  assertResolvedModelSelection(desiredModel, resolvedLabel);
 }
 
 /**
@@ -343,6 +378,19 @@ function buildModelSelectionExpression(
         }
       }
       const candidateGpt55VisibleAlias = isTargetGpt55VisibleAlias(normalizedText);
+      const candidateHasThinking =
+        normalizedText.includes('thinking') || normalizedTestId.includes('thinking');
+      const candidateHasPro =
+        candidateGpt55VisibleAlias ||
+        normalizedText === 'pro' ||
+        normalizedText.startsWith('pro ') ||
+        normalizedText.includes(' pro ') ||
+        normalizedText.endsWith(' pro') ||
+        normalizedText.includes('proresearch') ||
+        normalizedTestId.includes('pro');
+      if (wantsPro && candidateHasThinking) return 0;
+      if (wantsPro && !candidateHasPro) return 0;
+      if (wantsThinking && candidateHasPro) return 0;
       if (desiredVersion === '5-5' && normalizedText && !candidateGpt55VisibleAlias) {
         const candidateHasVersion =
           normalizedText.includes('5 5') ||

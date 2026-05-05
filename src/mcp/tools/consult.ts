@@ -36,7 +36,7 @@ const consultInputShape = {
     .enum(CONSULT_PRESETS)
     .optional()
     .describe(
-      'Optional MCP convenience preset. "chatgpt-pro-heavy" selects ChatGPT browser mode, the current Pro model alias, and heavy thinking unless overridden.',
+      'Optional MCP convenience preset. "chatgpt-pro-heavy" selects ChatGPT browser mode, the current Pro model alias, and Pro Extended thinking unless overridden.',
     ),
   prompt: z.string().min(1, "Prompt is required.").describe("User prompt to run."),
   files: z
@@ -147,15 +147,40 @@ const consultModelSummaryShape = z.object({
   logPath: z.string().optional(),
 });
 
+const consultDryRunResolvedShape = z.object({
+  resolvedEngine: z.enum(["api", "browser"]),
+  model: z.string(),
+  models: z.array(z.string()).optional(),
+  files: z.array(z.string()),
+  followUpCount: z.number(),
+  browser: z
+    .object({
+      desiredModel: z.string().nullable().optional(),
+      thinkingTime: z.string().nullable().optional(),
+      modelStrategy: z.string().nullable().optional(),
+      researchMode: z.string().nullable().optional(),
+      attachments: z.string().optional(),
+      bundleFiles: z.boolean().optional(),
+      keepBrowser: z.boolean().optional(),
+      manualLogin: z.boolean().optional(),
+      profileDir: z.string().nullable().optional(),
+      chatgptUrl: z.string().nullable().optional(),
+    })
+    .optional(),
+  guidance: z.array(z.string()),
+});
+
 const consultOutputShape = {
   sessionId: z.string().optional(),
   status: z.string(),
   output: z.string(),
   dryRun: z.boolean().optional(),
+  resolved: consultDryRunResolvedShape.optional(),
   models: z.array(consultModelSummaryShape).optional(),
 } satisfies z.ZodRawShape;
 
 export type ConsultModelSummary = z.infer<typeof consultModelSummaryShape>;
+export type ConsultDryRunResolved = z.infer<typeof consultDryRunResolvedShape>;
 
 export function summarizeModelRunsForConsult(
   runs?: SessionModelRun[] | null,
@@ -239,6 +264,103 @@ export function buildConsultBrowserConfig({
     researchMode: browserResearchMode ?? configuredBrowser.researchMode,
     desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
   };
+}
+
+export function buildConsultDryRunResolved({
+  resolvedEngine,
+  runOptions,
+  browserConfig,
+}: {
+  resolvedEngine: "api" | "browser";
+  runOptions: ReturnType<typeof mapConsultToRunOptions>["runOptions"];
+  browserConfig?: BrowserSessionConfig;
+}): ConsultDryRunResolved {
+  const guidance: string[] = [];
+  const followUpCount = runOptions.browserFollowUps?.filter((entry) => entry.trim()).length ?? 0;
+  if (resolvedEngine === "api") {
+    guidance.push(
+      'API engine requires provider credentials. If the operator has ChatGPT Pro but no API key, retry with engine:"browser" or preset:"chatgpt-pro-heavy".',
+    );
+  }
+  if (resolvedEngine === "browser") {
+    guidance.push(
+      "Browser engine uses the signed-in ChatGPT profile; run dryRun:true before live use.",
+    );
+  }
+  const desiredModel = browserConfig?.desiredModel ?? null;
+  const thinkingTime = browserConfig?.thinkingTime ?? null;
+  if (runOptions.model === "gpt-5.5-pro" && thinkingTime === "heavy") {
+    guidance.push(
+      'gpt-5.5-pro should normally use Pro Extended. Use model:"gpt-5.5" with browserThinkingTime:"heavy" only when you explicitly want Thinking Heavy.',
+    );
+  }
+  const chatgptUrl = browserConfig?.chatgptUrl ?? browserConfig?.url ?? null;
+  if (chatgptUrl?.includes("/project")) {
+    guidance.push(
+      "This ChatGPT project URL is persistent. Project Sources should be mutated only by the project_sources tool with confirmMutation:true.",
+    );
+  }
+  if (followUpCount > 0) {
+    guidance.push(
+      "This is a multi-turn browser consult; all follow-ups stay in one ChatGPT conversation.",
+    );
+  }
+  return {
+    resolvedEngine,
+    model: runOptions.model,
+    models: runOptions.models,
+    files: runOptions.file ?? [],
+    followUpCount,
+    browser:
+      resolvedEngine === "browser"
+        ? {
+            desiredModel,
+            thinkingTime,
+            modelStrategy: browserConfig?.modelStrategy ?? null,
+            researchMode: browserConfig?.researchMode ?? null,
+            attachments: runOptions.browserAttachments,
+            bundleFiles: runOptions.browserBundleFiles,
+            keepBrowser: browserConfig?.keepBrowser,
+            manualLogin: browserConfig?.manualLogin,
+            profileDir: browserConfig?.manualLoginProfileDir ?? null,
+            chatgptUrl,
+          }
+        : undefined,
+    guidance,
+  };
+}
+
+export function formatConsultDryRunResolved(details: ConsultDryRunResolved): string[] {
+  const lines = [
+    "[dry-run] MCP resolved request:",
+    `  engine: ${details.resolvedEngine}`,
+    `  model: ${details.model}`,
+  ];
+  if (details.models && details.models.length > 0) {
+    lines.push(`  models: ${details.models.join(", ")}`);
+  }
+  lines.push(`  files: ${details.files.length}`);
+  if (details.browser) {
+    lines.push(`  browser desired model: ${details.browser.desiredModel ?? "(default)"}`);
+    lines.push(`  browser thinking time: ${details.browser.thinkingTime ?? "(default)"}`);
+    lines.push(`  browser model strategy: ${details.browser.modelStrategy ?? "(default)"}`);
+    lines.push(`  browser research mode: ${details.browser.researchMode ?? "off"}`);
+    lines.push(`  browser attachments: ${details.browser.attachments ?? "auto"}`);
+    lines.push(`  browser bundle files: ${details.browser.bundleFiles ? "yes" : "no"}`);
+    lines.push(`  browser keep browser: ${details.browser.keepBrowser ? "yes" : "no"}`);
+    lines.push(`  browser manual login: ${details.browser.manualLogin ? "yes" : "no"}`);
+    if (details.browser.profileDir) {
+      lines.push(`  browser profile: ${details.browser.profileDir}`);
+    }
+    if (details.browser.chatgptUrl) {
+      lines.push(`  ChatGPT URL: ${details.browser.chatgptUrl}`);
+    }
+  }
+  lines.push(`  follow-ups: ${details.followUpCount}`);
+  for (const guidance of details.guidance) {
+    lines.push(`  guidance: ${guidance}`);
+  }
+  return lines;
 }
 
 export function registerConsultTool(server: McpServer): void {
@@ -329,6 +451,11 @@ export function registerConsultTool(server: McpServer): void {
           lines.push(line);
           sendLog(line);
         };
+        const resolved = buildConsultDryRunResolved({
+          resolvedEngine,
+          runOptions,
+          browserConfig,
+        });
         await runDryRunSummary({
           engine: resolvedEngine,
           runOptions,
@@ -337,6 +464,9 @@ export function registerConsultTool(server: McpServer): void {
           log,
           browserConfig,
         });
+        for (const line of formatConsultDryRunResolved(resolved)) {
+          log(line);
+        }
         const output = lines.join("\n").trim();
         return {
           content: textContent(output),
@@ -344,6 +474,7 @@ export function registerConsultTool(server: McpServer): void {
             status: "dry-run",
             output,
             dryRun: true,
+            resolved,
           },
         };
       }

@@ -109,7 +109,7 @@ If Claude Code and the signed-in Chrome profile are on the same Mac, skip the re
 oracle bridge claude-config --local-browser > .mcp.json
 ```
 
-This points Claude Code at `oracle-mcp`, sets `ORACLE_ENGINE="browser"`, and reuses the shared manual-login profile at `~/.oracle/browser-profile`. From Claude Code, call `consult` with `preset:"chatgpt-pro-heavy"` for the “Let Them Fight” workflow: Claude asks Oracle, Oracle asks ChatGPT Pro in browser mode, and the answer comes back through MCP. Use `dryRun:true` first when you only want to validate the resolved request.
+This points Claude Code at `oracle-mcp`, sets `ORACLE_ENGINE="browser"`, and reuses the shared manual-login profile at `~/.oracle/browser-profile`. From Claude Code, call `consult` with `preset:"chatgpt-pro-heavy"` for the “Let Them Fight” workflow: Claude asks Oracle, Oracle asks ChatGPT Pro Extended in browser mode, and the answer comes back through MCP. Use `dryRun:true` first when you only want to validate the resolved request.
 
 Override local paths when needed:
 

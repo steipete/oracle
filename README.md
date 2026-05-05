@@ -130,7 +130,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 oracle bridge claude-config --local-browser > .mcp.json
 ```
 
-- In MCP `consult`, use `preset: "chatgpt-pro-heavy"` for ChatGPT browser mode with `gpt-5.5-pro` and heavy thinking. Add `dryRun: true` to inspect the resolved run without creating a session or touching Chrome.
+- In MCP `consult`, use `preset: "chatgpt-pro-heavy"` for ChatGPT browser mode with `gpt-5.5-pro` and Pro Extended thinking. Add `dryRun: true` to inspect the resolved run without creating a session or touching Chrome.
 
 ```bash
 npx -y @steipete/oracle oracle-mcp

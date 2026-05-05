@@ -321,6 +321,7 @@ export async function attachSession(
           reasoningTokens: 0,
           totalTokens: outputTokens,
         },
+        errorMessage: undefined,
         browser: {
           config: metadata.browser?.config,
           runtime,
