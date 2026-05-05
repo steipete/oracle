@@ -528,6 +528,59 @@ export async function closeTab(
   }
 }
 
+export async function closeBlankChromeTabs(
+  port: number,
+  logger: BrowserLogger,
+  host?: string,
+  options?: { excludeTargetIds?: Iterable<string | null | undefined> },
+): Promise<void> {
+  const effectiveHost = host ?? "127.0.0.1";
+  const excluded = new Set(
+    [...(options?.excludeTargetIds ?? [])].filter(
+      (targetId): targetId is string => typeof targetId === "string" && targetId.length > 0,
+    ),
+  );
+  let targets: Array<{ id?: string; targetId?: string; type?: string; url?: string }>;
+  try {
+    targets = (await CDP.List({ host: effectiveHost, port })) as Array<{
+      id?: string;
+      targetId?: string;
+      type?: string;
+      url?: string;
+    }>;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`Failed to inspect blank Chrome tabs: ${message}`);
+    return;
+  }
+
+  let closed = 0;
+  for (const target of targets) {
+    const targetId = target.targetId ?? target.id;
+    if (!targetId || excluded.has(targetId) || !isBlankPageTarget(target)) {
+      continue;
+    }
+    try {
+      await CDP.Close({ host: effectiveHost, port, id: targetId });
+      closed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger(`Failed to close blank Chrome tab ${targetId}: ${message}`);
+    }
+  }
+  if (closed > 0) {
+    logger(`Closed ${closed} blank Chrome tab${closed === 1 ? "" : "s"}.`);
+  }
+}
+
+function isBlankPageTarget(target: { type?: string; url?: string }): boolean {
+  if (target.type && target.type !== "page") {
+    return false;
+  }
+  const url = (target.url ?? "").trim().toLowerCase();
+  return url === "about:blank" || url === "chrome://newtab/" || url === "chrome://new-tab-page/";
+}
+
 function buildChromeFlags(headless: boolean, debugBindAddress?: string | null): string[] {
   const flags = [
     "--disable-background-networking",

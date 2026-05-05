@@ -220,6 +220,7 @@ Browser automation can open or control Chrome, so dry-runs and live runs print a
 - `--browser-attach-running` and `--remote-chrome <host:port>` are the calmest options when a signed-in Chrome is already running with DevTools enabled.
 - `--browser-hide-window` is best-effort: Chrome can briefly take focus before Oracle hides it.
 - Long GPT-5.5 Pro browser consults are normal. Use `--heartbeat`, `oracle status`, and `oracle session <id>` instead of starting a duplicate run if the host agent appears to be waiting.
+- Successful manual-profile runs close Oracle's own ChatGPT tab and clean up leftover blank startup tabs when no other Oracle browser slots are active. Incomplete runs leave the tab open so `oracle session <id>` can reattach.
 
 ## Flags you’ll actually use
 

@@ -132,6 +132,51 @@ describe("connectWithNewTab", () => {
     expect(cdpNewMock).toHaveBeenCalledTimes(1);
     expect(cdpMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222, target: "target-2" });
   });
+});
+
+describe("closeBlankChromeTabs", () => {
+  beforeEach(() => {
+    cdpMock.mockReset();
+    cdpNewMock.mockReset();
+    cdpCloseMock.mockReset();
+    cdpListMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("closes blank tabs while preserving active and conversation targets", async () => {
+    cdpListMock.mockResolvedValue([
+      { id: "blank-1", type: "page", url: "about:blank" },
+      { id: "chat-1", type: "page", url: "https://chatgpt.com/c/abc" },
+      { id: "active-blank", type: "page", url: "about:blank" },
+      { id: "newtab-1", type: "page", url: "chrome://newtab/" },
+      { id: "worker-1", type: "service_worker", url: "about:blank" },
+    ]);
+    cdpCloseMock.mockResolvedValue(undefined);
+
+    const { closeBlankChromeTabs } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+
+    await closeBlankChromeTabs(9222, logger, "127.0.0.1", {
+      excludeTargetIds: ["active-blank"],
+    });
+
+    expect(cdpListMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222 });
+    expect(cdpCloseMock).toHaveBeenCalledTimes(2);
+    expect(cdpCloseMock).toHaveBeenNthCalledWith(1, {
+      host: "127.0.0.1",
+      port: 9222,
+      id: "blank-1",
+    });
+    expect(cdpCloseMock).toHaveBeenNthCalledWith(2, {
+      host: "127.0.0.1",
+      port: 9222,
+      id: "newtab-1",
+    });
+    expect(logger).toHaveBeenCalledWith("Closed 2 blank Chrome tabs.");
+  });
 
   test("opens a dedicated tab through a browser websocket endpoint", async () => {
     const browserClient = {
