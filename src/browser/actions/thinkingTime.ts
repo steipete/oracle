@@ -29,8 +29,9 @@ export async function ensureThinkingTime(
   Runtime: ChromeClient["Runtime"],
   level: ThinkingTimeLevel,
   logger: BrowserLogger,
+  targetModel?: string | null,
 ) {
-  const result = await evaluateThinkingTimeSelection(Runtime, level);
+  const result = await evaluateThinkingTimeSelection(Runtime, level, targetModel);
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
 
   switch (result?.status) {
@@ -106,9 +107,10 @@ export async function ensureThinkingTimeIfAvailable(
 async function evaluateThinkingTimeSelection(
   Runtime: ChromeClient["Runtime"],
   level: ThinkingTimeLevel,
+  targetModel?: string | null,
 ): Promise<ThinkingTimeOutcome | undefined> {
   const outcome = await Runtime.evaluate({
-    expression: buildThinkingTimeExpression(level),
+    expression: buildThinkingTimeExpression(level, targetModel),
     awaitPromise: true,
     returnByValue: true,
   });
@@ -116,11 +118,15 @@ async function evaluateThinkingTimeSelection(
   return outcome.result?.value as ThinkingTimeOutcome | undefined;
 }
 
-function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
+function buildThinkingTimeExpression(
+  level: ThinkingTimeLevel,
+  targetModel?: string | null,
+): string {
   const menuContainerLiteral = JSON.stringify(MENU_CONTAINER_SELECTOR);
   const menuItemLiteral = JSON.stringify(MENU_ITEM_SELECTOR);
   const modelButtonLiteral = JSON.stringify(MODEL_BUTTON_SELECTOR);
   const targetLevelLiteral = JSON.stringify(level.toLowerCase());
+  const targetModelLiteral = JSON.stringify(targetModel?.trim() || null);
 
   return `(async () => {
     ${buildClickDispatcher()}
@@ -129,6 +135,7 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
     const MENU_ITEM_SELECTOR = ${menuItemLiteral};
     const MODEL_BUTTON_SELECTOR = ${modelButtonLiteral};
     const TARGET_LEVEL = ${targetLevelLiteral};
+    const TARGET_MODEL = ${targetModelLiteral};
 
     // Bilingual matchers: English level token + observed Chinese variants.
     const LEVEL_TOKENS = {
@@ -150,6 +157,21 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
       .replace(/[^a-z0-9\\u4e00-\\u9fa5]+/g, ' ')
       .replace(/\\s+/g, ' ')
       .trim();
+    const normalizedTargetModel = normalize(TARGET_MODEL);
+    const targetModelVersion = normalizedTargetModel.includes('5 5')
+      ? '5-5'
+      : normalizedTargetModel.includes('5 4')
+        ? '5-4'
+        : normalizedTargetModel.includes('5 2')
+          ? '5-2'
+          : normalizedTargetModel.includes('5 1')
+            ? '5-1'
+            : normalizedTargetModel.includes('5 0')
+              ? '5-0'
+              : null;
+    const targetWantsPro = normalizedTargetModel.includes('pro');
+    const targetWantsThinking = normalizedTargetModel.includes('thinking');
+    const targetWantsInstant = normalizedTargetModel.includes('instant');
     const matchesLevel = (text) => {
       const t = normalize(text);
       return targetTokens.some((tok) => t.includes(String(tok).toLowerCase()));
@@ -242,13 +264,60 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
 
     const findModelButton = () => document.querySelector(MODEL_BUTTON_SELECTOR);
     const findTrailingButtons = () => Array.from(document.querySelectorAll(TRAILING_SELECTOR));
+    const normalizeModelRowText = (node) => {
+      if (!(node instanceof HTMLElement)) return '';
+      const parts = [
+        node.textContent ?? '',
+        node.getAttribute('aria-label') ?? '',
+        node.getAttribute('data-testid') ?? '',
+      ];
+      return normalize(parts.join(' '));
+    };
+    const modelRowMatchesTarget = (row) => {
+      if (!normalizedTargetModel || !(row instanceof HTMLElement)) return false;
+      const text = normalizeModelRowText(row);
+      if (!text) return false;
+      if (targetModelVersion === '5-5') {
+        const has55 = text.includes('5 5') || text.includes('gpt55') || text.includes('gpt 5 5');
+        const isCurrentProAlias = targetWantsPro && text.includes('pro') && !text.includes('thinking');
+        if (!has55 && !isCurrentProAlias) return false;
+      } else if (targetModelVersion === '5-4' && !text.includes('5 4')) {
+        return false;
+      } else if (targetModelVersion === '5-2' && !text.includes('5 2')) {
+        return false;
+      } else if (targetModelVersion === '5-1' && !text.includes('5 1')) {
+        return false;
+      } else if (targetModelVersion === '5-0' && !text.includes('5 0')) {
+        return false;
+      }
+      if (targetWantsPro && !text.includes('pro')) return false;
+      if (!targetWantsPro && text.includes('pro')) return false;
+      if (targetWantsThinking && !text.includes('thinking')) return false;
+      if (!targetWantsThinking && text.includes('thinking')) return false;
+      if (targetWantsInstant && !text.includes('instant')) return false;
+      if (!targetWantsInstant && text.includes('instant')) return false;
+      return true;
+    };
+    const getModelRowForTrailing = (trailing) => {
+      const rowContainer = trailing?.closest?.('[class*="model-picker-thinking-effort-row"]');
+      const row = rowContainer?.querySelector?.(
+        '[data-model-picker-thinking-effort-menu-item="true"], [role="menuitemradio"][data-testid*="model-switcher-"]',
+      );
+      if (row) return row;
+      return trailing?.closest?.('[role="menuitemradio"], [data-radix-collection-item]');
+    };
     const pickTrailingForCurrentModel = () => {
       const trailings = findTrailingButtons();
       if (trailings.length === 0) return null;
       if (trailings.length === 1) return trailings[0];
+      // Prefer the trailing effort button on the model row Oracle just selected.
+      for (const t of trailings) {
+        const row = getModelRowForTrailing(t);
+        if (modelRowMatchesTarget(row)) return t;
+      }
       // Prefer the trailing button whose model row is currently selected.
       for (const t of trailings) {
-        const row = t.closest('[role="menuitem"], [role="menuitemradio"], [data-radix-collection-item]');
+        const row = getModelRowForTrailing(t);
         if (row && (optionIsSelected(row) || row.querySelector('[aria-checked="true"]'))) return t;
       }
       // Fallback: first one with non-zero box.
@@ -281,6 +350,9 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
       closeOpenMenus();
       return { status: 'chip-not-found' };
     }
+
+    const targetModelRow = getModelRowForTrailing(trailing);
+    const targetModelAlreadySelected = !TARGET_MODEL || optionIsSelected(targetModelRow);
 
     dispatchClickSequence(trailing);
     await sleep(STEP_WAIT_MS);
@@ -325,15 +397,29 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
       return { status: 'option-not-found' };
     }
 
-    const already = optionIsSelected(targetOption);
+    const effortAlreadySelected = optionIsSelected(targetOption);
     const label = targetOption.textContent?.trim?.() || null;
-    dispatchClickSequence(targetOption);
-    await sleep(STEP_WAIT_MS);
+    if (!effortAlreadySelected) {
+      dispatchClickSequence(targetOption);
+      await sleep(STEP_WAIT_MS);
+    }
+    if (
+      TARGET_MODEL &&
+      targetModelRow instanceof HTMLElement &&
+      targetModelRow.isConnected &&
+      !optionIsSelected(targetModelRow)
+    ) {
+      dispatchClickSequence(targetModelRow);
+      await sleep(STEP_WAIT_MS);
+    }
     closeOpenMenus();
-    return { status: already ? 'already-selected' : 'switched', label };
+    return { status: effortAlreadySelected && targetModelAlreadySelected ? 'already-selected' : 'switched', label };
   })()`;
 }
 
-export function buildThinkingTimeExpressionForTest(level: ThinkingTimeLevel = "extended"): string {
-  return buildThinkingTimeExpression(level);
+export function buildThinkingTimeExpressionForTest(
+  level: ThinkingTimeLevel = "extended",
+  targetModel?: string | null,
+): string {
+  return buildThinkingTimeExpression(level, targetModel);
 }

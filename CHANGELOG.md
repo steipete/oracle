@@ -22,6 +22,9 @@
 ### Fixed
 
 - Bridge: keep generated Codex/Claude MCP config snippets clean on stdout so redirecting `oracle bridge claude-config --local-browser > .mcp.json` produces valid JSON.
+- Browser: keep `--browser-thinking-time extended` on the selected GPT-5.5 Pro row instead of applying Extended to regular GPT-5.5.
+- Browser: clear stale manual-login composer text before every initial submission so new prompts do not append to leftover drafts.
+- Browser: ignore per-row thinking-effort controls while selecting a model so GPT-5.5 Pro selection cannot stop at regular GPT-5.5 Thinking's Extended control.
 - MCP: clarify `consult` engine defaults and add ChatGPT browser-mode recovery guidance to missing GPT API-key errors. (#172) — thanks @pdurlej.
 
 ## 0.10.0 — 2026-05-04

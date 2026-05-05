@@ -32,6 +32,39 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("LEVEL_TOKENS");
   });
 
+  it("prefers the effort control attached to the requested model row", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    expect(expression).toContain('const TARGET_MODEL = "gpt-5.5-pro"');
+    expect(expression).toContain("const modelRowMatchesTarget = (row) =>");
+    expect(expression).toContain("if (targetWantsPro && !text.includes('pro')) return false;");
+    expect(expression).toContain("if (!targetWantsPro && text.includes('pro')) return false;");
+    expect(expression).toContain("if (modelRowMatchesTarget(row)) return t;");
+  });
+
+  it("keeps regular GPT-5.5 thinking-time requests on the non-Pro row", () => {
+    const expression = buildThinkingTimeExpressionForTest("heavy", "Thinking 5.5");
+    expect(expression).toContain('const TARGET_MODEL = "Thinking 5.5"');
+    expect(expression).toContain("const targetWantsPro = normalizedTargetModel.includes('pro');");
+    expect(expression).toContain(
+      "const targetWantsThinking = normalizedTargetModel.includes('thinking');",
+    );
+    expect(expression).toContain("if (!targetWantsPro && text.includes('pro')) return false;");
+    expect(expression).toContain(
+      "if (targetWantsThinking && !text.includes('thinking')) return false;",
+    );
+    expect(expression).toContain("if (modelRowMatchesTarget(row)) return t;");
+  });
+
+  it("activates the requested model row after changing its effort", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    expect(expression).toContain('[class*="model-picker-thinking-effort-row"]');
+    expect(expression).toContain('data-model-picker-thinking-effort-menu-item="true"');
+    expect(expression).toContain("const targetModelRow = getModelRowForTrailing(trailing);");
+    expect(expression).toContain("if (!effortAlreadySelected)");
+    expect(expression).toContain("!optionIsSelected(targetModelRow)");
+    expect(expression).toContain("dispatchClickSequence(targetModelRow);");
+  });
+
   it("preserves Chinese thinking-effort labels while normalizing", () => {
     const expression = buildThinkingTimeExpressionForTest("heavy");
     expect(expression).toContain("\\u4e00-\\u9fa5");

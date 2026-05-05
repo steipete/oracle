@@ -78,6 +78,7 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.4");
     expect(expression).toContain("const closeMenu = () =>");
     expect(expression).toContain("key: 'Escape'");
+    expect(expression).toContain("button.getAttribute?.('aria-expanded') === 'true'");
     expect(expression).toContain("closeMenu();");
   });
 
@@ -129,5 +130,12 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain('data-testid="model-switcher-dropdown-button"');
     expect(expression).toContain("button.__composer-pill[aria-haspopup=");
+  });
+
+  it("does not treat per-row thinking effort controls as model options", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
+    expect(expression).toContain("const isThinkingEffortControl = (node) =>");
+    expect(expression).toContain("data-model-picker-thinking-effort-action");
+    expect(expression).toContain("if (isThinkingEffortControl(option))");
   });
 });
