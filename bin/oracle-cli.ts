@@ -72,6 +72,7 @@ import {
 import { isErrorLogged } from "../src/cli/errorUtils.js";
 import { handleSessionAlias, handleStatusFlag } from "../src/cli/rootAlias.js";
 import { resolveOutputPath } from "../src/cli/writeOutputPath.js";
+import { showBrowserTabsStatus } from "../src/cli/browserTabs.js";
 import { getCliVersion } from "../src/version.js";
 import { runDryRunSummary, runBrowserPreview } from "../src/cli/dryRun.js";
 import { launchTui } from "../src/cli/tui/index.js";
@@ -142,6 +143,7 @@ interface CliOptions extends OptionValues {
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
   browserKeepBrowser?: boolean;
+  browserTab?: string;
   browserModelStrategy?: "select" | "current" | "ignore";
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string;
@@ -653,6 +655,10 @@ program
       "Connect to remote Chrome DevTools Protocol, or when combined with --browser-attach-running use this host:port as the local attach hint.",
     ),
   )
+  .option(
+    "--browser-tab <ref>",
+    "Reuse an existing ChatGPT tab by ref (current, target id, full URL, or title substring) instead of opening a new tab.",
+  )
   .addOption(
     new Option(
       "--remote-host <host:port>",
@@ -881,6 +887,24 @@ program
   .option("--render-markdown", "Alias for --render.", false)
   .option("--model <name>", "Filter sessions/output for a specific model.", "")
   .option("--path", "Print the stored session paths instead of attaching.", false)
+  .option(
+    "--harvest",
+    "Re-read the bound browser tab and print/save the latest assistant output.",
+    false,
+  )
+  .option(
+    "--live",
+    "Tail the live browser tab for this session until it completes, stalls, or detaches.",
+    false,
+  )
+  .option(
+    "--write-output <path>",
+    "Write harvested browser output to this file (requires --harvest or --live).",
+  )
+  .option(
+    "--browser-tab <ref>",
+    "Override the browser tab ref used for harvesting/live tail (current, target id, URL, or title substring).",
+  )
   .addOption(new Option("--clean", "Deprecated alias for --clear.").default(false).hideHelp())
   .action(async (sessionId, _options: StatusOptions, cmd: Command) => {
     await handleSessionCommand(sessionId, cmd);
@@ -899,9 +923,25 @@ program
   .option("--render-markdown", "Alias for --render.", false)
   .option("--model <name>", "Filter sessions/output for a specific model.", "")
   .option("--hide-prompt", "Hide stored prompt when displaying a session.", false)
+  .option(
+    "--browser-tabs",
+    "List live ChatGPT browser tabs and known Oracle session linkage.",
+    false,
+  )
   .addOption(new Option("--clean", "Deprecated alias for --clear.").default(false).hideHelp())
   .action(async (sessionId: string | undefined, _options: StatusOptions, command: Command) => {
     const statusOptions = command.opts<StatusOptions>();
+    if (statusOptions.browserTabs) {
+      if (sessionId) {
+        console.error(
+          "Cannot combine a session ID with --browser-tabs. Remove the ID to inspect live browser tabs.",
+        );
+        process.exitCode = 1;
+        return;
+      }
+      await showBrowserTabsStatus();
+      return;
+    }
     const clearRequested = Boolean(statusOptions.clear || statusOptions.clean);
     if (clearRequested) {
       if (sessionId) {
@@ -1383,6 +1423,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   if (remoteHost && options.remoteChrome) {
     throw new Error("--remote-host cannot be combined with --remote-chrome.");
+  }
+  if (options.browserTab && engine !== "browser") {
+    throw new Error("--browser-tab requires --engine browser.");
   }
 
   if (optionUsesDefault("azureEndpoint")) {

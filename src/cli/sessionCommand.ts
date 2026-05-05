@@ -7,6 +7,12 @@ import {
   type AttachSessionOptions,
   type ShowStatusOptions,
 } from "./sessionDisplay.js";
+import {
+  harvestSessionBrowserOutput,
+  liveTailSessionBrowserOutput,
+  type BrowserHarvestOptions,
+  type BrowserLiveTailOptions,
+} from "./browserTabs.js";
 import { sessionStore } from "../sessionStore.js";
 
 export interface StatusOptions extends OptionValues {
@@ -21,11 +27,26 @@ export interface StatusOptions extends OptionValues {
   verboseRender?: boolean;
   hidePrompt?: boolean;
   model?: string;
+  harvest?: boolean;
+  live?: boolean;
+  writeOutput?: string;
+  writeOutputPath?: string;
+  browserTab?: string;
+  browserTabRef?: string;
+  browserTabs?: boolean;
 }
 
 interface SessionCommandDependencies {
   showStatus: (options: ShowStatusOptions) => Promise<void> | void;
   attachSession: (sessionId: string, options?: AttachSessionOptions) => Promise<void>;
+  harvestSessionBrowserOutput: (
+    sessionId: string,
+    options?: BrowserHarvestOptions,
+  ) => Promise<unknown>;
+  liveTailSessionBrowserOutput: (
+    sessionId: string,
+    options?: BrowserLiveTailOptions,
+  ) => Promise<unknown>;
   usesDefaultStatusFilters: (cmd: Command) => boolean;
   deleteSessionsOlderThan: (options?: {
     hours?: number;
@@ -39,6 +60,8 @@ interface SessionCommandDependencies {
 const defaultDependencies: SessionCommandDependencies = {
   showStatus,
   attachSession,
+  harvestSessionBrowserOutput,
+  liveTailSessionBrowserOutput,
   usesDefaultStatusFilters,
   deleteSessionsOlderThan: (options) => sessionStore.deleteOlderThan(options),
   getSessionPaths: (sessionId) => sessionStore.getPaths(sessionId),
@@ -54,6 +77,10 @@ const SESSION_OPTION_KEYS = new Set([
   "renderMarkdown",
   "path",
   "model",
+  "harvest",
+  "live",
+  "writeOutput",
+  "browserTab",
 ]);
 
 export async function handleSessionCommand(
@@ -62,6 +89,21 @@ export async function handleSessionCommand(
   deps: SessionCommandDependencies = defaultDependencies,
 ): Promise<void> {
   const sessionOptions = command.opts<StatusOptions>();
+  const allOptions = (command.optsWithGlobals?.() as StatusOptions | undefined) ?? sessionOptions;
+  const writeOutputPath =
+    sessionOptions.writeOutput ??
+    sessionOptions.writeOutputPath ??
+    allOptions.writeOutput ??
+    allOptions.writeOutputPath ??
+    command.getOptionValue?.("writeOutput") ??
+    command.getOptionValue?.("writeOutputPath");
+  const browserTabRef =
+    sessionOptions.browserTab ??
+    sessionOptions.browserTabRef ??
+    allOptions.browserTab ??
+    allOptions.browserTabRef ??
+    command.getOptionValue?.("browserTab") ??
+    command.getOptionValue?.("browserTabRef");
   if (sessionOptions.verboseRender) {
     process.env.ORACLE_VERBOSE_RENDER = "1";
   }
@@ -112,6 +154,37 @@ export async function handleSessionCommand(
       console.error(error instanceof Error ? error.message : String(error));
       process.exitCode = 1;
     }
+    return;
+  }
+  const harvestRequested = Boolean(sessionOptions.harvest);
+  const liveRequested = Boolean(sessionOptions.live);
+  if (harvestRequested && liveRequested) {
+    console.error("Cannot combine --harvest and --live. Choose one.");
+    process.exitCode = 1;
+    return;
+  }
+  if (writeOutputPath && !harvestRequested && !liveRequested) {
+    console.error("The --write-output flag requires --harvest or --live.");
+    process.exitCode = 1;
+    return;
+  }
+  if (harvestRequested || liveRequested) {
+    if (!sessionId) {
+      console.error(`The ${harvestRequested ? "--harvest" : "--live"} flag requires a session ID.`);
+      process.exitCode = 1;
+      return;
+    }
+    if (harvestRequested) {
+      await deps.harvestSessionBrowserOutput(sessionId, {
+        writeOutputPath,
+        browserTabRef,
+      });
+      return;
+    }
+    await deps.liveTailSessionBrowserOutput(sessionId, {
+      writeOutputPath,
+      browserTabRef,
+    });
     return;
   }
   if (!sessionId) {

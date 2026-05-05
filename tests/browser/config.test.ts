@@ -38,6 +38,7 @@ describe("resolveBrowserConfig", () => {
       desiredModel: "Custom",
       chromeProfile: "Profile 1",
       chromePath: "/Applications/Chrome",
+      browserTabRef: "current",
       debug: true,
       maxConcurrentTabs: 5,
       researchMode: "deep",
@@ -50,6 +51,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.desiredModel).toBe("Custom");
     expect(resolved.chromeProfile).toBe("Profile 1");
     expect(resolved.chromePath).toBe("/Applications/Chrome");
+    expect(resolved.browserTabRef).toBe("current");
     expect(resolved.debug).toBe(true);
     expect(resolved.maxConcurrentTabs).toBe(5);
     expect(resolved.researchMode).toBe("deep");

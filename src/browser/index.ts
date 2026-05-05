@@ -18,6 +18,7 @@ import {
   connectToRemoteChrome,
   connectWithNewTab,
   closeTab,
+  closeRemoteChromeTarget,
 } from "./chromeLifecycle.js";
 import { syncCookies } from "./cookies.js";
 import {
@@ -79,6 +80,7 @@ import { collectGeneratedImageArtifacts } from "./chatgptImages.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
 import { resolveAttachRunningConnection } from "./attachRunning.js";
+import { connectToExistingChatGptTab } from "./liveTabs.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -372,7 +374,11 @@ async function closeRemoteConnectionAfterRun(options: {
   client: Pick<ChromeClient, "close"> | null;
   runStatus: "attempted" | "complete";
 }): Promise<void> {
-  if (options.connectionClosedUnexpectedly || !options.connection) {
+  if (options.connectionClosedUnexpectedly) {
+    return;
+  }
+  if (!options.connection) {
+    await options.client?.close();
     return;
   }
   if (options.runStatus === "complete") {
@@ -557,6 +563,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   let client: ChromeClient | null = null;
   let isolatedTargetId: string | null = null;
+  let ownsTarget = true;
   const startedAt = Date.now();
   let answerText = "";
   let answerMarkdown = "";
@@ -570,14 +577,31 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   try {
     try {
-      const strictTabIsolation = Boolean(manualLogin && reusedChrome);
-      const connection = await connectWithNewTab(chrome.port, logger, config.url, chromeHost, {
-        fallbackToDefault: !strictTabIsolation,
-        retries: strictTabIsolation ? 3 : 0,
-        retryDelayMs: 500,
-      });
-      client = connection.client;
-      isolatedTargetId = connection.targetId ?? null;
+      if (config.browserTabRef) {
+        const attached = await connectToExistingChatGptTab({
+          host: chromeHost,
+          port: chrome.port,
+          ref: config.browserTabRef,
+        });
+        client = attached.client;
+        isolatedTargetId = attached.targetId ?? null;
+        lastTargetId = attached.targetId ?? undefined;
+        lastUrl = attached.tab.url || lastUrl;
+        ownsTarget = false;
+        logger(
+          `Attached to existing ChatGPT tab ${attached.targetId}${attached.tab.url ? ` (${attached.tab.url})` : ""}`,
+        );
+      } else {
+        const strictTabIsolation = Boolean(manualLogin && reusedChrome);
+        const connection = await connectWithNewTab(chrome.port, logger, config.url, chromeHost, {
+          fallbackToDefault: !strictTabIsolation,
+          retries: strictTabIsolation ? 3 : 0,
+          retryDelayMs: 500,
+        });
+        client = connection.client;
+        isolatedTargetId = connection.targetId ?? null;
+        ownsTarget = true;
+      }
       if (tabLease && isolatedTargetId) {
         await tabLease.update({
           chromeHost,
@@ -683,34 +707,40 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
 
-    const baseUrl = CHATGPT_URL;
-    // First load the base ChatGPT homepage to satisfy potential interstitials,
-    // then hop to the requested URL if it differs.
-    await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
-    await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
-    // Learned: login checks must happen on the base domain before jumping into project URLs.
-    await raceWithDisconnect(
-      waitForLogin({
-        runtime: Runtime,
-        logger,
-        appliedCookies,
-        manualLogin,
-        timeoutMs: config.timeoutMs,
-      }),
-    );
-
-    if (config.url !== baseUrl) {
+    if (config.browserTabRef) {
+      await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+      await raceWithDisconnect(ensureLoggedIn(Runtime, logger));
+      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+    } else {
+      const baseUrl = CHATGPT_URL;
+      // First load the base ChatGPT homepage to satisfy potential interstitials,
+      // then hop to the requested URL if it differs.
+      await raceWithDisconnect(navigateToChatGPT(Page, Runtime, baseUrl, logger));
+      await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+      // Learned: login checks must happen on the base domain before jumping into project URLs.
       await raceWithDisconnect(
-        navigateToPromptReadyWithFallback(Page, Runtime, {
-          url: config.url,
-          fallbackUrl: baseUrl,
-          timeoutMs: config.inputTimeoutMs,
-          headless: config.headless,
+        waitForLogin({
+          runtime: Runtime,
           logger,
+          appliedCookies,
+          manualLogin,
+          timeoutMs: config.timeoutMs,
         }),
       );
-    } else {
-      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+
+      if (config.url !== baseUrl) {
+        await raceWithDisconnect(
+          navigateToPromptReadyWithFallback(Page, Runtime, {
+            url: config.url,
+            fallbackUrl: baseUrl,
+            timeoutMs: config.inputTimeoutMs,
+            headless: config.headless,
+            logger,
+          }),
+        );
+      } else {
+        await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+      }
     }
     logger(
       `Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`,
@@ -1565,7 +1595,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // Close the isolated tab once the response has been fully captured to prevent
     // tab accumulation across repeated runs. Keep the tab open on incomplete runs
     // so reattach can recover the response.
-    if (runStatus === "complete" && isolatedTargetId && chrome?.port) {
+    if (runStatus === "complete" && isolatedTargetId && chrome?.port && ownsTarget) {
       await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
     }
     let keepBrowserOpen = effectiveKeepBrowser || preserveBrowserOnError;
@@ -1961,6 +1991,8 @@ async function runRemoteBrowserMode(
   let remoteTargetId: string | null = null;
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
+  let attachedExistingTab = false;
+  let ownsTarget = true;
   const runtimeHintCb = options.runtimeHintCb;
   const emitRuntimeHint = async () => {
     if (!runtimeHintCb) return;
@@ -1999,7 +2031,9 @@ async function runRemoteBrowserMode(
   const chromeProfileRoot = config.remoteChromeProfileRoot ?? undefined;
 
   try {
-    const remoteLeaseProfileDir = resolveRemoteTabLeaseProfileDir(config);
+    const remoteLeaseProfileDir = config.browserTabRef
+      ? null
+      : resolveRemoteTabLeaseProfileDir(config);
     if (remoteLeaseProfileDir) {
       await mkdir(remoteLeaseProfileDir, { recursive: true });
       tabLease = await acquireBrowserTabLease(remoteLeaseProfileDir, {
@@ -2011,11 +2045,35 @@ async function runRemoteBrowserMode(
         chromePort: port,
       });
     }
-    connection = await connectToRemoteChrome(host, port, logger, config.url, browserWSEndpoint, {
-      approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
-    });
-    client = connection.client;
-    remoteTargetId = connection.targetId ?? null;
+    if (config.browserTabRef) {
+      const attached = await connectToExistingChatGptTab({
+        host,
+        port,
+        ref: config.browserTabRef,
+      });
+      client = attached.client;
+      remoteTargetId = attached.targetId ?? null;
+      lastUrl = attached.tab.url || lastUrl;
+      attachedExistingTab = true;
+      ownsTarget = false;
+      logger(
+        `Attached to existing remote ChatGPT tab ${attached.targetId}${attached.tab.url ? ` (${attached.tab.url})` : ""}`,
+      );
+    } else {
+      connection = await connectToRemoteChrome(host, port, logger, config.url, browserWSEndpoint, {
+        approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
+      });
+      client = connection.client;
+      remoteTargetId = connection.targetId ?? null;
+      ownsTarget = true;
+    }
+    if (tabLease && remoteTargetId) {
+      await tabLease.update({
+        chromeHost: host,
+        chromePort: port,
+        chromeTargetId: remoteTargetId,
+      });
+    }
     await emitRuntimeHint();
     const markConnectionLost = () => {
       connectionClosedUnexpectedly = true;
@@ -2033,10 +2091,16 @@ async function runRemoteBrowserMode(
     // Skip cookie sync for remote Chrome - it already has cookies
     logger("Skipping cookie sync for remote Chrome (using existing session)");
 
-    await navigateToChatGPT(Page, Runtime, config.url, logger);
-    await ensureNotBlocked(Runtime, config.headless, logger);
-    await ensureLoggedIn(Runtime, logger, { remoteSession: true });
-    await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+    if (!attachedExistingTab) {
+      await navigateToChatGPT(Page, Runtime, config.url, logger);
+      await ensureNotBlocked(Runtime, config.headless, logger);
+      await ensureLoggedIn(Runtime, logger, { remoteSession: true });
+      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+    } else {
+      await ensureNotBlocked(Runtime, config.headless, logger);
+      await ensureLoggedIn(Runtime, logger, { remoteSession: true });
+      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+    }
     logger(
       `Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`,
     );
@@ -2647,6 +2711,9 @@ async function runRemoteBrowserMode(
       const handle = tabLease;
       tabLease = null;
       await handle.release().catch(() => undefined);
+    }
+    if (ownsTarget) {
+      await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
     }
     // Don't kill remote Chrome - it's not ours to manage
     const totalSeconds = (Date.now() - startedAt) / 1000;

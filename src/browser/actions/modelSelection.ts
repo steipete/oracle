@@ -121,7 +121,7 @@ function buildModelSelectionExpression(
           ? '5-1'
           : normalizedTarget.includes('5 0')
             ? '5-0'
-            : null;
+          : null;
     const wantsPro = normalizedTarget.includes(' pro') || normalizedTarget.endsWith(' pro') || normalizedTokens.includes('pro');
     const wantsInstant = normalizedTarget.includes('instant');
     const wantsThinking = normalizedTarget.includes('thinking');
@@ -136,6 +136,9 @@ function buildModelSelectionExpression(
       }
       return false;
     };
+    const hasProComposerPill = () => Boolean(
+      document.querySelector('button.__composer-pill, button[aria-label="Pro, click to remove"]')
+    );
 
     const button = document.querySelector(BUTTON_SELECTOR);
     if (!button) {
@@ -168,12 +171,21 @@ function buildModelSelectionExpression(
     const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
     const getResolvedLabel = (fallback) => getComposerModelLabel() || getButtonLabel() || fallback;
     if (MODEL_STRATEGY === 'current') {
-      return { status: 'already-selected', label: getResolvedLabel(PRIMARY_LABEL) };
+      const currentLabel = getResolvedLabel(PRIMARY_LABEL);
+      return {
+        status: 'already-selected',
+        label: wantsPro && normalizeText(currentLabel) === 'chatgpt' && hasProComposerPill()
+          ? currentLabel + ' + Pro'
+          : currentLabel,
+      };
     }
     const buttonMatchesTarget = () => {
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
+      if (wantsPro && normalizedLabel === 'chatgpt' && hasProComposerPill()) {
+        return true;
+      }
       if (desiredVersion) {
         if (desiredVersion === '5-5' && !normalizedLabel.includes('5 5')) return false;
         if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
@@ -740,6 +752,9 @@ function buildModelMatchersLiteral(targetModel: string): {
   };
 }
 
-export function buildModelSelectionExpressionForTest(targetModel: string): string {
-  return buildModelSelectionExpression(targetModel, "select");
+export function buildModelSelectionExpressionForTest(
+  targetModel: string,
+  strategy: BrowserModelStrategy = "select",
+): string {
+  return buildModelSelectionExpression(targetModel, strategy);
 }

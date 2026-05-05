@@ -46,6 +46,7 @@ export interface BrowserFlagOptions {
   browserChromePath?: string;
   browserCookiePath?: string;
   browserAttachRunning?: boolean;
+  browserTab?: string;
   chatgptUrl?: string;
   browserUrl?: string;
   browserTimeout?: string;
@@ -222,6 +223,7 @@ export async function buildBrowserConfig(
     // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
+    browserTabRef: options.browserTab ?? undefined,
     thinkingTime: options.browserThinkingTime,
     researchMode: options.browserResearch === "deep" ? "deep" : "off",
   };

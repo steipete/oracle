@@ -145,6 +145,14 @@ describe("buildBrowserConfig", () => {
     expect(config.attachRunning).toBe(true);
   });
 
+  test("passes through a browser tab ref", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.2-pro",
+      browserTab: "current",
+    });
+    expect(config.browserTabRef).toBe("current");
+  });
+
   test("still accepts browser-chrome-path when attach-running is enabled", async () => {
     const config = await buildBrowserConfig({
       model: "gpt-5.2-pro",

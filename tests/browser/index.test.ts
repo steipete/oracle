@@ -150,6 +150,19 @@ describe("remote Chrome cleanup", () => {
     expect(closeClient).toHaveBeenCalledTimes(1);
   });
 
+  test("detaches raw target clients when a run attaches to an existing remote tab", async () => {
+    const closeClient = vi.fn().mockResolvedValue(undefined);
+
+    await __test__.closeRemoteConnectionAfterRun({
+      connectionClosedUnexpectedly: false,
+      connection: null,
+      client: { close: closeClient },
+      runStatus: "complete",
+    });
+
+    expect(closeClient).toHaveBeenCalledTimes(1);
+  });
+
   test("does not close an already-lost connection", async () => {
     const closeConnection = vi.fn().mockResolvedValue(undefined);
     const closeClient = vi.fn().mockResolvedValue(undefined);

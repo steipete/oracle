@@ -88,6 +88,13 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("desiredVersion === '5-5'");
   });
 
+  it("recognizes ChatGPT plus the Pro composer pill as the current Pro model", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
+    expect(expression).toContain("const hasProComposerPill = () =>");
+    expect(expression).toContain("currentLabel + ' + Pro'");
+    expect(expression).toContain("normalizedLabel === 'chatgpt' && hasProComposerPill()");
+  });
+
   it("builds composer footer matchers for generic ChatGPT header states", () => {
     expect(buildComposerSignalMatchersForTest("GPT-5.5 Pro")).toEqual({
       includesAny: ["pro"],
