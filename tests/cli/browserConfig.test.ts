@@ -19,6 +19,7 @@ describe("buildBrowserConfig", () => {
       debug: undefined,
       allowCookieErrors: true,
       researchMode: "off",
+      archiveConversations: undefined,
     });
   });
 
@@ -41,6 +42,14 @@ describe("buildBrowserConfig", () => {
       browserResearch: "deep",
     });
     expect(config.researchMode).toBe("deep");
+  });
+
+  test("sets browser archive mode when requested", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.4-pro",
+      browserArchive: "never",
+    });
+    expect(config.archiveConversations).toBe("never");
   });
 
   test("honors overrides and converts durations + booleans", async () => {

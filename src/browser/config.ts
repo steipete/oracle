@@ -64,6 +64,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   manualLoginProfileDir: null,
   manualLoginCookieSync: false,
   researchMode: "off",
+  archiveConversations: "auto",
 };
 
 export function resolveBrowserConfig(
@@ -105,6 +106,7 @@ export function resolveBrowserConfig(
     process.env.ORACLE_BROWSER_PROFILE_DIR,
   );
   const researchMode = normalizeResearchMode(config?.researchMode);
+  const archiveConversations = normalizeArchiveMode(config?.archiveConversations);
   const defaultTimeoutMs =
     researchMode === "deep" ? DEEP_RESEARCH_DEFAULT_TIMEOUT_MS : DEFAULT_BROWSER_CONFIG.timeoutMs;
   return {
@@ -154,6 +156,7 @@ export function resolveBrowserConfig(
       config?.remoteChromeProfileRoot ?? DEFAULT_BROWSER_CONFIG.remoteChromeProfileRoot,
     thinkingTime: config?.thinkingTime,
     researchMode,
+    archiveConversations,
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
     manualLoginCookieSync:
@@ -163,6 +166,10 @@ export function resolveBrowserConfig(
 
 function normalizeResearchMode(value: unknown): "off" | "deep" {
   return value === "deep" ? "deep" : "off";
+}
+
+function normalizeArchiveMode(value: unknown): "auto" | "always" | "never" {
+  return value === "always" || value === "never" ? value : "auto";
 }
 
 function parseDebugPort(raw?: string | null): number | null {

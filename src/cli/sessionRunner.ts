@@ -137,6 +137,7 @@ export async function performSessionRun({
         browser: {
           config: browserConfig,
           runtime: result.runtime,
+          archive: result.archive,
         },
         artifacts: mergeArtifacts(sessionMeta.artifacts, result.artifacts),
         response: undefined,

@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
 import net from "node:net";
-import type { BrowserModelStrategy, BrowserResearchMode, CookieParam } from "./browser/types.js";
+import type {
+  BrowserArchiveMode,
+  BrowserArchiveResult,
+  BrowserModelStrategy,
+  BrowserResearchMode,
+  CookieParam,
+} from "./browser/types.js";
 import type {
   TransportFailureReason,
   AzureOptions,
@@ -63,6 +69,8 @@ export interface BrowserSessionConfig {
   thinkingTime?: ThinkingTimeLevel;
   /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
   researchMode?: BrowserResearchMode;
+  /** Archive completed ChatGPT conversations after local artifacts are saved. */
+  archiveConversations?: BrowserArchiveMode;
 }
 
 export interface BrowserRuntimeMetadata {
@@ -100,6 +108,7 @@ export interface BrowserMetadata {
   config?: BrowserSessionConfig;
   runtime?: BrowserRuntimeMetadata;
   harvest?: BrowserHarvestMetadata;
+  archive?: BrowserArchiveResult;
 }
 
 export interface SessionArtifact {

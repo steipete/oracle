@@ -82,6 +82,9 @@ describe("runDryRunSummary", () => {
     expect(
       log.mock.calls.some(([entry]) => String(entry).includes("Cookies: copy from Chrome")),
     ).toBe(true);
+    expect(
+      log.mock.calls.some(([entry]) => String(entry).includes("ChatGPT archive policy: auto")),
+    ).toBe(true);
   });
 
   test("prints browser follow-up summary", async () => {

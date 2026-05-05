@@ -91,6 +91,12 @@ const consultInputShape = {
     .enum(["deep"])
     .optional()
     .describe("Browser-only: activate ChatGPT Deep Research mode for broad web research."),
+  browserArchive: z
+    .enum(["auto", "always", "never"])
+    .optional()
+    .describe(
+      'Browser-only: archive completed ChatGPT conversations after local artifacts are saved. "auto" archives successful non-project one-shots only.',
+    ),
   browserFollowUps: z
     .array(z.string())
     .optional()
@@ -224,6 +230,7 @@ export function buildConsultBrowserConfig({
   browserThinkingTime,
   browserModelStrategy,
   browserResearchMode,
+  browserArchive,
   browserKeepBrowser,
 }: {
   userConfig: UserConfig;
@@ -234,6 +241,7 @@ export function buildConsultBrowserConfig({
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
   browserModelStrategy?: BrowserModelStrategy;
   browserResearchMode?: "deep";
+  browserArchive?: "auto" | "always" | "never";
   browserKeepBrowser?: boolean;
 }): BrowserSessionConfig {
   const configuredBrowser = userConfig.browser ?? {};
@@ -262,6 +270,7 @@ export function buildConsultBrowserConfig({
     thinkingTime: browserThinkingTime ?? configuredBrowser.thinkingTime,
     modelStrategy: browserModelStrategy ?? configuredBrowser.modelStrategy,
     researchMode: browserResearchMode ?? configuredBrowser.researchMode,
+    archiveConversations: browserArchive ?? configuredBrowser.archiveConversations,
     desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
   };
 }
@@ -398,6 +407,7 @@ export function registerConsultTool(server: McpServer): void {
         browserThinkingTime,
         browserModelStrategy,
         browserResearchMode,
+        browserArchive,
         browserFollowUps,
         browserKeepBrowser,
         dryRun,
@@ -441,6 +451,7 @@ export function registerConsultTool(server: McpServer): void {
           browserThinkingTime,
           browserModelStrategy,
           browserResearchMode,
+          browserArchive,
           browserKeepBrowser,
         });
       }

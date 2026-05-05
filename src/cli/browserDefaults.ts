@@ -1,7 +1,11 @@
 import { normalizeChatgptUrl, CHATGPT_URL } from "../browserMode.js";
 import type { UserConfig } from "../config.js";
 import type { ThinkingTimeLevel } from "../oracle.js";
-import type { BrowserModelStrategy, BrowserResearchMode } from "../browser/types.js";
+import type {
+  BrowserArchiveMode,
+  BrowserModelStrategy,
+  BrowserResearchMode,
+} from "../browser/types.js";
 
 export interface BrowserDefaultsOptions {
   chatgptUrl?: string;
@@ -28,6 +32,7 @@ export interface BrowserDefaultsOptions {
   browserModelStrategy?: BrowserModelStrategy;
   browserThinkingTime?: ThinkingTimeLevel;
   browserResearch?: BrowserResearchMode;
+  browserArchive?: BrowserArchiveMode;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
 }
@@ -124,6 +129,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset("browserResearch") && browser.researchMode !== undefined) {
     options.browserResearch = browser.researchMode;
+  }
+  if (isUnset("browserArchive") && browser.archiveConversations !== undefined) {
+    options.browserArchive = browser.archiveConversations;
   }
   if (isUnset("browserManualLogin") && browser.manualLogin !== undefined) {
     options.browserManualLogin = browser.manualLogin;

@@ -8,6 +8,7 @@ export type ChromeClient = Awaited<ReturnType<typeof CDP>>;
 export type CookieParam = Protocol.Network.CookieParam;
 export type BrowserModelStrategy = "select" | "current" | "ignore";
 export type BrowserResearchMode = "off" | "deep";
+export type BrowserArchiveMode = "auto" | "always" | "never";
 
 export type BrowserLogger = ((message: string) => void) & {
   verbose?: boolean;
@@ -87,6 +88,8 @@ export interface BrowserAutomationConfig {
   thinkingTime?: ThinkingTimeLevel;
   /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
   researchMode?: BrowserResearchMode;
+  /** Archive completed ChatGPT conversations after local artifacts are saved. */
+  archiveConversations?: BrowserArchiveMode;
 }
 
 export interface BrowserRunOptions {
@@ -113,6 +116,15 @@ export interface BrowserRunOptions {
   runtimeHintCb?: (hint: BrowserRuntimeMetadata) => void | Promise<void>;
 }
 
+export interface BrowserArchiveResult {
+  mode: BrowserArchiveMode;
+  attempted: boolean;
+  archived: boolean;
+  reason?: string;
+  conversationUrl?: string;
+  error?: string;
+}
+
 export interface BrowserRunResult {
   answerText: string;
   answerMarkdown: string;
@@ -120,6 +132,7 @@ export interface BrowserRunResult {
   artifacts?: SessionArtifact[];
   generatedImages?: BrowserGeneratedImage[];
   savedImages?: SavedBrowserImage[];
+  archive?: BrowserArchiveResult;
   tookMs: number;
   answerTokens: number;
   answerChars: number;
@@ -170,4 +183,5 @@ export type ResolvedBrowserConfig = Required<
   manualLoginCookieSync?: boolean;
   maxConcurrentTabs: number;
   researchMode: BrowserResearchMode;
+  archiveConversations: BrowserArchiveMode;
 };
