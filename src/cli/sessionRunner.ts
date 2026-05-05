@@ -6,6 +6,7 @@ import type {
   SessionMode,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
+  SessionArtifact,
 } from "../sessionStore.js";
 import type { RunOracleOptions, UsageSummary } from "../oracle.js";
 import {
@@ -17,6 +18,7 @@ import {
   extractTextOutput,
 } from "../oracle.js";
 import {
+  ensureSessionArtifacts,
   runBrowserSessionExecution,
   type BrowserSessionRunnerDeps,
 } from "../browser/sessionRunner.js";
@@ -135,6 +137,7 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: result.runtime,
         },
+        artifacts: mergeArtifacts(sessionMeta.artifacts, result.artifacts),
         response: undefined,
         transport: undefined,
         error: undefined,
@@ -559,6 +562,21 @@ export async function performSessionRun({
   }
 }
 
+function mergeArtifacts(
+  existing: SessionArtifact[] | undefined,
+  additions: SessionArtifact[] | undefined,
+): SessionArtifact[] | undefined {
+  const merged = new Map<string, SessionArtifact>();
+  for (const artifact of existing ?? []) {
+    merged.set(`${artifact.kind}:${artifact.path}`, artifact);
+  }
+  for (const artifact of additions ?? []) {
+    merged.set(`${artifact.kind}:${artifact.path}`, artifact);
+  }
+  const values = Array.from(merged.values());
+  return values.length > 0 ? values : undefined;
+}
+
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -687,6 +705,15 @@ async function autoReattachUntilComplete({
       });
       const answerText = result.answerMarkdown || result.answerText || "";
       const outputTokens = estimateTokenCount(answerText);
+      const artifacts = await ensureSessionArtifacts({
+        sessionId: sessionMeta.id,
+        prompt: runOptions.prompt,
+        answerMarkdown: answerText,
+        conversationUrl: runtime.tabUrl,
+        browserConfig,
+        existingArtifacts: sessionMeta.artifacts,
+        logger,
+      });
       const logWriter = sessionStore.createLogWriter(sessionMeta.id);
       logWriter.logLine(`[auto-reattach] captured assistant response on attempt ${attempt}`);
       logWriter.logLine("Answer:");
@@ -717,6 +744,7 @@ async function autoReattachUntilComplete({
           config: browserConfig,
           runtime,
         },
+        artifacts: mergeArtifacts(sessionMeta.artifacts, artifacts),
         response: { status: "completed" },
         error: undefined,
         transport: undefined,

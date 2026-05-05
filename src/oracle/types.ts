@@ -166,6 +166,10 @@ export interface RunOracleOptions {
   browserAttachments?: "auto" | "never" | "always";
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
+  /** Browser image generation output path. */
+  generateImage?: string;
+  /** Optional output path used by browser image operations. */
+  outputPath?: string;
   background?: boolean;
   /** Optional absolute path to save only the assistant's final text output. */
   writeOutputPath?: string;

@@ -19,6 +19,13 @@ describe("browser automation expressions", () => {
     expect(expression).toContain(JSON.stringify(ASSISTANT_ROLE_SELECTOR));
   });
 
+  test("assistant extractor treats image-only ChatGPT turns as responses", () => {
+    const expression = buildAssistantExtractorForTest("capture");
+    expect(expression).toContain("/backend-api/estuary/content?id=file_");
+    expect(expression).toContain("Generated image.");
+    expect(expression).toContain("stopped thinking edit");
+  });
+
   test("conversation debug expression references conversation selector", () => {
     const expression = buildConversationDebugExpressionForTest();
     expect(expression).toContain(JSON.stringify(CONVERSATION_TURN_SELECTOR));

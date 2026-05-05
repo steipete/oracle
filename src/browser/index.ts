@@ -70,6 +70,12 @@ import {
   hasOtherActiveBrowserTabLeases,
   type BrowserTabLease,
 } from "./tabLeaseRegistry.js";
+import {
+  appendArtifacts,
+  saveBrowserTranscriptArtifact,
+  saveDeepResearchReportArtifact,
+} from "./artifacts.js";
+import { collectGeneratedImageArtifacts } from "./chatgptImages.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
 import { resolveAttachRunningConnection } from "./attachRunning.js";
@@ -133,6 +139,105 @@ function hasBrowserErrorCode(error: unknown, code: string): boolean {
   return (
     error instanceof BrowserAutomationError &&
     (error.details as { code?: string } | undefined)?.code === code
+  );
+}
+
+async function saveOptionalArtifact<T>(
+  operation: () => Promise<T | null>,
+  logger: BrowserLogger,
+): Promise<T | null> {
+  try {
+    return await operation();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`[browser] Failed to save session artifact: ${message}`);
+    return null;
+  }
+}
+
+type AssistantAnswer = {
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+};
+
+async function waitForAssistantOrGeneratedImageResponse(params: {
+  Runtime: ChromeClient["Runtime"];
+  waitForText: () => Promise<AssistantAnswer>;
+  timeoutMs: number;
+  minTurnIndex?: number;
+  expectedConversationId?: string;
+  imageOutputRequested: boolean;
+  logger: BrowserLogger;
+}): Promise<AssistantAnswer> {
+  if (!params.imageOutputRequested) {
+    return params.waitForText();
+  }
+
+  params.logger("[browser] Waiting for ChatGPT generated image response.");
+  const response = await pollGeneratedImageOrTextAssistantResponse(
+    params.Runtime,
+    params.timeoutMs,
+    params.minTurnIndex,
+    params.expectedConversationId,
+  );
+  if (response) {
+    if (response.html?.includes("/backend-api/estuary/content?id=file_")) {
+      params.logger("[browser] Captured generated image response before text appeared.");
+    }
+    return response;
+  }
+
+  throw new Error("assistant response timeout while waiting for generated image or text");
+}
+
+async function pollGeneratedImageOrTextAssistantResponse(
+  Runtime: ChromeClient["Runtime"],
+  timeoutMs: number,
+  minTurnIndex?: number,
+  expectedConversationId?: string,
+): Promise<AssistantAnswer | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    let snapshot = await readAssistantSnapshot(Runtime, minTurnIndex, expectedConversationId).catch(
+      () => null,
+    );
+    if (!snapshot && typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex)) {
+      const relaxedSnapshot = await readAssistantSnapshot(
+        Runtime,
+        undefined,
+        expectedConversationId,
+      ).catch(() => null);
+      const relaxedHtml = typeof relaxedSnapshot?.html === "string" ? relaxedSnapshot.html : "";
+      if (relaxedHtml.includes("/backend-api/estuary/content?id=file_")) {
+        snapshot = relaxedSnapshot;
+      }
+    }
+    const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
+    const html = typeof snapshot?.html === "string" ? snapshot.html : "";
+    const hasGeneratedImage = html.includes("/backend-api/estuary/content?id=file_");
+    if (text && (hasGeneratedImage || !isImageOnlyUiChromeText(text))) {
+      return {
+        text,
+        html,
+        meta: {
+          turnId: snapshot?.turnId ?? undefined,
+          messageId: snapshot?.messageId ?? undefined,
+        },
+      };
+    }
+    await delay(750);
+  }
+  return null;
+}
+
+function isImageOnlyUiChromeText(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
+  return (
+    normalized.length === 0 ||
+    normalized === "edit" ||
+    normalized === "stopped thinking" ||
+    normalized === "stopped thinking edit"
   );
 }
 
@@ -851,10 +956,34 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       runStatus = "complete";
       const durationMs = Date.now() - startedAt;
       const tokens = estimateTokenCount(researchResult.text);
+      const reportArtifact = await saveOptionalArtifact(
+        () =>
+          saveDeepResearchReportArtifact({
+            sessionId: options.sessionId,
+            reportMarkdown: researchResult.text,
+            conversationUrl: lastUrl,
+            logger,
+          }),
+        logger,
+      );
+      const transcriptArtifact = await saveOptionalArtifact(
+        () =>
+          saveBrowserTranscriptArtifact({
+            sessionId: options.sessionId,
+            prompt: promptText,
+            answerMarkdown: researchResult.text,
+            conversationUrl: lastUrl,
+            artifacts: appendArtifacts(undefined, [reportArtifact]),
+            logger,
+          }),
+        logger,
+      );
+      const savedArtifacts = appendArtifacts(undefined, [reportArtifact, transcriptArtifact]);
       return {
         answerText: researchResult.text,
         answerMarkdown: researchResult.text,
         answerHtml: researchResult.html,
+        artifacts: savedArtifacts,
         tookMs: durationMs,
         answerTokens: tokens,
         answerChars: researchResult.text.length,
@@ -905,11 +1034,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
       return null;
     };
-    let answer: {
-      text: string;
-      html?: string;
-      meta: { turnId?: string | null; messageId?: string | null };
-    };
+    const imageOutputRequested = Boolean(
+      options.generateImagePath ||
+      options.outputPath ||
+      (options as { generateImage?: string }).generateImage,
+    );
+    let answer: AssistantAnswer;
     const waitWithThinkingMonitor = async <T>(operation: () => Promise<T>): Promise<T> => {
       stopThinkingMonitor?.();
       stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, {
@@ -971,14 +1101,23 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
       const rechecked = await waitWithThinkingMonitor(() =>
         raceWithDisconnect(
-          waitForAssistantResponseWithReload(
+          waitForAssistantOrGeneratedImageResponse({
             Runtime,
-            Page,
+            waitForText: () =>
+              waitForAssistantResponseWithReload(
+                Runtime,
+                Page,
+                timeoutMs,
+                logger,
+                baselineTurns ?? undefined,
+                expectedConversationId(),
+              ),
             timeoutMs,
             logger,
-            baselineTurns ?? undefined,
-            expectedConversationId(),
-          ),
+            minTurnIndex: baselineTurns ?? undefined,
+            expectedConversationId: expectedConversationId(),
+            imageOutputRequested,
+          }),
         ),
       );
       logger("Recovered assistant response after delayed recheck");
@@ -988,14 +1127,23 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       await updateConversationHint("assistant-wait", 15_000).catch(() => false);
       answer = await waitWithThinkingMonitor(() =>
         raceWithDisconnect(
-          waitForAssistantResponseWithReload(
+          waitForAssistantOrGeneratedImageResponse({
             Runtime,
-            Page,
-            config.timeoutMs,
+            waitForText: () =>
+              waitForAssistantResponseWithReload(
+                Runtime,
+                Page,
+                config.timeoutMs,
+                logger,
+                baselineTurns ?? undefined,
+                expectedConversationId(),
+              ),
+            timeoutMs: config.timeoutMs,
             logger,
-            baselineTurns ?? undefined,
-            expectedConversationId(),
-          ),
+            minTurnIndex: baselineTurns ?? undefined,
+            expectedConversationId: expectedConversationId(),
+            imageOutputRequested,
+          }),
         ),
       );
     } catch (error) {
@@ -1186,6 +1334,35 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       // Bail out on mid-run disconnects so the session stays reattachable.
       throw new Error("Chrome disconnected before completion");
     }
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex: baselineTurns,
+      sessionId: options.sessionId,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: options.config?.timeoutMs,
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
+    const savedImageArtifacts = appendArtifacts(undefined, imageArtifacts.savedImages);
+    const transcriptArtifact = await saveOptionalArtifact(
+      () =>
+        saveBrowserTranscriptArtifact({
+          sessionId: options.sessionId,
+          prompt: promptText,
+          answerMarkdown,
+          conversationUrl: lastUrl,
+          artifacts: savedImageArtifacts,
+          logger,
+        }),
+      logger,
+    );
+    const savedArtifacts = appendArtifacts(savedImageArtifacts, [transcriptArtifact]);
     runStatus = "complete";
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
@@ -1194,6 +1371,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       answerText,
       answerMarkdown,
       answerHtml: answerHtml.length > 0 ? answerHtml : undefined,
+      artifacts: savedArtifacts,
+      generatedImages: imageArtifacts.generatedImages,
+      savedImages: imageArtifacts.savedImages,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -1203,6 +1383,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       userDataDir,
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -1953,11 +2134,12 @@ async function runRemoteBrowserMode(
       }
       return null;
     };
-    let answer: {
-      text: string;
-      html?: string;
-      meta: { turnId?: string | null; messageId?: string | null };
-    };
+    const imageOutputRequested = Boolean(
+      options.generateImagePath ||
+      options.outputPath ||
+      (options as { generateImage?: string }).generateImage,
+    );
+    let answer: AssistantAnswer;
     const waitWithThinkingMonitor = async <T>(operation: () => Promise<T>): Promise<T> => {
       stopThinkingMonitor?.();
       stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, {
@@ -2018,14 +2200,23 @@ async function runRemoteBrowserMode(
       await emitRuntimeHint();
       const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
       const rechecked = await waitWithThinkingMonitor(() =>
-        waitForAssistantResponseWithReload(
+        waitForAssistantOrGeneratedImageResponse({
           Runtime,
-          Page,
+          waitForText: () =>
+            waitForAssistantResponseWithReload(
+              Runtime,
+              Page,
+              timeoutMs,
+              logger,
+              baselineTurns ?? undefined,
+              expectedConversationId(),
+            ),
           timeoutMs,
           logger,
-          baselineTurns ?? undefined,
-          expectedConversationId(),
-        ),
+          minTurnIndex: baselineTurns ?? undefined,
+          expectedConversationId: expectedConversationId(),
+          imageOutputRequested,
+        }),
       );
       logger("Recovered assistant response after delayed recheck");
       return rechecked;
@@ -2037,14 +2228,23 @@ async function runRemoteBrowserMode(
         await emitRuntimeHint();
       }
       answer = await waitWithThinkingMonitor(() =>
-        waitForAssistantResponseWithReload(
+        waitForAssistantOrGeneratedImageResponse({
           Runtime,
-          Page,
-          config.timeoutMs,
+          waitForText: () =>
+            waitForAssistantResponseWithReload(
+              Runtime,
+              Page,
+              config.timeoutMs,
+              logger,
+              baselineTurns ?? undefined,
+              expectedConversationId(),
+            ),
+          timeoutMs: config.timeoutMs,
           logger,
-          baselineTurns ?? undefined,
-          expectedConversationId(),
-        ),
+          minTurnIndex: baselineTurns ?? undefined,
+          expectedConversationId: expectedConversationId(),
+          imageOutputRequested,
+        }),
       );
     } catch (error) {
       if (isAssistantResponseTimeoutError(error)) {
@@ -2200,6 +2400,22 @@ async function runRemoteBrowserMode(
         answerMarkdown = bestText;
       }
     }
+    const imageArtifacts = await collectGeneratedImageArtifacts({
+      Runtime,
+      Network,
+      logger,
+      minTurnIndex: baselineTurns,
+      sessionId: options.sessionId,
+      generateImagePath: options.generateImagePath,
+      outputPath: options.outputPath,
+      answerText,
+      waitTimeoutMs: options.config?.timeoutMs,
+    });
+    answerText = imageArtifacts.answerText || answerText;
+    if (imageArtifacts.markdownSuffix) {
+      answerMarkdown += imageArtifacts.markdownSuffix;
+    }
+    const savedImageArtifacts = appendArtifacts(undefined, imageArtifacts.savedImages);
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -2221,6 +2437,8 @@ async function runRemoteBrowserMode(
       userDataDir: undefined,
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
+      conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+      artifacts: savedImageArtifacts,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -2278,6 +2496,7 @@ export { resolveBrowserConfig, DEFAULT_BROWSER_CONFIG } from "./config.js";
 export const __test__ = {
   closeRemoteConnectionAfterRun,
   detachKeptChromeProcess,
+  isImageOnlyUiChromeText,
   listIgnoredRemoteChromeFlags,
 };
 export { syncCookies } from "./cookies.js";

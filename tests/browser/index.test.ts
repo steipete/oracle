@@ -111,6 +111,14 @@ describe("remote Chrome cleanup", () => {
   });
 });
 
+describe("image-only assistant turn detection", () => {
+  test("treats ChatGPT image-only chrome text as non-answer UI", () => {
+    expect(__test__.isImageOnlyUiChromeText("Stopped thinking\nEdit")).toBe(true);
+    expect(__test__.isImageOnlyUiChromeText("Edit")).toBe(true);
+    expect(__test__.isImageOnlyUiChromeText("PR169_IMAGE_OK")).toBe(false);
+  });
+});
+
 describe("redactBrowserConfigForDebugLogForTest", () => {
   test("redacts inline cookie values while preserving count context", () => {
     const redacted = redactBrowserConfigForDebugLogForTest({

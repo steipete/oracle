@@ -673,21 +673,16 @@ program
   .addOption(
     new Option(
       "--generate-image <file>",
-      "Generate image and save to file (Gemini web/cookie mode only; requires gemini.google.com Chrome cookies).",
+      "Generate image and save to file (Gemini browser mode; ChatGPT browser mode saves downloadable image artifacts when present).",
     ),
   )
   .addOption(
     new Option(
       "--edit-image <file>",
-      "Edit existing image (use with --output, Gemini web/cookie mode only).",
+      "Edit existing image (Gemini browser mode; for ChatGPT attach source images with --file and use --generate-image for output).",
     ),
   )
-  .addOption(
-    new Option(
-      "--output <file>",
-      "Output file path for image operations (Gemini web/cookie mode only).",
-    ),
-  )
+  .addOption(new Option("--output <file>", "Output file path for image operations."))
   .addOption(
     new Option(
       "--aspect <ratio>",
@@ -1004,6 +999,8 @@ function buildRunOptions(
       "auto",
     browserInlineFiles: overrides.browserInlineFiles ?? options.browserInlineFiles ?? false,
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
+    generateImage: overrides.generateImage ?? options.generateImage,
+    outputPath: overrides.outputPath ?? options.output,
     background: overrides.background ?? undefined,
     renderPlain: overrides.renderPlain ?? options.renderPlain ?? false,
     writeOutputPath: overrides.writeOutputPath ?? options.writeOutputPath,

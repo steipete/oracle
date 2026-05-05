@@ -174,6 +174,10 @@ export async function waitForAssistantResponse(
     expectedConversationId,
   );
   const candidate = refreshed ?? parsed;
+  if (isGeneratedImageAssistantAnswer(candidate)) {
+    logger("Captured assistant generated image response");
+    return candidate;
+  }
   // The evaluation path can race ahead of completion. If ChatGPT is still streaming, wait for the watchdog poller.
   const elapsedMs = Date.now() - start;
   const remainingMs = Math.max(0, timeoutMs - elapsedMs);
@@ -462,6 +466,9 @@ async function pollAssistantCompletion(
         isStopButtonVisible(Runtime),
         isCompletionVisible(Runtime),
       ]);
+      if (isGeneratedImageAssistantAnswer(normalized)) {
+        return normalized;
+      }
       const shortAnswer = currentLength > 0 && currentLength < 16;
       const mediumAnswer = currentLength >= 16 && currentLength < 40;
       const longAnswer = currentLength >= 40 && currentLength < 500;
@@ -571,6 +578,10 @@ function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
     html: snapshot?.html ?? undefined,
     meta: { turnId: snapshot?.turnId ?? undefined, messageId: snapshot?.messageId ?? undefined },
   };
+}
+
+function isGeneratedImageAssistantAnswer(answer: { html?: string } | null): boolean {
+  return Boolean(answer?.html?.includes("/backend-api/estuary/content?id=file_"));
 }
 
 async function waitForCondition<T>(
@@ -804,6 +815,9 @@ function buildResponseObserverExpression(
     };
 
     const waitForSettle = async (snapshot) => {
+      if (String(snapshot?.html ?? '').includes('/backend-api/estuary/content?id=file_')) {
+        return snapshot;
+      }
       // Learned: short answers can be 1-2 tokens; enforce longer settle windows to avoid truncation.
       // Learned: long streaming responses (esp. thinking models) can pause mid-stream;
       // use progressively longer windows to avoid truncation (#71).
@@ -932,6 +946,19 @@ function buildAssistantExtractor(functionName: string): string {
       const html = contentRoot?.innerHTML ?? '';
       const messageId = messageRoot.getAttribute('data-message-id');
       const turnId = messageRoot.getAttribute('data-testid');
+      const generatedImages = Array.from(messageRoot.querySelectorAll('img')).filter((img) =>
+        String(img?.src || '').includes('/backend-api/estuary/content?id=file_')
+      );
+      const normalizedText = String(text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+      const imageOnlyChrome =
+        !normalizedText ||
+        normalizedText === 'edit' ||
+        normalizedText === 'stopped thinking' ||
+        normalizedText === 'stopped thinking edit';
+      if (generatedImages.length > 0 && imageOnlyChrome) {
+        const label = generatedImages.length === 1 ? 'Generated image.' : \`Generated \${generatedImages.length} images.\`;
+        return { text: label, html: messageRoot?.innerHTML ?? html, messageId, turnId, turnIndex: index };
+      }
       if (text.trim()) {
         return { text, html, messageId, turnId, turnIndex: index };
       }
