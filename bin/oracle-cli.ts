@@ -780,6 +780,75 @@ program
     });
   });
 
+const projectSourcesCommand = program
+  .command("project-sources")
+  .description("Manage ChatGPT Project Sources as explicit shared project context.");
+
+function addProjectSourcesCommonOptions(command: Command): Command {
+  return command
+    .option(
+      "--chatgpt-url <url>",
+      "ChatGPT project URL ending in /project (or browser.chatgptUrl config).",
+    )
+    .addOption(
+      new Option("--browser-manual-login", "Reuse a persistent signed-in Chrome profile.").default(
+        undefined,
+      ),
+    )
+    .option("--browser-manual-login-profile-dir <path>", "Persistent Chrome profile directory.")
+    .option("--browser-timeout <duration>", "Overall browser timeout (e.g. 10m, 1h).")
+    .option("--browser-input-timeout <duration>", "Timeout waiting for the Project Sources UI.")
+    .option("--browser-profile-lock-timeout <duration>", "Timeout waiting for profile launch lock.")
+    .option("--browser-reuse-wait <duration>", "Wait for an existing shared Chrome to appear.")
+    .option("--browser-max-concurrent-tabs <n>", "Concurrent tabs allowed for the shared profile.")
+    .option("--browser-cookie-wait <duration>", "Wait before retrying cookie sync.")
+    .option("--browser-chrome-profile <profile>", "Chrome profile name for cookie sync.")
+    .option("--browser-chrome-path <path>", "Chrome/Chromium executable path.")
+    .option("--browser-cookie-path <path>", "Explicit Chrome cookie DB path.")
+    .option("--browser-inline-cookies <json>", "Inline ChatGPT cookies JSON.")
+    .option("--browser-inline-cookies-file <path>", "File containing ChatGPT cookies JSON.")
+    .option("--browser-no-cookie-sync", "Skip copying cookies from Chrome.")
+    .option("--browser-keep-browser", "Keep Chrome running after completion.", false)
+    .option("--browser-hide-window", "Hide Chrome window after launch on macOS.", false)
+    .option("--browser-allow-cookie-errors", "Continue when cookie sync fails.", false)
+    .option(
+      "--max-file-size-bytes <bytes>",
+      "Reject uploads larger than this many bytes.",
+      parseIntOption,
+    )
+    .option("--json", "Print structured JSON.", false)
+    .option("-v, --verbose", "Enable verbose browser logging.", false);
+}
+
+addProjectSourcesCommonOptions(
+  projectSourcesCommand
+    .command("list")
+    .description("List sources already attached to a ChatGPT Project."),
+).action(async function (this: Command) {
+  const { runProjectSourcesCliCommand } = await import("../src/cli/projectSources.js");
+  await runProjectSourcesCliCommand("list", this.optsWithGlobals());
+});
+
+addProjectSourcesCommonOptions(
+  projectSourcesCommand
+    .command("add")
+    .description("Upload files into a ChatGPT Project's persistent Sources tab.")
+    .option(
+      "-f, --file <paths...>",
+      "Files/directories or globs to add as project sources.",
+      collectPaths,
+      [],
+    )
+    .option(
+      "--dry-run",
+      "Validate files and show the upload plan without touching the browser.",
+      false,
+    ),
+).action(async function (this: Command) {
+  const { runProjectSourcesCliCommand } = await import("../src/cli/projectSources.js");
+  await runProjectSourcesCliCommand("add", this.optsWithGlobals());
+});
+
 const bridgeCommand = program
   .command("bridge")
   .description("Bridge a Windows-hosted ChatGPT session to Linux clients.");

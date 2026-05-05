@@ -171,6 +171,34 @@ Browser mode keeps the local session as the source of truth, so Oracle can optio
 
 Oracle does not auto-archive failed, incomplete, running, project, Deep Research, or multi-turn sessions. Use `--browser-archive never` to disable archiving, or `--browser-archive always` when you explicitly want a successful browser conversation archived even outside the default one-shot policy. Archived chats are still visible and manageable from ChatGPT's own archive UI.
 
+### ChatGPT Project Sources
+
+ChatGPT Project Sources can act as explicit shared context for project workflows where chats should not implicitly share memory. This is especially useful with Developer Mode / Memory Off: separate chats do not see each other's conversation history, but they can read files attached to the Project Sources tab.
+
+Oracle exposes a narrow, non-destructive v1:
+
+```bash
+# Preview the upload plan without touching ChatGPT
+oracle project-sources add \
+  --chatgpt-url "https://chatgpt.com/g/g-p-example/project" \
+  --browser-manual-login \
+  --file docs/architecture.md \
+  --dry-run
+
+# List current sources
+oracle project-sources list \
+  --chatgpt-url "https://chatgpt.com/g/g-p-example/project" \
+  --browser-manual-login
+
+# Append files to the Sources tab
+oracle project-sources add \
+  --chatgpt-url "https://chatgpt.com/g/g-p-example/project" \
+  --browser-manual-login \
+  --file docs/architecture.md docs/decisions.md
+```
+
+This command uses browser automation but does not select a model, start a consult, or send a prompt. It only opens the Project Sources surface, lists existing files, or appends new files. Destructive operations such as delete, replace, and sync are intentionally left out until the UI path is safer and better covered by live tests.
+
 ### Multi-turn browser consults
 
 Use browser follow-ups when a one-shot review would be too easy for the model to answer shallowly. Oracle keeps the same ChatGPT conversation open, waits for each answer, then submits the next follow-up:

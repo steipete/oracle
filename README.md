@@ -75,6 +75,13 @@ npx -y @steipete/oracle --dry-run summary -p "Check release notes" --file docs/r
 # Browser run (no API key, will open ChatGPT)
 npx -y @steipete/oracle --engine browser -p "Walk through the UI smoke test" --file "src/**/*.ts"
 
+# Add explicit shared context to a ChatGPT Project without deleting anything
+npx -y @steipete/oracle project-sources add \
+  --chatgpt-url "https://chatgpt.com/g/g-p-example/project" \
+  --browser-manual-login \
+  --file docs/architecture.md \
+  --dry-run
+
 # Browser multi-turn consult in one ChatGPT conversation
 npx -y @steipete/oracle --engine browser --model gpt-5.5-pro \
   -p "Review this migration plan" --file docs/migration.md \
@@ -108,6 +115,7 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 - Browser artifacts: browser sessions save `transcript.md` and generated artifacts under `~/.oracle/sessions/<id>/artifacts/`. Deep Research saves `deep-research-report.md` when the report surface is captured; ChatGPT-generated images are downloaded with the active browser cookies when image URLs are present.
 - Browser archiving: by default, successful non-project, non-Deep-Research, non-multi-turn ChatGPT one-shots are archived after local artifacts are saved. Use `--browser-archive never` to disable or `--browser-archive always` to force archiving after a successful browser run. Archived chats remain manageable in ChatGPT.
 - Conversation mode guidance: use one-shot browser runs for narrow bug reports or quick file-set reviews; use explicit browser follow-ups for ambiguous architecture/product tradeoffs where a challenge pass and final decision are valuable; use Deep Research for broad public-web questions that need citations. Oracle never invents follow-ups automatically.
+- Project Sources: `oracle project-sources list|add --chatgpt-url <project-url>` manages the Project Sources tab in ChatGPT browser mode. v1 is append-only (`list`, `add`, `--dry-run`) so agents can share explicit project context without deleting or replacing user sources.
 - AGENTS.md/CLAUDE.md:
   ```
   - Oracle bundles a prompt plus the right files so another AI (GPT 5 Pro + more) can answer. Use when stuck/bugs/reviewing.

@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getCliVersion } from "../version.js";
 import { registerConsultTool } from "./tools/consult.js";
+import { registerProjectSourcesTool } from "./tools/projectSources.js";
 import { registerSessionsTool } from "./tools/sessions.js";
 import { registerSessionResources } from "./tools/sessionResources.js";
 
@@ -23,6 +24,7 @@ export async function startMcpServer(): Promise<void> {
   );
 
   registerConsultTool(server);
+  registerProjectSourcesTool(server);
   registerSessionsTool(server);
   registerSessionResources(server);
 
