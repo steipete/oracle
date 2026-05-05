@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
   __test__,
+  classifyPreservedBrowserErrorForTest,
   formatBrowserTurnTranscript,
   redactBrowserConfigForDebugLogForTest,
   resolveRemoteTabLeaseProfileDirForTest,
@@ -28,11 +29,43 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
     expect(shouldPreserveBrowserOnErrorForTest(error, true)).toBe(false);
   });
 
+  test("preserves the browser for headful assistant capture errors", () => {
+    const timeout = new BrowserAutomationError("assistant timed out", {
+      stage: "assistant-timeout",
+    });
+    const recheck = new BrowserAutomationError("assistant recheck failed", {
+      stage: "assistant-recheck",
+    });
+
+    expect(shouldPreserveBrowserOnErrorForTest(timeout, false)).toBe(true);
+    expect(shouldPreserveBrowserOnErrorForTest(recheck, false)).toBe(true);
+    expect(classifyPreservedBrowserErrorForTest(timeout, false)).toBe("reattachable-capture");
+    expect(classifyPreservedBrowserErrorForTest(recheck, false)).toBe("reattachable-capture");
+  });
+
+  test("does not preserve assistant capture errors in headless mode", () => {
+    const error = new BrowserAutomationError("assistant timed out", {
+      stage: "assistant-timeout",
+    });
+
+    expect(shouldPreserveBrowserOnErrorForTest(error, true)).toBe(false);
+    expect(classifyPreservedBrowserErrorForTest(error, true)).toBeNull();
+  });
+
   test("does not preserve the browser for unrelated browser errors", () => {
     const error = new BrowserAutomationError("other browser error", {
       stage: "execute-browser",
     });
     expect(shouldPreserveBrowserOnErrorForTest(error, false)).toBe(false);
+    expect(classifyPreservedBrowserErrorForTest(error, false)).toBeNull();
+  });
+
+  test("classifies Cloudflare preservation separately from assistant capture preservation", () => {
+    const error = new BrowserAutomationError("Cloudflare challenge detected.", {
+      stage: "cloudflare-challenge",
+    });
+
+    expect(classifyPreservedBrowserErrorForTest(error, false)).toBe("cloudflare-challenge");
   });
 });
 

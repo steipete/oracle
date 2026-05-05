@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  assertResolvedModelSelectionForTest,
   buildComposerSignalMatchersForTest,
   buildModelMatchersLiteralForTest,
   buildModelSelectionExpressionForTest,
+  ensureModelSelection,
 } from "../../src/browser/actions/modelSelection.js";
 
 const expectContains = (arr: string[], value: string) => {
@@ -93,6 +95,40 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const hasProComposerPill = () =>");
     expect(expression).toContain("currentLabel + ' + Pro'");
     expect(expression).toContain("normalizedLabel === 'chatgpt' && hasProComposerPill()");
+  });
+
+  it("hard-rejects Thinking candidates when targeting Pro", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
+    expect(expression).toContain("const candidateHasThinking =");
+    expect(expression).toContain("if (wantsPro && candidateHasThinking) return 0;");
+    expect(expression).toContain("if (wantsPro && !candidateHasPro) return 0;");
+  });
+
+  it("fails loudly if post-selection state resolves to Thinking instead of Pro Extended", () => {
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking 5.5 Heavy")).toThrow(
+      /requires GPT-5.5 Pro Extended/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5")).toThrow(
+      /requires GPT-5.5 Pro Extended/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "ChatGPT")).toThrow(
+      /requires GPT-5.5 Pro Extended/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5 Pro")).not.toThrow();
+  });
+
+  it("does not validate the active picker label when strategy keeps current selection", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: { value: { status: "already-selected", label: "Thinking 5.5 Heavy" } },
+      }),
+    };
+    const logger = vi.fn();
+
+    await expect(
+      ensureModelSelection(runtime as never, "gpt-5.5-pro", logger as never, "current"),
+    ).resolves.toBeUndefined();
+    expect(logger).toHaveBeenCalledWith("Model picker: Thinking 5.5 Heavy");
   });
 
   it("builds composer footer matchers for generic ChatGPT header states", () => {

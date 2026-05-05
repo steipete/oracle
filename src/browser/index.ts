@@ -81,6 +81,7 @@ import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
 import { resolveAttachRunningConnection } from "./attachRunning.js";
 import { connectToExistingChatGptTab } from "./liveTabs.js";
+import { captureBrowserDiagnostics } from "./domDebug.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -114,12 +115,37 @@ function isCloudflareChallengeError(error: unknown): error is BrowserAutomationE
   return (error.details as { stage?: string } | undefined)?.stage === "cloudflare-challenge";
 }
 
+function isReattachableCaptureError(error: unknown): error is BrowserAutomationError {
+  if (!(error instanceof BrowserAutomationError)) return false;
+  const stage = (error.details as { stage?: string } | undefined)?.stage;
+  return stage === "assistant-timeout" || stage === "assistant-recheck";
+}
+
+type PreservedBrowserErrorKind = "cloudflare-challenge" | "reattachable-capture";
+
+function classifyPreservedBrowserError(
+  error: unknown,
+  headless: boolean,
+): PreservedBrowserErrorKind | null {
+  if (headless) return null;
+  if (isCloudflareChallengeError(error)) return "cloudflare-challenge";
+  if (isReattachableCaptureError(error)) return "reattachable-capture";
+  return null;
+}
+
 function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolean {
-  return !headless && isCloudflareChallengeError(error);
+  return classifyPreservedBrowserError(error, headless) !== null;
 }
 
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
+}
+
+export function classifyPreservedBrowserErrorForTest(
+  error: unknown,
+  headless: boolean,
+): PreservedBrowserErrorKind | null {
+  return classifyPreservedBrowserError(error, headless);
 }
 
 function listIgnoredRemoteChromeFlags(config: {
@@ -191,6 +217,19 @@ async function waitForAssistantOrGeneratedImageResponse(params: {
   }
 
   throw new Error("assistant response timeout while waiting for generated image or text");
+}
+
+async function attemptAssistantRecheckOrRethrow(
+  operation: () => Promise<AssistantAnswer | null>,
+): Promise<AssistantAnswer | null> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof BrowserAutomationError) {
+      throw error;
+    }
+    return null;
+  }
 }
 
 async function pollGeneratedImageOrTextAssistantResponse(
@@ -1234,12 +1273,21 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         );
       } catch (error) {
         if (isAssistantResponseTimeoutError(error)) {
-          const rechecked = await attemptAssistantRecheck().catch(() => null);
+          const rechecked = await attemptAssistantRecheckOrRethrow(attemptAssistantRecheck);
           if (rechecked) {
             turnAnswer = rechecked;
           } else {
             await updateConversationHint("assistant-timeout", 15_000).catch(() => false);
             await captureRuntimeSnapshot().catch(() => undefined);
+            const diagnostics = await captureBrowserDiagnostics(
+              Runtime,
+              logger,
+              "assistant-timeout",
+              {
+                Page,
+                sessionId: options.sessionId,
+              },
+            ).catch(() => undefined);
             const runtime = {
               chromePid: chrome.pid,
               chromePort: chrome.port,
@@ -1252,7 +1300,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             };
             throw new BrowserAutomationError(
               "Assistant response timed out before completion; reattach later to capture the answer.",
-              { stage: "assistant-timeout", runtime },
+              { stage: "assistant-timeout", runtime, diagnostics },
               error,
             );
           }
@@ -1529,7 +1577,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const normalizedError = error instanceof Error ? error : new Error(String(error));
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
-    if (shouldPreserveBrowserOnError(normalizedError, config.headless)) {
+    const preservedErrorKind = classifyPreservedBrowserError(normalizedError, config.headless);
+    if (preservedErrorKind === "cloudflare-challenge") {
       preserveBrowserOnError = true;
       const runtime = {
         chromePid: chrome.pid,
@@ -1555,6 +1604,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         },
         normalizedError,
       );
+    }
+    if (preservedErrorKind === "reattachable-capture") {
+      preserveBrowserOnError = true;
+      await emitRuntimeHint();
+      logger("Assistant capture incomplete; leaving browser open for reattach.");
+      throw normalizedError;
     }
     if (!socketClosed) {
       logger(`Failed to complete ChatGPT run: ${normalizedError.message}`);
@@ -2429,7 +2484,7 @@ async function runRemoteBrowserMode(
         );
       } catch (error) {
         if (isAssistantResponseTimeoutError(error)) {
-          const rechecked = await attemptAssistantRecheck().catch(() => null);
+          const rechecked = await attemptAssistantRecheckOrRethrow(attemptAssistantRecheck);
           if (rechecked) {
             turnAnswer = rechecked;
           } else {
@@ -2442,6 +2497,15 @@ async function runRemoteBrowserMode(
               // ignore
             }
             await emitRuntimeHint();
+            const diagnostics = await captureBrowserDiagnostics(
+              Runtime,
+              logger,
+              "assistant-timeout",
+              {
+                Page,
+                sessionId: options.sessionId,
+              },
+            ).catch(() => undefined);
             const runtime = {
               chromePort: port,
               chromeHost: host,
@@ -2454,7 +2518,7 @@ async function runRemoteBrowserMode(
             };
             throw new BrowserAutomationError(
               "Assistant response timed out before completion; reattach later to capture the answer.",
-              { stage: "assistant-timeout", runtime },
+              { stage: "assistant-timeout", runtime, diagnostics },
               error,
             );
           }

@@ -468,22 +468,34 @@ export async function performSessionRun({
     if (assistantTimeout && mode === "browser") {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
-      log(dim("Assistant response timed out; keeping session running for reattach."));
+      log(dim("Assistant response timed out; marking capture incomplete for reattach."));
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
-          status: "running",
-          completedAt: undefined,
+          status: "error",
+          completedAt: new Date().toISOString(),
+          response: { status: "incomplete", incompleteReason: "incomplete-capture" },
+          error: {
+            category: userError.category,
+            message: userError.message,
+            details: userError.details,
+          },
         });
       }
       await sessionStore.updateSession(sessionMeta.id, {
-        status: "running",
+        status: "error",
+        completedAt: new Date().toISOString(),
         errorMessage: message,
         mode,
         browser: {
           config: browserConfig,
           runtime: runtime ?? sessionMeta.browser?.runtime,
         },
-        response: { status: "running", incompleteReason: "assistant-timeout" },
+        response: { status: "incomplete", incompleteReason: "incomplete-capture" },
+        error: {
+          category: userError.category,
+          message: userError.message,
+          details: userError.details,
+        },
       });
       const autoReattachIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
       if (autoReattachIntervalMs > 0) {

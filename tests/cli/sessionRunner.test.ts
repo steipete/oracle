@@ -943,10 +943,14 @@ describe("performSessionRun", () => {
     );
   });
 
-  test("keeps session running when assistant response times out", async () => {
+  test("marks browser capture incomplete when assistant response times out", async () => {
     const automationError = new BrowserAutomationError("assistant timed out", {
       stage: "assistant-timeout",
       runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/demo" },
+      diagnostics: {
+        domPath: "/tmp/.oracle/sessions/sess-1/artifacts/assistant-timeout.dom.json",
+        screenshotPath: "/tmp/.oracle/sessions/sess-1/artifacts/assistant-timeout.png",
+      },
     });
     vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
 
@@ -963,18 +967,37 @@ describe("performSessionRun", () => {
 
     const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({
-      status: "running",
-      response: { status: "running", incompleteReason: "assistant-timeout" },
+      status: "error",
+      response: { status: "incomplete", incompleteReason: "incomplete-capture" },
       browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePort: 9222 }) }),
+      error: expect.objectContaining({
+        details: expect.objectContaining({
+          diagnostics: expect.objectContaining({
+            domPath: "/tmp/.oracle/sessions/sess-1/artifacts/assistant-timeout.dom.json",
+            screenshotPath: "/tmp/.oracle/sessions/sess-1/artifacts/assistant-timeout.png",
+          }),
+        }),
+      }),
     });
     expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
       baseSessionMeta.id,
       "gpt-5.2-pro",
-      expect.objectContaining({ status: "running" }),
+      expect.objectContaining({
+        status: "error",
+        response: { status: "incomplete", incompleteReason: "incomplete-capture" },
+        error: expect.objectContaining({
+          details: expect.objectContaining({
+            diagnostics: expect.objectContaining({
+              domPath: "/tmp/.oracle/sessions/sess-1/artifacts/assistant-timeout.dom.json",
+              screenshotPath: "/tmp/.oracle/sessions/sess-1/artifacts/assistant-timeout.png",
+            }),
+          }),
+        }),
+      }),
     );
     const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
     expect(logLines).toContain(
-      "Assistant response timed out; keeping session running for reattach.",
+      "Assistant response timed out; marking capture incomplete for reattach.",
     );
   });
 
@@ -1119,8 +1142,8 @@ describe("performSessionRun", () => {
       expect(vi.mocked(resumeBrowserSession).mock.calls.length).toBeGreaterThanOrEqual(2);
       const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
       expect(finalUpdate).toMatchObject({
-        status: "running",
-        response: { status: "running", incompleteReason: "assistant-timeout" },
+        status: "error",
+        response: { status: "incomplete", incompleteReason: "incomplete-capture" },
       });
       const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
       expect(logLines).toContain("Auto-reattach stopped");

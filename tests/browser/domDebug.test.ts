@@ -1,39 +1,61 @@
-import { describe, expect, test, vi } from "vitest";
-import { logDomFailure, logConversationSnapshot } from "../../src/browser/domDebug.js";
-import type { ChromeClient } from "../../src/browser/types.js";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { captureBrowserDiagnostics } from "../../src/browser/domDebug.js";
+import type { BrowserLogger } from "../../src/browser/types.js";
 
-const makeRuntime = (value: unknown) =>
-  ({
-    evaluate: vi.fn().mockResolvedValue({ result: { value } }),
-  }) as unknown as ChromeClient["Runtime"];
+const originalOracleHome = process.env.ORACLE_HOME_DIR;
 
-describe("domDebug utilities", () => {
-  test("logDomFailure captures snapshot when verbose", async () => {
-    const runtime = makeRuntime([{ role: "assistant", text: "Hello", testid: "assistant-1" }]);
-    const logger = Object.assign(vi.fn(), { verbose: true, sessionLog: vi.fn() });
-    await logDomFailure(runtime, logger, "test-context");
-    expect(runtime.evaluate).toHaveBeenCalledTimes(1);
-    expect(logger).toHaveBeenCalledWith(expect.stringContaining("Browser automation failure"));
-    expect(logger.sessionLog).toHaveBeenCalled();
-  });
+afterEach(() => {
+  if (originalOracleHome === undefined) {
+    delete process.env.ORACLE_HOME_DIR;
+  } else {
+    process.env.ORACLE_HOME_DIR = originalOracleHome;
+  }
+});
 
-  test("logConversationSnapshot emits recent entries", async () => {
-    const value = [
-      { role: "user", text: "Hi", testid: "u1" },
-      { role: "assistant", text: "Hello", testid: "a1" },
-    ];
-    const runtime = makeRuntime(value);
-    const logger = vi.fn();
-    await logConversationSnapshot(runtime, logger);
-    expect(runtime.evaluate).toHaveBeenCalled();
-    expect(logger).toHaveBeenCalledWith(expect.stringContaining("Conversation snapshot"));
-  });
+describe("captureBrowserDiagnostics", () => {
+  test("writes DOM and screenshot diagnostics into the session artifact directory", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-dom-debug-"));
+    process.env.ORACLE_HOME_DIR = tmpHome;
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            url: "https://chatgpt.com/c/demo",
+            title: "demo",
+            turns: [{ role: "assistant", text: "visible answer" }],
+          },
+        },
+      }),
+    };
+    const page = {
+      captureScreenshot: vi
+        .fn()
+        .mockResolvedValue({ data: Buffer.from("png bytes").toString("base64") }),
+    };
+    const logger = vi.fn() as BrowserLogger;
 
-  test("logDomFailure skips when verbose disabled", async () => {
-    const runtime = makeRuntime([]);
-    const logger = Object.assign(vi.fn(), { verbose: false });
-    await logDomFailure(runtime, logger, "quiet");
-    expect(runtime.evaluate).not.toHaveBeenCalled();
-    expect(logger).not.toHaveBeenCalled();
+    try {
+      const result = await captureBrowserDiagnostics(
+        runtime as never,
+        logger,
+        "assistant-timeout",
+        {
+          Page: page as never,
+          sessionId: "debug-session",
+        },
+      );
+
+      expect(result.domPath).toContain("debug-session/artifacts/assistant-timeout");
+      expect(result.screenshotPath).toContain("debug-session/artifacts/assistant-timeout");
+      await expect(fs.readFile(result.domPath ?? "", "utf8")).resolves.toContain("visible answer");
+      await expect(fs.readFile(result.screenshotPath ?? "")).resolves.toEqual(
+        Buffer.from("png bytes"),
+      );
+    } finally {
+      await fs.rm(tmpHome, { recursive: true, force: true });
+    }
   });
 });
