@@ -38,7 +38,7 @@ export function resolveBrowserArchiveDecision({
   if (mode === "always") {
     return { mode, shouldArchive: true, reason: "forced" };
   }
-  if (isProjectChatgptUrl(chatgptUrl)) {
+  if (isProjectChatgptUrl(chatgptUrl) || isProjectChatgptUrl(conversationUrl)) {
     return { mode, shouldArchive: false, reason: "project-conversation" };
   }
   if (researchMode === "deep") {

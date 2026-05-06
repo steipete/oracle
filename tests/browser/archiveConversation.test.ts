@@ -34,6 +34,13 @@ describe("browser conversation archive policy", () => {
     expect(
       resolveBrowserArchiveDecision({
         mode: "auto",
+        chatgptUrl: "https://chatgpt.com/",
+        conversationUrl: "https://chatgpt.com/g/g-p-demo/project/c/abc",
+      }),
+    ).toMatchObject({ shouldArchive: false, reason: "project-conversation" });
+    expect(
+      resolveBrowserArchiveDecision({
+        mode: "auto",
         conversationUrl: "https://chatgpt.com/c/abc",
         researchMode: "deep",
       }),
