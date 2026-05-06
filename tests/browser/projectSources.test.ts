@@ -42,6 +42,9 @@ describe("Project Sources browser expressions", () => {
     const expression = buildProjectSourcesListExpression();
     expect(expression).toContain("sources.push");
     expect(expression).toContain("hasMetadata");
+    expect(expression).toContain("hasLikelyFileName");
+    expect(expression).toContain("add files and more");
+    expect(expression).toContain("start voice");
     expect(expression).toContain("row.top");
   });
 

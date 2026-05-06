@@ -423,9 +423,17 @@ export function buildProjectSourcesListExpression(): string {
         text === 'actions' ||
         text === 'share' ||
         text === 'udostępnij' ||
-        text === 'udostepnij'
+        text === 'udostepnij' ||
+        text === 'add files and more' ||
+        text === 'chat with chatgpt' ||
+        text === 'ask anything' ||
+        text === 'pro' ||
+        text === 'voice' ||
+        text === 'start voice' ||
+        text === 'start dictation'
       );
     };
+    const hasLikelyFileName = (label) => /\\.[a-z0-9]{1,12}(?:\\s|$)/iu.test(label);
     const cleanSourceName = (label) => {
       const text = normalize(label);
       return text
@@ -461,6 +469,7 @@ export function buildProjectSourcesListExpression(): string {
       const name = node.name;
       if (node.hasMetadata && plainNames.has(name)) continue;
       if (isChromeLabel(name)) continue;
+      if (!node.hasMetadata && !hasLikelyFileName(name)) continue;
       if (name.length < 2 || name.length > 200) continue;
       if (/^(pdf|docx?|txt|md|csv|xlsx?|json)$/iu.test(name)) continue;
       if (/^(copy|edit|remove|delete|pobierz|usuń|usun)$/iu.test(name)) continue;
