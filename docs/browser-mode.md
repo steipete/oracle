@@ -187,6 +187,13 @@ oracle --engine browser \
 
 The CLI output and saved `transcript.md` include each captured turn. For PR validation, compare a one-shot run with the same initial prompt against a two-turn run that asks the model to challenge itself; record concrete differences such as additional failure modes, test cases, or rollback steps rather than claiming a fixed quality percentage.
 
+Guardrails for agents:
+
+- Use one-shot browser runs for narrow bugs, exact file sets, quick code review, or when the expected answer is a short decision.
+- Use explicit follow-ups for ambiguous architecture, competing options, product tradeoffs, or review flows where a challenge pass and final recommendation are useful.
+- Use Deep Research for broad public-web research that needs citations; Deep Research has its own lifecycle and is not combined with browser follow-ups.
+- Oracle never invents follow-ups automatically. Agents may suggest a short follow-up sequence, but the caller must pass each prompt explicitly with `--browser-follow-up` or `browserFollowUps`.
+
 ### ChatGPT generated images
 
 When ChatGPT returns downloadable generated images in browser mode, Oracle downloads them using the active browser cookies and records them as session artifacts. To choose an output path, pass `--generate-image <file>`:
