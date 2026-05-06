@@ -11,7 +11,7 @@ import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
-import type { BrowserLogger } from "./types.js";
+import type { BrowserArchiveResult, BrowserLogger } from "./types.js";
 import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
@@ -27,6 +27,7 @@ export interface BrowserExecutionResult {
   };
   elapsedMs: number;
   runtime: BrowserRuntimeMetadata;
+  archive?: BrowserArchiveResult;
   answerText: string;
   artifacts?: SessionArtifact[];
 }
@@ -92,7 +93,7 @@ export async function runBrowserSessionExecution(
     if (typeof message !== "string") return;
     const shouldAlwaysPrint =
       message.startsWith("[browser] ") &&
-      /fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot/i.test(message);
+      /archive|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot/i.test(message);
     if (!runOptions.verbose && !shouldAlwaysPrint) return;
     log(message);
   }) as BrowserLogger;
@@ -200,6 +201,7 @@ export async function runBrowserSessionExecution(
       conversationId: browserResult.conversationId,
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
+    archive: browserResult.archive,
     answerText,
     artifacts: savedArtifacts,
   };

@@ -11,7 +11,11 @@ import {
   parseDuration,
 } from "../browserMode.js";
 import { normalizeBrowserModelStrategy } from "../browser/modelStrategy.js";
-import type { BrowserModelStrategy, BrowserResearchMode } from "../browser/types.js";
+import type {
+  BrowserArchiveMode,
+  BrowserModelStrategy,
+  BrowserResearchMode,
+} from "../browser/types.js";
 import type { CookieParam } from "../browser/types.js";
 import { getOracleHomeDir } from "../oracleHome.js";
 
@@ -72,6 +76,7 @@ export interface BrowserFlagOptions {
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
   browserResearch?: BrowserResearchMode;
+  browserArchive?: BrowserArchiveMode;
   browserModelLabel?: string;
   browserModelStrategy?: BrowserModelStrategy;
   browserAllowCookieErrors?: boolean;
@@ -226,6 +231,7 @@ export async function buildBrowserConfig(
     browserTabRef: options.browserTab ?? undefined,
     thinkingTime: options.browserThinkingTime,
     researchMode: options.browserResearch === "deep" ? "deep" : "off",
+    archiveConversations: options.browserArchive,
   };
 }
 
