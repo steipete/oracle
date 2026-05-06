@@ -235,44 +235,69 @@ export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logg
   const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   const result = await Runtime.evaluate({
     expression: `(() => {
+      const SELECTORS = ${inputSelectorsLiteral};
       const fallback = document.querySelector(${fallbackSelectorLiteral});
       const editor = document.querySelector(${primarySelectorLiteral});
-      const inputSelectors = ${inputSelectorsLiteral};
-      let cleared = false;
-      if (fallback) {
-        fallback.value = '';
-        fallback.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
-        fallback.dispatchEvent(new Event('change', { bubbles: true }));
-        cleared = true;
-      }
-      if (editor) {
-        editor.textContent = '';
-        editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
-        cleared = true;
-      }
-      const nodes = inputSelectors
-        .map((selector) => document.querySelector(selector))
-        .filter((node) => Boolean(node));
-      for (const node of nodes) {
-        if (!node) continue;
-        if (node instanceof HTMLTextAreaElement) {
-          node.value = '';
+      const readValue = (node) => {
+        if (!node) return '';
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) return node.value ?? '';
+        return node.innerText ?? node.textContent ?? '';
+      };
+      const dispatchClearEvents = (node) => {
+        try {
+          node.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward' }));
+        } catch {}
+        try {
           node.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
-          node.dispatchEvent(new Event('change', { bubbles: true }));
-          cleared = true;
-          continue;
+        } catch {
+          node.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        node.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      const clearEditable = (node) => {
+        if (!node) return false;
+        try {
+          node.focus?.();
+        } catch {}
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          node.value = '';
+          dispatchClearEvents(node);
+          return true;
         }
         if (node.isContentEditable || node.getAttribute('contenteditable') === 'true') {
+          try {
+            const selection = node.ownerDocument?.getSelection?.();
+            const range = node.ownerDocument?.createRange?.();
+            if (selection && range) {
+              range.selectNodeContents(node);
+              selection.removeAllRanges();
+              selection.addRange(range);
+              node.ownerDocument?.execCommand?.('delete', false);
+            }
+          } catch {}
           node.textContent = '';
-          node.dispatchEvent(new InputEvent('input', { bubbles: true, data: '', inputType: 'deleteByCut' }));
-          cleared = true;
+          dispatchClearEvents(node);
+          return true;
         }
+        return false;
+      };
+      let cleared = false;
+      const nodes = SELECTORS
+        .map((selector) => document.querySelector(selector))
+        .filter((node) => Boolean(node));
+      for (const node of Array.from(new Set([fallback, editor, ...nodes])).filter(Boolean)) {
+        cleared = clearEditable(node) || cleared;
       }
-      return { cleared };
+      const remaining = Array.from(new Set([fallback, editor, ...nodes]))
+        .filter(Boolean)
+        .map((node) => readValue(node).trim())
+        .filter(Boolean);
+      return { cleared, remaining };
     })()`,
     returnByValue: true,
   });
-  if (!result.result?.value?.cleared) {
+  const value = result.result?.value as { cleared?: boolean; remaining?: string[] } | undefined;
+  if (!value?.cleared || (value.remaining?.length ?? 0) > 0) {
     await logDomFailure(Runtime, logger, "clear-composer");
     throw new Error("Failed to clear prompt composer");
   }

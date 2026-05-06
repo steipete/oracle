@@ -104,6 +104,13 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("if (wantsPro && !candidateHasPro) return 0;");
   });
 
+  it("does not treat per-row thinking effort controls as model options", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
+    expect(expression).toContain("const isThinkingEffortControl = (node) =>");
+    expect(expression).toContain("data-model-picker-thinking-effort-action");
+    expect(expression).toContain("if (isThinkingEffortControl(option))");
+  });
+
   it("fails loudly if post-selection state resolves to Thinking instead of Pro Extended", () => {
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking 5.5 Heavy")).toThrow(
       /requires GPT-5.5 Pro Extended/,

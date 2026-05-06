@@ -1,7 +1,25 @@
 import { describe, expect, test, vi } from "vitest";
-import { __test__ as promptComposer } from "../../src/browser/actions/promptComposer.js";
+import {
+  __test__ as promptComposer,
+  clearPromptComposer,
+} from "../../src/browser/actions/promptComposer.js";
 
 describe("promptComposer", () => {
+  test("fails composer clearing when stale text remains", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: { value: { cleared: true, remaining: ["old draft"] } },
+      }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+    const logger = Object.assign(vi.fn(), { verbose: false });
+
+    await expect(clearPromptComposer(runtime as never, logger as never)).rejects.toThrow(
+      /Failed to clear prompt composer/,
+    );
+  });
+
   test("does not treat cleared composer + stop button as committed without a new turn", async () => {
     vi.useFakeTimers();
     try {

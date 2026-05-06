@@ -24,6 +24,7 @@
 
 - Bridge: keep generated Codex/Claude MCP config snippets clean on stdout so redirecting `oracle bridge claude-config --local-browser > .mcp.json` produces valid JSON.
 - Browser/MCP: harden ChatGPT Pro browser consults with louder GPT-5.5 Pro selection validation, resolved MCP dry-run details, assistant-timeout diagnostics, incomplete-capture reattach metadata, and clean Pro Extended live-run metadata. (#177) — thanks @pdurlej.
+- Browser: clear stale ChatGPT composer drafts before initial browser submissions and ignore model-picker thinking-effort controls while scanning model rows. (#176) — thanks @oirehT.
 - MCP: clarify `consult` engine defaults and add ChatGPT browser-mode recovery guidance to missing GPT API-key errors. (#172) — thanks @pdurlej.
 
 ## 0.10.0 — 2026-05-04

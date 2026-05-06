@@ -975,6 +975,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         typeof baselineSnapshot?.text === "string" ? baselineSnapshot.text.trim() : "";
       const attachmentNames = submissionAttachments.map((a) => path.basename(a.path));
       let inputOnlyAttachments = false;
+      await raceWithDisconnect(clearPromptComposer(Runtime, logger));
+      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       if (submissionAttachments.length > 0) {
         if (!DOM) {
           throw new Error("Chrome DOM domain unavailable while uploading attachments.");
@@ -2265,6 +2267,8 @@ async function runRemoteBrowserMode(
       const baselineAssistantText =
         typeof baselineSnapshot?.text === "string" ? baselineSnapshot.text.trim() : "";
       const attachmentNames = submissionAttachments.map((a) => path.basename(a.path));
+      await clearPromptComposer(Runtime, logger);
+      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       if (submissionAttachments.length > 0) {
         if (!DOM) {
           throw new Error("Chrome DOM domain unavailable while uploading attachments.");

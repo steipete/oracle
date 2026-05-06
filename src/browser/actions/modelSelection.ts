@@ -288,6 +288,10 @@ function buildModelSelectionExpression(
     };
 
     const getOptionLabel = (node) => node?.textContent?.trim() ?? '';
+    const isThinkingEffortControl = (node) =>
+      node instanceof HTMLElement &&
+      (node.getAttribute('data-model-picker-thinking-effort-action') === 'true' ||
+        Boolean(node.closest('[data-model-picker-thinking-effort-action="true"]')));
     const optionIsSelected = (node) => {
       if (!(node instanceof HTMLElement)) {
         return false;
@@ -463,6 +467,9 @@ function buildModelSelectionExpression(
       for (const menu of menus) {
         const buttons = Array.from(menu.querySelectorAll(${menuItemLiteral}));
         for (const option of buttons) {
+          if (isThinkingEffortControl(option)) {
+            continue;
+          }
           const text = option.textContent ?? '';
           const normalizedText = normalizeText(text);
           const testid = option.getAttribute('data-testid') ?? '';
