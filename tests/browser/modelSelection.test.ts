@@ -86,7 +86,9 @@ describe("browser model selection matchers", () => {
   it("recognizes current GPT-5.5 visible aliases in the picker expression", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain("isTargetGpt55VisibleAlias");
-    expect(expression).toContain("label.includes('pro') && label.includes('extended')");
+    // ChatGPT as of 2026-05 shows bare "Pro" (not "Pro Extended") in the picker.
+    // Composer pill may also display "Extended Pro" (reversed ordering).
+    expect(expression).toContain("label === 'pro' || label === 'pro extended' || label === 'extended pro'");
     expect(expression).toContain("desiredVersion === '5-5'");
   });
 
@@ -122,16 +124,18 @@ describe("browser model selection matchers", () => {
     );
   });
 
-  it("fails loudly if post-selection state resolves to Thinking instead of Pro Extended", () => {
+  it("fails loudly if post-selection state resolves to Thinking instead of Pro", () => {
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking 5.5 Heavy")).toThrow(
-      /requires GPT-5.5 Pro Extended/,
+      /requires GPT-5.5 Pro/,
     );
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5")).toThrow(
-      /requires GPT-5.5 Pro Extended/,
+      /requires GPT-5.5 Pro/,
     );
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "ChatGPT")).toThrow(
-      /requires GPT-5.5 Pro Extended/,
+      /requires GPT-5.5 Pro/,
     );
+    // Both the new bare "Pro" label and the legacy "GPT-5.5 Pro" should pass.
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Pro")).not.toThrow();
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5 Pro")).not.toThrow();
   });
 
