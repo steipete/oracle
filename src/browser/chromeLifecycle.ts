@@ -342,32 +342,51 @@ async function connectToBrowserWebSocket(
   logger: BrowserLogger,
   approvalWaitMs?: number,
 ): Promise<ChromeClient> {
-  const connectPromise = CDP({ target: browserWSEndpoint, local: true }) as Promise<ChromeClient>;
   if (!approvalWaitMs || approvalWaitMs <= 0) {
-    return await connectPromise;
+    return (await CDP({ target: browserWSEndpoint, local: true })) as ChromeClient;
   }
 
   logger(`Waiting for Chrome remote debugging approval for ${host}:${port}...`);
 
-  let timeoutId: NodeJS.Timeout | null = null;
-  try {
-    return await Promise.race([
-      connectPromise,
-      new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          reject(
-            new Error(
-              `Oracle waited ${formatApprovalWait(approvalWaitMs)} for Chrome remote debugging approval at ${host}:${port}. Allow the Chrome prompt or retry after toggling remote debugging.`,
-            ),
-          );
-        }, approvalWaitMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
+  const deadline = Date.now() + approvalWaitMs;
+  let lastApprovalError: unknown;
+  while (Date.now() < deadline) {
+    const remainingMs = Math.max(1, deadline - Date.now());
+    try {
+      return await Promise.race([
+        CDP({ target: browserWSEndpoint, local: true }) as Promise<ChromeClient>,
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error("__oracle_remote_debugging_approval_timeout__"));
+          }, remainingMs);
+        }),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "__oracle_remote_debugging_approval_timeout__"
+      ) {
+        break;
+      }
+      if (!isRemoteDebuggingApprovalError(error)) {
+        throw error;
+      }
+      lastApprovalError = error;
+      await delay(Math.min(500, Math.max(0, deadline - Date.now())));
     }
   }
+  const suffix =
+    lastApprovalError instanceof Error && lastApprovalError.message
+      ? ` Last Chrome response: ${lastApprovalError.message}`
+      : "";
+  throw new Error(
+    `Oracle waited ${formatApprovalWait(approvalWaitMs)} for Chrome remote debugging approval at ${host}:${port}. Allow the Chrome prompt or retry after toggling remote debugging.${suffix}`,
+  );
+}
+
+function isRemoteDebuggingApprovalError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /unexpected server response:\s*403|remote debugging|forbidden/i.test(message);
 }
 
 function formatApprovalWait(waitMs: number): string {

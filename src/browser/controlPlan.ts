@@ -2,7 +2,13 @@ import type { BrowserAutomationConfig } from "./types.js";
 
 type BrowserControlConfig = Pick<
   BrowserAutomationConfig,
-  "attachRunning" | "remoteChrome" | "headless" | "hideWindow" | "keepBrowser" | "manualLogin"
+  | "attachRunning"
+  | "browserTabRef"
+  | "remoteChrome"
+  | "headless"
+  | "hideWindow"
+  | "keepBrowser"
+  | "manualLogin"
 >;
 
 export interface BrowserControlPlan {
@@ -15,9 +21,15 @@ export interface BrowserControlPlan {
 
 export function describeBrowserControlPlan(config: BrowserControlConfig = {}): BrowserControlPlan {
   const guidance: string[] = [];
+  const tabRef = String(config.browserTabRef ?? "").trim();
+  const reusesExistingTab = tabRef.length > 0;
 
   if (config.attachRunning) {
-    guidance.push("Oracle opens a dedicated tab and leaves the existing browser process alone.");
+    guidance.push(
+      reusesExistingTab
+        ? `Oracle reuses the matching ChatGPT tab (${tabRef}) and leaves the existing browser process alone.`
+        : "Oracle opens a dedicated tab and leaves the existing browser process alone.",
+    );
     if (config.keepBrowser) {
       guidance.push("The browser stays open because Oracle did not launch it.");
     }
@@ -25,19 +37,27 @@ export function describeBrowserControlPlan(config: BrowserControlConfig = {}): B
       mode: "attach-running",
       launchesChrome: false,
       mayFocusWindow: true,
-      summary: "attach to an already-running local Chrome session",
+      summary: reusesExistingTab
+        ? "attach to an already-running local Chrome tab"
+        : "attach to an already-running local Chrome session",
       guidance,
     };
   }
 
   if (config.remoteChrome) {
-    guidance.push("Oracle opens a dedicated tab in the configured remote Chrome session.");
+    guidance.push(
+      reusesExistingTab
+        ? `Oracle reuses the matching ChatGPT tab (${tabRef}) in the configured remote Chrome session.`
+        : "Oracle opens a dedicated tab in the configured remote Chrome session.",
+    );
     guidance.push("Local Chrome launch, cookie copy, and window hiding flags are skipped.");
     return {
       mode: "remote-chrome",
       launchesChrome: false,
       mayFocusWindow: false,
-      summary: "reuse an existing remote Chrome session",
+      summary: reusesExistingTab
+        ? "reuse an existing remote Chrome tab"
+        : "reuse an existing remote Chrome session",
       guidance,
     };
   }

@@ -181,6 +181,12 @@ export async function ensureNotBlocked(
     logger("Cloudflare anti-bot page detected");
     throw new BrowserAutomationError(message, { stage: "cloudflare-challenge", headless });
   }
+  if (await isChatGptAccountSecurityBlock(Runtime)) {
+    const message =
+      "ChatGPT account security block detected. Open chatgpt.com in Chrome, secure the account, then rerun Oracle.";
+    logger("ChatGPT account security block detected");
+    throw new BrowserAutomationError(message, { stage: "chatgpt-account-blocked" });
+  }
 }
 
 const LOGIN_CHECK_TIMEOUT_MS = 5_000;
@@ -423,6 +429,23 @@ async function isCloudflareInterstitial(Runtime: ChromeClient["Runtime"]): Promi
     returnByValue: true,
   });
   return Boolean(result.value);
+}
+
+async function isChatGptAccountSecurityBlock(Runtime: ChromeClient["Runtime"]): Promise<boolean> {
+  try {
+    const outcome = await Runtime.evaluate({
+      expression: `(() => {
+        const text = String(document.body?.innerText || '').toLowerCase().replace(/\\s+/g, ' ');
+        return text.includes('suspicious activity detected') &&
+          text.includes('secure your account') &&
+          text.includes('regain access');
+      })()`,
+      returnByValue: true,
+    });
+    return Boolean(outcome?.result?.value);
+  } catch {
+    return false;
+  }
 }
 
 type LoginProbeResult = {

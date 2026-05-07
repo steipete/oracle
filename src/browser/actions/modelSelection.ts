@@ -204,14 +204,20 @@ function buildModelSelectionExpression(
     const getComposerModelLabel = () =>
       (document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR)?.textContent ?? '').trim();
     const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
-    const getResolvedLabel = (fallback) => getComposerModelLabel() || getButtonLabel() || fallback;
+    const withProPillSignal = (label) => {
+      const resolved = label || '';
+      if (!wantsPro || !hasProComposerPill()) return resolved;
+      const normalized = normalizeText(resolved);
+      if (!normalized || normalized.includes('pro')) return resolved;
+      return resolved + ' + Pro';
+    };
+    const getResolvedLabel = (fallback) =>
+      withProPillSignal(getComposerModelLabel() || getButtonLabel() || fallback);
     if (MODEL_STRATEGY === 'current') {
       const currentLabel = getResolvedLabel(PRIMARY_LABEL);
       return {
         status: 'already-selected',
-        label: wantsPro && normalizeText(currentLabel) === 'chatgpt' && hasProComposerPill()
-          ? currentLabel + ' + Pro'
-          : currentLabel,
+        label: currentLabel,
       };
     }
     const buttonMatchesTarget = () => {
@@ -488,15 +494,16 @@ function buildModelSelectionExpression(
     const waitForTargetSelection = (previousButtonLabel, previousComposerSignal) => new Promise((resolve) => {
       const waitStart = performance.now();
       const check = () => {
-        if (
-          activeSelectionMatchesTarget() ||
-          selectionStateChanged(previousButtonLabel, previousComposerSignal)
-        ) {
-          resolve(true);
+        if (activeSelectionMatchesTarget()) {
+          resolve('target');
+          return;
+        }
+        if (selectionStateChanged(previousButtonLabel, previousComposerSignal)) {
+          resolve('changed');
           return;
         }
         if (performance.now() - waitStart > SETTLE_WAIT_MS) {
-          resolve(false);
+          resolve('timeout');
           return;
         }
         setTimeout(check, 100);
@@ -547,7 +554,7 @@ function buildModelSelectionExpression(
         ensureMenuOpen();
         const match = findBestOption();
         if (match) {
-          if (optionIsSelected(match.node) || activeSelectionMatchesTarget()) {
+          if (activeSelectionMatchesTarget()) {
             closeMenu();
             resolve({ status: 'already-selected', label: getResolvedLabel(match.label) });
             return;
@@ -564,7 +571,7 @@ function buildModelSelectionExpression(
           }
           // Wait for the selected model signal to settle before reopening the picker.
           waitForTargetSelection(previousButtonLabel, previousComposerSignal).then((selectionSettled) => {
-            if (selectionSettled) {
+            if (selectionSettled === 'target') {
               closeMenu();
               resolve({ status: 'switched', label: getResolvedLabel(match.label) });
               return;

@@ -192,8 +192,16 @@ export async function waitForDeepResearchCompletion(
           textLength?: number;
           hasIframe?: boolean;
           hasActiveScopedResearch?: boolean;
+          accountBlocked?: boolean;
         }
       | undefined;
+
+    if (val?.accountBlocked) {
+      throw new BrowserAutomationError(
+        "ChatGPT account security block detected during Deep Research. Open chatgpt.com in Chrome, secure the account, then rerun Oracle.",
+        { stage: "chatgpt-account-blocked", code: "chatgpt-account-blocked" },
+      );
+    }
 
     const frameResult = Page
       ? await readDeepResearchFrameResult(Runtime, Page).catch(() => null)
@@ -723,6 +731,10 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
     const MIN_TURN_INDEX = ${minTurnIndex};
     const stopVisible = Boolean(document.querySelector(${stopSelector}));
     const scopedToNewTurns = MIN_TURN_INDEX >= 0;
+    const pageText = String(document.body?.innerText || '').toLowerCase().replace(/\\s+/g, ' ');
+    const accountBlocked = pageText.includes('suspicious activity detected') &&
+      pageText.includes('secure your account') &&
+      pageText.includes('regain access');
     const isAssistantTurn = (node) => {
       const attr = String(node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       return attr === 'assistant' ||
@@ -752,7 +764,7 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
     });
     const hasActiveScopedResearch = scopedToNewTurns && Boolean(lastTurn) && hasIframe &&
       (textLength < 40 || isToolStub || /chatgpt\\s+said:?$/i.test(text));
-    return { finished, stopVisible, textLength, hasIframe, isToolStub, hasActiveScopedResearch };
+    return { finished, stopVisible, textLength, hasIframe, isToolStub, hasActiveScopedResearch, accountBlocked };
   })()`;
 }
 

@@ -39,7 +39,7 @@ Prereqs:
 
 Run this whenever you touch the session store, CLI session views, or TUI wiring for multi-model runs.
 
-1. Kick off an API multi-run:  
+1. Kick off an API multi-run:
    `pnpm run oracle -- --models "gpt-5.1-pro,gemini-3-pro" --prompt "Compare the moon & sun."`
    - Expect stdout to print sequential sections, one per model (`[gpt-5.1-pro] …` followed by `[gemini-3-pro] …`). No interleaved tokens.
 2. Capture the session ID from the summary line. Run `oracle session --status --model gpt-5.1-pro`.
@@ -89,19 +89,19 @@ Debug note: when you have a live ChatGPT tab open under a DevTools port and need
 1. **Prompt Submission & Model Switching**
    - With Chrome signed in and cookie sync enabled, run
      ```bash
-     pnpm run oracle -- --engine browser --model "GPT-5.2" \
+     pnpm run oracle -- --engine browser --model gpt-5.5 \
        --prompt "Line 1\nLine 2\nLine 3"
      ```
    - Observe logs for:
      - `Prompt textarea ready (xxx chars queued)` (twice: initial + after model switch).
-     - `Model picker: ... 5.2 ...`.
+     - `Model picker: ... Thinking ...` or the current GPT-5.5 picker label.
      - `Clicked send button` (or Enter fallback).
    - In the attached Chrome window, verify the multi-line prompt appears exactly as sent.
 
 2. **Markdown Capture**
    - Prompt:
      ```bash
-     pnpm run oracle -- --engine browser --model "GPT-5.2" \
+     pnpm run oracle -- --engine browser --model gpt-5.5 \
        --prompt "Produce a short bullet list with code fencing."
      ```
    - Expected CLI output:
@@ -141,22 +141,22 @@ Document results (pass/fail, session IDs) in PR descriptions so reviewers can au
 
 Run these four smoke tests whenever we touch browser automation:
 
-1. **GPT-5.2 simple prompt**  
-   `pnpm run oracle -- --engine browser --model "GPT-5.2" --prompt "Give me two short markdown bullet points about tables"`  
+1. **GPT-5.5 simple prompt**
+   `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "Give me two short markdown bullet points about tables"`
    Expect two markdown bullets, no files/search referenced. Note the session ID (e.g., `give-me-two-short-markdown`).
 
-2. **GPT-5.2 simple prompt**  
-   `pnpm run oracle -- --engine browser --model gpt-5.2 --prompt "List two reasons Markdown is handy"`  
+2. **GPT-5.5 simple prompt**
+   `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "List two reasons Markdown is handy"`
    Confirm the answer arrives (and only once) even if it takes ~2–3 minutes.
 
-3. **GPT-5.2 + attachment**  
-   Prepare `/tmp/browser-md.txt` with a short note, then run  
-   `pnpm run oracle -- --engine browser --model "GPT-5.2" --prompt "Summarize the key idea from the attached note" --file /tmp/browser-md.txt`  
+3. **GPT-5.5 + attachment**
+   Prepare `/tmp/browser-md.txt` with a short note, then run
+   `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "Summarize the key idea from the attached note" --file /tmp/browser-md.txt`
    Ensure upload logs show “Attachment queued” and the answer references the file contents explicitly.
 
-4. **GPT-5.2 + attachment (verbose)**  
-   Prepare `/tmp/browser-report.txt` with faux metrics, then run  
-   `pnpm run oracle -- --engine browser --model gpt-5.2 --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`  
+4. **GPT-5.5 + attachment (verbose)**
+   Prepare `/tmp/browser-report.txt` with faux metrics, then run
+   `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`
    Verify verbose logs show attachment upload and the final answer matches the file data.
 
 5. **Deep Research smoke**
@@ -217,7 +217,7 @@ Run this whenever you touch the local attach path (`--browser-attach-running`) o
    ```bash
    pnpm run oracle -- --engine browser \
      --browser-attach-running \
-     --model "GPT-5.2" \
+     --model gpt-5.5 \
      --prompt "Give me two short markdown bullets about browser tabs"
    ```
    If the browser’s remote-debugging UI shows a different local port, rerun with `--remote-chrome <host:port>` in addition to `--browser-attach-running`.

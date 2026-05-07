@@ -3,14 +3,24 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CMD=(node "$ROOT/dist/bin/oracle-cli.js" --engine browser --wait --heartbeat 0 --timeout 900 --browser-input-timeout 120000)
-FAST_MODEL="${ORACLE_BROWSER_SMOKE_FAST_MODEL:-gpt-5.2}"
-PRO_MODEL="${ORACLE_BROWSER_SMOKE_PRO_MODEL:-gpt-5.4-pro}"
+FAST_MODEL="${ORACLE_BROWSER_SMOKE_FAST_MODEL:-gpt-5.5}"
+PRO_MODEL="${ORACLE_BROWSER_SMOKE_PRO_MODEL:-gpt-5.5-pro}"
 
-tmpfile="$(mktemp -t oracle-browser-smoke)"
+tmpdir="$(mktemp -d -t oracle-browser-smoke)"
+tmpfile="$tmpdir/smoke-attachment.txt"
+upload_log="$(mktemp -t oracle-browser-smoke-upload-log)"
+trap 'rm -rf "$tmpdir" "$upload_log"' EXIT
 echo "smoke-attachment" >"$tmpfile"
 
 echo "[browser-smoke] fast upload attachment (non-inline)"
-"${CMD[@]}" --model "$FAST_MODEL" --browser-attachments always --prompt "Read the attached file and return exactly one markdown bullet '- upload: <content>' where <content> is the file text." --file "$tmpfile" --slug browser-smoke-upload --force
+if ! "${CMD[@]}" --model "$FAST_MODEL" --browser-attachments always --prompt "Read the attached file and return exactly one markdown bullet '- upload: <content>' where <content> is the file text." --file "$tmpfile" --slug browser-smoke-upload --force | tee "$upload_log"; then
+  exit 1
+fi
+if ! grep -Eq -- "^[[:space:]]*[-*][[:space:]]+upload:[[:space:]]+smoke-attachment" "$upload_log"; then
+  echo "[browser-smoke] upload: expected uploaded file content not found"
+  cat "$upload_log"
+  exit 1
+fi
 
 echo "[browser-smoke] fast simple"
 "${CMD[@]}" --model "$FAST_MODEL" --prompt "Return exactly one markdown bullet: '- pro-ok'." --slug browser-smoke-pro --force
@@ -72,5 +82,3 @@ if [ -n "${chrome_pid:-}" ]; then
   kill "$chrome_pid" 2>/dev/null || true
 fi
 rm -rf "$HOME/.oracle/sessions/$slug" "$logfile" "$reattach_log"
-
-rm -f "$tmpfile"

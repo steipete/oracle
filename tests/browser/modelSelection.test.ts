@@ -93,7 +93,8 @@ describe("browser model selection matchers", () => {
   it("recognizes ChatGPT plus the Pro composer pill as the current Pro model", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain("const hasProComposerPill = () =>");
-    expect(expression).toContain("currentLabel + ' + Pro'");
+    expect(expression).toContain("const withProPillSignal = (label) =>");
+    expect(expression).toContain("return resolved + ' + Pro'");
     expect(expression).toContain("normalizedLabel === 'chatgpt' && hasProComposerPill()");
   });
 
@@ -109,6 +110,16 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const isThinkingEffortControl = (node) =>");
     expect(expression).toContain("data-model-picker-thinking-effort-action");
     expect(expression).toContain("if (isThinkingEffortControl(option))");
+  });
+
+  it("does not accept a changed but wrong model selection as success", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
+    expect(expression).toContain("resolve('target')");
+    expect(expression).toContain("resolve('changed')");
+    expect(expression).toContain("if (selectionSettled === 'target')");
+    expect(expression).not.toContain(
+      "optionIsSelected(match.node) || activeSelectionMatchesTarget()",
+    );
   });
 
   it("fails loudly if post-selection state resolves to Thinking instead of Pro Extended", () => {

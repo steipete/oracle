@@ -183,6 +183,21 @@ describe("ensureNotBlocked", () => {
       });
     }
   });
+
+  test("throws structured browser error when ChatGPT account security block appears", async () => {
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: "ChatGPT" } })
+        .mockResolvedValueOnce({ result: { value: false } })
+        .mockResolvedValueOnce({ result: { value: true } }),
+    } as unknown as ChromeClient["Runtime"];
+
+    await expect(ensureNotBlocked(runtime, false, logger)).rejects.toMatchObject({
+      details: { stage: "chatgpt-account-blocked" },
+    });
+    expect(logger).toHaveBeenCalledWith("ChatGPT account security block detected");
+  });
 });
 
 describe("ensureLoggedIn", () => {

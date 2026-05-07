@@ -295,4 +295,41 @@ describe("closeBlankChromeTabs", () => {
       "Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
     );
   });
+
+  test("retries immediate 403 responses while waiting for remote debugging approval", async () => {
+    vi.useFakeTimers();
+    const browserClient = {
+      Target: {
+        createTarget: vi.fn(async () => ({ targetId: "target-20" })),
+        attachToTarget: vi.fn(async () => ({ sessionId: "session-20" })),
+      },
+      close: vi.fn(async () => {}),
+      on: vi.fn(),
+      once: vi.fn(),
+      off: vi.fn(),
+      removeListener: vi.fn(),
+    };
+    cdpMock
+      .mockRejectedValueOnce(new Error("Unexpected server response: 403"))
+      .mockRejectedValueOnce(new Error("Unexpected server response: 403"))
+      .mockResolvedValueOnce(browserClient);
+
+    const { connectToRemoteChrome } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+    const promise = connectToRemoteChrome(
+      "127.0.0.1",
+      9222,
+      logger,
+      "https://chatgpt.com/",
+      "ws://127.0.0.1:9222/devtools/browser/abc",
+      { approvalWaitMs: 20_000 },
+    );
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const connection = await promise;
+
+    expect(cdpMock).toHaveBeenCalledTimes(3);
+    expect(connection.targetId).toBe("target-20");
+  });
 });

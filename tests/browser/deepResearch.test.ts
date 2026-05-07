@@ -656,6 +656,28 @@ describe("checkDeepResearchStatus", () => {
     expect(result.textLength).toBe("Called tool".length);
   });
 
+  it("detects ChatGPT account security blocks during completion polling", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(1);
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: {
+          innerText:
+            "Suspicious activity detected. Please secure your account to regain access to all features.",
+        },
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [];
+          if (selector === '[data-message-author-role="assistant"], [data-turn="assistant"]') {
+            return [];
+          }
+          return [];
+        },
+      },
+    }) as { accountBlocked?: boolean };
+
+    expect(result.accountBlocked).toBe(true);
+  });
+
   it("scopes completion actions to the latest assistant turn", () => {
     const expression = buildDeepResearchStatusExpressionForTest();
     const priorFinishedTurn = {

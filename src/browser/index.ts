@@ -522,6 +522,14 @@ async function closeRemoteConnectionAfterRun(options: {
   }
 }
 
+function shouldCloseOwnedRunTargetAfterRun(options: {
+  runStatus: "attempted" | "complete";
+  ownsTarget: boolean;
+  keepBrowser: boolean;
+}): boolean {
+  return options.runStatus === "complete" && options.ownsTarget && !options.keepBrowser;
+}
+
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
   if (!promptText) {
@@ -1774,7 +1782,15 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // Close the isolated tab once the response has been fully captured to prevent
     // tab accumulation across repeated runs. Keep the tab open on incomplete runs
     // so reattach can recover the response.
-    if (runStatus === "complete" && isolatedTargetId && chrome?.port && ownsTarget) {
+    if (
+      shouldCloseOwnedRunTargetAfterRun({
+        runStatus,
+        ownsTarget,
+        keepBrowser: effectiveKeepBrowser,
+      }) &&
+      isolatedTargetId &&
+      chrome?.port
+    ) {
       await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
     }
     let keepBrowserOpen = effectiveKeepBrowser || preserveBrowserOnError;
@@ -2988,7 +3004,13 @@ async function runRemoteBrowserMode(
       tabLease = null;
       await handle.release().catch(() => undefined);
     }
-    if (ownsTarget) {
+    if (
+      shouldCloseOwnedRunTargetAfterRun({
+        runStatus,
+        ownsTarget,
+        keepBrowser: Boolean(config.keepBrowser),
+      })
+    ) {
       await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
     }
     // Don't kill remote Chrome - it's not ours to manage
@@ -3006,6 +3028,7 @@ export const __test__ = {
   detachKeptChromeProcess,
   isImageOnlyUiChromeText,
   listIgnoredRemoteChromeFlags,
+  shouldCloseOwnedRunTargetAfterRun,
 };
 export { syncCookies } from "./cookies.js";
 export {

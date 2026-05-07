@@ -39,4 +39,16 @@ describe("browser control plan", () => {
     ).toBe("remote-chrome");
     expect(describeBrowserControlPlan({ headless: true }).mode).toBe("headless");
   });
+
+  test("describes browser-tab reuse without claiming to open a dedicated tab", () => {
+    const plan = describeBrowserControlPlan({
+      remoteChrome: { host: "127.0.0.1", port: 9222 },
+      browserTabRef: "current",
+    });
+    const output = formatBrowserControlPlan(plan, "browser").join("\n");
+
+    expect(plan.summary).toBe("reuse an existing remote Chrome tab");
+    expect(output).toContain("reuses the matching ChatGPT tab (current)");
+    expect(output).not.toContain("opens a dedicated tab");
+  });
 });

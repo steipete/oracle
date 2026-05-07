@@ -71,6 +71,45 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
   });
 });
 
+describe("browser run target cleanup", () => {
+  test("keeps the completed conversation tab when keepBrowser is enabled", () => {
+    expect(
+      __test__.shouldCloseOwnedRunTargetAfterRun({
+        runStatus: "complete",
+        ownsTarget: true,
+        keepBrowser: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("closes owned completed tabs by default", () => {
+    expect(
+      __test__.shouldCloseOwnedRunTargetAfterRun({
+        runStatus: "complete",
+        ownsTarget: true,
+        keepBrowser: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("does not close attached or incomplete targets", () => {
+    expect(
+      __test__.shouldCloseOwnedRunTargetAfterRun({
+        runStatus: "complete",
+        ownsTarget: false,
+        keepBrowser: false,
+      }),
+    ).toBe(false);
+    expect(
+      __test__.shouldCloseOwnedRunTargetAfterRun({
+        runStatus: "attempted",
+        ownsTarget: true,
+        keepBrowser: false,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("shouldSkipThinkingTimeSelectionForTest", () => {
   test("treats GPT-5.5 Pro Extended as resolved by model selection", () => {
     expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.5 Pro", "extended")).toBe(true);
