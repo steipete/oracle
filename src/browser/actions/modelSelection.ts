@@ -576,6 +576,11 @@ function buildModelSelectionExpression(
               resolve({ status: 'switched', label: getResolvedLabel(match.label) });
               return;
             }
+            if (selectionSettled === 'changed' || selectionSettled === 'timeout') {
+              closeMenu();
+              resolve({ status: 'switched-best-effort', label: getResolvedLabel(match.label) });
+              return;
+            }
             attempt();
           });
           return;

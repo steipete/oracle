@@ -126,9 +126,7 @@ export async function buildBrowserConfig(
   const desiredModelOverride = options.browserModelLabel?.trim();
   const normalizedOverride = desiredModelOverride?.toLowerCase() ?? "";
   const baseModel = options.model.toLowerCase();
-  const isChatGptModel = baseModel.startsWith("gpt-") && !baseModel.includes("codex");
-  const shouldUseOverride =
-    !isChatGptModel && normalizedOverride.length > 0 && normalizedOverride !== baseModel;
+  const shouldUseOverride = normalizedOverride.length > 0 && normalizedOverride !== baseModel;
   const modelStrategy =
     normalizeBrowserModelStrategy(options.browserModelStrategy) ?? DEFAULT_MODEL_STRATEGY;
   const cookieNames = parseCookieNames(
@@ -157,11 +155,9 @@ export async function buildBrowserConfig(
   const rawUrl = options.chatgptUrl ?? options.browserUrl;
   const url = rawUrl ? normalizeChatgptUrl(rawUrl, CHATGPT_URL) : undefined;
 
-  const desiredModel = isChatGptModel
-    ? mapModelToBrowserLabel(options.model)
-    : shouldUseOverride
-      ? desiredModelOverride
-      : mapModelToBrowserLabel(options.model);
+  const desiredModel = shouldUseOverride
+    ? desiredModelOverride
+    : mapModelToBrowserLabel(options.model);
 
   if (
     modelStrategy === "select" &&

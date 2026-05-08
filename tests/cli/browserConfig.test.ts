@@ -96,7 +96,7 @@ describe("buildBrowserConfig", () => {
       model: "gpt-5.2-pro",
       browserModelLabel: "Instant",
     });
-    expect(config.desiredModel).toBe("GPT-5.5 Pro");
+    expect(config.desiredModel).toBe("Instant");
   });
 
   test("rejects invalid browser max concurrent tabs", async () => {
@@ -135,7 +135,7 @@ describe("buildBrowserConfig", () => {
       model: "gpt-5.1",
       browserModelLabel: "  ChatGPT 5.1 Instant  ",
     });
-    expect(config.desiredModel).toBe("GPT-5.2");
+    expect(config.desiredModel).toBe("ChatGPT 5.1 Instant");
   });
 
   test("parses remoteChrome host targets", async () => {

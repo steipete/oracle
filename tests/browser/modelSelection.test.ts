@@ -112,10 +112,14 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("if (isThinkingEffortControl(option))");
   });
 
-  it("does not accept a changed but wrong model selection as success", () => {
+  it("accepts post-click state changes as a best-effort switch", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain("resolve('target')");
     expect(expression).toContain("resolve('changed')");
+    expect(expression).toContain("resolve({ status: 'switched-best-effort'");
+    expect(expression).toContain(
+      "selectionSettled === 'changed' || selectionSettled === 'timeout'",
+    );
     expect(expression).toContain("if (selectionSettled === 'target')");
     expect(expression).not.toContain(
       "optionIsSelected(match.node) || activeSelectionMatchesTarget()",
