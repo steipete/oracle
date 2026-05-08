@@ -6,7 +6,6 @@ import {
   CHATGPT_URL,
   DEFAULT_MODEL_STRATEGY,
   DEFAULT_MODEL_TARGET,
-  isTemporaryChatUrl,
   normalizeChatgptUrl,
   parseDuration,
 } from "../browserMode.js";
@@ -162,18 +161,6 @@ export async function buildBrowserConfig(
     : shouldUseOverride
       ? desiredModelOverride
       : mapModelToBrowserLabel(options.model);
-
-  if (
-    modelStrategy === "select" &&
-    url &&
-    isTemporaryChatUrl(url) &&
-    /\bpro\b/i.test(desiredModel ?? "")
-  ) {
-    throw new Error(
-      "Temporary Chat mode does not expose Pro models in the ChatGPT model picker. " +
-        'Remove "temporary-chat=true" from --chatgpt-url (or omit --chatgpt-url), or use a non-Pro model (e.g. --model gpt-5.2).',
-    );
-  }
 
   return {
     chromeProfile: options.browserChromeProfile ?? DEFAULT_CHROME_PROFILE,

@@ -3,6 +3,7 @@ import {
   archiveChatGptConversation,
   buildArchiveConversationExpressionForTest,
   isProjectChatgptUrl,
+  isTemporaryChatgptUrl,
   resolveBrowserArchiveDecision,
 } from "../../src/browser/actions/archiveConversation.js";
 
@@ -23,7 +24,7 @@ describe("browser conversation archive policy", () => {
     });
   });
 
-  test("does not auto-archive project, Deep Research, multi-turn, or missing-url runs", () => {
+  test("does not auto-archive project, Temporary Chat, Deep Research, multi-turn, or missing-url runs", () => {
     expect(
       resolveBrowserArchiveDecision({
         mode: "auto",
@@ -38,6 +39,13 @@ describe("browser conversation archive policy", () => {
         conversationUrl: "https://chatgpt.com/g/g-p-demo/project/c/abc",
       }),
     ).toMatchObject({ shouldArchive: false, reason: "project-conversation" });
+    expect(
+      resolveBrowserArchiveDecision({
+        mode: "auto",
+        chatgptUrl: "https://chatgpt.com/?temporary-chat=true",
+        conversationUrl: "https://chatgpt.com/?temporary-chat=true",
+      }),
+    ).toMatchObject({ shouldArchive: false, reason: "temporary-chat" });
     expect(
       resolveBrowserArchiveDecision({
         mode: "auto",
@@ -78,6 +86,12 @@ describe("browser conversation archive policy", () => {
     expect(isProjectChatgptUrl("https://chatgpt.com/g/g-p-demo/project")).toBe(true);
     expect(isProjectChatgptUrl("https://chatgpt.com/g/g-p-demo/project?model=gpt-5")).toBe(true);
     expect(isProjectChatgptUrl("https://chatgpt.com/c/abc")).toBe(false);
+  });
+
+  test("detects ChatGPT temporary chat URLs", () => {
+    expect(isTemporaryChatgptUrl("https://chatgpt.com/?temporary-chat=true")).toBe(true);
+    expect(isTemporaryChatgptUrl("https://chatgpt.com/?temporary-chat=false")).toBe(false);
+    expect(isTemporaryChatgptUrl("https://chatgpt.com/c/abc")).toBe(false);
   });
 });
 

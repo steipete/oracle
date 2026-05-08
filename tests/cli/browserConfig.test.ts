@@ -239,13 +239,14 @@ describe("buildBrowserConfig", () => {
     ).rejects.toThrow(/http/i);
   });
 
-  test("rejects temporary chat URLs when targeting Pro", async () => {
-    await expect(
-      buildBrowserConfig({
-        model: "gpt-5.2-pro",
-        chatgptUrl: "https://chatgpt.com/?temporary-chat=true",
-      }),
-    ).rejects.toThrow(/Temporary Chat/i);
+  test("allows temporary chat URLs when targeting Pro", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.5-pro",
+      chatgptUrl: "https://chatgpt.com/?temporary-chat=true",
+    });
+    expect(config.url).toBe("https://chatgpt.com/?temporary-chat=true");
+    expect(config.desiredModel).toBe("GPT-5.5 Pro");
+    expect(config.modelStrategy).toBe("select");
   });
 
   test("allows temporary chat URLs when model strategy keeps current selection", async () => {
