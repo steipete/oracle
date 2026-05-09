@@ -2,6 +2,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { createHighlighter } from "shiki";
+
 import { css, faviconSvg, js, preThemeScript, themeToggleHtml } from "./docs-site-assets.mjs";
 
 const root = process.cwd();
@@ -17,6 +19,11 @@ const productTagline = "Whisper your prompt to a mythical pro agent";
 const productDescription =
   "Oracle bundles your prompt and files so a Pro AI — GPT-5.5 Pro, Gemini 3 Pro, Claude Opus, and friends — can answer with real repository context. CLI, MCP, browser, and API in one tool.";
 const brewInstall = "brew install steipete/tap/oracle";
+const codeTheme = "github-dark-dimmed";
+const highlighter = await createHighlighter({
+  themes: [codeTheme],
+  langs: ["bash", "json", "json5", "powershell", "text"],
+});
 
 const sections = [
   ["Start", ["index.md", "install.md", "quickstart.md", "configuration.md"]],
@@ -249,9 +256,7 @@ function markdownToHtml(markdown, currentRel) {
       closeList();
       flushBlockquote();
       if (fence) {
-        html.push(
-          `<pre><code class="language-${escapeAttr(fence.lang)}">${escapeHtml(fence.lines.join("\n"))}</code></pre>`,
-        );
+        html.push(renderCodeBlock(fence.lang, fence.lines.join("\n")));
         fence = null;
       } else {
         fence = { lang: fenceMatch[1] || "text", lines: [] };
@@ -350,6 +355,26 @@ function markdownToHtml(markdown, currentRel) {
   closeList();
   flushBlockquote();
   return html.join("\n");
+}
+
+function renderCodeBlock(lang, code) {
+  const normalizedLang = normalizeCodeLang(lang);
+  const highlighted = highlighter.codeToHtml(code, { lang: normalizedLang, theme: codeTheme });
+  return highlighted
+    .replace(
+      /<pre class="shiki ([^"]+)" style="[^"]*" tabindex="0">/,
+      `<pre class="shiki $1" style="background-color:var(--code-bg);color:var(--code-fg)" tabindex="0"><code class="language-${escapeAttr(normalizedLang)}">`,
+    )
+    .replace("<code>", "")
+    .replace("</code></pre>", "</code></pre>");
+}
+
+function normalizeCodeLang(lang) {
+  const normalized = String(lang || "text").toLowerCase();
+  if (normalized === "sh" || normalized === "shell" || normalized === "zsh") return "bash";
+  if (normalized === "ps1" || normalized === "pwsh") return "powershell";
+  if (highlighter.getLoadedLanguages().includes(normalized)) return normalized;
+  return "text";
 }
 
 function inline(text, currentRel) {

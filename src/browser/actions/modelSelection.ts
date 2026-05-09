@@ -82,7 +82,7 @@ function assertResolvedModelSelection(desiredModel: string, resolvedLabel: strin
     resolved.includes("gpt 5 5 pro");
   if (!hasProSignal || (resolved.includes("thinking") && !resolved.includes("pro"))) {
     throw new Error(
-      `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires GPT-5.5 Pro Extended. Use model "gpt-5.5" with browser thinking time "heavy" for Thinking Heavy.`,
+      `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires GPT-5.5 Pro. Use model "gpt-5.5" with browser thinking time for the Thinking variant.`,
     );
   }
 }
@@ -164,10 +164,15 @@ function buildModelSelectionExpression(
       if (desiredVersion !== '5-5') return false;
       const label = normalizeText(value);
       if (wantsPro) {
-        return label.includes('pro') && label.includes('extended') && !label.includes('thinking');
+        // ChatGPT UI as of 2026-05: the picker shows just "Pro" (no longer "Pro Extended").
+        // "Extended" is now a thinking-effort sub-setting, not part of the model label.
+        // Accept bare "pro", legacy "pro extended", and reversed "extended pro" (composer pill).
+        return (label === 'pro' || label === 'pro extended' || label === 'extended pro') && !label.includes('thinking');
       }
       if (wantsThinking) {
-        return label.includes('thinking') && label.includes('heavy') && !label.includes('pro');
+        // ChatGPT UI as of 2026-05: the picker shows "Thinking" or "Thinking · Extended"
+        // (normalized to "thinking extended"). Accept both old "thinking heavy" and new labels.
+        return (label === 'thinking' || label === 'thinking extended' || label === 'thinking heavy') && !label.includes('pro');
       }
       return false;
     };

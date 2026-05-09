@@ -235,4 +235,33 @@ describe("summarizeModelRunsForConsult", () => {
     });
     expect(result.content[0]?.text).toContain("[dry-run] MCP resolved request:");
   });
+
+  test("rejects unsupported consult fields instead of silently ignoring them", async () => {
+    const handlers: Array<(input: unknown) => Promise<unknown>> = [];
+    registerConsultTool({
+      registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
+        handlers.push(fn);
+      },
+      server: {
+        sendLoggingMessage: async () => undefined,
+      },
+    } as unknown as Parameters<typeof registerConsultTool>[0]);
+    const handler = handlers[0];
+    if (!handler) throw new Error("handler not registered");
+
+    const result = (await handler({
+      dryRun: true,
+      engine: "browser",
+      model: "gpt-5.5-pro",
+      prompt: "review this",
+      files: [],
+      run_in_background: true,
+    })) as {
+      isError?: boolean;
+      content: Array<{ type: "text"; text: string }>;
+    };
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("run_in_background");
+  });
 });

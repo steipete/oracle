@@ -49,9 +49,9 @@
    - [ ] `npm view @steipete/oracle version` (and optionally `npm view @steipete/oracle time`) to confirm the registry shows the new version.
    - [ ] Verify positional prompt still works: `npx -y @steipete/oracle "Test prompt" --dry-run`.
 6. **Homebrew (tap)**
-   - [ ] Update formula in `~/Projects/homebrew-tap/Formula/oracle.rb` (or create it if missing).
-   - [ ] Bump version, URL, and SHA256 to match the GitHub release asset you want Homebrew to install.
-   - [ ] Commit + push the tap update only after assets are live.
+   - [ ] The `Update Homebrew Tap` workflow dispatches `steipete/homebrew-tap` after the GitHub release is published.
+   - [ ] If needed, run `.github/workflows/update-homebrew-tap.yml` manually with the release tag after assets are live.
+   - [ ] Confirm the tap workflow updated `Formula/oracle.rb` to the GitHub release asset and committed the SHA256.
    - [ ] Verify install:
      - `brew uninstall oracle || true`
      - `brew tap steipete/tap || true`

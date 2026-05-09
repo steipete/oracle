@@ -155,28 +155,12 @@ export function classifyPreservedBrowserErrorForTest(
   return classifyPreservedBrowserError(error, headless);
 }
 
-function shouldSkipThinkingTimeSelection(
-  desiredModel: string | null | undefined,
-  thinkingTime: ResolvedBrowserConfig["thinkingTime"],
-): boolean {
-  if (thinkingTime !== "extended" || !desiredModel) {
-    return false;
-  }
-  const normalized = desiredModel.toLowerCase();
-  return (
-    normalized === "gpt-5.5-pro" ||
-    normalized.includes("gpt-5.5 pro") ||
-    normalized.includes("gpt 5.5 pro") ||
-    normalized.includes("gpt 5 5 pro")
-  );
-}
-
-export function shouldSkipThinkingTimeSelectionForTest(
-  desiredModel: string | null | undefined,
-  thinkingTime: ResolvedBrowserConfig["thinkingTime"],
-): boolean {
-  return shouldSkipThinkingTimeSelection(desiredModel, thinkingTime);
-}
+// NOTE: Previously, shouldSkipThinkingTimeSelection() would skip the thinking
+// time UI step when desiredModel was gpt-5.5-pro and thinkingTime was "extended",
+// assuming that selecting "Pro Extended" in the old UI already implied Extended
+// effort. This is wrong for lower-tier plans ($100/mo Pro) where selecting "Pro"
+// defaults to Standard effort. ensureThinkingTime() already handles the
+// "already-selected" case as a no-op, so always attempting it is safe.
 
 function listIgnoredRemoteChromeFlags(config: {
   attachRunning?: ResolvedBrowserConfig["attachRunning"];
@@ -1000,23 +984,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
-      if (shouldSkipThinkingTimeSelection(config.desiredModel, thinkingTime)) {
-        logger("Thinking time: Pro Extended (via model selection)");
-      } else {
-        await raceWithDisconnect(
-          withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
-            retries: 2,
-            delayMs: 300,
-            onRetry: (attempt, error) => {
-              if (options.verbose) {
-                logger(
-                  `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-                );
-              }
-            },
-          }),
-        );
-      }
+      await raceWithDisconnect(
+        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
+          retries: 2,
+          delayMs: 300,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
+        }),
+      );
     }
     if (deepResearch) {
       await raceWithDisconnect(
@@ -2364,21 +2344,17 @@ async function runRemoteBrowserMode(
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
-      if (shouldSkipThinkingTimeSelection(config.desiredModel, thinkingTime)) {
-        logger("Thinking time: Pro Extended (via model selection)");
-      } else {
-        await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
-          retries: 2,
-          delayMs: 300,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
-          },
-        });
-      }
+      await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
+        retries: 2,
+        delayMs: 300,
+        onRetry: (attempt, error) => {
+          if (options.verbose) {
+            logger(
+              `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+            );
+          }
+        },
+      });
     }
     if (deepResearch) {
       await withRetries(() => activateDeepResearch(Runtime, Input, logger), {
