@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- MCP: reject unknown `consult` fields instead of silently ignoring misspelled tool-call arguments. (#184) — thanks @pdurlej.
 - Browser/MCP: harden ChatGPT Pro browser consults with louder GPT-5.5 Pro selection validation, resolved MCP dry-run details, assistant-timeout diagnostics, incomplete-capture reattach metadata, and clean Pro Extended live-run metadata. (#177) — thanks @pdurlej.
 - Browser: clear stale ChatGPT composer drafts before initial browser submissions and ignore model-picker thinking-effort controls while scanning model rows. (#176) — thanks @oirehT.
 - Browser: keep the completed conversation tab open when `--browser-keep-browser` is set so `oracle status --browser-tabs`, harvest, and `--browser-tab current` can inspect/reuse it.
