@@ -170,6 +170,12 @@ export async function createRemoteServer(
     };
 
     const attachments: BrowserAttachment[] = [];
+    let fallbackSubmission:
+      | {
+          prompt: string;
+          attachments: BrowserAttachment[];
+        }
+      | undefined;
     try {
       const attachmentsPayload = Array.isArray(payload.attachments) ? payload.attachments : [];
       for (const [index, attachment] of attachmentsPayload.entries()) {
@@ -181,6 +187,29 @@ export async function createRemoteServer(
           displayPath: attachment.displayPath,
           sizeBytes: attachment.sizeBytes,
         });
+      }
+
+      if (payload.fallbackSubmission) {
+        const fallbackAttachmentDir = path.join(runDir, "fallback-attachments");
+        await mkdir(fallbackAttachmentDir, { recursive: true });
+        const fallbackAttachments: BrowserAttachment[] = [];
+        const fallbackPayload = Array.isArray(payload.fallbackSubmission.attachments)
+          ? payload.fallbackSubmission.attachments
+          : [];
+        for (const [index, attachment] of fallbackPayload.entries()) {
+          const safeName = sanitizeName(attachment.fileName ?? `fallback-attachment-${index + 1}`);
+          const filePath = path.join(fallbackAttachmentDir, safeName);
+          await writeFile(filePath, Buffer.from(attachment.contentBase64, "base64"));
+          fallbackAttachments.push({
+            path: filePath,
+            displayPath: attachment.displayPath,
+            sizeBytes: attachment.sizeBytes,
+          });
+        }
+        fallbackSubmission = {
+          prompt: payload.fallbackSubmission.prompt,
+          attachments: fallbackAttachments,
+        };
       }
 
       // Reuse the existing browser logger surface so clients see the same log stream.
@@ -215,10 +244,13 @@ export async function createRemoteServer(
       const result = await runBrowser({
         prompt: payload.prompt,
         attachments,
+        fallbackSubmission,
         config: payload.browserConfig,
         log: automationLogger,
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
         verbose: payload.options.verbose,
+        sessionId: payload.options.sessionId,
+        followUpPrompts: payload.options.followUpPrompts,
       });
 
       sendEvent({ type: "result", result: sanitizeResult(result) });

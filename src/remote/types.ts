@@ -12,10 +12,16 @@ export interface RemoteAttachmentPayload {
 export interface RemoteRunPayload {
   prompt: string;
   attachments: RemoteAttachmentPayload[];
+  fallbackSubmission?: {
+    prompt: string;
+    attachments: RemoteAttachmentPayload[];
+  };
   browserConfig: BrowserSessionConfig;
   options: {
     heartbeatIntervalMs?: number;
     verbose?: boolean;
+    sessionId?: string;
+    followUpPrompts?: string[];
   };
 }
 
