@@ -15,8 +15,8 @@ importers:
         specifier: ^0.0.4
         version: 0.0.4
       '@google/genai':
-        specifier: ^2.0.0
-        version: 2.0.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
+        specifier: ^2.0.1
+        version: 2.0.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
       '@google/generative-ai':
         specifier: ^0.24.1
         version: 0.24.1
@@ -465,8 +465,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@google/genai@2.0.0':
-    resolution: {integrity: sha512-6XpO+YbGutXkm5QgR7NZktISxSz0dw3pSs9NtCUQwvhJc1eyA3KhdKhE/0Uaxp3a6eul3LC0SKau1bXymjOKUg==}
+  '@google/genai@2.0.1':
+    resolution: {integrity: sha512-trxxbVePM9J8Cuni5x7+xvApoqb2y6Zk27/wugjT2cuwHOT78nFGdf/Ni29MkDxzWwrj90OQpno1Ana6dm3D2A==}
     engines: {node: '>=20.0.0'}
     peerDependencies:
       '@modelcontextprotocol/sdk': ^1.25.2
@@ -3038,7 +3038,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.0':
     optional: true
 
-  '@google/genai@2.0.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))':
+  '@google/genai@2.0.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))':
     dependencies:
       google-auth-library: 10.6.2
       p-retry: 4.6.2

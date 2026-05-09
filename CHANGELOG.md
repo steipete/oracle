@@ -23,6 +23,7 @@
 
 ### Changed
 
+- Dependencies: update Google GenAI, OpenAI, Zod, Puppeteer, and developer tooling packages. (#187)
 - Browser: emit `--heartbeat` status while waiting for ChatGPT browser responses, including safe Thinking/Reasoning sidecar liveness metadata without logging reasoning text. (#148) — thanks @pdurlej.
 
 ### Fixed
