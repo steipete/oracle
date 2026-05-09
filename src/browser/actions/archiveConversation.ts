@@ -16,6 +16,15 @@ export function isProjectChatgptUrl(url?: string | null): boolean {
   return /\/project(?:[/?#]|$)/i.test(url ?? "");
 }
 
+export function isTemporaryChatgptUrl(url?: string | null): boolean {
+  try {
+    const parsed = new URL(url ?? "");
+    return (parsed.searchParams.get("temporary-chat") ?? "").trim().toLowerCase() === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function resolveBrowserArchiveDecision({
   mode = "auto",
   chatgptUrl,
@@ -34,6 +43,9 @@ export function resolveBrowserArchiveDecision({
   }
   if (!conversationUrl) {
     return { mode, shouldArchive: false, reason: "missing-conversation-url" };
+  }
+  if (isTemporaryChatgptUrl(chatgptUrl) || isTemporaryChatgptUrl(conversationUrl)) {
+    return { mode, shouldArchive: false, reason: "temporary-chat" };
   }
   if (mode === "always") {
     return { mode, shouldArchive: true, reason: "forced" };

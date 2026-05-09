@@ -37,6 +37,12 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@c0c44be4b0f6fedac74eff654af003cc07e50374 # v6
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Build docs site
         run: node scripts/build-docs-site.mjs
 

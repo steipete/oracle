@@ -128,9 +128,11 @@ body:not(.home) .doc>h1:first-child{display:none}
 .doc em{font-style:italic}
 .doc code{font-family:"JetBrains Mono","SF Mono",ui-monospace,monospace;font-size:.84em;background:var(--line-soft);border:1px solid var(--line);border-radius:5px;padding:.08em .35em;color:var(--code-inline-fg)}
 .doc pre{position:relative;overflow:auto;background:var(--code-bg);color:var(--code-fg);border-radius:8px;padding:14px 18px;margin:1.3em 0;font-size:.85em;line-height:1.6;scrollbar-width:thin;scrollbar-color:#3a3358 transparent;border:1px solid #221c40}
+.doc pre.shiki{background:var(--code-bg)!important;color:var(--code-fg)!important}
 .doc pre::-webkit-scrollbar{height:8px;width:8px}
 .doc pre::-webkit-scrollbar-thumb{background:#3a3358;border-radius:8px}
 .doc pre code{display:block;background:transparent;border:0;color:inherit;padding:0;font-size:1em;white-space:pre}
+.doc pre code .line{display:block;min-height:1.6em}
 .doc pre .copy{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.06);color:var(--code-fg);border:1px solid rgba(255,255,255,.16);border-radius:6px;padding:3px 9px;font:500 .7rem/1 "Inter",sans-serif;cursor:pointer;opacity:0;transition:opacity .15s,background .15s,border-color .15s}
 .doc pre:hover .copy,.doc pre .copy:focus{opacity:1}
 .doc pre .copy:hover{background:rgba(255,255,255,.12)}

@@ -239,6 +239,8 @@ describe("inferModelFromLabel", () => {
     expect(inferModelFromLabel("ChatGPT 5.5")).toBe("gpt-5.5");
     expect(inferModelFromLabel("GPT-5.5 Pro")).toBe("gpt-5.5-pro");
     expect(inferModelFromLabel("Pro Extended")).toBe("gpt-5.5-pro");
+    // New ChatGPT UI (2026-05): bare "Pro" label maps to default (gpt-5.5-pro)
+    expect(inferModelFromLabel("Pro")).toBe("gpt-5.5-pro");
     expect(inferModelFromLabel("Thinking Heavy")).toBe("gpt-5.5");
   });
 

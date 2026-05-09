@@ -41,7 +41,7 @@ describe("ensureModelSelection", () => {
     );
   });
 
-  test("includes temporary chat hint when Pro is unavailable", async () => {
+  test("includes temporary chat hint when requested Pro option is missing", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
         result: {
@@ -53,7 +53,7 @@ describe("ensureModelSelection", () => {
       }),
     } as unknown as ChromeClient["Runtime"];
     await expect(ensureModelSelection(runtime, "GPT-5.2 Pro", logger)).rejects.toThrow(
-      /Temporary Chat/i,
+      /model labels may differ/i,
     );
   });
 

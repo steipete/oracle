@@ -9,7 +9,6 @@ import {
   resolveRemoteTabLeaseProfileDirForTest,
   runBrowserMode,
   runSubmissionWithRecoveryForTest,
-  shouldSkipThinkingTimeSelectionForTest,
   shouldPreferSystemTmpDirForTest,
   shouldPreserveBrowserOnErrorForTest,
 } from "../../src/browser/index.js";
@@ -110,18 +109,10 @@ describe("browser run target cleanup", () => {
   });
 });
 
-describe("shouldSkipThinkingTimeSelectionForTest", () => {
-  test("treats GPT-5.5 Pro Extended as resolved by model selection", () => {
-    expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.5 Pro", "extended")).toBe(true);
-    expect(shouldSkipThinkingTimeSelectionForTest("gpt-5.5-pro", "extended")).toBe(true);
-  });
-
-  test("keeps explicit effort selection for non-Pro or non-extended requests", () => {
-    expect(shouldSkipThinkingTimeSelectionForTest("gpt-5.5", "heavy")).toBe(false);
-    expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.5 Pro", "heavy")).toBe(false);
-    expect(shouldSkipThinkingTimeSelectionForTest("GPT-5.2", "extended")).toBe(false);
-  });
-});
+// NOTE: shouldSkipThinkingTimeSelection was removed — it incorrectly assumed
+// that selecting "Pro" in the picker always implied Extended effort, which is
+// wrong for lower-tier plans where Pro defaults to Standard. The thinking time
+// step now always runs; ensureThinkingTime handles the already-selected case.
 
 describe("formatBrowserTurnTranscript", () => {
   test("keeps single-turn browser output unchanged", () => {

@@ -10,7 +10,7 @@ import {
   normalizeMaxConcurrentTabs,
 } from "./tabLeaseRegistry.js";
 import type { BrowserAutomationConfig, ResolvedBrowserConfig } from "./types.js";
-import { isTemporaryChatUrl, normalizeChatgptUrl } from "./utils.js";
+import { normalizeChatgptUrl } from "./utils.js";
 import os from "node:os";
 import path from "node:path";
 
@@ -87,16 +87,6 @@ export function resolveBrowserConfig(
     normalizeBrowserModelStrategy(config?.modelStrategy) ??
     DEFAULT_BROWSER_CONFIG.modelStrategy ??
     DEFAULT_MODEL_STRATEGY;
-  if (
-    modelStrategy === "select" &&
-    isTemporaryChatUrl(normalizedUrl) &&
-    /\bpro\b/i.test(desiredModel)
-  ) {
-    throw new Error(
-      "Temporary Chat mode does not expose Pro models in the ChatGPT model picker. " +
-        'Remove "temporary-chat=true" from your browser URL, or use a non-Pro model label (e.g. "GPT-5.2").',
-    );
-  }
   const isWindows = process.platform === "win32";
   const manualLogin =
     config?.manualLogin ?? (isWindows ? true : DEFAULT_BROWSER_CONFIG.manualLogin);
