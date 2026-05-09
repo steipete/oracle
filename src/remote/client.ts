@@ -20,10 +20,18 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
     const payload: RemoteRunPayload = {
       prompt: options.prompt,
       attachments: await serializeAttachments(options.attachments ?? []),
+      fallbackSubmission: options.fallbackSubmission
+        ? {
+            prompt: options.fallbackSubmission.prompt,
+            attachments: await serializeAttachments(options.fallbackSubmission.attachments ?? []),
+          }
+        : undefined,
       browserConfig: options.config ?? {},
       options: {
         heartbeatIntervalMs: options.heartbeatIntervalMs,
         verbose: options.verbose,
+        sessionId: options.sessionId,
+        followUpPrompts: options.followUpPrompts,
       },
     };
 

@@ -29,7 +29,9 @@ describe("remote browser service", () => {
     async () => {
       const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-test-"));
       const attachmentPath = path.join(tmpDir, "note.txt");
+      const fallbackAttachmentPath = path.join(tmpDir, "fallback.txt");
       await writeFile(attachmentPath, "hello world", "utf8");
+      await writeFile(fallbackAttachmentPath, "fallback world", "utf8");
 
       const runLog: string[] = [];
       const server = await createRemoteServer(
@@ -37,6 +39,8 @@ describe("remote browser service", () => {
         {
           runBrowser: async (options) => {
             runLog.push(options.prompt);
+            expect(options.sessionId).toBe("remote-session-id");
+            expect(options.followUpPrompts).toEqual(["follow up"]);
             expect(options.attachments).toHaveLength(1);
             const attachment = options.attachments?.[0];
             if (!attachment) {
@@ -44,6 +48,14 @@ describe("remote browser service", () => {
             }
             const stored = await readFile(attachment.path, "utf8");
             expect(stored).toBe("hello world");
+            expect(options.fallbackSubmission?.prompt).toBe("fallback prompt");
+            expect(options.fallbackSubmission?.attachments).toHaveLength(1);
+            const fallbackAttachment = options.fallbackSubmission?.attachments[0];
+            if (!fallbackAttachment) {
+              throw new Error("missing fallback attachment");
+            }
+            const fallbackStored = await readFile(fallbackAttachment.path, "utf8");
+            expect(fallbackStored).toBe("fallback world");
             options.log?.("uploading attachment");
             const result: BrowserRunResult = {
               answerText: "hi",
@@ -65,7 +77,15 @@ describe("remote browser service", () => {
       const result = await executor({
         prompt: "remote",
         attachments: [{ path: attachmentPath, displayPath: "note.txt", sizeBytes: 11 }],
+        fallbackSubmission: {
+          prompt: "fallback prompt",
+          attachments: [
+            { path: fallbackAttachmentPath, displayPath: "fallback.txt", sizeBytes: 14 },
+          ],
+        },
         config: {},
+        sessionId: "remote-session-id",
+        followUpPrompts: ["follow up"],
         log: (message?: string) => {
           if (message) clientLogs.push(message);
         },
