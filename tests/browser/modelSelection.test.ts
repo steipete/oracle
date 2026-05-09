@@ -88,7 +88,9 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("isTargetGpt55VisibleAlias");
     // ChatGPT as of 2026-05 shows bare "Pro" (not "Pro Extended") in the picker.
     // Composer pill may also display "Extended Pro" (reversed ordering).
-    expect(expression).toContain("label === 'pro' || label === 'pro extended' || label === 'extended pro'");
+    expect(expression).toContain(
+      "label === 'pro' || label === 'pro extended' || label === 'extended pro'",
+    );
     expect(expression).toContain("desiredVersion === '5-5'");
   });
 
