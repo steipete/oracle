@@ -253,7 +253,9 @@ export function buildConsultBrowserConfig({
     ? mapModelToBrowserLabel(runModel)
     : resolveBrowserModelLabel(preferredLabel, runModel);
   const configuredUrl = configuredBrowser.chatgptUrl ?? configuredBrowser.url ?? CHATGPT_URL;
-  const manualLogin = hasProfileDir ? true : (configuredBrowser.manualLogin ?? false);
+  const manualLogin = hasProfileDir
+    ? true
+    : (configuredBrowser.manualLogin ?? process.platform === "win32");
 
   return {
     ...configuredBrowser,

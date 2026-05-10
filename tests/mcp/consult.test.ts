@@ -112,6 +112,18 @@ describe("summarizeModelRunsForConsult", () => {
     });
   });
 
+  test("defaults MCP browser consults to manual login on Windows", () => {
+    const config = buildConsultBrowserConfig({
+      userConfig: {},
+      env: {},
+      runModel: "gpt-5.5-pro",
+      inputModel: "gpt-5.5-pro",
+    });
+
+    expect(config.manualLogin).toBe(process.platform === "win32");
+    expect(config.cookieSync).toBe(process.platform !== "win32");
+  });
+
   test("lets explicit consult inputs override config defaults", () => {
     const config = buildConsultBrowserConfig({
       userConfig: {
