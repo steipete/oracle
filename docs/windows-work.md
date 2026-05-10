@@ -9,3 +9,5 @@ Read this file whenever you're working from Windows and add new findings so the 
 - Prefer PowerShell + pnpm directly; watch for CRLF warnings when touching tracked files.
 
 Future Windows gotchas belong here. Update this doc when you learn something new.
+
+- ChatGPT sidebar/history labels can include phrases like "Login setup instruction"; login probes must match exact auth CTAs, not any visible text starting with login, or manual-login automation loops forever before typing.

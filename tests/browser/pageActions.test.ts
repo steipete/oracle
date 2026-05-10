@@ -10,6 +10,7 @@ import {
   ensureNotBlocked,
   ensureLoggedIn,
 } from "../../src/browser/pageActions.js";
+import { buildLoginProbeExpressionForTest } from "../../src/browser/actions/navigation.js";
 import * as attachments from "../../src/browser/actions/attachments.js";
 import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDataTransfer.js";
 import type { ChromeClient } from "../../src/browser/types.js";
@@ -209,6 +210,15 @@ describe("ensureLoggedIn", () => {
     } as unknown as ChromeClient["Runtime"];
     await expect(ensureLoggedIn(runtime, logger, { appliedCookies: 2 })).resolves.toBeUndefined();
     expect(logger).toHaveBeenCalledWith(expect.stringContaining("Login check passed"));
+  });
+
+  test("does not treat history items starting with login as login CTAs", () => {
+    const expression = buildLoginProbeExpressionForTest();
+    expect(expression).toContain(
+      "['log in', 'login', 'sign in', 'signin', 'sign up for free'].includes(normalized)",
+    );
+    expect(expression).toContain("normalized.startsWith('continue with')");
+    expect(expression).not.toContain("normalized.startsWith(needle)");
   });
 
   test("throws with cookie guidance when cookies missing", async () => {
