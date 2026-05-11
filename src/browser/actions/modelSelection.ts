@@ -435,8 +435,7 @@ function buildModelSelectionExpression(
       const candidateGpt55VisibleAlias = isTargetGpt55VisibleAlias(normalizedText);
       const candidateHasThinking =
         normalizedText.includes('thinking') || normalizedTestId.includes('thinking');
-      const candidateHasLegacyProVersion =
-        labelHasLegacyProVersion(normalizedText) || labelHasLegacyProVersion(normalizedTestId);
+      const candidateHasLegacyProVersion = labelHasLegacyProVersion(normalizedText);
       const candidateHasPro =
         candidateGpt55VisibleAlias ||
         labelHasProWord(normalizedText) ||
