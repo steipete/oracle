@@ -489,9 +489,8 @@ function buildLoginProbeExpression(timeoutMs: number): string {
         if (!text) return false;
         const normalized = text.toLowerCase().trim();
         return (
-          ['log in', 'login', 'sign in', 'signin', 'continue with', 'sign up for free'].some(
-            (needle) => normalized.startsWith(needle),
-          ) ||
+          ['log in', 'login', 'sign in', 'signin', 'sign up for free'].includes(normalized) ||
+          normalized.startsWith('continue with') ||
           normalized.includes('get responses tailored to you') ||
           normalized.includes('log in to get answers')
         );
@@ -593,4 +592,8 @@ function normalizeLoginProbe(raw: unknown): LoginProbeResult {
     domLoginCta: Boolean(value.domLoginCta),
     onAuthPage: Boolean(value.onAuthPage),
   };
+}
+
+export function buildLoginProbeExpressionForTest(timeoutMs = LOGIN_CHECK_TIMEOUT_MS): string {
+  return buildLoginProbeExpression(timeoutMs);
 }
