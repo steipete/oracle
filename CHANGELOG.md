@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.2 — Unreleased
+
+### Fixed
+
+- Browser: target ChatGPT's renamed bare Pro picker row for Pro browser runs while keeping older Pro CLI aliases mapped to the current browser target (#190, fixes #182). Thanks @jungdaesuh!
+
 ## 0.11.1 — 2026-05-10
 
 ### Changed
