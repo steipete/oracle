@@ -1,4 +1,6 @@
 import path from "node:path";
+import os from "node:os";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import {
   __test__,
@@ -106,6 +108,56 @@ describe("browser run target cleanup", () => {
         keepBrowser: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("manual-login profile setup gate", () => {
+  test("fails fast for an uninitialized manual-login profile unless setup keeps Chrome open", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-empty-profile-"));
+    try {
+      await expect(
+        __test__.assertManualLoginProfileReadyForRun({
+          userDataDir: dir,
+          keepBrowser: false,
+        }),
+      ).rejects.toThrow(/private Chrome profile/i);
+
+      await expect(
+        __test__.assertManualLoginProfileReadyForRun({
+          userDataDir: dir,
+          keepBrowser: true,
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts an initialized manual-login Chrome profile", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-initialized-profile-"));
+    try {
+      await mkdir(path.join(dir, "Default"));
+      await expect(
+        __test__.assertManualLoginProfileReadyForRun({
+          userDataDir: dir,
+          keepBrowser: false,
+        }),
+      ).resolves.toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("formats the first-time setup command with the selected profile", () => {
+    expect(__test__.formatManualLoginSetupCommand("/tmp/oracle profile")).toContain(
+      '--browser-manual-login-profile-dir "/tmp/oracle profile"',
+    );
+  });
+
+  test("caps non-setup manual-login waits so MCP callers fail fast", () => {
+    expect(__test__.resolveManualLoginWaitMs(20 * 60_000, false)).toBe(30_000);
+    expect(__test__.resolveManualLoginWaitMs(5_000, false)).toBe(5_000);
+    expect(__test__.resolveManualLoginWaitMs(20 * 60_000, true)).toBe(20 * 60_000);
   });
 });
 
