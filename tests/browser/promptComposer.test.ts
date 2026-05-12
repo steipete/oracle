@@ -111,7 +111,8 @@ describe("promptComposer", () => {
         ["oracle-attach-verify.txt"],
       );
       const assertion = expect(promise).rejects.toThrow(/clickable send button/i);
-      await vi.advanceTimersByTimeAsync(21_000);
+      // Deadline is 45_000ms; advance a bit past it so the timeout fires.
+      await vi.advanceTimersByTimeAsync(46_000);
       await assertion;
     } finally {
       vi.useRealTimers();

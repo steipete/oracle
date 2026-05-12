@@ -340,17 +340,35 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       document.querySelector('form') ||
       document.body ||
       document;
-    const labelText = (node) =>
-      [
-        node?.textContent,
-        node?.getAttribute?.('aria-label'),
-        node?.getAttribute?.('title'),
-        node?.getAttribute?.('data-testid'),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-    const match = (node, name) => labelText(node).includes(name);
+    // Walk node + ancestors (up to grandparent) + descendants to gather every textual hint.
+    // ChatGPT's current chip DOM nests the filename inside truncated child spans, so checking
+    // only the node's own textContent/aria/title misses the match.
+    const collectLabelHaystack = (node) => {
+      if (!node) return '';
+      const pieces = [];
+      const pushAttrs = (el) => {
+        if (!el || typeof el.getAttribute !== 'function') return;
+        for (const attr of ['aria-label', 'title', 'data-testid', 'data-tooltip', 'data-tooltip-content']) {
+          const v = el.getAttribute(attr);
+          if (v) pieces.push(v);
+        }
+      };
+      const pushText = (el) => {
+        if (!el) return;
+        const text = (el.innerText ?? el.textContent ?? '').trim();
+        if (text) pieces.push(text);
+      };
+      pushAttrs(node);
+      pushText(node);
+      const parent = node.parentElement;
+      pushAttrs(parent);
+      pushText(parent);
+      const grandparent = parent?.parentElement;
+      pushAttrs(grandparent);
+      pushText(grandparent);
+      return pieces.join(' ').toLowerCase();
+    };
+    const match = (node, name) => collectLabelHaystack(node).includes(name);
 
     // Restrict to attachment affordances; never scan generic div/span nodes (prompt text can contain the file name).
     const attachmentSelectors = [
@@ -362,13 +380,32 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       'button[aria-label*="Remove file"]',
       '[aria-label*="remove file"]',
       'button[aria-label*="remove file"]',
+      '[aria-label*="Remove attachment"]',
+      'button[aria-label*="Remove attachment"]',
+      '[aria-label*="remove attachment"]',
+      'button[aria-label*="remove attachment"]',
     ];
     const attachmentRoots = Array.from(new Set([composer, document])).filter(Boolean);
+    const collectChipNodes = () => {
+      const seen = new Set();
+      const collected = [];
+      for (const root of attachmentRoots) {
+        for (const node of Array.from(root.querySelectorAll(attachmentSelectors.join(',')))) {
+          if (!(node instanceof HTMLElement)) continue;
+          // Skip elements clearly inside the editable input (composer textarea may contain
+          // filename text in the user's prompt — avoid mistaking that for a chip).
+          if (node.closest('textarea,[contenteditable="true"]')) continue;
+          if (seen.has(node)) continue;
+          seen.add(node);
+          collected.push(node);
+        }
+      }
+      return collected;
+    };
+    const chipNodes = collectChipNodes();
 
     const chipsReady = names.every((name) =>
-      attachmentRoots.some((root) =>
-        Array.from(root.querySelectorAll(attachmentSelectors.join(','))).some((node) => match(node, name)),
-      ),
+      chipNodes.some((node) => match(node, name)),
     );
     const inputsReady = names.every((name) =>
       attachmentRoots.some((root) =>
@@ -379,8 +416,21 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
         ),
       ),
     );
+    // Count-based fallback: if we cannot match names individually (ChatGPT may strip
+    // the filename out of attribute-readable text into a deeply nested span), but we
+    // do see at least as many distinct chip-shaped nodes as attachments we uploaded,
+    // and a sibling "Remove" affordance exists per chip, trust the upload.
+    const removeAffordanceCount = chipNodes.filter((node) => {
+      const aria = (node.getAttribute?.('aria-label') ?? '').toLowerCase();
+      if (aria.includes('remove')) return true;
+      const removeSibling = node.querySelector?.(
+        '[aria-label*="Remove" i], [aria-label*="remove" i], button[aria-label*="Remove" i], button[aria-label*="remove" i]',
+      );
+      return Boolean(removeSibling);
+    }).length;
+    const countReady = chipNodes.length >= names.length && removeAffordanceCount >= names.length;
 
-    return chipsReady || inputsReady;
+    return chipsReady || inputsReady || countReady;
   })()`;
 }
 
@@ -426,7 +476,10 @@ async function attemptSendButton(
     return 'clicked';
   })()`;
 
-  const deadline = Date.now() + 20_000;
+  // Give attachment-bearing submissions more headroom — ChatGPT's chip render
+  // settles slowly for multi-file uploads (the previous 20s deadline routinely
+  // tripped before the send button became clickable for two .md attachments).
+  const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
     if (needAttachment) {
