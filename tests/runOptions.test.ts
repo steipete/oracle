@@ -183,6 +183,26 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(runOptions.model).toBe("gpt-5.5-pro");
   });
 
+  it("maps browser engine gpt-5.4-pro to the current ChatGPT Pro target", () => {
+    const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      model: "gpt-5.4-pro",
+      engine: "browser",
+    });
+    expect(resolvedEngine).toBe("browser");
+    expect(runOptions.model).toBe("gpt-5.5-pro");
+  });
+
+  it("keeps gpt-5.4-pro unchanged for API engine runs", () => {
+    const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      model: "gpt-5.4-pro",
+      engine: "api",
+    });
+    expect(resolvedEngine).toBe("api");
+    expect(runOptions.model).toBe("gpt-5.4-pro");
+  });
+
   it("forces api engine for gpt-5.1-codex when engine is auto-detected", () => {
     const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
       prompt: basePrompt,
