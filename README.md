@@ -19,7 +19,7 @@ Browser mode lets you use GPT-5.5 Pro without any API keys — it automates your
 
 ### First-time login
 
-Run this once to create an automation profile and log into ChatGPT. The browser will stay open so you can complete the login:
+Run this once to create Oracle's private automation profile and log into ChatGPT. This profile is separate from your normal Chrome profile. The browser will stay open so you can complete the login:
 
 ```bash
 oracle --engine browser --browser-manual-login \

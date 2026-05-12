@@ -125,31 +125,34 @@ function llmsTxt() {
   const origin = docsOrigin();
   const source = docsSourceUrl();
   const name = typeof productName !== "undefined" ? productName : path.basename(root);
-  const description = typeof productDescription !== "undefined" ? productDescription : `${name} documentation index.`;
+  const description =
+    typeof productDescription !== "undefined" ? productDescription : `${name} documentation index.`;
   const install = docsInstallHint();
-  const docPages = docsLlmsPages().map((page) => `- ${page.title}: ${pageUrl(origin, page.outRel)}`);
-  const lines = [
-    `# ${name}`,
-    "",
-    description,
-    "",
-    "Canonical documentation:",
-    ...docPages,
-  ];
+  const docPages = docsLlmsPages().map(
+    (page) => `- ${page.title}: ${pageUrl(origin, page.outRel)}`,
+  );
+  const lines = [`# ${name}`, "", description, "", "Canonical documentation:", ...docPages];
   if (install) {
     lines.push("", "Install:", `- ${install}`);
   }
   if (source) {
     lines.push("", `Source: ${source}`);
   }
-  lines.push("", "Guidance for agents:", "- Prefer the canonical documentation URLs above over README excerpts or package metadata.", "- Fetch only the pages needed for the current task; this is an index, not a full-site corpus.");
+  lines.push(
+    "",
+    "Guidance for agents:",
+    "- Prefer the canonical documentation URLs above over README excerpts or package metadata.",
+    "- Fetch only the pages needed for the current task; this is an index, not a full-site corpus.",
+  );
   return `${lines.join("\n")}\n`;
 }
 
 function docsLlmsPages() {
   const seen = new Set();
   const ordered = typeof orderedPages !== "undefined" ? orderedPages : [];
-  return [...ordered, ...pages].filter((page) => page.outRel && !seen.has(page.outRel) && seen.add(page.outRel));
+  return [...ordered, ...pages].filter(
+    (page) => page.outRel && !seen.has(page.outRel) && seen.add(page.outRel),
+  );
 }
 
 function docsOrigin() {
@@ -163,7 +166,8 @@ function docsOrigin() {
 function docsSourceUrl() {
   if (typeof repoBase !== "undefined") return repoBase;
   if (typeof repoUrl !== "undefined") return repoUrl;
-  if (typeof repoEditBase !== "undefined") return repoEditBase.replace(/\/edit\/main\/docs\/?$/, "");
+  if (typeof repoEditBase !== "undefined")
+    return repoEditBase.replace(/\/edit\/main\/docs\/?$/, "");
   return "";
 }
 
@@ -177,7 +181,10 @@ function docsInstallHint() {
 }
 
 function pageUrl(origin, outRel) {
-  const normalized = outRel === "index.html" ? "" : outRel.replace(/(?:^|\/)index\.html$/, (match) => match === "index.html" ? "" : "/");
+  const normalized =
+    outRel === "index.html"
+      ? ""
+      : outRel.replace(/(?:^|\/)index\.html$/, (match) => (match === "index.html" ? "" : "/"));
   if (!origin) return normalized || "index.html";
   return normalized ? `${origin}/${normalized}` : `${origin}/`;
 }
