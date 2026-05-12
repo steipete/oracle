@@ -110,7 +110,13 @@ const evaluateMenuModelSelectionExpression = async (
   }
 
   class FakeMouseEvent {
-    constructor(_type: string, _init?: unknown) {}
+    readonly type: string;
+    readonly init?: unknown;
+
+    constructor(type: string, init?: unknown) {
+      this.type = type;
+      this.init = init;
+    }
   }
 
   const expression = buildModelSelectionExpressionForTest(targetModel);
