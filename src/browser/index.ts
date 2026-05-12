@@ -1,4 +1,4 @@
-import { mkdtemp, rm, mkdir, readdir } from "node:fs/promises";
+import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import net from "node:net";
@@ -88,6 +88,13 @@ import {
   archiveChatGptConversation,
   resolveBrowserArchiveDecision,
 } from "./actions/archiveConversation.js";
+import {
+  assertManualLoginProfileReadyForRun,
+  defaultManualLoginProfileDir,
+  formatManualLoginSetupCommand,
+  isManualLoginProfileInitialized,
+  resolveManualLoginWaitMs,
+} from "./manualLoginProfile.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "./controlPlan.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
@@ -620,7 +627,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const manualLogin = Boolean(config.manualLogin);
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
-    : path.join(os.homedir(), ".oracle", "browser-profile");
+    : defaultManualLoginProfileDir();
   const userDataDir = manualLogin
     ? manualProfileDir
     : await mkdtemp(path.join(await resolveUserDataBaseDir(), "oracle-browser-"));
@@ -1975,71 +1982,12 @@ async function waitForLogin({
       await delay(1000);
     }
   }
-  const setupCommand = formatManualLoginSetupCommand(
-    profileDir ?? path.join(os.homedir(), ".oracle", "browser-profile"),
-  );
+  const setupCommand = formatManualLoginSetupCommand(profileDir ?? defaultManualLoginProfileDir());
   throw new Error(
     "Manual login mode timed out waiting for ChatGPT session. " +
       `Browser mode is using Oracle's private Chrome profile at ${profileDir ?? "(default profile)"}, not your normal Chrome profile. ` +
       `Run first-time setup, sign in there, then retry: ${setupCommand}`,
   );
-}
-
-function resolveManualLoginWaitMs(timeoutMs: number | undefined, keepBrowser: boolean): number {
-  const configured = Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
-  if (keepBrowser) {
-    return configured;
-  }
-  return Math.min(configured, 30_000);
-}
-
-async function assertManualLoginProfileReadyForRun({
-  userDataDir,
-  keepBrowser,
-}: {
-  userDataDir: string;
-  keepBrowser: boolean;
-}): Promise<void> {
-  if (keepBrowser) {
-    return;
-  }
-  if (await isManualLoginProfileInitialized(userDataDir)) {
-    return;
-  }
-  const setupCommand = formatManualLoginSetupCommand(userDataDir);
-  throw new BrowserAutomationError(
-    "ChatGPT browser manual-login profile is not initialized. " +
-      `Browser mode is using Oracle's private Chrome profile at ${userDataDir}, separate from your normal Chrome profile. ` +
-      `Run first-time setup, sign in there, then retry: ${setupCommand}. ` +
-      "If you want to reuse an already signed-in Chrome instead, use --browser-attach-running.",
-    {
-      stage: "browser-login-setup",
-      details: {
-        profileDir: userDataDir,
-        setupCommand,
-        sessionStatus: "needs_login",
-      },
-      reuseProfileHint: setupCommand,
-    },
-  );
-}
-
-async function isManualLoginProfileInitialized(profileDir: string): Promise<boolean> {
-  const entries = await readdir(profileDir, { withFileTypes: true }).catch(() => []);
-  return entries.some((entry) => {
-    if (!entry.name) return false;
-    if (entry.name === "Default" || entry.name === "Local State") return true;
-    if (entry.name.startsWith("Profile ")) return true;
-    return false;
-  });
-}
-
-function formatManualLoginSetupCommand(profileDir: string): string {
-  return [
-    "oracle --engine browser --browser-manual-login --browser-keep-browser",
-    `--browser-manual-login-profile-dir ${JSON.stringify(profileDir)}`,
-    '-p "HI"',
-  ].join(" ");
 }
 
 async function maybeRecoverLongAssistantResponse({
