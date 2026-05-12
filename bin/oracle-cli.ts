@@ -283,6 +283,11 @@ program
     collectPaths,
     [],
   )
+  .option(
+    "--max-file-size-bytes <bytes>",
+    "Reject files larger than this many bytes.",
+    parseIntOption,
+  )
   .addOption(
     new Option("--include <paths...>", "Alias for --file.")
       .argParser(collectPaths)
@@ -1595,7 +1600,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   );
   const { models: _rawModels, ...optionsWithoutModels } = options;
   const resolvedOptions: ResolvedCliOptions = { ...optionsWithoutModels, model: resolvedModel };
-  resolvedOptions.maxFileSizeBytes = resolveConfiguredMaxFileSizeBytes(userConfig, process.env);
+  resolvedOptions.maxFileSizeBytes =
+    options.maxFileSizeBytes ?? resolveConfiguredMaxFileSizeBytes(userConfig, process.env);
   if (normalizedMultiModels.length > 0) {
     resolvedOptions.models = normalizedMultiModels;
   }

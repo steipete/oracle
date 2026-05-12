@@ -11,6 +11,7 @@
 - Browser/MCP: avoid false ChatGPT login prompts when sidebar history starts with "Login..." and default MCP browser consults to manual login on Windows. (#189) — thanks @ndycode.
 - Browser: allow Pro model selection in ChatGPT Temporary Chat URLs and skip archive attempts for temporary conversations. (#185) — thanks @pdurlej.
 - Browser: recognize ChatGPT's renamed GPT-5.5 Pro/Thinking model labels and always apply requested thinking time instead of assuming Pro implies Extended. (#183, fixes #182) — thanks @broady.
+- CLI/Browser: expose `--max-file-size-bytes` on normal `oracle --file` runs, preserve the CLI override ahead of config/env defaults, and pass the raised cap through browser prompt assembly.
 - MCP: reject unknown `consult` fields instead of silently ignoring misspelled tool-call arguments. (#184) — thanks @pdurlej.
 
 ### Docs
