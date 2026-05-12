@@ -37,6 +37,12 @@ import {
 import { CHATGPT_URL } from "./constants.js";
 import { delay } from "./utils.js";
 import {
+  assertManualLoginProfileReadyForRun,
+  defaultManualLoginProfileDir,
+  formatManualLoginSetupCommand,
+  resolveManualLoginWaitMs,
+} from "./manualLoginProfile.js";
+import {
   openProjectSourcesTab,
   uploadProjectSources,
   waitForProjectSourcesReady,
@@ -87,13 +93,18 @@ export async function runBrowserProjectSources(
   const manualLogin = Boolean(config.manualLogin);
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
-    : path.join(os.homedir(), ".oracle", "browser-profile");
+    : defaultManualLoginProfileDir();
   const userDataDir = manualLogin
     ? manualProfileDir
     : await mkdtemp(path.join(os.tmpdir(), "oracle-project-sources-"));
+  const effectiveKeepBrowser = Boolean(config.keepBrowser);
   if (manualLogin) {
     await mkdir(userDataDir, { recursive: true });
     logger(`Manual login mode enabled; reusing persistent profile at ${userDataDir}`);
+    await assertManualLoginProfileReadyForRun({
+      userDataDir,
+      keepBrowser: effectiveKeepBrowser,
+    });
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
@@ -116,7 +127,6 @@ export async function runBrowserProjectSources(
   let removeDialogHandler: (() => void) | null = null;
   let connectionClosedUnexpectedly = false;
   let completed = false;
-  const effectiveKeepBrowser = Boolean(config.keepBrowser);
 
   try {
     const acquired = manualLogin
@@ -198,6 +208,8 @@ export async function runBrowserProjectSources(
         appliedCookies,
         manualLogin,
         timeoutMs: config.timeoutMs,
+        profileDir: userDataDir,
+        keepBrowser: effectiveKeepBrowser,
       }),
     );
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, projectUrl, logger));
@@ -354,18 +366,23 @@ async function waitForProjectSourcesLogin({
   appliedCookies,
   manualLogin,
   timeoutMs,
+  profileDir,
+  keepBrowser,
 }: {
   runtime: ChromeClient["Runtime"];
   logger: BrowserLogger;
   appliedCookies: number;
   manualLogin: boolean;
   timeoutMs: number;
+  profileDir?: string;
+  keepBrowser?: boolean;
 }): Promise<void> {
   if (!manualLogin) {
     await ensureLoggedIn(runtime, logger, { appliedCookies });
     return;
   }
-  const deadline = Date.now() + Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
+  const waitMs = resolveManualLoginWaitMs(timeoutMs, Boolean(keepBrowser));
+  const deadline = Date.now() + waitMs;
   let lastNotice = 0;
   while (Date.now() < deadline) {
     try {
@@ -389,8 +406,11 @@ async function waitForProjectSourcesLogin({
       await delay(1000);
     }
   }
+  const setupCommand = formatManualLoginSetupCommand(profileDir ?? defaultManualLoginProfileDir());
   throw new Error(
-    "Manual login mode timed out waiting for ChatGPT session; please sign in and retry.",
+    "Manual login mode timed out waiting for ChatGPT session. " +
+      `Browser mode is using Oracle's private Chrome profile at ${profileDir ?? "(default profile)"}, not your normal Chrome profile. ` +
+      `Run first-time setup, sign in there, then retry: ${setupCommand}`,
   );
 }
 

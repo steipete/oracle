@@ -88,6 +88,13 @@ import {
   archiveChatGptConversation,
   resolveBrowserArchiveDecision,
 } from "./actions/archiveConversation.js";
+import {
+  assertManualLoginProfileReadyForRun,
+  defaultManualLoginProfileDir,
+  formatManualLoginSetupCommand,
+  isManualLoginProfileInitialized,
+  resolveManualLoginWaitMs,
+} from "./manualLoginProfile.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "./controlPlan.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
@@ -620,14 +627,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const manualLogin = Boolean(config.manualLogin);
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
-    : path.join(os.homedir(), ".oracle", "browser-profile");
+    : defaultManualLoginProfileDir();
   const userDataDir = manualLogin
     ? manualProfileDir
     : await mkdtemp(path.join(await resolveUserDataBaseDir(), "oracle-browser-"));
+  const effectiveKeepBrowser = Boolean(config.keepBrowser);
   if (manualLogin) {
     // Learned: manual login reuses a persistent profile so cookies/SSO survive.
     await mkdir(userDataDir, { recursive: true });
     logger(`Manual login mode enabled; reusing persistent profile at ${userDataDir}`);
+    await assertManualLoginProfileReadyForRun({
+      userDataDir,
+      keepBrowser: effectiveKeepBrowser,
+    });
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
@@ -641,7 +653,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     });
   }
 
-  const effectiveKeepBrowser = Boolean(config.keepBrowser);
   let acquiredChrome: { chrome: BrowserChrome; reusedChrome: LaunchedChrome | null };
   try {
     acquiredChrome = manualLogin
@@ -854,6 +865,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           appliedCookies,
           manualLogin,
           timeoutMs: config.timeoutMs,
+          profileDir: userDataDir,
+          keepBrowser: effectiveKeepBrowser,
         }),
       );
 
@@ -1930,18 +1943,23 @@ async function waitForLogin({
   appliedCookies,
   manualLogin,
   timeoutMs,
+  profileDir,
+  keepBrowser,
 }: {
   runtime: ChromeClient["Runtime"];
   logger: BrowserLogger;
   appliedCookies: number;
   manualLogin: boolean;
   timeoutMs: number;
+  profileDir?: string;
+  keepBrowser?: boolean;
 }): Promise<void> {
   if (!manualLogin) {
     await ensureLoggedIn(runtime, logger, { appliedCookies });
     return;
   }
-  const deadline = Date.now() + Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
+  const waitMs = resolveManualLoginWaitMs(timeoutMs, Boolean(keepBrowser));
+  const deadline = Date.now() + waitMs;
   let lastNotice = 0;
   while (Date.now() < deadline) {
     try {
@@ -1964,8 +1982,11 @@ async function waitForLogin({
       await delay(1000);
     }
   }
+  const setupCommand = formatManualLoginSetupCommand(profileDir ?? defaultManualLoginProfileDir());
   throw new Error(
-    "Manual login mode timed out waiting for ChatGPT session; please sign in and retry.",
+    "Manual login mode timed out waiting for ChatGPT session. " +
+      `Browser mode is using Oracle's private Chrome profile at ${profileDir ?? "(default profile)"}, not your normal Chrome profile. ` +
+      `Run first-time setup, sign in there, then retry: ${setupCommand}`,
   );
 }
 
@@ -3000,10 +3021,14 @@ export { resolveBrowserConfig, DEFAULT_BROWSER_CONFIG } from "./config.js";
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  assertManualLoginProfileReadyForRun,
   closeRemoteConnectionAfterRun,
   detachKeptChromeProcess,
+  formatManualLoginSetupCommand,
+  isManualLoginProfileInitialized,
   isImageOnlyUiChromeText,
   listIgnoredRemoteChromeFlags,
+  resolveManualLoginWaitMs,
   shouldCloseOwnedRunTargetAfterRun,
 };
 export { syncCookies } from "./cookies.js";

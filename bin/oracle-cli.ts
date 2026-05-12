@@ -597,6 +597,12 @@ program
       "Skip cookie copy; reuse a persistent automation profile and wait for manual ChatGPT login.",
     ).hideHelp(),
   )
+  .addOption(
+    new Option(
+      "--browser-manual-login-profile-dir <path>",
+      "Persistent Chrome profile directory for manual-login browser runs.",
+    ).hideHelp(),
+  )
   .addOption(new Option("--browser-headless", "Launch Chrome in headless mode.").hideHelp())
   .addOption(
     new Option(
