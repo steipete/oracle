@@ -47,25 +47,15 @@ function isMissingChatGptSessionError(error: unknown): boolean {
 
 const CASES = [
   {
-    name: "auto",
-    desiredModel: "GPT-5.2",
-    expected: ["5.2"],
-  },
-  {
-    name: "thinking",
-    desiredModel: "GPT-5.2 Thinking",
-    expected: ["5.2", "thinking"],
-  },
-  {
-    name: "instant",
-    desiredModel: "GPT-5.2 Instant",
-    expected: ["5.2", "instant"],
+    name: "pro",
+    desiredModel: "Pro",
+    expected: ["pro"],
   },
 ];
 
 (LIVE ? describe : describe.skip)("ChatGPT browser live model selection", () => {
   test(
-    "selects GPT-5.2 variants reliably",
+    "selects the current bare Pro picker row reliably",
     async () => {
       if (!(await hasChatGptCookies())) return;
       // Learned: serialize live browser tests to avoid Chrome profile contention.

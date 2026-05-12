@@ -241,7 +241,7 @@ describe("summarizeModelRunsForConsult", () => {
         resolvedEngine: "browser",
         model: "gpt-5.5-pro",
         browser: expect.objectContaining({
-          desiredModel: "GPT-5.5 Pro",
+          desiredModel: "Pro",
           thinkingTime: "extended",
           modelStrategy: "select",
         }),
