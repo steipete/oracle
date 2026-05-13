@@ -90,7 +90,9 @@ export function resolveGeminiBrowserConfig(
   const rawUrl = config?.url ?? config?.chatgptUrl ?? DEFAULT_GEMINI_BROWSER_CONFIG.url;
   const normalizedUrl = normalizeGeminiUrl(rawUrl, DEFAULT_GEMINI_BROWSER_CONFIG.url);
   const desiredModel =
-    config?.desiredModel ?? DEFAULT_GEMINI_BROWSER_CONFIG.desiredModel ?? DEFAULT_GEMINI_MODEL_TARGET;
+    config?.desiredModel ??
+    DEFAULT_GEMINI_BROWSER_CONFIG.desiredModel ??
+    DEFAULT_GEMINI_MODEL_TARGET;
   const modelStrategy =
     normalizeModelStrategy(config?.modelStrategy) ??
     DEFAULT_GEMINI_BROWSER_CONFIG.modelStrategy ??
@@ -131,7 +133,8 @@ export function resolveGeminiBrowserConfig(
     autoReattachTimeoutMs:
       config?.autoReattachTimeoutMs ?? DEFAULT_GEMINI_BROWSER_CONFIG.autoReattachTimeoutMs,
     cookieSync: config?.cookieSync ?? cookieSyncDefault,
-    cookieNames: normalizeCookieNames(config?.cookieNames) ?? DEFAULT_GEMINI_BROWSER_CONFIG.cookieNames,
+    cookieNames:
+      normalizeCookieNames(config?.cookieNames) ?? DEFAULT_GEMINI_BROWSER_CONFIG.cookieNames,
     cookieSyncWaitMs: config?.cookieSyncWaitMs ?? DEFAULT_GEMINI_BROWSER_CONFIG.cookieSyncWaitMs,
     inlineCookies: config?.inlineCookies ?? DEFAULT_GEMINI_BROWSER_CONFIG.inlineCookies,
     inlineCookiesSource:

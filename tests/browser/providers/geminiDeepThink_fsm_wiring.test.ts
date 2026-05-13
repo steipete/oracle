@@ -86,8 +86,9 @@ function makeFakeAdapter(options: FakeAdapterOptions = {}): {
 }
 
 function makeCtx(overrides: Partial<ProviderDomFlowContext> = {}): ProviderDomFlowContext {
-  const evaluate: ProviderDomFlowContext["evaluate"] = async <T>(_expr: string): Promise<T | undefined> =>
-    undefined;
+  const evaluate: ProviderDomFlowContext["evaluate"] = async <T>(
+    _expr: string,
+  ): Promise<T | undefined> => undefined;
   const delay: ProviderDomFlowContext["delay"] = async (_ms: number): Promise<void> => {};
   const log: ProviderDomFlowContext["log"] = () => {};
   return {
@@ -148,7 +149,9 @@ describe("wireGeminiDeepThinkFsm — adapter wrapper invariants (oracle-svt)", (
 
   it("login-style error during waitForUi lands FSM in login_required", async () => {
     const { adapter, calls } = makeFakeAdapter({
-      waitForUiThrows: new Error("Gemini is showing a sign-in flow. Please sign in in Chrome and retry."),
+      waitForUiThrows: new Error(
+        "Gemini is showing a sign-in flow. Please sign in in Chrome and retry.",
+      ),
     });
     const wired = wireGeminiDeepThinkFsm(adapter);
     const ctx = makeCtx();
