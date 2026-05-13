@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- CLI: add `oracle remote doctor|status|attach [--json]` to diagnose the configured remote browser endpoint. `doctor` probes TCP + `/health`, `status` snapshots the resolved endpoint config without touching the network, and `attach --host <host:port> --token-env <ENV>` probes a caller-supplied target without ever placing the token on the command line. `oracle bridge doctor --json` emits the same `remote_browser_endpoint.v1`-shaped envelope so scripts can parse a single wire format across all four commands.
+
 ### Fixed
 
 - CLI/Browser: reject malformed port and tab-count values with trailing non-numeric text instead of silently truncating them.
