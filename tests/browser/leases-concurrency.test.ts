@@ -35,6 +35,38 @@ describe("browser lease concurrency conformance", () => {
     expect(() => assertAllLeaseRequirementsCovered(COVERED_REQUIREMENTS)).not.toThrow();
   });
 
+  test("simultaneous first acquire has one persisted winner", async () => {
+    await withLeaseHarness(async (harness) => {
+      const outcomes = await raceAcquireLeases(harness, {
+        provider: "chatgpt",
+        profileIdHash: CHATGPT_PROFILE,
+        count: 48,
+        leaseIdPrefix: "chatgpt-first-contender",
+      });
+      const successes = outcomes.flatMap((outcome) => (outcome.ok ? [outcome] : []));
+      const failures = outcomes.flatMap((outcome) => (outcome.ok ? [] : [outcome]));
+
+      expect(successes).toHaveLength(1);
+      expect(failures).toHaveLength(47);
+      const winner = successes[0]!.lease;
+
+      const current = await harness.read("chatgpt", CHATGPT_PROFILE);
+      expect(current.state).toBe("active");
+      if (current.state === "active") {
+        expect(current.record.lease_id).toBe(winner.lease_id);
+      }
+
+      for (const outcome of failures) {
+        expect(outcome.error).toBeInstanceOf(BrowserLeaseStateError);
+        const result = (outcome.error as BrowserLeaseStateError).result;
+        expect(result.state).toBe("active");
+        if (result.state === "active") {
+          expect(result.record.lease_id).toBe(winner.lease_id);
+        }
+      }
+    });
+  });
+
   test("LEASE-CONCURRENCY-001: active same-provider lock rejects all contenders", async () => {
     await withLeaseHarness(async (harness) => {
       await harness.acquire({
