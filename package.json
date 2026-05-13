@@ -44,6 +44,7 @@
     "lint:fix": "oxlint --fix && pnpm run format",
     "test": "vitest run",
     "test:v18-conformance": "vitest run tests/conformance/v18/",
+    "release:readiness": "pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run test:v18-conformance",
     "test:v18": "tsx scripts/v18-validation.ts",
     "test:v18:unit": "vitest run tests/oracle/v18/",
     "test:v18:fixtures": "vitest run tests/browser/selectors/ tests/browser/providers/",
