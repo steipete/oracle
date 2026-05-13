@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   classifyTabState,
   formatBrowserTabState,
+  isChatGptUrlForTest,
   resolveChatGptTabFromSummariesForTest,
   sessionMatchesTab,
   type ChatGptTabSummary,
@@ -96,6 +97,32 @@ describe("liveTabs helpers", () => {
     expect(() => resolveChatGptTabFromSummariesForTest(tabs, "Routing Review")).toThrow(
       /Multiple ChatGPT tabs match/i,
     );
+  });
+
+  test("isChatGptUrl matches canonical ChatGPT hosts and rejects look-alikes", () => {
+    // Canonical hosts
+    expect(isChatGptUrlForTest("https://chatgpt.com/c/abc")).toBe(true);
+    expect(isChatGptUrlForTest("https://chat.openai.com/c/abc")).toBe(true);
+    expect(isChatGptUrlForTest("HTTPS://CHATGPT.COM/c/abc")).toBe(true);
+    expect(isChatGptUrlForTest("  https://chatgpt.com/  ")).toBe(true);
+    expect(isChatGptUrlForTest("https://chatgpt.com:443/c/abc")).toBe(true);
+
+    // Prefix-confusion attacks must NOT match
+    expect(isChatGptUrlForTest("https://chatgpt.com.evil.example/c/abc")).toBe(false);
+    expect(isChatGptUrlForTest("https://chatgpt.com-evil.example/c/abc")).toBe(false);
+    expect(isChatGptUrlForTest("https://chat.openai.com.fake.test/c/abc")).toBe(false);
+    expect(isChatGptUrlForTest("https://chatgpt.com@evil.example/c/abc")).toBe(false);
+
+    // Subdomains that aren't part of the canonical ChatGPT product
+    expect(isChatGptUrlForTest("https://www.chatgpt.com/c/abc")).toBe(false);
+    expect(isChatGptUrlForTest("https://api.chatgpt.com/c/abc")).toBe(false);
+
+    // Wrong schemes / malformed
+    expect(isChatGptUrlForTest("http://chatgpt.com/c/abc")).toBe(true);
+    expect(isChatGptUrlForTest("ftp://chatgpt.com/c/abc")).toBe(false);
+    expect(isChatGptUrlForTest("javascript:alert(1)")).toBe(false);
+    expect(isChatGptUrlForTest("")).toBe(false);
+    expect(isChatGptUrlForTest("not-a-url")).toBe(false);
   });
 
   test("matches sessions by target id, url, and conversation id", () => {

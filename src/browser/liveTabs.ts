@@ -113,10 +113,18 @@ function buildTargetFingerprint(
 }
 
 function isChatGptUrl(url: string): boolean {
-  const normalized = normalizeUrl(url).toLowerCase();
-  return (
-    normalized.startsWith("https://chatgpt.com") || normalized.startsWith("https://chat.openai.com")
-  );
+  // Use URL parsing so look-alike hosts (chatgpt.com.evil.example) and
+  // userinfo tricks (https://chatgpt.com@evil.example) don't match.
+  try {
+    const parsed = new URL(normalizeUrl(url));
+    if (!/^https?:$/i.test(parsed.protocol)) {
+      return false;
+    }
+    const host = parsed.hostname.toLowerCase();
+    return host === "chatgpt.com" || host === "chat.openai.com";
+  } catch {
+    return false;
+  }
 }
 
 function isChatGptConversationUrl(url: string): boolean {
@@ -431,6 +439,10 @@ export function resolveChatGptTabFromSummariesForTest(
   ref?: string,
 ): ChatGptTabSummary {
   return resolveChatGptTabFromSummaries(summaries, ref);
+}
+
+export function isChatGptUrlForTest(url: string): boolean {
+  return isChatGptUrl(url);
 }
 
 export async function resolveChatGptTab(
