@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import JSON5 from "json5";
-import type { UserConfig } from "../config.js";
+import { writeUserConfig, type UserConfig } from "../config.js";
 
 export async function readUserConfigFile(
   configPath: string,
@@ -22,14 +21,5 @@ export async function readUserConfigFile(
 }
 
 export async function writeUserConfigFile(configPath: string, config: UserConfig): Promise<void> {
-  const dir = path.dirname(configPath);
-  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
-
-  const contents = `${JSON.stringify(config, null, 2)}\n`;
-  const tempPath = `${configPath}.tmp-${process.pid}-${Date.now()}`;
-  await fs.writeFile(tempPath, contents, { encoding: "utf8", mode: 0o600 });
-  await fs.rename(tempPath, configPath);
-  if (process.platform !== "win32") {
-    await fs.chmod(configPath, 0o600).catch(() => undefined);
-  }
+  await writeUserConfig(config, configPath);
 }

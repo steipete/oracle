@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import JSON5 from "json5";
-import { getOracleHomeDir } from "./oracleHome.js";
+import { ensureOracleHomeDir, getOracleHomeDir } from "./oracleHome.js";
 import type {
   BrowserArchiveMode,
   BrowserModelStrategy,
@@ -106,23 +107,112 @@ export interface LoadConfigResult {
   loaded: boolean;
 }
 
-export async function loadUserConfig(): Promise<LoadConfigResult> {
+export interface LoadUserConfigOptions {
+  env?: NodeJS.ProcessEnv;
+}
+
+function normalizeString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeEngine(value: unknown): EnginePreference | undefined {
+  const normalized = normalizeString(value)?.toLowerCase();
+  return normalized === "api" || normalized === "browser" ? normalized : undefined;
+}
+
+function normalizeConfigRecord(value: unknown, configPath: string): UserConfig {
+  if (value == null) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Expected ${configPath} to contain a JSON object.`);
+  }
+  return value as UserConfig;
+}
+
+export function applyEnvConfigOverrides(
+  config: UserConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): UserConfig {
+  const next: UserConfig = { ...config };
+  const envEngine = normalizeEngine(env.ORACLE_ENGINE);
+  if (envEngine) {
+    next.engine = envEngine;
+  }
+
+  const remoteHost = normalizeString(env.ORACLE_REMOTE_HOST);
+  const remoteToken = normalizeString(env.ORACLE_REMOTE_TOKEN);
+  if (remoteHost || remoteToken) {
+    next.browser = { ...(next.browser ?? {}) };
+    if (remoteHost) {
+      next.browser.remoteHost = remoteHost;
+    }
+    if (remoteToken) {
+      next.browser.remoteToken = remoteToken;
+    }
+  }
+  return next;
+}
+
+export async function loadUserConfig(
+  options: LoadUserConfigOptions = {},
+): Promise<LoadConfigResult> {
   const CONFIG_PATH = resolveConfigPath();
+  const env = options.env ?? process.env;
   try {
     const raw = await fs.readFile(CONFIG_PATH, "utf8");
-    const parsed = JSON5.parse(raw) as UserConfig;
-    return { config: parsed ?? {}, path: CONFIG_PATH, loaded: true };
+    const parsed = normalizeConfigRecord(JSON5.parse(raw), CONFIG_PATH);
+    return {
+      config: applyEnvConfigOverrides(parsed, env),
+      path: CONFIG_PATH,
+      loaded: true,
+    };
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "ENOENT") {
-      return { config: {}, path: CONFIG_PATH, loaded: false };
+      return {
+        config: applyEnvConfigOverrides({}, env),
+        path: CONFIG_PATH,
+        loaded: false,
+      };
     }
     console.warn(
       `Failed to read ${CONFIG_PATH}: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return { config: {}, path: CONFIG_PATH, loaded: false };
+    return {
+      config: applyEnvConfigOverrides({}, env),
+      path: CONFIG_PATH,
+      loaded: false,
+    };
   }
 }
 export function configPath(): string {
   return resolveConfigPath();
+}
+
+export async function writeUserConfig(
+  config: UserConfig,
+  targetPath: string = resolveConfigPath(),
+): Promise<void> {
+  const resolvedTarget = path.resolve(targetPath);
+  const dir = path.dirname(resolvedTarget);
+  if (resolvedTarget === resolveConfigPath()) {
+    await ensureOracleHomeDir();
+  } else {
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  }
+  const contents = `${JSON.stringify(config, null, 2)}\n`;
+  const tempPath = path.join(dir, `.config.json.tmp-${process.pid}-${randomUUID()}`);
+  try {
+    await fs.writeFile(tempPath, contents, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    await fs.rename(tempPath, resolvedTarget);
+    if (process.platform !== "win32") {
+      await fs.chmod(resolvedTarget, 0o600).catch(() => undefined);
+    }
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }

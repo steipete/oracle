@@ -20,6 +20,7 @@ import {
   getSessionPaths,
   getSessionsDir,
 } from "./sessionManager.js";
+import { ensureOracleHomeDir } from "./oracleHome.js";
 type InitializeSessionOptionsType = Parameters<typeof initializeSession>[0];
 
 export interface SessionStore {
@@ -57,8 +58,9 @@ export interface SessionStore {
 }
 
 class FileSessionStore implements SessionStore {
-  ensureStorage(): Promise<void> {
-    return ensureSessionStorage();
+  async ensureStorage(): Promise<void> {
+    await ensureOracleHomeDir();
+    await ensureSessionStorage();
   }
 
   createSession(

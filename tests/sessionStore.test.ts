@@ -1,7 +1,7 @@
 import { beforeEach, afterEach, describe, expect, test } from "vitest";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { finished } from "node:stream/promises";
 import { setOracleHomeDirOverrideForTest } from "../src/oracleHome.js";
 import { sessionStore as store } from "../src/sessionStore.js";
@@ -30,6 +30,21 @@ describe("sessionStore", () => {
     expect(fetched?.options?.search).toBe(false);
     const request = await store.readRequest(meta.id);
     expect(request?.prompt).toBe("Inspect me");
+  });
+
+  test("ensureStorage creates the oracle home before session directories", async () => {
+    const freshHome = path.join(tmpHome, "fresh-home");
+    setOracleHomeDirOverrideForTest(freshHome);
+
+    await store.ensureStorage();
+
+    const homeStats = await stat(freshHome);
+    const sessionsStats = await stat(path.join(freshHome, "sessions"));
+    expect(homeStats.isDirectory()).toBe(true);
+    expect(sessionsStats.isDirectory()).toBe(true);
+    if (process.platform !== "win32") {
+      expect(homeStats.mode & 0o777).toBe(0o700);
+    }
   });
 
   test("persists waitPreference and gemini browser metadata for restarts", async () => {
