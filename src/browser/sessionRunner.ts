@@ -3,6 +3,8 @@ import type { RunOracleOptions } from "../oracle.js";
 import { formatTokenCount } from "../oracle/runUtils.js";
 import { formatFinishLine } from "../oracle/finishLine.js";
 import type {
+  BrowserModelSelectionEvidence,
+  BrowserRunWarning,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
   SessionArtifact,
@@ -28,6 +30,8 @@ export interface BrowserExecutionResult {
   elapsedMs: number;
   runtime: BrowserRuntimeMetadata;
   archive?: BrowserArchiveResult;
+  modelSelection?: BrowserModelSelectionEvidence;
+  warnings?: BrowserRunWarning[];
   answerText: string;
   artifacts?: SessionArtifact[];
 }
@@ -43,6 +47,87 @@ export interface BrowserSessionRunnerDeps {
   assemblePrompt?: typeof assembleBrowserPrompt;
   executeBrowser?: typeof runBrowserMode;
   persistRuntimeHint?: (runtime: BrowserRuntimeMetadata) => Promise<void> | void;
+}
+
+const LARGE_PRO_FAST_INPUT_TOKEN_THRESHOLD = 25_000;
+const LARGE_PRO_FAST_ELAPSED_MS_THRESHOLD = 120_000;
+
+function buildUnavailableModelSelectionEvidence(
+  browserConfig: BrowserSessionConfig,
+): BrowserModelSelectionEvidence | undefined {
+  if (!browserConfig.desiredModel) {
+    return undefined;
+  }
+  return {
+    requestedModel: browserConfig.desiredModel,
+    resolvedLabel: null,
+    strategy: browserConfig.modelStrategy,
+    status: "unavailable",
+    verified: false,
+    source: "config",
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+function formatModelSelectionEvidence(evidence: BrowserModelSelectionEvidence): string {
+  const requested = evidence.requestedModel ?? "(none)";
+  const resolved = evidence.resolvedLabel ?? "(unavailable)";
+  const strategy = evidence.strategy ?? "(default)";
+  const verified = evidence.verified ? "yes" : "no";
+  return `[browser] Model selection evidence: requested=${requested}; resolved=${resolved}; status=${evidence.status}; strategy=${strategy}; verified=${verified}.`;
+}
+
+function isRequestedProBrowserRun(
+  runOptions: RunOracleOptions,
+  browserConfig: BrowserSessionConfig,
+  evidence?: BrowserModelSelectionEvidence,
+): boolean {
+  const candidates = [
+    runOptions.model,
+    browserConfig.desiredModel,
+    evidence?.requestedModel,
+    evidence?.resolvedLabel,
+  ];
+  return candidates.some((value) => typeof value === "string" && /\bpro\b/i.test(value));
+}
+
+export function buildBrowserRunWarningsForTest(args: {
+  runOptions: RunOracleOptions;
+  browserConfig: BrowserSessionConfig;
+  inputTokens: number;
+  elapsedMs: number;
+  modelSelection?: BrowserModelSelectionEvidence;
+}): BrowserRunWarning[] {
+  return buildBrowserRunWarnings(args);
+}
+
+function buildBrowserRunWarnings(args: {
+  runOptions: RunOracleOptions;
+  browserConfig: BrowserSessionConfig;
+  inputTokens: number;
+  elapsedMs: number;
+  modelSelection?: BrowserModelSelectionEvidence;
+}): BrowserRunWarning[] {
+  if (
+    !isRequestedProBrowserRun(args.runOptions, args.browserConfig, args.modelSelection) ||
+    args.inputTokens < LARGE_PRO_FAST_INPUT_TOKEN_THRESHOLD ||
+    args.elapsedMs >= LARGE_PRO_FAST_ELAPSED_MS_THRESHOLD
+  ) {
+    return [];
+  }
+  return [
+    {
+      code: "browser-pro-fast-large-run",
+      severity: "warning",
+      message: `Large browser Pro run completed quickly (${(args.elapsedMs / 1000).toFixed(0)}s for ~${args.inputTokens.toLocaleString()} input tokens); verify the stored model selection evidence before claiming Pro Extended output.`,
+      details: {
+        inputTokens: args.inputTokens,
+        elapsedMs: args.elapsedMs,
+        requestedModel: args.modelSelection?.requestedModel ?? args.browserConfig.desiredModel,
+        resolvedLabel: args.modelSelection?.resolvedLabel ?? null,
+      },
+    },
+  ];
 }
 
 export async function runBrowserSessionExecution(
@@ -93,7 +178,7 @@ export async function runBrowserSessionExecution(
     if (typeof message !== "string") return;
     const shouldAlwaysPrint =
       message.startsWith("[browser] ") &&
-      /archive|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot|browser control|browser guidance/i.test(
+      /archive|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot|browser control|browser guidance|model selection|model picker/i.test(
         message,
       );
     if (!runOptions.verbose && !shouldAlwaysPrint) return;
@@ -140,6 +225,21 @@ export async function runBrowserSessionExecution(
     }
     const message = error instanceof Error ? error.message : "Browser automation failed.";
     throw new BrowserAutomationError(message, { stage: "execute-browser" }, error);
+  }
+  const modelSelection =
+    browserResult.modelSelection ?? buildUnavailableModelSelectionEvidence(browserConfig);
+  if (modelSelection) {
+    log(formatModelSelectionEvidence(modelSelection));
+  }
+  const warnings = buildBrowserRunWarnings({
+    runOptions,
+    browserConfig,
+    inputTokens: promptArtifacts.estimatedInputTokens,
+    elapsedMs: browserResult.tookMs,
+    modelSelection,
+  });
+  for (const warning of warnings) {
+    log(chalk.yellow(`[browser] ${warning.message}`));
   }
   if (!runOptions.silent) {
     log(chalk.bold("Answer:"));
@@ -204,6 +304,8 @@ export async function runBrowserSessionExecution(
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     archive: browserResult.archive,
+    modelSelection,
+    warnings,
     answerText,
     artifacts: savedArtifacts,
   };

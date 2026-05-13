@@ -358,7 +358,13 @@ describe("browser model selection matchers", () => {
 
     await expect(
       ensureModelSelection(runtime as never, "gpt-5.5-pro", logger as never, "current"),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      requestedModel: "gpt-5.5-pro",
+      resolvedLabel: "Thinking 5.5 Heavy",
+      status: "already-selected",
+      strategy: "current",
+      verified: false,
+    });
     expect(logger).toHaveBeenCalledWith("Model picker: Thinking 5.5 Heavy");
   });
 

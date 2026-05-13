@@ -104,11 +104,37 @@ export interface BrowserHarvestMetadata {
   lastAssistantSnippet?: string;
 }
 
+export type BrowserModelSelectionEvidenceStatus =
+  | "already-selected"
+  | "switched"
+  | "switched-best-effort"
+  | "skipped"
+  | "unavailable";
+
+export interface BrowserModelSelectionEvidence {
+  requestedModel?: string | null;
+  resolvedLabel?: string | null;
+  strategy?: BrowserModelStrategy;
+  status: BrowserModelSelectionEvidenceStatus;
+  verified: boolean;
+  source: "chatgpt-model-picker" | "config";
+  capturedAt: string;
+}
+
+export interface BrowserRunWarning {
+  code: string;
+  severity: "warning";
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export interface BrowserMetadata {
   config?: BrowserSessionConfig;
   runtime?: BrowserRuntimeMetadata;
   harvest?: BrowserHarvestMetadata;
   archive?: BrowserArchiveResult;
+  modelSelection?: BrowserModelSelectionEvidence;
+  warnings?: BrowserRunWarning[];
 }
 
 export interface SessionArtifact {
