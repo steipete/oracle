@@ -13,6 +13,7 @@ import type {
 import type {
   TransportFailureReason,
   AzureOptions,
+  BrowserBundleFormat,
   ModelName,
   ThinkingTimeLevel,
 } from "./oracle.js";
@@ -188,7 +189,7 @@ export interface StoredRunOptions {
   browserAttachments?: "auto" | "never" | "always";
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
-  browserBundleFormat?: "text" | "zip";
+  browserBundleFormat?: BrowserBundleFormat;
   background?: boolean;
   search?: boolean;
   baseUrl?: string;

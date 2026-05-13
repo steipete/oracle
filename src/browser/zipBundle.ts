@@ -1,6 +1,8 @@
 const ZIP_UTF8_FLAG = 0x0800;
 const ZIP_STORE_METHOD = 0;
 const ZIP_VERSION_NEEDED = 20;
+const ZIP_DOS_TIME = 0x0000;
+const ZIP_DOS_DATE = 0x0021;
 
 export interface ZipBundleEntry {
   path: string;
@@ -66,14 +68,20 @@ function assertZip32(value: number, label: string): void {
   }
 }
 
+function assertZip16(value: number, label: string): void {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffff) {
+    throw new Error(`${label} exceeds ZIP16 limits.`);
+  }
+}
+
 function localFileHeader(entry: PreparedZipEntry): Buffer {
   const header = Buffer.alloc(30);
   header.writeUInt32LE(0x04034b50, 0);
   header.writeUInt16LE(ZIP_VERSION_NEEDED, 4);
   header.writeUInt16LE(ZIP_UTF8_FLAG, 6);
   header.writeUInt16LE(ZIP_STORE_METHOD, 8);
-  header.writeUInt16LE(0, 10);
-  header.writeUInt16LE(0, 12);
+  header.writeUInt16LE(ZIP_DOS_TIME, 10);
+  header.writeUInt16LE(ZIP_DOS_DATE, 12);
   header.writeUInt32LE(entry.crc32, 14);
   header.writeUInt32LE(entry.content.length, 18);
   header.writeUInt32LE(entry.content.length, 22);
@@ -89,8 +97,8 @@ function centralDirectoryHeader(entry: PreparedZipEntry): Buffer {
   header.writeUInt16LE(ZIP_VERSION_NEEDED, 6);
   header.writeUInt16LE(ZIP_UTF8_FLAG, 8);
   header.writeUInt16LE(ZIP_STORE_METHOD, 10);
-  header.writeUInt16LE(0, 12);
-  header.writeUInt16LE(0, 14);
+  header.writeUInt16LE(ZIP_DOS_TIME, 12);
+  header.writeUInt16LE(ZIP_DOS_DATE, 14);
   header.writeUInt32LE(entry.crc32, 16);
   header.writeUInt32LE(entry.content.length, 20);
   header.writeUInt32LE(entry.content.length, 24);
@@ -125,6 +133,7 @@ export function createStoredZip(entries: ZipBundleEntry[]): Buffer {
   if (entries.length > 0xffff) {
     throw new Error("Too many files for a ZIP32 browser bundle.");
   }
+  assertZip16(entries.length, "ZIP entry count");
   const seen = new Set<string>();
   const prepared: PreparedZipEntry[] = [];
   const localParts: Buffer[] = [];
@@ -135,6 +144,7 @@ export function createStoredZip(entries: ZipBundleEntry[]): Buffer {
     const content = Buffer.isBuffer(entry.content)
       ? entry.content
       : Buffer.from(entry.content, "utf8");
+    assertZip16(name.length, "ZIP file name");
     assertZip32(name.length, "ZIP file name");
     assertZip32(content.length, "ZIP entry size");
     assertZip32(offset, "ZIP local header offset");
