@@ -209,6 +209,38 @@ export function parseDurationOption(value: string | undefined, label: string): n
   return parsed;
 }
 
+const V18_WORKFLOW_PROVIDER_SLOTS = [
+  "chatgpt_pro_first_plan",
+  "chatgpt_pro_synthesis",
+  "claude_code_opus",
+  "codex_intake",
+  "codex_thinking_fast_draft",
+  "deepseek_v4_pro_reasoning_search",
+  "gemini_deep_think",
+  "xai_grok_reasoning",
+] as const;
+
+const V18_WORKFLOW_PROVIDER_SLOT_SET: ReadonlySet<string> = new Set(
+  V18_WORKFLOW_PROVIDER_SLOTS,
+);
+
+function normalizeWorkflowProviderSlotCandidate(value: string): string {
+  return value.trim().toLowerCase().replace(/-+/gu, "_");
+}
+
+export function isWorkflowProviderSlotName(value: string | undefined): boolean {
+  if (!value) return false;
+  return V18_WORKFLOW_PROVIDER_SLOT_SET.has(normalizeWorkflowProviderSlotCandidate(value));
+}
+
+function assertNotWorkflowProviderSlotModel(value: string): void {
+  if (!isWorkflowProviderSlotName(value)) return;
+  const slot = normalizeWorkflowProviderSlotCandidate(value);
+  throw new InvalidArgumentError(
+    `v18 provider slot "${slot}" is not a model name. Oracle will not satisfy workflow slots by substituting a direct API model; pass a concrete --model value or route provider-slot metadata through the v18 workflow policy layer.`,
+  );
+}
+
 function isGeminiDeepThinkAlias(normalized: string): boolean {
   return (
     (normalized.includes("gemini") && normalized.includes("deep")) ||
@@ -220,6 +252,7 @@ function isGeminiDeepThinkAlias(normalized: string): boolean {
 
 export function resolveApiModel(modelValue: string): ModelName {
   const normalized = normalizeModelOption(modelValue).toLowerCase();
+  assertNotWorkflowProviderSlotModel(normalized);
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
   }
@@ -296,6 +329,7 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (!normalized) {
     return DEFAULT_MODEL;
   }
+  assertNotWorkflowProviderSlotModel(normalized);
   if (normalized in MODEL_CONFIGS) {
     return normalized as ModelName;
   }

@@ -5,6 +5,7 @@
 ### Fixed
 
 - CLI/Browser: reject malformed port and tab-count values with trailing non-numeric text instead of silently truncating them.
+- CLI: reject v18 workflow provider-slot identifiers passed as `--model` / `--models` so protected routes cannot silently become direct API substitutions.
 - CLI: reject malformed `maxFileSizeBytes` values with trailing text or decimals instead of truncating them.
 - CLI: reject malformed generic numeric options such as `--timeout`, `--heartbeat`, and integer flags instead of accepting partial numeric prefixes.
 - Browser: reject unsafe `--chatgpt-url` hosts, credentials, custom ports, and control characters, and keep configured cookie-name filters on the safe allowlist.
