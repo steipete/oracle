@@ -291,8 +291,33 @@ export function wrapBrowserExecutorWithV18Emit(
   emitOptions: WrapBrowserExecutorWithV18EmitOptions,
 ): (options: BrowserRunOptions) => Promise<V18EmittedBrowserRunResult> {
   return async (options) => {
-    const result = await executor(options);
-    const outcome = await maybeEmit(options, result, emitOptions, options.log);
-    return { ...result, v18Emit: outcome };
+    const startedAt = Date.now();
+    try {
+      const result = await executor(options);
+      const outcome = await maybeEmit(options, result, emitOptions, options.log);
+      return { ...result, v18Emit: outcome };
+    } catch (error) {
+      const elapsedMs = Math.max(0, Date.now() - startedAt);
+      const failureResult: BrowserRunResultWithV18Capture = {
+        answerText: "",
+        answerMarkdown: "",
+        tookMs: elapsedMs,
+        answerTokens: 0,
+        answerChars: 0,
+        tabUrl: options.config?.chatgptUrl ?? options.config?.url,
+        v18Capture: {
+          promptText: options.prompt,
+          answerText: "",
+          observedEffortLabels: [],
+          observedTurnIndex: 0,
+          baselineTurns: 0,
+          modeVerified: false,
+          verifiedBeforePromptSubmit: false,
+          captureConfidence: "low",
+        },
+      };
+      await maybeEmit(options, failureResult, emitOptions, options.log);
+      throw error;
+    }
   };
 }
