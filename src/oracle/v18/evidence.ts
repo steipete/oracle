@@ -33,6 +33,7 @@ import {
   type ArtifactIndexEntry,
   type BrowserEvidence,
 } from "./contracts.js";
+import { serializeArtifactIndexUpdate } from "./artifact_index_lock.js";
 
 const SESSIONS_DIRNAME = "sessions";
 const EVIDENCE_DIRNAME = "evidence";
@@ -375,18 +376,19 @@ export async function writeEvidence(
   const indexFile = isUnsafe
     ? quarantineIndexPath(sessionId, homeDir)
     : evidenceIndexPath(sessionId, homeDir);
-  const existing = (await readArtifactIndex(indexFile)) ?? emptyIndex(options.runId);
   const entry: ArtifactIndexEntry = {
     artifact_id: evidence.evidence_id,
     kind: EVIDENCE_KIND,
     path: path.relative(path.dirname(indexFile), filePath) || path.basename(filePath),
     sha256: sha,
   };
-  const updated = upsertEntry(existing, entry);
-  if (options.runId && !updated.run_id) {
-    (updated as Record<string, unknown>).run_id = options.runId;
-  }
-  await writeArtifactIndex(indexFile, updated);
+  await serializeArtifactIndexUpdate(indexFile, (current) => {
+    const updated = upsertEntry(current ?? emptyIndex(options.runId), entry);
+    if (options.runId && !updated.run_id) {
+      return { ...updated, run_id: options.runId };
+    }
+    return updated;
+  });
 
   return {
     evidenceId: evidence.evidence_id,
