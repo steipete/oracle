@@ -23,6 +23,7 @@ const DEFAULT_REQUIREMENT = "optional";
 const DEFAULT_TTL_SECONDS = 15 * 60;
 
 export interface BrowserLeasesCommandOptions extends BrowserLeaseStoreOptions {
+  provider?: string | string[];
   providers?: string | string[];
   profile?: string;
   remoteBrowser?: string;
@@ -244,6 +245,7 @@ export async function runBrowserLeasesRecover(
 
 function addCommonOptions(command: Command): Command {
   return command
+    .option("--provider <provider>", "Alias for --providers; single provider.")
     .option("--providers <list>", "Comma-separated providers (chatgpt,gemini).")
     .option("--require <mode>", "Mode requirement to report in the plan.", DEFAULT_REQUIREMENT)
     .option("--profile <profile>", "Shared profile policy label.", DEFAULT_PROFILE)
@@ -292,7 +294,7 @@ function normalizeOptions(options: BrowserLeasesCommandOptions): NormalizedLease
   const remoteBrowser = cleanLabel(options.remoteBrowser, DEFAULT_REMOTE_BROWSER);
   const requirement = cleanLabel(options.require, DEFAULT_REQUIREMENT);
   return {
-    providers: normalizeProviders(options.providers),
+    providers: normalizeProviders(options.providers ?? options.provider),
     profile,
     remoteBrowser,
     requirement,

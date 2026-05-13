@@ -1,8 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { Command } from "commander";
+import { describe, expect, test, vi } from "vitest";
 import {
+  registerBrowserLeasesCommand,
   runBrowserLeasesAcquire,
   runBrowserLeasesPlan,
   runBrowserLeasesRecover,
@@ -68,6 +70,20 @@ describe("browser leases command surface", () => {
         issued_at: "2026-01-01T00:00:00.000Z",
         expires_at: "2026-01-01T00:02:00.000Z",
       });
+    });
+  });
+
+  test("registered command accepts singular --provider and plural --providers", async () => {
+    await withLeaseDir(async (leaseDir) => {
+      const singular = await runRegisteredPlan(leaseDir, ["--provider", "chatgpt"]);
+      const plural = await runRegisteredPlan(leaseDir, ["--providers", "chatgpt"]);
+
+      expect(singular.data.leases.map((lease: { provider: string }) => lease.provider)).toEqual([
+        "chatgpt",
+      ]);
+      expect(plural.data.leases.map((lease: { provider: string }) => lease.provider)).toEqual([
+        "chatgpt",
+      ]);
     });
   });
 
@@ -220,3 +236,42 @@ describe("browser leases command surface", () => {
     });
   });
 });
+
+async function runRegisteredPlan(
+  leaseDir: string,
+  providerArgs: readonly string[],
+): Promise<{ data: { leases: Array<{ provider: string }> } }> {
+  const output: string[] = [];
+  const consoleLog = vi.spyOn(console, "log").mockImplementation((text?: unknown) => {
+    output.push(String(text ?? ""));
+  });
+  try {
+    const program = new Command();
+    program.exitOverride();
+    program.configureOutput({
+      writeOut: () => undefined,
+      writeErr: () => undefined,
+    });
+    registerBrowserLeasesCommand(program, {
+      leaseDir,
+      now: () => new Date("2026-01-01T00:00:00.000Z"),
+    });
+    await program.parseAsync(
+      [
+        "browser",
+        "leases",
+        "plan",
+        ...providerArgs,
+        "--profile-id-hash",
+        PROFILE_A,
+        "--json",
+      ],
+      { from: "user" },
+    );
+  } finally {
+    consoleLog.mockRestore();
+  }
+
+  expect(output).toHaveLength(1);
+  return JSON.parse(output[0]) as { data: { leases: Array<{ provider: string }> } };
+}
