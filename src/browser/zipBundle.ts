@@ -145,7 +145,6 @@ export function createStoredZip(entries: ZipBundleEntry[]): Buffer {
       ? entry.content
       : Buffer.from(entry.content, "utf8");
     assertZip16(name.length, "ZIP file name");
-    assertZip32(name.length, "ZIP file name");
     assertZip32(content.length, "ZIP entry size");
     assertZip32(offset, "ZIP local header offset");
     const preparedEntry: PreparedZipEntry = {

@@ -107,4 +107,12 @@ describe("createStoredZip", () => {
 
     expect(() => createStoredZip(entries)).toThrow(/too many files/i);
   });
+
+  test("rejects file names that cannot fit in ZIP16 headers", () => {
+    const tooLongName = `${"a".repeat(0x10000)}.txt`;
+
+    expect(() => createStoredZip([{ path: tooLongName, content: "" }])).toThrow(
+      /file name exceeds ZIP16/i,
+    );
+  });
 });
