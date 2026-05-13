@@ -86,6 +86,8 @@ import { applyBrowserDefaultsFromConfig } from "../src/cli/browserDefaults.js";
 import { shouldBlockDuplicatePrompt } from "../src/cli/duplicatePromptGuard.js";
 import { resolveRemoteServiceConfig } from "../src/remote/remoteServiceConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "../src/cli/fileSize.js";
+import { registerCliCommands } from "../src/cli/index.js";
+import { listRobotCommands } from "../src/cli/robotRegistry.js";
 import { registerEvidenceCommand } from "../src/cli/commands/evidence/index.js";
 
 interface CliOptions extends OptionValues {
@@ -229,6 +231,8 @@ program.hook("preAction", () => {
   introPrinted = true;
 });
 applyHelpStyling(program, VERSION, isTty);
+registerCliCommands(program);
+program.addHelpText("after", () => formatRobotCommandHelp());
 program.hook("preAction", async (thisCommand) => {
   if (thisCommand !== program) {
     return;
@@ -781,7 +785,9 @@ program
     });
   });
 
-registerEvidenceCommand(program);
+if (!program.commands.some((command) => command.name() === "evidence")) {
+  registerEvidenceCommand(program);
+}
 
 const projectSourcesCommand = program
   .command("project-sources")
@@ -2425,3 +2431,17 @@ void main().catch((error: unknown) => {
   }
   process.exitCode = 1;
 });
+
+function formatRobotCommandHelp(): string {
+  const lines = ["", "Robot JSON commands"];
+  const commands = new Set([
+    ...listRobotCommands().map((entry) => entry.command),
+    "oracle evidence ledger show <session> --json",
+    "oracle evidence ledger verify <session> --json",
+    "oracle evidence ledger export <session> --json",
+  ]);
+  for (const command of commands) {
+    lines.push(`  ${command}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
