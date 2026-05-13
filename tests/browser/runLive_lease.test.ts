@@ -75,8 +75,16 @@ describe("wrapBrowserExecutorWithLease — happy path acquire/release", () => {
       order.push("executor");
       return successResult;
     });
-    const acquired = vi.fn(() => order.push("acquired"));
-    const released = vi.fn(() => order.push("released"));
+    // Wrap push() in a block so the mock's inferred return type is
+    // void instead of number (Array.push returns the new length, which
+    // wouldn't satisfy the lease listener signature
+    // `(record) => void | Promise<void>`).
+    const acquired = vi.fn(() => {
+      order.push("acquired");
+    });
+    const released = vi.fn(() => {
+      order.push("released");
+    });
     const wrapped = wrapBrowserExecutorWithLease(executor, {
       leaseDir,
       onLeaseAcquired: acquired,
@@ -112,8 +120,12 @@ describe("wrapBrowserExecutorWithLease — happy path acquire/release", () => {
       order.push("executor");
       throw failure;
     });
-    const acquired = vi.fn(() => order.push("acquired"));
-    const released = vi.fn(() => order.push("released"));
+    const acquired = vi.fn(() => {
+      order.push("acquired");
+    });
+    const released = vi.fn(() => {
+      order.push("released");
+    });
     const wrapped = wrapBrowserExecutorWithLease(executor, {
       leaseDir,
       onLeaseAcquired: acquired,
@@ -182,7 +194,7 @@ describe("wrapWithLeaseOrPassthrough — forgiving variant", () => {
     expect(executor).toHaveBeenCalledOnce();
     expect(acquired).not.toHaveBeenCalled();
     // Passthrough returns the raw BrowserRunResult without a `lease` field.
-    expect((result as Record<string, unknown>).lease).toBeUndefined();
+    expect((result as unknown as Record<string, unknown>).lease).toBeUndefined();
   });
 
   test("ChatGPT run is still wrapped (acquire/release happens)", async () => {
@@ -199,6 +211,6 @@ describe("wrapWithLeaseOrPassthrough — forgiving variant", () => {
     );
     expect(acquired).toHaveBeenCalledOnce();
     expect(released).toHaveBeenCalledOnce();
-    expect((result as Record<string, unknown>).lease).toBeDefined();
+    expect((result as unknown as Record<string, unknown>).lease).toBeDefined();
   });
 });
