@@ -213,6 +213,40 @@ export function sha256OfBytes(bytes: string | Uint8Array): `sha256:${string}` {
 }
 
 /**
+ * Recognize obvious placeholder hashes (all-zeros, all-fs, any single-char
+ * repeat) that a caller might use as a sentinel before real hashing is
+ * wired in. The browser_evidence schema would still pass these via its
+ * regex, so the v18 hash-provenance contract relies on this guard.
+ */
+export function isPlaceholderHash(value: unknown): boolean {
+  if (typeof value !== "string") return true;
+  const match = /^sha256:([0-9a-f]{64})$/.exec(value);
+  if (!match) return true;
+  const hex = match[1];
+  // Any 64-char repeat of a single hex character is a placeholder.
+  if (/^([0-9a-f])\1{63}$/.test(hex)) return true;
+  return false;
+}
+
+/**
+ * Throw with a descriptive error if the value is not a real sha256 hash.
+ * Used by the evidence builder when a caller hands in a pre-computed
+ * hash instead of bytes.
+ */
+export function assertRealHash(value: unknown, field: string): `sha256:${string}` {
+  if (typeof value !== "string") {
+    throw new Error(`${field} must be a sha256 hash string (got ${typeof value}).`);
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${field} must match sha256:<64 hex>; got "${value}".`);
+  }
+  if (isPlaceholderHash(value)) {
+    throw new Error(`${field} appears to be a placeholder hash: ${value}`);
+  }
+  return value as `sha256:${string}`;
+}
+
+/**
  * Canonical JSON: sorted keys, no trailing newline. Used for evidence bytes
  * so the same logical object always hashes to the same value regardless of
  * input key ordering.
