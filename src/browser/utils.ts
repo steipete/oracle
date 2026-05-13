@@ -112,6 +112,9 @@ export function normalizeChatgptUrl(raw: string | null | undefined, fallback: st
   if (!candidate) {
     return fallback;
   }
+  if (/[\u0000-\u001f\u007f]/u.test(candidate)) {
+    throw new Error(`Invalid ChatGPT URL: "${raw}". Control characters are not allowed.`);
+  }
   const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate);
   const withScheme = hasScheme ? candidate : `https://${candidate}`;
   let parsed: URL;
@@ -120,8 +123,18 @@ export function normalizeChatgptUrl(raw: string | null | undefined, fallback: st
   } catch {
     throw new Error(`Invalid ChatGPT URL: "${raw}". Provide an absolute http(s) URL.`);
   }
-  if (!/^https?:$/i.test(parsed.protocol)) {
-    throw new Error(`Invalid ChatGPT URL protocol: "${parsed.protocol}". Use http or https.`);
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Invalid ChatGPT URL protocol: "${parsed.protocol}". Use https.`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`Invalid ChatGPT URL: "${raw}". Credentials are not allowed.`);
+  }
+  if (parsed.port) {
+    throw new Error(`Invalid ChatGPT URL: "${raw}". Custom ports are not allowed.`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname !== "chatgpt.com" && hostname !== "chat.openai.com") {
+    throw new Error(`Invalid ChatGPT URL host: "${hostname}". Use chatgpt.com or chat.openai.com.`);
   }
   // Preserve user-provided path/query; URL#toString will normalize trailing slashes appropriately.
   return parsed.toString();

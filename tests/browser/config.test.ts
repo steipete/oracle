@@ -43,7 +43,7 @@ describe("resolveBrowserConfig", () => {
 
   test("applies overrides", () => {
     const resolved = resolveBrowserConfig({
-      url: "https://example.com",
+      url: "https://chatgpt.com/g/g-p-foo/project",
       timeoutMs: 123,
       inputTimeoutMs: 456,
       cookieSync: false,
@@ -57,7 +57,7 @@ describe("resolveBrowserConfig", () => {
       researchMode: "deep",
       archiveConversations: "never",
     });
-    expect(resolved.url).toBe("https://example.com/");
+    expect(resolved.url).toBe("https://chatgpt.com/g/g-p-foo/project");
     expect(resolved.timeoutMs).toBe(123);
     expect(resolved.inputTimeoutMs).toBe(456);
     expect(resolved.cookieSync).toBe(false);
@@ -120,5 +120,22 @@ describe("resolveBrowserConfig", () => {
 
     process.env.ORACLE_BROWSER_PORT = "9222abc";
     expect(resolveBrowserConfig(undefined).debugPort).toBeNull();
+  });
+
+  test("normalizes cookie names back to the safe allowlist when input is empty or invalid", () => {
+    expect(resolveBrowserConfig({ cookieNames: [] }).cookieNames).toEqual(
+      DEFAULT_CHATGPT_COOKIE_NAMES,
+    );
+    expect(
+      resolveBrowserConfig({
+        cookieNames: [" __Secure-next-auth.session-token ", "bad\r\nInjected: x", "semi;colon"],
+      }).cookieNames,
+    ).toEqual(["__Secure-next-auth.session-token"]);
+  });
+
+  test("rejects non-ChatGPT browser URLs before they can receive cookies", () => {
+    expect(() => resolveBrowserConfig({ url: "https://example.com/" })).toThrow(
+      /ChatGPT URL host/i,
+    );
   });
 });

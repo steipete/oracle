@@ -1,5 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
-import { parseDuration, estimateTokenCount, delay, withRetries } from "../../src/browser/utils.js";
+import {
+  parseDuration,
+  estimateTokenCount,
+  delay,
+  withRetries,
+  normalizeChatgptUrl,
+} from "../../src/browser/utils.js";
 
 describe("parseDuration", () => {
   test.each([
@@ -68,5 +74,30 @@ describe("withRetries", () => {
     );
     expect(result).toBe("done");
     expect(attempt).toBe(3);
+  });
+});
+
+describe("normalizeChatgptUrl", () => {
+  test("normalizes supported ChatGPT hosts", () => {
+    expect(normalizeChatgptUrl("chatgpt.com/g/g-p-foo/project", "https://chatgpt.com/")).toBe(
+      "https://chatgpt.com/g/g-p-foo/project",
+    );
+    expect(normalizeChatgptUrl("https://chat.openai.com/c/abc", "https://chatgpt.com/")).toBe(
+      "https://chat.openai.com/c/abc",
+    );
+  });
+
+  test.each([
+    "http://chatgpt.com/",
+    "https://example.com/",
+    "https://chatgpt.com.evil.test/",
+    "https://chatgpt.com@evil.test/",
+    "https://user:pass@chatgpt.com/",
+    "https://chatgpt.com:444/",
+    "https://chatgpt.com/path\nInjected: value",
+  ])("rejects unsafe ChatGPT URL: %s", (input) => {
+    expect(() => normalizeChatgptUrl(input, "https://chatgpt.com/")).toThrow(
+      /ChatGPT URL|host|protocol/i,
+    );
   });
 });

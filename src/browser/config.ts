@@ -123,7 +123,7 @@ export function resolveBrowserConfig(
     autoReattachTimeoutMs:
       config?.autoReattachTimeoutMs ?? DEFAULT_BROWSER_CONFIG.autoReattachTimeoutMs,
     cookieSync: config?.cookieSync ?? cookieSyncDefault,
-    cookieNames: config?.cookieNames ?? DEFAULT_BROWSER_CONFIG.cookieNames,
+    cookieNames: normalizeCookieNames(config?.cookieNames) ?? DEFAULT_BROWSER_CONFIG.cookieNames,
     cookieSyncWaitMs: config?.cookieSyncWaitMs ?? DEFAULT_BROWSER_CONFIG.cookieSyncWaitMs,
     inlineCookies: config?.inlineCookies ?? DEFAULT_BROWSER_CONFIG.inlineCookies,
     inlineCookiesSource: config?.inlineCookiesSource ?? DEFAULT_BROWSER_CONFIG.inlineCookiesSource,
@@ -160,6 +160,16 @@ function normalizeResearchMode(value: unknown): "off" | "deep" {
 
 function normalizeArchiveMode(value: unknown): "auto" | "always" | "never" {
   return value === "always" || value === "never" ? value : "auto";
+}
+
+function normalizeCookieNames(value: string[] | null | undefined): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const names = value
+    .map((entry) => entry.trim())
+    .filter((entry) => /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/u.test(entry));
+  return names.length > 0 ? names : null;
 }
 
 function parseDebugPort(raw?: string | null): number | null {
