@@ -52,6 +52,11 @@ export const providerCapabilitySchema = z
     status: providerCapabilityStatusSchema.optional(),
     evidence_required: z.boolean().optional(),
     remote_browser_supported: z.boolean().optional(),
+    // Promoted from extension to typed-core per
+    // docs/contract-core-extension-policy.md rule #6: `api_allowed` is a
+    // critical decision key, so Oracle's policy helpers must read it from
+    // a typed field rather than traversing the passthrough bag.
+    api_allowed: z.boolean().optional(),
     blocked_reason: z.string().nullable().optional(),
     next_command: z.string().nullable().optional(),
   })
