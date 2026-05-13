@@ -1,5 +1,6 @@
 import type { ProviderDomAdapter, ProviderDomFlowContext } from "../providerDomFlow.js";
 import { joinSelectors } from "../providerDomFlow.js";
+import { GEMINI_DEEP_THINK_MANIFEST, getManifestSelectorLiteral } from "../../gemini-web/selectors/geminiDeepThinkManifest.js";
 
 const UI_TIMEOUT_MS = 60_000;
 const RESPONSE_TIMEOUT_MS = 10 * 60_000;
@@ -328,6 +329,38 @@ async function extractThoughts(ctx: ProviderDomFlowContext): Promise<string | nu
     : null;
 }
 
+async function applyHighIfExposedStrategy(ctx: ProviderDomFlowContext): Promise<{ verified: boolean; effort?: string }> {
+  const manifest = GEMINI_DEEP_THINK_MANIFEST;
+  if (!manifest.thinkingLevelControl) {
+    return { verified: false };
+  }
+
+  const controlSelector = getManifestSelectorLiteral(manifest.thinkingLevelControl.selector);
+  const highOption = manifest.thinkingLevelControl.options["high"];
+
+  const result = await ctx.evaluate<{ clicked: boolean; label?: string }>(
+    `(() => {
+      const controls = Array.from(document.querySelectorAll(${controlSelector}));
+      for (const control of controls) {
+        if (!(control instanceof HTMLElement)) continue;
+        const text = control.textContent?.trim().toLowerCase() ?? '';
+        if (text.includes(${JSON.stringify(highOption.toLowerCase())})) {
+          control.click();
+          return { clicked: true, label: text };
+        }
+      }
+      return { clicked: false };
+    })()`,
+  );
+
+  if (result?.clicked) {
+    ctx.log?.(`[gemini-web] Selected high thinking level: ${result.label}`);
+    return { verified: true, effort: "high" };
+  }
+
+  return { verified: false };
+}
+
 export const geminiDeepThinkDomProvider: ProviderDomAdapter = {
   providerName: "gemini-web",
   waitForUi,
@@ -337,3 +370,15 @@ export const geminiDeepThinkDomProvider: ProviderDomAdapter = {
   waitForResponse,
   extractThoughts,
 };
+
+/**
+ * Gemini Deep Think provider with high-if-exposed strategy enabled.
+ */
+export const geminiDeepThinkWithStrategyDomProvider: ProviderDomAdapter = {
+  ...geminiDeepThinkDomProvider,
+  selectMode: async (ctx) => {
+    await selectMode(ctx);
+    await applyHighIfExposedStrategy(ctx);
+  },
+};
+
