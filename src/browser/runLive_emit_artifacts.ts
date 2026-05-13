@@ -39,18 +39,13 @@
 //     a transient hiccup.
 
 import type { BrowserLogger } from "./types.js";
-import type {
-  BrowserExecutor,
-  LeasedBrowserExecutor,
-} from "./leaseIntegration.js";
+import type { BrowserExecutor, LeasedBrowserExecutor } from "./leaseIntegration.js";
 import type { BrowserRunOptions, BrowserRunResult } from "./types.js";
 import type { OracleBrowserAccessPath } from "../oracle/v18/provider_access_policy.js";
 import type { ChatGptProSlot } from "../oracle/v18/chatgpt_provider_result.js";
-import type {
-  EmitV18BrowserArtifactsResult,
-  LiveBrowserRunCapture,
-} from "./runLive_v18.js";
+import type { EmitV18BrowserArtifactsResult, LiveBrowserRunCapture } from "./runLive_v18.js";
 import { emitV18BrowserArtifacts } from "./runLive_v18.js";
+import { urlHostnameMatchesAllowedHost } from "./url_constraint.js";
 
 const CHATGPT_HOSTS = ["chatgpt.com", "chat.openai.com"] as const;
 
@@ -115,13 +110,10 @@ export interface V18EmittedBrowserRunResult extends BrowserRunResult {
   v18Emit?: V18EmitOutcome;
 }
 
-function detectProviderSlotFromOptions(
-  options: BrowserRunOptions,
-): ChatGptProSlot | null {
+function detectProviderSlotFromOptions(options: BrowserRunOptions): ChatGptProSlot | null {
   const url = options.config?.chatgptUrl ?? options.config?.url ?? null;
   if (typeof url !== "string" || url.length === 0) return null;
-  const lowered = url.toLowerCase();
-  if (!CHATGPT_HOSTS.some((host) => lowered.includes(host))) return null;
+  if (!urlHostnameMatchesAllowedHost(url, CHATGPT_HOSTS)) return null;
   // Conservative default: treat every ChatGPT browser run as
   // chatgpt_pro_first_plan unless the caller passes an explicit slot
   // override. The synthesis slot is only invoked through the explicit

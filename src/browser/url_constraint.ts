@@ -20,6 +20,32 @@ export class UrlConstraintError extends Error {
   }
 }
 
+export function parsedAllowedUrlHostname(
+  rawUrl: string | URL,
+  allowedHosts: readonly string[],
+): string | null {
+  let url: URL;
+  try {
+    url = rawUrl instanceof URL ? rawUrl : new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  const protocol = url.protocol.toLowerCase();
+  if (protocol !== "http:" && protocol !== "https:") return null;
+
+  const host = url.hostname.toLowerCase();
+  const allowedHostsSet = new Set(allowedHosts.map((entry) => entry.toLowerCase()));
+  return allowedHostsSet.has(host) ? host : null;
+}
+
+export function urlHostnameMatchesAllowedHost(
+  rawUrl: string | URL,
+  allowedHosts: readonly string[],
+): boolean {
+  return parsedAllowedUrlHostname(rawUrl, allowedHosts) !== null;
+}
+
 export function assertConstrainedUrl(rawUrl: string | URL, constraint: UrlConstraint): URL {
   let url: URL;
   try {

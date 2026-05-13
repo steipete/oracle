@@ -24,6 +24,7 @@ import {
   type LeasedBrowserExecutor,
 } from "./leaseIntegration.js";
 import type { BrowserRunOptions } from "./types.js";
+import { urlHostnameMatchesAllowedHost } from "./url_constraint.js";
 
 const CHATGPT_HOSTS = ["chatgpt.com", "chat.openai.com"] as const;
 const GEMINI_HOSTS = ["gemini.google.com", "ai.google.dev"] as const;
@@ -42,14 +43,15 @@ export function detectBrowserLeaseProvider(
   if (explicit === "chatgpt" || explicit === "gemini") return explicit;
   const url = runOptions.config?.chatgptUrl ?? runOptions.config?.url ?? null;
   if (typeof url !== "string" || url.length === 0) return null;
-  const lowered = url.toLowerCase();
-  if (CHATGPT_HOSTS.some((host) => lowered.includes(host))) return "chatgpt";
-  if (GEMINI_HOSTS.some((host) => lowered.includes(host))) return "gemini";
+  if (urlHostnameMatchesAllowedHost(url, CHATGPT_HOSTS)) return "chatgpt";
+  if (urlHostnameMatchesAllowedHost(url, GEMINI_HOSTS)) return "gemini";
   return null;
 }
 
-export interface WrapBrowserExecutorOptions
-  extends Omit<BrowserLeaseIntegrationOptions, "provider"> {
+export interface WrapBrowserExecutorOptions extends Omit<
+  BrowserLeaseIntegrationOptions,
+  "provider"
+> {
   /** Optional explicit provider override; otherwise auto-detected per call. */
   readonly provider?: BrowserLeaseProvider;
 }
