@@ -32,6 +32,11 @@ import { createRemoteBrowserExecutor } from "../src/remote/client.js";
 import { createGeminiWebExecutor } from "../src/gemini-web/index.js";
 import { applyHelpStyling } from "../src/cli/help.js";
 import {
+  buildTopLevelCliErrorEnvelope,
+  isJsonModeRequested,
+  stableJsonStringify,
+} from "../src/cli/errorEnvelope.js";
+import {
   collectPaths,
   collectModelList,
   collectTextValues,
@@ -236,6 +241,14 @@ const suppressIntro =
 
 const program = new Command();
 let introPrinted = false;
+program.configureOutput({
+  outputError: (str, write) => {
+    if (!isJsonModeRequested(userCliArgs)) {
+      write(str);
+    }
+  },
+});
+program.exitOverride();
 program.hook("preAction", () => {
   if (suppressIntro) return;
   if (introPrinted) return;
@@ -2507,6 +2520,25 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
+  const exitCode = resolveTopLevelExitCode(error);
+  const jsonMode = isJsonModeRequested(userCliArgs);
+  if (jsonMode && exitCode !== 0) {
+    process.stdout.write(
+      stableJsonStringify(
+        buildTopLevelCliErrorEnvelope({
+          error,
+          command: "oracle",
+          exitCode,
+        }),
+      ),
+    );
+    process.exitCode = exitCode;
+    return;
+  }
+  if (isCommanderControlFlowError(error)) {
+    setProcessExitCode(exitCode);
+    return;
+  }
   if (error instanceof Error) {
     if (!isErrorLogged(error)) {
       console.error(chalk.red("✖"), error.message);
@@ -2516,6 +2548,43 @@ void main().catch((error: unknown) => {
   }
   process.exitCode = 1;
 });
+
+function resolveTopLevelExitCode(error: unknown): number {
+  const currentExitCode =
+    typeof process.exitCode === "number"
+      ? process.exitCode
+      : typeof process.exitCode === "string"
+        ? Number.parseInt(process.exitCode, 10)
+        : undefined;
+  if (currentExitCode && currentExitCode !== 0) {
+    return currentExitCode;
+  }
+  if (isRecord(error) && typeof error.exitCode === "number") {
+    return error.exitCode;
+  }
+  return 1;
+}
+
+function isCommanderControlFlowError(error: unknown): boolean {
+  return isRecord(error) && typeof error.code === "string" && error.code.startsWith("commander.");
+}
+
+function setProcessExitCode(exitCode: number): void {
+  const currentExitCode =
+    typeof process.exitCode === "number"
+      ? process.exitCode
+      : typeof process.exitCode === "string"
+        ? Number.parseInt(process.exitCode, 10)
+        : undefined;
+  if (currentExitCode && currentExitCode !== 0) {
+    return;
+  }
+  process.exitCode = exitCode;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 function formatRobotCommandHelp(): string {
   const lines = ["", "Robot JSON commands"];
