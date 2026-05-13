@@ -122,8 +122,7 @@ describe("Remote payload serialization", () => {
     expect(browserConfig?.remoteChrome).toBeUndefined();
     expect(browserConfig?.remoteChromeBrowserWSEndpoint).toBeUndefined();
     expect(browserConfig?.remoteChromeProfileRoot).toBeUndefined();
-    // chromeProfile is benign and should survive.
-    expect(browserConfig?.chromeProfile).toBe("Test");
+    expect(browserConfig?.chromeProfile).toBeUndefined();
   });
 
   it("authorization header carries the token but the body does not", async () => {

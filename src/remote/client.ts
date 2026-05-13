@@ -6,6 +6,7 @@ import type { BrowserRunResult } from "../browserMode.js";
 import type { BrowserAttachment } from "../browser/types.js";
 import type { RemoteRunPayload, RemoteRunEvent, RemoteAttachmentPayload } from "./types.js";
 import { parseHostPort } from "../bridge/connection.js";
+import { serializeRemoteRunPayloadForWire } from "./payload_sanitize.js";
 
 interface RemoteExecutorOptions {
   host: string;
@@ -30,14 +31,6 @@ export function createRemoteBrowserExecutor({
   return async function remoteBrowserExecutor(
     options: BrowserRunOptions,
   ): Promise<BrowserRunResult> {
-    // Ensure we never serialize remote credentials or local host overrides
-    const safeBrowserConfig = { ...(options.config ?? {}) };
-    // @ts-expect-error Remove any accidentally leaked token
-    delete safeBrowserConfig.remoteToken;
-    delete safeBrowserConfig.remoteChrome;
-    delete safeBrowserConfig.remoteChromeBrowserWSEndpoint;
-    delete safeBrowserConfig.remoteChromeProfileRoot;
-
     const payload: RemoteRunPayload = {
       prompt: options.prompt,
       attachments: await serializeAttachments(options.attachments ?? []),
@@ -47,7 +40,7 @@ export function createRemoteBrowserExecutor({
             attachments: await serializeAttachments(options.fallbackSubmission.attachments ?? []),
           }
         : undefined,
-      browserConfig: safeBrowserConfig,
+      browserConfig: options.config ?? {},
       options: {
         heartbeatIntervalMs: options.heartbeatIntervalMs,
         verbose: options.verbose,
@@ -56,7 +49,7 @@ export function createRemoteBrowserExecutor({
       },
     };
 
-    const body = Buffer.from(JSON.stringify(payload));
+    const body = Buffer.from(serializeRemoteRunPayloadForWire(payload));
     const { hostname, port } = parseHost(host);
 
     return new Promise<BrowserRunResult>((resolve, reject) => {
