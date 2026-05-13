@@ -52,6 +52,7 @@ import {
   verifyHashConsistency,
   type ConsistencyVerdict,
 } from "../oracle/v18/hash_consistency.js";
+import { isV18ErrorCode, type V18ErrorCode } from "../oracle/v18/json_envelope.js";
 import type { OracleBrowserAccessPath } from "../oracle/v18/provider_access_policy.js";
 import type {
   ChatGptProSlot,
@@ -112,7 +113,7 @@ export interface EmitV18BrowserArtifactsResult {
   readonly evidenceSha256: `sha256:${string}`;
   readonly consistency: ConsistencyVerdict;
   /** v18 error codes the caller should surface in a failure envelope. */
-  readonly blockedErrorCodes: readonly string[];
+  readonly blockedErrorCodes: readonly V18ErrorCode[];
   /** True when every gate passed (evidence + normalization + consistency). */
   readonly synthesisEligible: boolean;
 }
@@ -183,15 +184,15 @@ function mergedBlockedErrorCodes(input: {
   readonly evidence: BrowserEvidence;
   readonly providerResult: ChatGptProviderResultBuild;
   readonly consistency: ConsistencyVerdict;
-}): readonly string[] {
-  const codes: string[] = [];
-  const add = (code: string | null | undefined) => {
-    if (code && !codes.includes(code)) {
+}): readonly V18ErrorCode[] {
+  const codes: V18ErrorCode[] = [];
+  const add = (code: unknown) => {
+    if (isV18ErrorCode(code) && !codes.includes(code)) {
       codes.push(code);
     }
   };
 
-  add(input.evidence.failure_code ?? null);
+  add(input.evidence.failure_code);
   for (const reason of input.providerResult.blockedReasons) {
     add(reason.code);
   }
