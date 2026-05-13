@@ -47,6 +47,7 @@ export interface EvidenceLedgerHeadCacheStats {
   readonly tailBytesRead: number;
   readonly fullFallbacks: number;
   readonly durableFlushes: number;
+  readonly nonFatalUpdateFailures: number;
 }
 
 const headCache = new Map<string, EvidenceLedgerHeadCacheRecord>();
@@ -57,6 +58,7 @@ let stats = {
   tailBytesRead: 0,
   fullFallbacks: 0,
   durableFlushes: 0,
+  nonFatalUpdateFailures: 0,
 };
 
 export async function getEvidenceLedgerAppendHead(
@@ -90,20 +92,28 @@ export async function recordEvidenceLedgerAppend(
   options: Pick<EvidenceLedgerAppendHeadOptions, "flushInterval" | "now"> = {},
 ): Promise<void> {
   const key = path.resolve(filePath);
-  const ledgerStat = await fs.stat(key);
-  const previous = headCache.get(key);
-  const record: EvidenceLedgerHeadCacheRecord = {
-    nextSequence: entry.sequence + 1,
-    prevHash: entry.entry_hash,
-    chainExtended: true,
-    ledgerSizeBytes: ledgerStat.size,
-    ledgerMtimeMs: ledgerStat.mtimeMs,
-    appendsSinceFlush: (previous?.appendsSinceFlush ?? 0) + 1,
-  };
-  headCache.set(key, record);
+  try {
+    const ledgerStat = await fs.stat(key);
+    const previous = headCache.get(key);
+    const record: EvidenceLedgerHeadCacheRecord = {
+      nextSequence: entry.sequence + 1,
+      prevHash: entry.entry_hash,
+      chainExtended: true,
+      ledgerSizeBytes: ledgerStat.size,
+      ledgerMtimeMs: ledgerStat.mtimeMs,
+      appendsSinceFlush: (previous?.appendsSinceFlush ?? 0) + 1,
+    };
+    headCache.set(key, record);
 
-  if (record.appendsSinceFlush >= flushInterval(options)) {
-    await flushEvidenceLedgerHeadCache(key, options);
+    if (record.appendsSinceFlush >= flushInterval(options)) {
+      await flushEvidenceLedgerHeadCache(key, options);
+    }
+  } catch {
+    stats.nonFatalUpdateFailures += 1;
+    // The ledger line has already been appended before callers invoke this
+    // cache hook. Treat cache maintenance as non-authoritative: drop the warm
+    // head so the next append reconciles from the on-disk ledger tail.
+    headCache.delete(key);
   }
 }
 
@@ -147,6 +157,7 @@ export function resetEvidenceLedgerHeadCacheStats(): void {
     tailBytesRead: 0,
     fullFallbacks: 0,
     durableFlushes: 0,
+    nonFatalUpdateFailures: 0,
   };
 }
 
