@@ -241,9 +241,11 @@ const suppressIntro =
 
 const program = new Command();
 let introPrinted = false;
+let commanderErrorPrinted = false;
 program.configureOutput({
   outputError: (str, write) => {
     if (!isJsonModeRequested(userCliArgs)) {
+      commanderErrorPrinted = true;
       write(str);
     }
   },
@@ -2522,6 +2524,10 @@ async function main(): Promise<void> {
 void main().catch((error: unknown) => {
   const exitCode = resolveTopLevelExitCode(error);
   const jsonMode = isJsonModeRequested(userCliArgs);
+  const commanderControlFlow = isCommanderControlFlowError(error);
+  if (exitCode !== 0 && !(commanderControlFlow && commanderErrorPrinted && !jsonMode)) {
+    emitTopLevelHumanError(error);
+  }
   if (jsonMode && exitCode !== 0) {
     process.stdout.write(
       stableJsonStringify(
@@ -2535,10 +2541,14 @@ void main().catch((error: unknown) => {
     process.exitCode = exitCode;
     return;
   }
-  if (isCommanderControlFlowError(error)) {
+  if (commanderControlFlow) {
     setProcessExitCode(exitCode);
     return;
   }
+  process.exitCode = exitCode;
+});
+
+function emitTopLevelHumanError(error: unknown): void {
   if (error instanceof Error) {
     if (!isErrorLogged(error)) {
       console.error(chalk.red("✖"), error.message);
@@ -2546,8 +2556,7 @@ void main().catch((error: unknown) => {
   } else {
     console.error(chalk.red("✖"), error);
   }
-  process.exitCode = 1;
-});
+}
 
 function resolveTopLevelExitCode(error: unknown): number {
   const currentExitCode =

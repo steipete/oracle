@@ -17,7 +17,7 @@ describe("bin/oracle-cli top-level --json error envelope", () => {
     const envelope = JSON.parse(stdout.trim()) as Record<string, unknown>;
 
     expect(code).toBe(1);
-    expect(stderr).not.toContain("error: unknown command");
+    expect(stderr).toContain("error: unknown command 'definitely-not-a-command'");
     expect(`${stdout}\n${stderr}`).not.toMatch(/\n\s+at\s+\S+/u);
     expect(envelope).toMatchObject({
       schema_version: "json_envelope.v1",
