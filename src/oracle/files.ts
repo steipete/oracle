@@ -475,14 +475,19 @@ export function normalizeMaxFileSizeBytes(
   if (value == null || value === "") {
     return undefined;
   }
-  const parsed =
-    typeof value === "number"
-      ? value
-      : Number.parseInt(typeof value === "string" ? value.trim() : String(value), 10);
+  const parsed = typeof value === "number" ? value : parseStrictPositiveInteger(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`${source} must be a positive integer number of bytes.`);
   }
   return parsed;
+}
+
+function parseStrictPositiveInteger(value: string): number {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return Number.NaN;
+  }
+  return Number(trimmed);
 }
 
 function relativePath(targetPath: string, cwd: string): string {

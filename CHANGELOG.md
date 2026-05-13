@@ -5,6 +5,7 @@
 ### Fixed
 
 - CLI/Browser: reject malformed port and tab-count values with trailing non-numeric text instead of silently truncating them.
+- CLI: reject malformed `maxFileSizeBytes` values with trailing text or decimals instead of truncating them.
 - Browser: reject unsafe `--chatgpt-url` hosts, credentials, custom ports, and control characters, and keep configured cookie-name filters on the safe allowlist.
 - Browser: tighten ChatGPT tab detection so look-alike hosts (`chatgpt.com.evil.example`, userinfo-based `chatgpt.com@evil.example`) are no longer treated as ChatGPT tabs when discovering live targets.
 - Sessions: reject path traversal-style session ids before reading or reporting files from session storage.

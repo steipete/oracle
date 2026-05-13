@@ -18,6 +18,7 @@ import {
   printFileTokenStats,
 } from "@src/oracle.ts";
 import { collectPaths, parseIntOption } from "@src/cli/options.ts";
+import { normalizeMaxFileSizeBytes } from "../../../src/oracle/files.ts";
 import { createTempFile } from "./helpers.ts";
 
 const testNonWindows = process.platform === "win32" ? test.skip : test;
@@ -98,6 +99,16 @@ describe("oracle utility helpers", () => {
     expect(parseIntOption(undefined)).toBeUndefined();
     expect(parseIntOption("42")).toBe(42);
     expect(() => parseIntOption("not-a-number")).toThrow("Value must be an integer.");
+  });
+
+  test("normalizeMaxFileSizeBytes rejects malformed numeric strings", () => {
+    expect(normalizeMaxFileSizeBytes(" 2097152 ", "test.maxFileSizeBytes")).toBe(2_097_152);
+    expect(() => normalizeMaxFileSizeBytes("1024junk", "test.maxFileSizeBytes")).toThrow(
+      /positive integer/,
+    );
+    expect(() => normalizeMaxFileSizeBytes("1.5", "test.maxFileSizeBytes")).toThrow(
+      /positive integer/,
+    );
   });
 
   test("formatElapsed chooses human-friendly units", () => {
