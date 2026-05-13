@@ -26,6 +26,7 @@ import {
   isPlaceholderHash,
   sha256OfBytes,
 } from "./v18/evidence.js";
+import { serializeEvidenceLedgerAppend } from "./evidence_ledger_concurrency.js";
 
 export const EVIDENCE_LEDGER_SCHEMA_VERSION = "evidence_ledger.v1" as const;
 export const EVIDENCE_LEDGER_FILENAME = "ledger.jsonl" as const;
@@ -159,14 +160,11 @@ export interface AppendResult {
 }
 
 /**
- * Append a single event to the ledger. The function reads the existing
- * file (if any) to compute the next sequence number + the
- * tail-hash-as-prev_hash, then appends a JSONL line atomically.
- *
- * Concurrent appends from a single process are serialised by Node's fs
- * promises API. Cross-process serialisation is the caller's
- * responsibility (Oracle's lease registry already enforces single-writer
- * semantics per session).
+ * Append a single event to the ledger. The read-tail/compute-next/append
+ * critical section is serialized per ledger path in-process and guarded
+ * by a cooperative lock file for other Oracle processes using this module.
+ * Direct writes to ledger.jsonl are unsupported because they bypass the
+ * append-only hash-chain contract.
  */
 export async function appendEvidenceLedgerEvent(
   sessionId: string,
@@ -178,6 +176,16 @@ export async function appendEvidenceLedgerEvent(
   const filePath = evidenceLedgerPath(sessionId, options.homeDir);
   await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
 
+  return serializeEvidenceLedgerAppend(filePath, async () =>
+    appendEvidenceLedgerEventUnlocked(filePath, event, options),
+  );
+}
+
+async function appendEvidenceLedgerEventUnlocked(
+  filePath: string,
+  event: EvidenceLedgerEvent,
+  options: AppendEvidenceLedgerOptions,
+): Promise<AppendResult> {
   const prior = await readEvidenceLedgerInternal(filePath, { tolerateMissingFile: true });
   const sequence = prior.entries.length;
   const prevHash =
