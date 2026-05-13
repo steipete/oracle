@@ -5,6 +5,7 @@
 ### Added
 
 - CLI: add `oracle remote doctor|status|attach [--json]` to diagnose the configured remote browser endpoint. `doctor` probes TCP + `/health`, `status` snapshots the resolved endpoint config without touching the network, and `attach --host <host:port> --token-env <ENV>` probes a caller-supplied target without ever placing the token on the command line. `oracle bridge doctor --json` emits the same `remote_browser_endpoint.v1`-shaped envelope so scripts can parse a single wire format across all four commands.
+- Browser/v18: add the protected browser-route support package for ChatGPT Pro and Gemini Deep Think workflows, including `oracle leases plan|status|acquire|release|recover`, automatic browser-run lease acquire/release, aggregate and provider-specific doctor/readiness surfaces, same-session UI verification gates for protected ChatGPT Pro planning/synthesis and Gemini Deep Think runs, run-progress-compatible blocker reporting, and evidence ledger show/verify/export flows with redacted browser evidence plus provider-result artifacts linked by hashes. The new surfaces expose local verification, artifact, and blocker state for users and automation; they do not claim hidden provider backend attestation.
 
 ### Docs
 
