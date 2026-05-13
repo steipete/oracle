@@ -357,3 +357,42 @@ function summariseEvidence(evidence: BrowserEvidence): Record<string, unknown> {
     verified_before_prompt_submit: evidence.verified_before_prompt_submit,
   };
 }
+
+// ─── PAV boundary attachment (additive — oracle-6np) ─────────────────────────
+//
+// Layer pane 7's provider_boundary_pav.v1 snapshot onto a build that
+// `buildChatGptProviderResult` already produced. Purely additive: the
+// existing build shape is preserved; a typed `pav_boundary` block is
+// added to `build.result` for ChatGPT Pro workflow slots. Ordinary
+// Oracle usage (`ownership === "ordinary_oracle"`) is a no-op.
+
+import type { ProviderBoundaryPavSnapshot } from "../provider_boundaries_pav.js";
+import {
+  attachPavToProviderResult as _attachPavToProviderResult,
+  type ProviderResultLike as _ProviderResultLike,
+} from "./pav_wiring.js";
+
+/**
+ * Attach a PAV snapshot to a previously-built ChatGPT provider result.
+ * Returns a new build object; the input is not mutated. Raw prompt
+ * bytes never enter `build.result` — the snapshot's metadata projection
+ * only carries `prompt_sha256`, `prompt_bytes`, and `prompt_semantics`.
+ */
+export function attachPavToChatGptBuild(
+  build: ChatGptProviderResultBuild,
+  snapshot: ProviderBoundaryPavSnapshot,
+): ChatGptProviderResultBuild {
+  const updated = _attachPavToProviderResult(
+    build.result as unknown as _ProviderResultLike,
+    snapshot,
+  );
+  // When ordinary usage, `_attachPavToProviderResult` returns the
+  // input verbatim — referential equality is fine.
+  if (updated === (build.result as unknown)) {
+    return build;
+  }
+  return {
+    ...build,
+    result: updated as unknown as ProviderResult,
+  };
+}

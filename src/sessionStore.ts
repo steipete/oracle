@@ -163,3 +163,53 @@ export async function pruneOldSessions(
     log?.(`Pruned ${result.deleted} stored sessions older than ${hours}h.`);
   }
 }
+
+// ─── PAV boundary persistence (additive — oracle-6np) ────────────────────────
+//
+// Re-export pane-6 PAV wiring helpers + types so callers that already
+// import from `sessionStore` don't need another import path. Existing
+// `SessionMetadata` callers see no behavior change — these are purely
+// additive surfaces.
+
+export {
+  PAV_SESSION_NAMESPACE_SCHEMA_VERSION,
+  assertNoRawPromptInMetadata,
+  attachPavToProviderResult,
+  attachPavToSessionRecord,
+  isOrdinaryOracleUsage,
+  projectPavMetadata,
+  readPavBoundaries,
+} from "./oracle/v18/pav_wiring.js";
+export type {
+  PavBoundaryMetadata,
+  ProviderResultLike,
+  ProviderResultWithPav,
+  SessionPavMetadata,
+  SessionRecordLike,
+  SessionRecordWithPav,
+} from "./oracle/v18/pav_wiring.js";
+
+import type { ProviderBoundaryPavSnapshot } from "./oracle/provider_boundaries_pav.js";
+import {
+  attachPavToSessionRecord as _attachPavToSessionRecord,
+  type SessionRecordLike as _SessionRecordLike,
+} from "./oracle/v18/pav_wiring.js";
+
+/**
+ * Persist a PAV boundary onto an existing session's metadata. Reads
+ * the session, appends the new boundary, writes the updated metadata
+ * back. Returns the updated metadata. Ordinary (non-workflow) Oracle
+ * runs are returned unchanged.
+ */
+export async function appendSessionPavBoundary(
+  sessionId: string,
+  snapshot: ProviderBoundaryPavSnapshot,
+): Promise<SessionMetadata> {
+  const current = await sessionStore.readSession(sessionId);
+  if (!current) {
+    throw new Error(`session "${sessionId}" not found`);
+  }
+  const updated = _attachPavToSessionRecord(current as unknown as _SessionRecordLike, snapshot);
+  const patch = updated as Partial<SessionMetadata>;
+  return sessionStore.updateSession(sessionId, patch);
+}
