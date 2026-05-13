@@ -1,5 +1,5 @@
 import { browserEvidenceSchema, type BrowserEvidence } from "./contracts.js";
-import { writeEvidence, type WriteEvidenceOptions, type WrittenEvidence } from "./evidence.js";
+import type { WriteEvidenceOptions, WrittenEvidence } from "./evidence.js";
 
 export type EvidenceMode = "safe" | "unsafe";
 
@@ -54,30 +54,46 @@ export function resolveEvidenceModeGate(options: EvidenceModeGateOptions = {}): 
   return { mode, allowQuarantine: true };
 }
 
+export function enforceUnsafeEvidenceModeGate(
+  evidence: Pick<BrowserEvidence, "evidence_id" | "redaction_policy" | "unsafe_artifacts_quarantined">,
+  options: EvidenceModeGateOptions = {},
+): ReturnType<typeof resolveEvidenceModeGate> {
+  const gate = resolveEvidenceModeGate(options);
+
+  if (evidence.redaction_policy !== "unsafe_debug") {
+    return gate;
+  }
+
+  if (gate.mode !== "unsafe") {
+    throw new UnsafeEvidenceModeError(
+      'redaction_policy "unsafe_debug" requires --evidence unsafe and an unsafe-evidence acknowledgement.',
+    );
+  }
+  if (evidence.unsafe_artifacts_quarantined !== true) {
+    throw new UnsafeEvidenceModeError(
+      'redaction_policy "unsafe_debug" requires unsafe_artifacts_quarantined=true.',
+    );
+  }
+
+  return gate;
+}
+
 export async function writeEvidenceWithMode(
   sessionId: string,
   rawEvidence: unknown,
   options: WriteEvidenceWithModeOptions = {},
 ): Promise<WrittenEvidence> {
   const evidence = browserEvidenceSchema.parse(rawEvidence) as BrowserEvidence;
-  const gate = resolveEvidenceModeGate(options);
+  const gate = enforceUnsafeEvidenceModeGate(evidence, options);
 
-  if (evidence.redaction_policy === "unsafe_debug") {
-    if (gate.mode !== "unsafe") {
-      throw new UnsafeEvidenceModeError(
-        'redaction_policy "unsafe_debug" requires --evidence unsafe and an unsafe-evidence acknowledgement.',
-      );
-    }
-    if (evidence.unsafe_artifacts_quarantined !== true) {
-      throw new UnsafeEvidenceModeError(
-        'redaction_policy "unsafe_debug" requires unsafe_artifacts_quarantined=true.',
-      );
-    }
-  }
+  const { writeEvidence } = await import("./evidence.js");
 
   return writeEvidence(sessionId, evidence, {
     homeDir: options.homeDir,
     runId: options.runId,
     allowQuarantine: gate.allowQuarantine,
+    evidenceMode: options.evidenceMode,
+    acknowledgeUnsafeEvidence: options.acknowledgeUnsafeEvidence,
+    commandKind: options.commandKind,
   });
 }

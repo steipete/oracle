@@ -382,7 +382,11 @@ describe("writeEvidence + artifact index", () => {
       redaction_policy: "unsafe_debug",
       evidence_id: "evidence-debug-1",
     });
-    const written = await writeEvidence("sess-4", evidence, { homeDir });
+    const written = await writeEvidence("sess-4", evidence, {
+      homeDir,
+      evidenceMode: "unsafe",
+      acknowledgeUnsafeEvidence: true,
+    });
 
     expect(written.quarantined).toBe(true);
     expect(written.indexed).toBe(false);

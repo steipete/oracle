@@ -34,6 +34,10 @@ import {
   type BrowserEvidence,
 } from "./contracts.js";
 import { serializeArtifactIndexUpdate } from "./artifact_index_lock.js";
+import {
+  enforceUnsafeEvidenceModeGate,
+  type EvidenceModeGateOptions,
+} from "./evidence_unsafe.js";
 
 const SESSIONS_DIRNAME = "sessions";
 const EVIDENCE_DIRNAME = "evidence";
@@ -307,7 +311,7 @@ export interface WrittenEvidence {
   readonly removedPaths: readonly string[];
 }
 
-export interface WriteEvidenceOptions {
+export interface WriteEvidenceOptions extends EvidenceModeGateOptions {
   readonly homeDir?: string;
   /**
    * Caller-supplied run identifier; recorded in the artifact index so APR
@@ -315,9 +319,8 @@ export interface WriteEvidenceOptions {
    */
   readonly runId?: string;
   /**
-   * When true, allow `redaction_policy: "unsafe_debug"` to write to the
-   * quarantine directory. Defaults to true; if false, unsafe payloads
-   * throw rather than landing on disk.
+   * Legacy storage toggle after unsafe-mode authorization has succeeded.
+   * This option does not authorize unsafe evidence by itself.
    */
   readonly allowQuarantine?: boolean;
 }
@@ -333,8 +336,9 @@ export interface WriteEvidenceOptions {
  *     walk. The schema still enforces the typed-core shape, so raw
  *     fields cannot sneak in via the typed surface; only extension keys
  *     are preserved verbatim.
- *   * `unsafe_debug` → quarantine path; never appears in the normal
- *     index. The quarantine has its own separate index.json for audits.
+ *   * `unsafe_debug` → only after explicit unsafe-mode acknowledgement:
+ *     quarantine path; never appears in the normal index. The quarantine
+ *     has its own separate index.json for audits.
  */
 export async function writeEvidence(
   sessionId: string,
@@ -345,8 +349,8 @@ export async function writeEvidence(
   const evidence = browserEvidenceSchema.parse(rawEvidence);
   const policy = evidence.redaction_policy;
   const isUnsafe = policy === "unsafe_debug";
-  const allowQuarantine = options.allowQuarantine ?? true;
-  if (isUnsafe && !allowQuarantine) {
+  enforceUnsafeEvidenceModeGate(evidence, options);
+  if (isUnsafe && options.allowQuarantine === false) {
     throw new Error(
       `Refusing to write unsafe_debug evidence (${evidence.evidence_id}); allowQuarantine is disabled.`,
     );
