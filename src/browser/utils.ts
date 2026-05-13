@@ -28,7 +28,7 @@ export function parseDuration(input: string, fallback: number): number {
     lastIndex = multiDuration.lastIndex;
     match = multiDuration.exec(normalized);
   }
-  if (total > 0 && lastIndex === normalized.length) {
+  if (lastIndex > 0 && lastIndex === normalized.length) {
     return total;
   }
   return fallback;
