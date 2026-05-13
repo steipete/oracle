@@ -291,14 +291,20 @@ async function extractThoughts(ctx: ProviderDomFlowContext): Promise<string | nu
   const thoughtsToggleSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.thoughtsToggle);
   const thoughtsContentSel = asSelectorLiteral(GEMINI_DEEP_THINK_SELECTORS.thoughtsContent);
 
-  const thinkResult = await ctx.evaluate<string>(
-    `(() => {
-      const toggle = document.querySelector(${thoughtsToggleSel});
-      if (!(toggle instanceof HTMLElement)) return 'no-toggle';
-      toggle.click();
-      return 'clicked';
-    })()`,
-  );
+  let thinkResult = "no-toggle";
+  for (let i = 0; i < 10; i++) {
+    thinkResult = (await ctx.evaluate<string>(
+      `(() => {
+        const toggle = document.querySelector(${thoughtsToggleSel});
+        if (!(toggle instanceof HTMLElement)) return 'no-toggle';
+        toggle.click();
+        return 'clicked';
+      })()`,
+    )) ?? "no-toggle";
+    if (thinkResult === "clicked") break;
+    await ctx.delay(500);
+  }
+
   if (thinkResult !== "clicked") {
     return null;
   }
