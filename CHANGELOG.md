@@ -5,6 +5,7 @@
 ### Fixed
 
 - CLI/Browser: reject malformed port and tab-count values with trailing non-numeric text instead of silently truncating them.
+- Sessions: reject path traversal-style session ids before reading or reporting files from session storage.
 
 ## 0.11.1 — 2026-05-10
 

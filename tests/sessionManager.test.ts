@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -58,6 +58,28 @@ describe("session identifiers", () => {
   test("createSessionId truncates overly long words to keep slugs readable", () => {
     const id = sessionModule.createSessionId("abcdefghijklm nopqrstuvwxyz shorty");
     expect(id).toBe("abcdefghij-nopqrstuvw-shorty");
+  });
+
+  test("rejects path traversal ids at the session storage boundary", async () => {
+    const escapedDir = path.join(oracleHomeDir, "escape");
+    await mkdir(escapedDir, { recursive: true });
+    await writeFile(
+      path.join(escapedDir, "meta.json"),
+      JSON.stringify(
+        {
+          id: "escape",
+          createdAt: new Date().toISOString(),
+          status: "completed",
+          options: {},
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await expect(sessionModule.readSessionMetadata("../escape")).resolves.toBeNull();
+    await expect(sessionModule.getSessionPaths("../escape")).rejects.toThrow(/Invalid session id/);
   });
 });
 

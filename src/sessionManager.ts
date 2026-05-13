@@ -308,7 +308,21 @@ export function createSessionId(prompt: string, customSlug?: string): string {
   return slugify(prompt);
 }
 
+function assertSafeSessionId(id: string): void {
+  if (
+    id.length === 0 ||
+    id === "." ||
+    id === ".." ||
+    id.includes("/") ||
+    id.includes("\\") ||
+    id.includes("\0")
+  ) {
+    throw new Error(`Invalid session id: "${id}"`);
+  }
+}
+
 function sessionDir(id: string): string {
+  assertSafeSessionId(id);
   return path.join(getSessionsDir(), id);
 }
 
