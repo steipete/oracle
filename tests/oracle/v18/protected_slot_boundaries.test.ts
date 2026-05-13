@@ -9,7 +9,7 @@ import {
   isExploratoryProfile,
   isNonWaivableSlot,
   profileFailsClosed,
-  type DowngradeVerdict,
+  type DowngradeInspectionInput,
 } from "@src/oracle/v18/protected_slot_boundaries.ts";
 
 describe("NON_WAIVABLE_PROTECTED_SLOTS canonical list", () => {
@@ -88,6 +88,8 @@ describe("detectSilentDowngrade — happy path for protected slots", () => {
 });
 
 describe("detectSilentDowngrade — no silent downgrade for protected slots", () => {
+  type ProtectedProviderFixture = Omit<DowngradeInspectionInput, "slot" | "synthesis_eligible">;
+
   const happy = {
     evidence: { evidence_id: "ev-1" },
     evidence_id: "ev-1",
@@ -96,7 +98,7 @@ describe("detectSilentDowngrade — no silent downgrade for protected slots", ()
     selected_effort_is_highest_visible: true,
     access_path: "oracle_browser_remote",
     result_text_length: 1024,
-  } as const;
+  } as const satisfies ProtectedProviderFixture;
 
   test("missing evidence flips synthesis_eligible to false even when caller claims true", () => {
     const verdict = detectSilentDowngrade({
@@ -173,19 +175,18 @@ describe("detectSilentDowngrade — no silent downgrade for protected slots", ()
   });
 
   test("missing access_path is rejected (Oracle cannot infer the route)", () => {
-    const partial = { ...happy } as Record<string, unknown>;
-    delete partial.access_path;
+    const partial = {
+      evidence: happy.evidence,
+      evidence_id: happy.evidence_id,
+      reasoning_effort_verified: happy.reasoning_effort_verified,
+      observed_reasoning_effort_label: happy.observed_reasoning_effort_label,
+      selected_effort_is_highest_visible: happy.selected_effort_is_highest_visible,
+      result_text_length: happy.result_text_length,
+    } satisfies Omit<ProtectedProviderFixture, "access_path">;
     const verdict = detectSilentDowngrade({
       slot: "gemini_deep_think",
       synthesis_eligible: true,
-      ...(partial as DowngradeVerdict & {
-        evidence: unknown;
-        evidence_id: unknown;
-        reasoning_effort_verified: boolean;
-        observed_reasoning_effort_label: string;
-        selected_effort_is_highest_visible: boolean;
-        result_text_length: number;
-      }),
+      ...partial,
     });
     expect(verdict.degraded).toBe(true);
     expect(
