@@ -108,6 +108,15 @@ describe("buildBrowserConfig", () => {
     ).rejects.toThrow(/max concurrent tabs/i);
   });
 
+  test("rejects browser max concurrent tabs with trailing junk", async () => {
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.1",
+        browserMaxConcurrentTabs: "5abc",
+      }),
+    ).rejects.toThrow(/max concurrent tabs/i);
+  });
+
   test("falls back to canonical label when override matches base model", async () => {
     const config = await buildBrowserConfig({
       model: "gpt-5.1",
@@ -299,6 +308,15 @@ describe("buildBrowserConfig", () => {
       buildBrowserConfig({
         model: "gpt-5.2-pro",
         remoteChrome: "server:70000",
+      }),
+    ).rejects.toThrow(/between 1 and 65535/i);
+  });
+
+  test("rejects remoteChrome ports with trailing junk", async () => {
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.2-pro",
+        remoteChrome: "server:9222abc",
       }),
     ).rejects.toThrow(/between 1 and 65535/i);
   });

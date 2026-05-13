@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- CLI/Browser: reject malformed port and tab-count values with trailing non-numeric text instead of silently truncating them.
+
 ## 0.11.1 — 2026-05-10
 
 ### Changed

@@ -27,6 +27,14 @@ export function normalizeHostPort(hostname: string, port: number): string {
   return `${unwrapped}:${port}`;
 }
 
+function parsePortSegment(portSegment: string | undefined): number | null {
+  if (!portSegment || !/^\d+$/.test(portSegment)) {
+    return null;
+  }
+  const port = Number(portSegment);
+  return Number.isInteger(port) && port > 0 && port <= 65_535 ? port : null;
+}
+
 export function parseHostPort(raw: string): { hostname: string; port: number } {
   const target = raw.trim();
   if (!target) {
@@ -58,8 +66,8 @@ export function parseHostPort(raw: string): { hostname: string; port: number } {
   if (!hostname) {
     throw new Error(`Invalid host:port format: ${target}. Host portion is missing.`);
   }
-  const port = Number.parseInt(portSegment ?? "", 10);
-  if (!Number.isFinite(port) || port <= 0 || port > 65_535) {
+  const port = parsePortSegment(portSegment);
+  if (port === null) {
     throw new Error(`Invalid port: "${portSegment ?? ""}". Expected a number between 1 and 65535.`);
   }
 
@@ -85,8 +93,8 @@ export function parseBridgeConnectionString(input: string): {
   }
 
   const hostname = url.hostname?.trim();
-  const port = Number.parseInt(url.port ?? "", 10);
-  if (!hostname || !Number.isFinite(port) || port <= 0 || port > 65_535) {
+  const port = parsePortSegment(url.port);
+  if (!hostname || port === null) {
     throw new Error(`Invalid connection string host: ${raw}. Expected host:port.`);
   }
 

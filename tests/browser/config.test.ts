@@ -6,12 +6,24 @@ import { CHATGPT_URL, DEEP_RESEARCH_DEFAULT_TIMEOUT_MS } from "../../src/browser
 
 describe("resolveBrowserConfig", () => {
   const originalProfileDir = process.env.ORACLE_BROWSER_PROFILE_DIR;
+  const originalBrowserPort = process.env.ORACLE_BROWSER_PORT;
+  const originalBrowserDebugPort = process.env.ORACLE_BROWSER_DEBUG_PORT;
 
   afterEach(() => {
     if (originalProfileDir === undefined) {
       delete process.env.ORACLE_BROWSER_PROFILE_DIR;
     } else {
       process.env.ORACLE_BROWSER_PROFILE_DIR = originalProfileDir;
+    }
+    if (originalBrowserPort === undefined) {
+      delete process.env.ORACLE_BROWSER_PORT;
+    } else {
+      process.env.ORACLE_BROWSER_PORT = originalBrowserPort;
+    }
+    if (originalBrowserDebugPort === undefined) {
+      delete process.env.ORACLE_BROWSER_DEBUG_PORT;
+    } else {
+      process.env.ORACLE_BROWSER_DEBUG_PORT = originalBrowserDebugPort;
     }
   });
 
@@ -98,5 +110,15 @@ describe("resolveBrowserConfig", () => {
       DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
     );
     expect(resolveBrowserConfig({ researchMode: "deep", timeoutMs: 123 }).timeoutMs).toBe(123);
+  });
+
+  test("does not truncate non-numeric browser port env values", () => {
+    delete process.env.ORACLE_BROWSER_DEBUG_PORT;
+
+    process.env.ORACLE_BROWSER_PORT = " 9222 ";
+    expect(resolveBrowserConfig(undefined).debugPort).toBe(9_222);
+
+    process.env.ORACLE_BROWSER_PORT = "9222abc";
+    expect(resolveBrowserConfig(undefined).debugPort).toBeNull();
   });
 });

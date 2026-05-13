@@ -267,11 +267,20 @@ function selectBrowserPort(options: BrowserFlagOptions): number | null {
 
 function parseMaxConcurrentTabs(raw?: string): number | undefined {
   if (!raw) return undefined;
-  const value = Number.parseInt(raw, 10);
-  if (!Number.isFinite(value) || value <= 0) {
+  const value = parsePositiveInteger(raw);
+  if (value === null) {
     throw new Error(`Invalid browser max concurrent tabs: ${raw}. Expected a positive integer.`);
   }
-  return Math.trunc(value);
+  return value;
+}
+
+function parsePositiveInteger(raw: string | undefined): number | null {
+  const trimmed = raw?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) {
+    return null;
+  }
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value > 0 ? value : null;
 }
 
 export function mapModelToBrowserLabel(model: ModelName): string {
@@ -333,8 +342,8 @@ function parseRemoteChromeTarget(raw: string): { host: string; port: number } {
       `Invalid remote-chrome format: ${target}. Host portion is missing; expected host:port.`,
     );
   }
-  const port = Number.parseInt(portSegment ?? "", 10);
-  if (!Number.isFinite(port) || port <= 0 || port > 65_535) {
+  const port = parsePositiveInteger(portSegment);
+  if (port === null || port > 65_535) {
     throw new Error(
       `Invalid remote-chrome port: "${portSegment ?? ""}". Expected a number between 1 and 65535.`,
     );

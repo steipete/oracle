@@ -38,4 +38,11 @@ describe("bridge connection parsing", () => {
   it("rejects unbracketed IPv6 in host:port parsing", () => {
     expect(() => parseHostPort("2001:db8::1:9473")).toThrow(/Wrap IPv6 addresses in brackets/i);
   });
+
+  it("rejects ports with non-numeric suffixes", () => {
+    expect(() => parseHostPort("127.0.0.1:9473abc")).toThrow(/Invalid port/i);
+    expect(() => parseBridgeConnectionString("oracle+tcp://example.com:9473abc?token=abc")).toThrow(
+      /Invalid connection string|Invalid connection string host/i,
+    );
+  });
 });

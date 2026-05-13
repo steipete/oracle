@@ -163,9 +163,10 @@ function normalizeArchiveMode(value: unknown): "auto" | "always" | "never" {
 }
 
 function parseDebugPort(raw?: string | null): number | null {
-  if (!raw) return null;
-  const value = Number.parseInt(raw, 10);
-  if (!Number.isFinite(value) || value <= 0 || value > 65535) {
+  const trimmed = raw?.trim();
+  if (!trimmed || !/^\d+$/.test(trimmed)) return null;
+  const value = Number(trimmed);
+  if (!Number.isInteger(value) || value <= 0 || value > 65535) {
     return null;
   }
   return value;
