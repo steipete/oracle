@@ -165,6 +165,20 @@ export function deriveBrowserLeaseProfileHash(
     .digest("hex")}`;
 }
 
+export function inferBrowserLeaseProviderFromDesiredModel(
+  desiredModel: unknown,
+): BrowserLeaseProvider | null {
+  if (typeof desiredModel !== "string") {
+    return null;
+  }
+  const normalized = desiredModel
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-");
+  return normalized.startsWith("gemini") ? "gemini" : null;
+}
+
 export function leaseEvidence(
   lease: StoredBrowserLeaseRecord,
   status: BrowserLeaseExecutionContext["status"] = "acquired",

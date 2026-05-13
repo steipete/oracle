@@ -19,6 +19,7 @@
 import type { BrowserLeaseProvider } from "../oracle/v18/browser_lease.js";
 import {
   createLeasedBrowserExecutor,
+  inferBrowserLeaseProviderFromDesiredModel,
   type BrowserExecutor,
   type BrowserLeaseIntegrationOptions,
   type LeasedBrowserExecutor,
@@ -42,10 +43,12 @@ export function detectBrowserLeaseProvider(
   const explicit = (runOptions as { provider?: unknown }).provider;
   if (explicit === "chatgpt" || explicit === "gemini") return explicit;
   const url = runOptions.config?.chatgptUrl ?? runOptions.config?.url ?? null;
-  if (typeof url !== "string" || url.length === 0) return null;
-  if (urlHostnameMatchesAllowedHost(url, CHATGPT_HOSTS)) return "chatgpt";
-  if (urlHostnameMatchesAllowedHost(url, GEMINI_HOSTS)) return "gemini";
-  return null;
+  if (typeof url === "string" && url.length > 0) {
+    if (urlHostnameMatchesAllowedHost(url, CHATGPT_HOSTS)) return "chatgpt";
+    if (urlHostnameMatchesAllowedHost(url, GEMINI_HOSTS)) return "gemini";
+    return null;
+  }
+  return inferBrowserLeaseProviderFromDesiredModel(runOptions.config?.desiredModel);
 }
 
 export interface WrapBrowserExecutorOptions extends Omit<
