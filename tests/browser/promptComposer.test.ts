@@ -111,10 +111,17 @@ describe("promptComposer", () => {
         ["oracle-attach-verify.txt"],
       );
       const assertion = expect(promise).rejects.toThrow(/clickable send button/i);
-      await vi.advanceTimersByTimeAsync(21_000);
+      // Deadline is 45_000ms; advance a bit past it so the timeout fires.
+      await vi.advanceTimersByTimeAsync(46_000);
       await assertion;
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("only attachment sends get the longer send-button deadline", () => {
+    expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
+    expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
+    expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"])).toBe(45_000);
   });
 });
