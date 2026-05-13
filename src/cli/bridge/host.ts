@@ -11,6 +11,8 @@ import {
 } from "../../bridge/connection.js";
 import type { BridgeConnectionArtifact } from "../../bridge/connection.js";
 import { serveRemote } from "../../remote/server.js";
+import { splitShellLikeArgs } from "../args.js";
+import { assertNoConflictingCommandFlags } from "../commands.js";
 
 export interface BridgeHostCliOptions {
   bind?: string;
@@ -31,6 +33,14 @@ interface ReverseTunnelHandle {
 }
 
 export async function runBridgeHost(options: BridgeHostCliOptions): Promise<void> {
+  assertNoConflictingCommandFlags(
+    [
+      { name: "--background", selected: options.background === true },
+      { name: "--foreground", selected: options.foreground === true },
+    ],
+    "bridge host",
+  );
+
   const bindRaw = options.bind?.trim() || "127.0.0.1:9473";
   const { hostname: bindHost, port: bindPort } = parseHostPort(bindRaw);
 
@@ -218,7 +228,7 @@ function startReverseTunnel({
       args.push("-i", identity);
     }
     if (extraArgs) {
-      args.push(...splitArgs(extraArgs));
+      args.push(...splitShellLikeArgs(extraArgs, { optionName: "--ssh-extra-args" }));
     }
     args.push(sshTarget);
 
@@ -254,41 +264,6 @@ function startReverseTunnel({
       }
     },
   };
-}
-
-function splitArgs(input: string): string[] {
-  const args: string[] = [];
-  let current = "";
-  let quote: '"' | "'" | null = null;
-
-  const push = () => {
-    const trimmed = current.trim();
-    if (trimmed.length) args.push(trimmed);
-    current = "";
-  };
-
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i] ?? "";
-    if (quote) {
-      if (ch === quote) {
-        quote = null;
-      } else {
-        current += ch;
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      continue;
-    }
-    if (/\s/.test(ch)) {
-      push();
-      continue;
-    }
-    current += ch;
-  }
-  push();
-  return args;
 }
 
 async function spawnBridgeHostInBackground({
