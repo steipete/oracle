@@ -14,7 +14,13 @@ export async function checkTcpConnection(
   host: string,
   timeoutMs = 2000,
 ): Promise<{ ok: boolean; error?: string }> {
-  const { hostname, port } = parseHostPort(host);
+  let hostname: string;
+  let port: number;
+  try {
+    ({ hostname, port } = parseHostPort(host));
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
   return await new Promise((resolve) => {
     const socket = net.createConnection({ host: hostname, port });
     const onError = (err: Error) => {
@@ -51,12 +57,12 @@ export async function checkRemoteHealth({
   token?: string;
   timeoutMs?: number;
 }): Promise<RemoteHealthResult> {
-  const { hostname, port } = parseHostPort(host);
   const headers: Record<string, string> = { accept: "application/json" };
   if (token) {
     headers.authorization = `Bearer ${token}`;
   }
   try {
+    const { hostname, port } = parseHostPort(host);
     const response = await requestJson({
       hostname,
       port,
