@@ -180,9 +180,8 @@ export async function loadUserConfig(
         loaded: false,
       };
     }
-    console.warn(
-      `Failed to read ${CONFIG_PATH}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`Config file at ${CONFIG_PATH} had a parse error: ${message}; using defaults`);
     return {
       config: applyEnvConfigOverrides({}, env),
       path: CONFIG_PATH,
