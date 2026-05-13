@@ -25,10 +25,7 @@ function normalizeOptionalString(value: unknown): string | undefined {
   return trimmed.length ? trimmed : undefined;
 }
 
-function applyHealthMetadata(
-  endpoint: RemoteBrowserEndpointV1,
-  health: RemoteHealthResult,
-): void {
+function applyHealthMetadata(endpoint: RemoteBrowserEndpointV1, health: RemoteHealthResult): void {
   endpoint.version = health.version ?? null;
   endpoint.uptimeSeconds = health.uptimeSeconds ?? null;
   endpoint.auth_profile_id_hash = health.authProfileIdHash ?? null;

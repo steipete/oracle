@@ -17,11 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveRemoteServiceConfig } from "../../src/remote/remoteServiceConfig.js";
 
-const ENV_KEYS = [
-  "ORACLE_REMOTE_HOST",
-  "ORACLE_REMOTE_TOKEN",
-  "ORACLE_REMOTE_BROWSER",
-] as const;
+const ENV_KEYS = ["ORACLE_REMOTE_HOST", "ORACLE_REMOTE_TOKEN", "ORACLE_REMOTE_BROWSER"] as const;
 
 function snapshotEnv(): Record<string, string | undefined> {
   const out: Record<string, string | undefined> = {};
