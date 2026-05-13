@@ -111,6 +111,15 @@ export {
   type VerifyTraceabilityInput,
 } from "./source_trust.js";
 export {
+  buildChatGptProviderResult,
+  isChatGptProSlot,
+  type BuildChatGptProviderResultInput,
+  type ChatGptProSlot,
+  type ChatGptProviderResultBuild,
+  type NormalizerCaptureSummary,
+  type NormalizerEffortSummary,
+} from "./chatgpt_provider_result.js";
+export {
   POLICY_ERROR_CODES_USED,
   evaluateApiSubstitution,
   evaluateBrowserEvidenceTrust,
