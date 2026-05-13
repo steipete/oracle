@@ -179,6 +179,28 @@ function buildBrowserEvidence(
   return browserEvidenceSchema.parse(raw) as BrowserEvidence;
 }
 
+function mergedBlockedErrorCodes(input: {
+  readonly evidence: BrowserEvidence;
+  readonly providerResult: ChatGptProviderResultBuild;
+  readonly consistency: ConsistencyVerdict;
+}): readonly string[] {
+  const codes: string[] = [];
+  const add = (code: string | null | undefined) => {
+    if (code && !codes.includes(code)) {
+      codes.push(code);
+    }
+  };
+
+  add(input.evidence.failure_code ?? null);
+  for (const reason of input.providerResult.blockedReasons) {
+    add(reason.code);
+  }
+  for (const code of consistencyCodes(input.consistency)) {
+    add(code);
+  }
+  return codes;
+}
+
 // ─── Orchestrator ───────────────────────────────────────────────────────────
 
 /**
@@ -253,7 +275,12 @@ export async function emitV18BrowserArtifacts(
     result: providerResult.result,
     evidence,
   });
-  const blockedErrorCodes = consistencyCodes(consistency);
+  const consistencyErrorCodes = consistencyCodes(consistency);
+  const blockedErrorCodes = mergedBlockedErrorCodes({
+    evidence,
+    providerResult,
+    consistency,
+  });
 
   const synthesisEligible =
     !providerResult.synthesisDowngraded &&
@@ -269,7 +296,11 @@ export async function emitV18BrowserArtifacts(
       evidence_id: input.evidenceId,
       metadata: {
         provider_result_id: providerResult.result.provider_result_id,
-        consistency_codes: blockedErrorCodes,
+        consistency_codes: consistencyErrorCodes,
+        provider_blocker_codes: blockedErrorCodes.filter(
+          (code) => !consistencyErrorCodes.includes(code),
+        ),
+        blocked_error_codes: blockedErrorCodes,
         synthesis_eligible: synthesisEligible,
       },
     },

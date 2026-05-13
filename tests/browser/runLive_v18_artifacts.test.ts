@@ -18,10 +18,7 @@ import {
   type LiveBrowserRunCapture,
 } from "../../src/browser/runLive_v18.js";
 import { readEvidenceLedger } from "../../src/oracle/evidence_ledger.js";
-import {
-  evidenceIndexPath,
-  readArtifactIndex,
-} from "../../src/oracle/v18/evidence.js";
+import { evidenceIndexPath, readArtifactIndex } from "../../src/oracle/v18/evidence.js";
 import { providerResultSchema } from "../../src/oracle/v18/contracts.js";
 import { assertNoLeaks } from "../_helpers/secretLeakDetector.js";
 
@@ -62,7 +59,9 @@ See [drift report](https://example.invalid/drift).
   captureConfidence: "high",
 };
 
-function happyInput(overrides: Partial<EmitV18BrowserArtifactsInput> = {}): EmitV18BrowserArtifactsInput {
+function happyInput(
+  overrides: Partial<EmitV18BrowserArtifactsInput> = {},
+): EmitV18BrowserArtifactsInput {
   return {
     sessionId: SESSION_ID,
     homeDir,
@@ -169,17 +168,26 @@ describe("emitV18BrowserArtifacts — blocker paths surface typed error codes", 
       }),
     );
     expect(result.synthesisEligible).toBe(false);
-    expect(
-      result.providerResult.blockedReasons.some((r) => r.code === "ui_drift_suspected"),
-    ).toBe(true);
+    expect(result.providerResult.blockedReasons.some((r) => r.code === "ui_drift_suspected")).toBe(
+      true,
+    );
     expect(result.effortVerdict.status).toBe("ui_drift_suspected");
     expect(result.providerResult.result.synthesis_eligible).toBe(false);
+    expect(result.blockedErrorCodes).toContain("ui_drift_suspected");
 
     // Ledger surfaces run_failed for the blocked outcome.
     const ledger = await readEvidenceLedger(SESSION_ID, { homeDir });
     const types = ledger.entries.map((e) => e.event.type);
     expect(types).toContain("run_failed");
     expect(types).not.toContain("run_completed");
+    const runFailed = ledger.entries.find((e) => e.event.type === "run_failed");
+    expect((runFailed!.event.metadata as Record<string, unknown>).consistency_codes).toEqual([]);
+    expect((runFailed!.event.metadata as Record<string, unknown>).provider_blocker_codes).toContain(
+      "ui_drift_suspected",
+    );
+    expect((runFailed!.event.metadata as Record<string, unknown>).blocked_error_codes).toContain(
+      "ui_drift_suspected",
+    );
   });
 
   testNonWindows("unverified mode blocks with chatgpt_pro_unverified", async () => {
@@ -194,19 +202,22 @@ describe("emitV18BrowserArtifacts — blocker paths surface typed error codes", 
     ).toBe(true);
   });
 
-  testNonWindows("verified_before_prompt_submit=false blocks with the prompt_before_verification code", async () => {
-    const result = await emitV18BrowserArtifacts(
-      happyInput({
-        capture: { ...HAPPY_CAPTURE, verifiedBeforePromptSubmit: false },
-      }),
-    );
-    expect(result.synthesisEligible).toBe(false);
-    expect(
-      result.providerResult.blockedReasons.some(
-        (r) => r.code === "prompt_submitted_before_verification",
-      ),
-    ).toBe(true);
-  });
+  testNonWindows(
+    "verified_before_prompt_submit=false blocks with the prompt_before_verification code",
+    async () => {
+      const result = await emitV18BrowserArtifacts(
+        happyInput({
+          capture: { ...HAPPY_CAPTURE, verifiedBeforePromptSubmit: false },
+        }),
+      );
+      expect(result.synthesisEligible).toBe(false);
+      expect(
+        result.providerResult.blockedReasons.some(
+          (r) => r.code === "prompt_submitted_before_verification",
+        ),
+      ).toBe(true);
+    },
+  );
 
   testNonWindows("empty captured text blocks with output_capture_empty", async () => {
     const result = await emitV18BrowserArtifacts(
@@ -219,6 +230,7 @@ describe("emitV18BrowserArtifacts — blocker paths surface typed error codes", 
     expect(
       result.providerResult.blockedReasons.some((r) => r.code === "output_capture_empty"),
     ).toBe(true);
+    expect(result.blockedErrorCodes).toContain("output_capture_empty");
   });
 
   testNonWindows("stale turn binding blocks with output_capture_unverified", async () => {
@@ -229,19 +241,35 @@ describe("emitV18BrowserArtifacts — blocker paths surface typed error codes", 
     );
     expect(result.synthesisEligible).toBe(false);
     expect(result.captureVerdict.status).toBe("stale_turn");
+    expect(result.blockedErrorCodes).toContain("output_capture_unverified");
+  });
+
+  testNonWindows("empty effort labels surface evidence and provider blocker codes", async () => {
+    const result = await emitV18BrowserArtifacts(
+      happyInput({
+        capture: { ...HAPPY_CAPTURE, observedEffortLabels: [] },
+      }),
+    );
+    expect(result.synthesisEligible).toBe(false);
+    expect(result.effortVerdict.status).toBe("unverified");
+    expect(result.blockedErrorCodes).toContain("output_capture_unverified");
+    expect(result.blockedErrorCodes).toContain("chatgpt_extended_reasoning_unverified");
   });
 });
 
 // ─── Persistence invariants ─────────────────────────────────────────────────
 
 describe("emitV18BrowserArtifacts — persistence invariants", () => {
-  testNonWindows("artifact index entry sha256 matches the on-disk evidence bytes hash", async () => {
-    const result = await emitV18BrowserArtifacts(happyInput());
-    const index = await readArtifactIndex(result.indexFilePath);
-    const entry = index?.artifacts.find((a) => a.artifact_id === "evidence-x2t-happy");
-    expect(entry).toBeDefined();
-    expect(entry!.sha256).toBe(result.evidenceSha256);
-  });
+  testNonWindows(
+    "artifact index entry sha256 matches the on-disk evidence bytes hash",
+    async () => {
+      const result = await emitV18BrowserArtifacts(happyInput());
+      const index = await readArtifactIndex(result.indexFilePath);
+      const entry = index?.artifacts.find((a) => a.artifact_id === "evidence-x2t-happy");
+      expect(entry).toBeDefined();
+      expect(entry!.sha256).toBe(result.evidenceSha256);
+    },
+  );
 
   testNonWindows("evidence index path is in the session's evidence directory", async () => {
     const result = await emitV18BrowserArtifacts(happyInput());

@@ -68,9 +68,7 @@ function fakeExecutor(answer = HAPPY_ANSWER): BrowserExecutor {
   };
 }
 
-function chatGptOptions(
-  overrides: Partial<BrowserRunOptions> = {},
-): BrowserRunOptions {
+function chatGptOptions(overrides: Partial<BrowserRunOptions> = {}): BrowserRunOptions {
   const config: BrowserSessionConfig = {
     chatgptUrl: "https://chatgpt.com/c/run-1",
   } as unknown as BrowserSessionConfig;
@@ -110,48 +108,51 @@ function emitOpts(
 // ─── Happy path: artifacts appear on disk ───────────────────────────────────
 
 describe("wrapBrowserExecutorWithV18Emit — happy path", () => {
-  testNonWindows("successful ChatGPT run produces evidence file, index, ledger, and provider_result", async () => {
-    const wrapped = wrapBrowserExecutorWithV18Emit(fakeExecutor(), emitOpts());
-    const result = await wrapped(chatGptOptions());
+  testNonWindows(
+    "successful ChatGPT run produces evidence file, index, ledger, and provider_result",
+    async () => {
+      const wrapped = wrapBrowserExecutorWithV18Emit(fakeExecutor(), emitOpts());
+      const result = await wrapped(chatGptOptions());
 
-    // Original BrowserRunResult fields preserved.
-    expect(result.answerText).toBe(HAPPY_ANSWER);
-    expect(result.tookMs).toBe(123);
+      // Original BrowserRunResult fields preserved.
+      expect(result.answerText).toBe(HAPPY_ANSWER);
+      expect(result.tookMs).toBe(123);
 
-    // v18 emit outcome attached.
-    expect(result.v18Emit?.attempted).toBe(true);
-    expect(result.v18Emit?.emitError).toBeNull();
-    expect(result.v18Emit?.artifacts).not.toBeNull();
-    expect(result.v18Emit?.artifacts!.synthesisEligible).toBe(true);
-    expect(result.v18Emit?.artifacts!.blockedErrorCodes).toEqual([]);
+      // v18 emit outcome attached.
+      expect(result.v18Emit?.attempted).toBe(true);
+      expect(result.v18Emit?.emitError).toBeNull();
+      expect(result.v18Emit?.artifacts).not.toBeNull();
+      expect(result.v18Emit?.artifacts!.synthesisEligible).toBe(true);
+      expect(result.v18Emit?.artifacts!.blockedErrorCodes).toEqual([]);
 
-    // Evidence file landed on disk and parses as browser_evidence.v1.
-    const evidenceId = `evidence-${SESSION_ID}-chatgpt_pro_first_plan`;
-    const evidencePath = evidenceFilePath(SESSION_ID, evidenceId, homeDir);
-    const raw = await readFile(evidencePath, "utf8");
-    const parsed = JSON.parse(raw);
-    expect(parsed.schema_version).toBe("browser_evidence.v1");
-    expect(parsed.evidence_id).toBe(evidenceId);
-    expect(parsed.provider_slot).toBe("chatgpt_pro_first_plan");
+      // Evidence file landed on disk and parses as browser_evidence.v1.
+      const evidenceId = `evidence-${SESSION_ID}-chatgpt_pro_first_plan`;
+      const evidencePath = evidenceFilePath(SESSION_ID, evidenceId, homeDir);
+      const raw = await readFile(evidencePath, "utf8");
+      const parsed = JSON.parse(raw);
+      expect(parsed.schema_version).toBe("browser_evidence.v1");
+      expect(parsed.evidence_id).toBe(evidenceId);
+      expect(parsed.provider_slot).toBe("chatgpt_pro_first_plan");
 
-    // Artifact index references the evidence entry.
-    const index = await readArtifactIndex(evidenceIndexPath(SESSION_ID, homeDir));
-    expect(index?.artifacts.some((a) => a.artifact_id === evidenceId)).toBe(true);
+      // Artifact index references the evidence entry.
+      const index = await readArtifactIndex(evidenceIndexPath(SESSION_ID, homeDir));
+      expect(index?.artifacts.some((a) => a.artifact_id === evidenceId)).toBe(true);
 
-    // Ledger chain has evidence_written + run_completed.
-    const ledger = await readEvidenceLedger(SESSION_ID, { homeDir });
-    expect(ledger.chainValid).toBe(true);
-    const types = ledger.entries.map((e) => e.event.type);
-    expect(types).toContain("evidence_written");
-    expect(types).toContain("run_completed");
+      // Ledger chain has evidence_written + run_completed.
+      const ledger = await readEvidenceLedger(SESSION_ID, { homeDir });
+      expect(ledger.chainValid).toBe(true);
+      const types = ledger.entries.map((e) => e.event.type);
+      expect(types).toContain("evidence_written");
+      expect(types).toContain("run_completed");
 
-    // Provider result is schema-valid and links to the evidence id.
-    const pr = result.v18Emit!.artifacts!.providerResult.result;
-    expect(pr.schema_version).toBe("provider_result.v1");
-    expect(pr.evidence_id).toBe(evidenceId);
-    expect(pr.access_path).toBe("oracle_browser_remote");
-    expect(pr.synthesis_eligible).toBe(true);
-  });
+      // Provider result is schema-valid and links to the evidence id.
+      const pr = result.v18Emit!.artifacts!.providerResult.result;
+      expect(pr.schema_version).toBe("provider_result.v1");
+      expect(pr.evidence_id).toBe(evidenceId);
+      expect(pr.access_path).toBe("oracle_browser_remote");
+      expect(pr.synthesis_eligible).toBe(true);
+    },
+  );
 
   testNonWindows("captureFor hook receives the executor result", async () => {
     const captureSpy = vi.fn((_: BrowserRunOptions, result: BrowserRunResult) => {
@@ -233,33 +234,37 @@ describe("wrapBrowserExecutorWithV18Emit — skip paths", () => {
 // ─── Blocker propagation ───────────────────────────────────────────────────
 
 describe("wrapBrowserExecutorWithV18Emit — blocker propagation", () => {
-  testNonWindows("UI drift in capture surfaces blockedErrorCodes without failing the run", async () => {
-    const wrapped = wrapBrowserExecutorWithV18Emit(
-      fakeExecutor(),
-      emitOpts({
-        captureFor: () => ({
-          ...happyCapture(),
-          observedEffortLabels: ["Unobtainium"],
+  testNonWindows(
+    "UI drift in capture surfaces blockedErrorCodes without failing the run",
+    async () => {
+      const wrapped = wrapBrowserExecutorWithV18Emit(
+        fakeExecutor(),
+        emitOpts({
+          captureFor: () => ({
+            ...happyCapture(),
+            observedEffortLabels: ["Unobtainium"],
+          }),
         }),
-      }),
-    );
-    const result = await wrapped(chatGptOptions());
-    // Original answer still returned — captured text is still useful
-    // even when v18 verification fails.
-    expect(result.answerText).toBe(HAPPY_ANSWER);
-    expect(result.v18Emit?.attempted).toBe(true);
-    expect(result.v18Emit?.artifacts?.synthesisEligible).toBe(false);
-    const blockerCodes = result.v18Emit?.artifacts?.providerResult.blockedReasons.map(
-      (r) => r.code,
-    );
-    expect(blockerCodes).toContain("ui_drift_suspected");
+      );
+      const result = await wrapped(chatGptOptions());
+      // Original answer still returned — captured text is still useful
+      // even when v18 verification fails.
+      expect(result.answerText).toBe(HAPPY_ANSWER);
+      expect(result.v18Emit?.attempted).toBe(true);
+      expect(result.v18Emit?.artifacts?.synthesisEligible).toBe(false);
+      const blockerCodes = result.v18Emit?.artifacts?.providerResult.blockedReasons.map(
+        (r) => r.code,
+      );
+      expect(blockerCodes).toContain("ui_drift_suspected");
+      expect(result.v18Emit?.artifacts?.blockedErrorCodes).toContain("ui_drift_suspected");
 
-    // Ledger surfaces run_failed for the blocked outcome.
-    const ledger = await readEvidenceLedger(SESSION_ID, { homeDir });
-    const types = ledger.entries.map((e) => e.event.type);
-    expect(types).toContain("run_failed");
-    expect(types).not.toContain("run_completed");
-  });
+      // Ledger surfaces run_failed for the blocked outcome.
+      const ledger = await readEvidenceLedger(SESSION_ID, { homeDir });
+      const types = ledger.entries.map((e) => e.event.type);
+      expect(types).toContain("run_failed");
+      expect(types).not.toContain("run_completed");
+    },
+  );
 
   testNonWindows("emit error does NOT mask a successful executor result", async () => {
     // Force an emit failure by passing a homeDir that points at a
