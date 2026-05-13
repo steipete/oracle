@@ -44,12 +44,9 @@ import {
   browserEvidenceSchema,
   type BrowserEvidence,
 } from "../oracle/v18/contracts.js";
-import {
-  evidenceFilePath,
-  evidenceIndexPath,
-  writeEvidence,
-} from "../oracle/v18/evidence.js";
+import { evidenceFilePath, evidenceIndexPath, writeEvidence } from "../oracle/v18/evidence.js";
 import { appendEvidenceLedgerEvent } from "../oracle/evidence_ledger.js";
+import { deriveBrowserEvidenceEffortFields } from "../oracle/v18/browser_evidence_effort.js";
 import {
   consistencyCodes,
   verifyHashConsistency,
@@ -132,23 +129,19 @@ function deterministicFixtureHash(seed: string): `sha256:${string}` {
 
 function buildBrowserEvidence(
   input: EmitV18BrowserArtifactsInput,
+  effortVerdict: EffortStrategyResult,
 ): BrowserEvidence {
   const promptSha = sha(input.capture.promptText);
   const outputSha = sha(input.capture.answerText);
-  const labelsSorted = [...input.capture.observedEffortLabels]
-    .map((s) => s.trim().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .sort()
-    .join("\n");
-  const availableLabelsHash = sha(labelsSorted || "empty-effort-picker");
+  const effortFields = deriveBrowserEvidenceEffortFields(effortVerdict);
 
   const raw = {
-    available_effort_labels_hash: availableLabelsHash,
+    available_effort_labels_hash: effortFields.available_effort_labels_hash,
     browser_effort_strategy: "select_highest_visible",
     bundle_version: V18_BUNDLE_VERSION,
     capture_confidence: input.capture.captureConfidence ?? "high",
     created_at: new Date().toISOString(),
-    effort_rank: "highest_visible",
+    effort_rank: effortFields.effort_rank,
     evidence_id: input.evidenceId,
     evidence_privacy: {
       stores_account_identifiers: false,
@@ -156,25 +149,25 @@ function buildBrowserEvidence(
       stores_raw_dom: false,
       stores_raw_screenshots: false,
     },
-    failure_code: null,
-    fix_command: null,
+    failure_code: effortFields.failure_code,
+    fix_command: effortFields.fix_command,
     mode_verified: input.capture.modeVerified,
-    next_command: null,
-    observed_reasoning_effort_label: "Heavy",
+    next_command: effortFields.next_command,
+    observed_reasoning_effort_label: effortFields.observed_reasoning_effort_label,
     output_text_sha256: outputSha,
     prompt_sha256: promptSha,
     prompt_submitted_at: new Date().toISOString(),
     provider: "chatgpt",
     provider_result_id: input.providerResultId,
     provider_slot: input.providerSlot,
-    reasoning_effort_verified: true,
+    reasoning_effort_verified: effortFields.reasoning_effort_verified,
     redaction_policy: "redacted",
     requested_mode: "pro_extended_reasoning",
     requested_reasoning_effort: "max_browser_available",
     run_id: input.runId ?? "live-run",
     schema_version: BROWSER_EVIDENCE_SCHEMA_VERSION,
-    selected_effort_is_highest_visible: true,
-    selector_manifest_version: "chatgpt-selectors.v1",
+    selected_effort_is_highest_visible: effortFields.selected_effort_is_highest_visible,
+    selector_manifest_version: effortFields.selector_manifest_version,
     session_id_hash: deterministicFixtureHash(`${input.sessionId}:session`),
     transition_log_sha256: deterministicFixtureHash(`${input.sessionId}:transition`),
     unsafe_artifacts_quarantined: true,
@@ -200,10 +193,13 @@ function buildBrowserEvidence(
 export async function emitV18BrowserArtifacts(
   input: EmitV18BrowserArtifactsInput,
 ): Promise<EmitV18BrowserArtifactsResult> {
-  // 1. Build evidence ledger object.
-  const evidence = buildBrowserEvidence(input);
+  // 1. Compute capture + effort verdicts (real surfaces, no mocks).
+  const effortVerdict = pickHighestVisibleEffort({
+    observedLabels: input.capture.observedEffortLabels,
+  });
+  const evidence = buildBrowserEvidence(input, effortVerdict);
 
-  // 2. Compute capture + effort verdicts (real surfaces, no mocks).
+  // 2. Compute capture verdict against the evidence prompt hash.
   const captureVerdict = buildChatGptCaptureVerdict({
     text: input.capture.answerText,
     turnId: `turn-${input.capture.observedTurnIndex}`,
@@ -215,9 +211,6 @@ export async function emitV18BrowserArtifacts(
       expectedPromptSha256: evidence.prompt_sha256 as `sha256:${string}`,
       observedPromptSha256: evidence.prompt_sha256 as `sha256:${string}`,
     },
-  });
-  const effortVerdict = pickHighestVisibleEffort({
-    observedLabels: input.capture.observedEffortLabels,
   });
 
   // 3. Sanitise + write evidence to disk (oracle-ejv + oracle-vq3).
