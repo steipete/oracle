@@ -4,6 +4,32 @@ import { ensurePromptReady } from "../actions/navigation.js";
 import { submitPrompt } from "../actions/promptComposer.js";
 import { waitForAssistantResponse } from "../actions/assistantResponse.js";
 
+// Re-export the v18 selector manifest + effort strategy so downstream
+// callers (state machine, doctor surface, evidence builder) can resolve
+// every ChatGPT browser dependency from a single module path.
+export {
+  CHATGPT_EFFORT_TIERS,
+  CHATGPT_SELECTOR_MANIFEST,
+  SELECTOR_MANIFEST_LAST_VERIFIED,
+  SELECTOR_MANIFEST_VERSION,
+  availableEffortLabelsHash,
+  chatgptManifestFingerprint,
+  chatgptSelector,
+  chatgptSelectorFingerprint,
+  chatgptSelectorList,
+  highestKnownLabel,
+  pickHighestVisibleEffort,
+  tierForLabel,
+  type ChatGptEffortTier,
+  type ChatGptEffortTierEntry,
+  type ChatGptSelectorEntry,
+  type ChatGptSelectorPurpose,
+  type EffortStatus,
+  type EffortStrategyResult,
+  type PickHighestVisibleEffortInput,
+  type SelectorConfidence,
+} from "../selectors/chatgpt/index.js";
+
 interface ChatgptDomProviderState {
   runtime: ChromeClient["Runtime"];
   input: ChromeClient["Input"];
