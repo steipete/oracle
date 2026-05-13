@@ -28,4 +28,11 @@ describe("prompt composer attachment expressions", () => {
     expect(expression).toContain("countReady");
     expect(expression).toContain("removeAffordanceCount");
   });
+
+  test("attachment ready check stays scoped to the active composer", () => {
+    const expression = buildAttachmentReadyExpressionForTest(["paper1_plan_v3.md"]);
+
+    expect(expression).toContain("const attachmentRoots = Array.from(new Set([composer]))");
+    expect(expression).not.toContain("new Set([composer, document])");
+  });
 });

@@ -118,4 +118,10 @@ describe("promptComposer", () => {
       vi.useRealTimers();
     }
   });
+
+  test("only attachment sends get the longer send-button deadline", () => {
+    expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
+    expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
+    expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"])).toBe(45_000);
+  });
 });

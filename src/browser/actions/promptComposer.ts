@@ -385,7 +385,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       '[aria-label*="remove attachment"]',
       'button[aria-label*="remove attachment"]',
     ];
-    const attachmentRoots = Array.from(new Set([composer, document])).filter(Boolean);
+    const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
     const collectChipNodes = () => {
       const seen = new Set();
       const collected = [];
@@ -443,6 +443,7 @@ async function attemptSendButton(
   _logger?: BrowserLogger,
   attachmentNames?: string[],
 ): Promise<boolean> {
+  const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
   const script = `(() => {
     ${buildClickDispatcher()}
     const selectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
@@ -476,12 +477,11 @@ async function attemptSendButton(
     return 'clicked';
   })()`;
 
-  // Give attachment-bearing submissions more headroom — ChatGPT's chip render
-  // settles slowly for multi-file uploads (the previous 20s deadline routinely
-  // tripped before the send button became clickable for two .md attachments).
-  const deadline = Date.now() + 45_000;
+  // Give attachment-bearing submissions more headroom. ChatGPT's chip render can
+  // settle slowly for multi-file uploads, but plain text sends should keep the
+  // shorter historical deadline.
+  const deadline = Date.now() + sendButtonTimeoutMs(attachmentNames);
   while (Date.now() < deadline) {
-    const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
     if (needAttachment) {
       const ready = await Runtime.evaluate({
         expression: buildAttachmentReadyExpression(attachmentNames),
@@ -512,6 +512,10 @@ async function attemptSendButton(
     );
   }
   return false;
+}
+
+function sendButtonTimeoutMs(attachmentNames?: string[]): number {
+  return Array.isArray(attachmentNames) && attachmentNames.length > 0 ? 45_000 : 20_000;
 }
 
 async function verifyPromptCommitted(
@@ -682,5 +686,6 @@ async function verifyPromptCommitted(
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
   attemptSendButton,
+  sendButtonTimeoutMs,
   verifyPromptCommitted,
 };
