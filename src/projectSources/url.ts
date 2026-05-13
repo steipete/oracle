@@ -7,6 +7,11 @@ export function normalizeProjectSourcesUrl(rawUrl: string): string {
       `Invalid ChatGPT project URL: ${rawUrl} (${error instanceof Error ? error.message : String(error)})`,
     );
   }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error(
+      `Project Sources require an http(s) ChatGPT URL, received protocol: ${url.protocol}`,
+    );
+  }
   const hostname = url.hostname.toLowerCase();
   if (hostname !== "chatgpt.com" && hostname !== "chat.openai.com") {
     throw new Error(`Project Sources require a ChatGPT URL, received: ${rawUrl}`);

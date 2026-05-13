@@ -20,4 +20,13 @@ describe("normalizeProjectSourcesUrl", () => {
       /ChatGPT URL/i,
     );
   });
+
+  test("rejects non-http protocols even when the host looks like ChatGPT", () => {
+    expect(() => normalizeProjectSourcesUrl("javascript://chatgpt.com/g/g-p-123/project")).toThrow(
+      /http\(s\)/i,
+    );
+    expect(() => normalizeProjectSourcesUrl("ftp://chatgpt.com/g/g-p-123/project")).toThrow(
+      /http\(s\)/i,
+    );
+  });
 });
