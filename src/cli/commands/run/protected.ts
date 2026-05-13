@@ -11,6 +11,7 @@ import {
   addGeminiDeepThinkRunFlags,
   buildGeminiDeepThinkRunEnvelope,
   formatGeminiDeepThinkRunEnvelope,
+  isGeminiDeepThinkProviderAlias,
   type GeminiDeepThinkRunCliOptions,
   type GeminiDeepThinkRunEnvelope,
   type GeminiDeepThinkRunPlan,
@@ -68,7 +69,8 @@ export function registerProtectedRunCommand(
     .description("Plan protected browser provider runs without submitting prompts.");
   addChatGptProRunFlags(run);
   addGeminiDeepThinkRunFlags(run);
-  run.action(async (options: ProtectedRunCliOptions) => {
+  run.action(async (_options: ProtectedRunCliOptions, command: Command) => {
+    const options = command.optsWithGlobals() as ProtectedRunCliOptions;
     const envelope = await runProtectedRunCommand(options, deps, deps);
     if (!envelope.ok) {
       process.exitCode = 1;
@@ -94,9 +96,14 @@ export async function runProtectedRunCommand(
       ),
     );
   } else if (route === "gemini") {
+    const providerAliasRequestsDeepThink = isGeminiDeepThinkProviderAlias(options.provider);
     envelope = rewriteGeminiRunCommand(
       buildGeminiDeepThinkRunEnvelope(
-        { ...options, provider: "gemini" },
+        {
+          ...options,
+          provider: "gemini",
+          geminiDeepThink: options.geminiDeepThink || providerAliasRequestsDeepThink,
+        },
         { now: () => new Date(generatedAt) },
       ),
     );
@@ -267,6 +274,9 @@ function promptPart(
 }
 
 function normalizeProvider(value: string | undefined): string | undefined {
+  if (isGeminiDeepThinkProviderAlias(value)) {
+    return "gemini";
+  }
   const normalized = value?.trim().toLowerCase();
   return normalized || undefined;
 }

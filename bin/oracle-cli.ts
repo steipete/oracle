@@ -3,6 +3,7 @@ import "dotenv/config";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
+import { readFile as readPromptFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
 // Allow `npx @steipete/oracle oracle-mcp` to resolve the MCP server even though npx runs the default binary.
@@ -46,8 +47,11 @@ import {
   parseHeartbeatOption,
   parseTimeoutOption,
   parseDurationOption,
+  parseGeminiDeepThinkEvidenceOption,
+  parseGeminiDeepThinkFallbackOption,
   mergePathLikeOptions,
   dedupePathInputs,
+  isGeminiDeepThinkModelAlias,
 } from "../src/cli/options.js";
 import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
@@ -93,6 +97,8 @@ import { registerEvidenceCommand } from "../src/cli/commands/evidence/index.js";
 interface CliOptions extends OptionValues {
   prompt?: string;
   message?: string;
+  promptFile?: string;
+  provider?: string;
   file?: string[];
   maxFileSizeBytes?: number;
   include?: string[];
@@ -168,6 +174,11 @@ interface CliOptions extends OptionValues {
   output?: string;
   aspect?: string;
   geminiShowThoughts?: boolean;
+  geminiDeepThink?: boolean;
+  deepThink?: boolean;
+  geminiDeepThinkFallback?: string;
+  evidence?: string;
+  json?: boolean;
   copyMarkdown?: boolean;
   copy?: boolean;
   verbose?: boolean;
@@ -257,6 +268,11 @@ program.hook("preAction", async (thisCommand) => {
     opts.prompt = resolvedPrompt;
     thisCommand.setOptionValue("prompt", resolvedPrompt);
   }
+  if (!opts.prompt && typeof opts.promptFile === "string" && opts.promptFile.trim().length > 0) {
+    const promptFromFile = await readPromptFile(opts.promptFile, "utf8");
+    opts.prompt = promptFromFile;
+    thisCommand.setOptionValue("prompt", promptFromFile);
+  }
   if (shouldRequirePrompt(userCliArgs, opts)) {
     console.log(
       chalk.yellow('Prompt is required. Provide it via --prompt "<text>" or positional [prompt].'),
@@ -274,6 +290,7 @@ program
   .version(VERSION)
   .argument("[prompt]", "Prompt text (shorthand for --prompt).")
   .option("-p, --prompt <text>", "User prompt to send to the model.")
+  .option("--prompt-file <path>", "Read the prompt from a file.")
   .addOption(new Option("--message <text>", "Alias for --prompt.").hideHelp())
   .option(
     "--followup <sessionId|responseId>",
@@ -340,6 +357,28 @@ program
       "Execution engine (api | browser). Browser engine: GPT models automate ChatGPT; Gemini models use a cookie-based client for gemini.google.com. If omitted, oracle picks api when OPENAI_API_KEY is set, otherwise browser.",
     ).choices(["api", "browser"]),
   )
+  .addOption(new Option("--provider <provider>", "Protected browser provider route."))
+  .addOption(
+    new Option("--gemini-deep-think", "Use the protected Gemini Deep Think browser route.").default(
+      false,
+    ),
+  )
+  .addOption(
+    new Option("--deep-think", "Alias for --gemini-deep-think.")
+      .default(false)
+      .hideHelp(),
+  )
+  .addOption(
+    new Option("--gemini-deep-think-fallback <mode>", "Deep Think fallback policy.")
+      .choices(["fail"])
+      .argParser(parseGeminiDeepThinkFallbackOption),
+  )
+  .addOption(
+    new Option("--evidence <mode>", "Evidence policy for protected browser runs.")
+      .choices(["redacted"])
+      .argParser(parseGeminiDeepThinkEvidenceOption),
+  )
+  .addOption(new Option("--json", "Accept canonical protected-run JSON flag.").default(false))
   .addOption(
     new Option("--mode <mode>", "Alias for --engine (api | browser).")
       .choices(["api", "browser"])
@@ -1205,6 +1244,39 @@ function resolveHeartbeatIntervalMs(seconds: number | undefined): number | undef
   return Math.round(seconds * 1000);
 }
 
+function normalizeProtectedProviderToken(value: string | undefined): string {
+  return value?.trim().toLowerCase().replace(/[\s_]+/gu, "-") ?? "";
+}
+
+function providerSelectsGeminiDeepThink(value: string | undefined): boolean {
+  const normalized = normalizeProtectedProviderToken(value);
+  return normalized === "gemini-deep-think" || normalized === "deep-think";
+}
+
+function shouldUseGeminiDeepThinkRootRoute(options: CliOptions): boolean {
+  const provider = normalizeProtectedProviderToken(options.provider);
+  return (
+    providerSelectsGeminiDeepThink(provider) ||
+    (provider === "gemini" && Boolean(options.geminiDeepThink || options.deepThink)) ||
+    isGeminiDeepThinkModelAlias(options.model)
+  );
+}
+
+function applyGeminiDeepThinkRootDefaults(
+  options: CliOptions,
+  optionUsesDefault: (name: string) => boolean,
+): void {
+  if (!shouldUseGeminiDeepThinkRootRoute(options)) {
+    return;
+  }
+  if (optionUsesDefault("engine")) {
+    options.engine = "browser";
+  }
+  if (optionUsesDefault("model") || !options.model || isGeminiDeepThinkModelAlias(options.model)) {
+    options.model = "gemini-3-pro-deep-think";
+  }
+}
+
 interface FollowupResolution {
   responseId: string;
   sessionId?: string;
@@ -1523,6 +1595,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error("--dry-run cannot be combined with --render-markdown.");
   }
 
+  applyGeminiDeepThinkRootDefaults(options, optionUsesDefault);
   const preferredEngine = options.engine ?? userConfig.engine;
   let engine: EngineMode = resolveEngine({
     engine: preferredEngine,
@@ -1547,6 +1620,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   if (optionUsesDefault("baseUrl") && userConfig.apiBaseUrl) {
     options.baseUrl = userConfig.apiBaseUrl;
   }
+  applyGeminiDeepThinkRootDefaults(options, optionUsesDefault);
 
   if (remoteHost && engine !== "browser") {
     throw new Error("--remote-host requires --engine browser.");
@@ -1622,7 +1696,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error("--remote-host does not support --models yet. Use API engine locally instead.");
   }
   const resolvedModel: ModelName =
-    normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
+    normalizedMultiModels[0] ??
+    (isGemini && engine !== "browser" ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
   const includesGeminiApiOnly = (
     normalizedMultiModels.length > 0 ? normalizedMultiModels : [resolvedModel]
   ).some((model) => model === "gemini-3.1-pro");

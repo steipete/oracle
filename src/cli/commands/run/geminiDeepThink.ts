@@ -109,6 +109,11 @@ export interface GeminiDeepThinkRunIo {
   stderr?: (text: string) => void;
 }
 
+export function isGeminiDeepThinkProviderAlias(value: string | undefined): boolean {
+  const normalized = normalizeProviderToken(value);
+  return normalized === "gemini-deep-think" || normalized === "deep-think";
+}
+
 export class GeminiDeepThinkCliError extends Error {
   constructor(
     message: string,
@@ -206,7 +211,8 @@ export function normalizeGeminiDeepThinkLeaseOptions(
 export function normalizeGeminiDeepThinkRunOptions(
   options: GeminiDeepThinkRunCliOptions = {},
 ): GeminiDeepThinkRunPlan {
-  if (!options.geminiDeepThink && !options.deepThink) {
+  const providerAliasRequestsDeepThink = isGeminiDeepThinkProviderAlias(options.provider);
+  if (!options.geminiDeepThink && !options.deepThink && !providerAliasRequestsDeepThink) {
     throw new GeminiDeepThinkCliError(
       "--gemini-deep-think is required for the protected Gemini Deep Think route.",
       "gemini_deep_think_flag_required",
@@ -228,7 +234,7 @@ export function normalizeGeminiDeepThinkRunOptions(
     );
   }
 
-  const provider = normalizeText(options.provider, "gemini");
+  const provider = normalizeGeminiDeepThinkProvider(options.provider);
   if (provider !== "gemini") {
     throw new GeminiDeepThinkCliError(
       "Gemini Deep Think protected routes require --provider gemini.",
@@ -462,6 +468,16 @@ function normalizeText(value: string | undefined, fallback: string): string {
   return trimmed || fallback;
 }
 
+function normalizeProviderToken(value: string | undefined): string {
+  return value?.trim().toLowerCase().replace(/[\s_]+/gu, "-") ?? "";
+}
+
+function normalizeGeminiDeepThinkProvider(value: string | undefined): string {
+  const normalized = normalizeProviderToken(value);
+  if (!normalized) return "gemini";
+  return isGeminiDeepThinkProviderAlias(normalized) ? "gemini" : normalized;
+}
+
 function doctorCommand(remoteBrowser: GeminiDeepThinkRemoteBrowserMode): string {
   return `oracle doctor gemini --deep-think --remote-browser ${remoteBrowser} --json`;
 }
@@ -478,7 +494,9 @@ function buildRunCommand(
       ? `--prompt-file ${quoteCliArg(promptSource.path)}`
       : "--prompt <redacted>";
   return [
-    "oracle --engine browser --provider gemini",
+    "oracle run",
+    "--engine browser",
+    "--provider gemini",
     `--model ${model}`,
     "--gemini-deep-think",
     `--gemini-deep-think-fallback ${fallback}`,
