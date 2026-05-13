@@ -61,6 +61,15 @@ export {
   type SharedProfileProvider,
 } from "./browser_profile.js";
 export {
+  assertHashConsistency,
+  computeSha256,
+  consistencyCodes,
+  verifyHashConsistency,
+  type ConsistencyMismatch,
+  type ConsistencyVerdict,
+  type VerifyHashConsistencyInput,
+} from "./hash_consistency.js";
+export {
   POLICY_ERROR_CODES_USED,
   evaluateApiSubstitution,
   evaluateBrowserEvidenceTrust,
