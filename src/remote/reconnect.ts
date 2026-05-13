@@ -22,6 +22,8 @@ export type ReconnectEvent =
   | { type: "target_recovered"; at: number; reason?: string }
   | { type: "endpoint_lost"; at: number; reason?: string }
   | { type: "endpoint_recovered"; at: number; reason?: string }
+  | { type: "reattach_started"; at: number; reason?: string }
+  | { type: "reattach_failed"; at: number; reason?: string }
   | { type: "prompt_thinking"; at: number; observedLabel?: string }
   | { type: "prompt_settled"; at: number }
   | { type: "heartbeat"; at: number }
@@ -60,7 +62,10 @@ export interface RemoteRunState {
   readonly sessionId: string;
   readonly startedAtMs: number;
   readonly lastHeartbeatMs: number;
+  /** Number of reconnect attempts already consumed from the retry budget. */
   readonly attempts: number;
+  /** True after a reattach starts and before it recovers or fails. */
+  readonly reconnectAttemptInFlight: boolean;
   readonly targetLost: boolean;
   readonly endpointLost: boolean;
   readonly thinking: boolean;
@@ -78,6 +83,7 @@ export function initialRemoteRunState(input: {
     startedAtMs: input.startedAtMs,
     lastHeartbeatMs: input.startedAtMs,
     attempts: 0,
+    reconnectAttemptInFlight: false,
     targetLost: false,
     endpointLost: false,
     thinking: false,
@@ -96,10 +102,7 @@ export function initialRemoteRunState(input: {
  * the run log free of model output bytes, satisfying the bead's
  * "no reasoning-text logging" acceptance.
  */
-export function applyReconnectEvent(
-  state: RemoteRunState,
-  event: ReconnectEvent,
-): RemoteRunState {
+export function applyReconnectEvent(state: RemoteRunState, event: ReconnectEvent): RemoteRunState {
   switch (event.type) {
     case "heartbeat":
       return { ...state, lastHeartbeatMs: event.at };
@@ -109,7 +112,8 @@ export function applyReconnectEvent(
       return {
         ...state,
         targetLost: false,
-        attempts: state.attempts + 1,
+        attempts: state.reconnectAttemptInFlight ? state.attempts : state.attempts + 1,
+        reconnectAttemptInFlight: false,
         lastHeartbeatMs: event.at,
       };
     case "endpoint_lost":
@@ -118,9 +122,17 @@ export function applyReconnectEvent(
       return {
         ...state,
         endpointLost: false,
-        attempts: state.attempts + 1,
+        attempts: state.reconnectAttemptInFlight ? state.attempts : state.attempts + 1,
+        reconnectAttemptInFlight: false,
         lastHeartbeatMs: event.at,
       };
+    case "reattach_started":
+      if (state.reconnectAttemptInFlight) {
+        return state;
+      }
+      return { ...state, attempts: state.attempts + 1, reconnectAttemptInFlight: true };
+    case "reattach_failed":
+      return { ...state, reconnectAttemptInFlight: false };
     case "prompt_thinking":
       return {
         ...state,
@@ -135,7 +147,13 @@ export function applyReconnectEvent(
       // state machine to reconsider whether we should background.
       return { ...state, lastHeartbeatMs: state.lastHeartbeatMs };
     case "result_received":
-      return { ...state, completed: true, thinking: false, lastHeartbeatMs: event.at };
+      return {
+        ...state,
+        completed: true,
+        thinking: false,
+        reconnectAttemptInFlight: false,
+        lastHeartbeatMs: event.at,
+      };
   }
 }
 
@@ -217,6 +235,9 @@ export function decideReconnect(
   const attemptsRemaining = policy.maxAttempts - state.attempts;
   const targetOrEndpointLost = state.targetLost || state.endpointLost;
   if (targetOrEndpointLost) {
+    if (state.reconnectAttemptInFlight) {
+      return reconnectAttemptInFlightDecision(state, policy);
+    }
     if (attemptsRemaining <= 0) {
       return {
         kind: "background",
@@ -242,6 +263,9 @@ export function decideReconnect(
 
   const sinceHeartbeat = now - state.lastHeartbeatMs;
   if (sinceHeartbeat > policy.heartbeatMissDeadlineMs) {
+    if (state.reconnectAttemptInFlight) {
+      return reconnectAttemptInFlightDecision(state, policy);
+    }
     if (attemptsRemaining <= 0) {
       return {
         kind: "background",
@@ -276,6 +300,18 @@ export function decideReconnect(
   };
 }
 
+function reconnectAttemptInFlightDecision(
+  state: RemoteRunState,
+  policy: ReconnectPolicy,
+): ReconnectDecision {
+  const attempt = Math.max(1, state.attempts);
+  return {
+    kind: "wait",
+    nextCheckInMs: backoffFor(attempt, policy),
+    reason: `reattach attempt ${attempt}/${policy.maxAttempts} in progress`,
+  };
+}
+
 /**
  * Convenience: build the canonical hand-off payload Oracle's CLI/MCP
  * surfaces emit when a remote run is incomplete but the assistant may
@@ -288,7 +324,11 @@ export interface RemoteHandoff {
   readonly errorCode: V18ErrorCode | null;
 }
 
-export function buildRemoteHandoff(state: RemoteRunState, reason: string, errorCode: V18ErrorCode | null = null): RemoteHandoff {
+export function buildRemoteHandoff(
+  state: RemoteRunState,
+  reason: string,
+  errorCode: V18ErrorCode | null = null,
+): RemoteHandoff {
   return {
     sessionId: state.sessionId,
     recoverCommand: recoverCommandFor(state.sessionId),
