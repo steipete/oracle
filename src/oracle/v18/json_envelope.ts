@@ -241,43 +241,41 @@ export const v18ErrorEntrySchema = z
  * matches {@link JsonEnvelope} exactly — this is a runtime narrowing, not
  * a type change.
  */
-export const jsonEnvelopeStrictSchema = jsonEnvelopeSchema.superRefine(
-  (envelope, ctx) => {
-    if (envelope.ok) return;
-    if (envelope.retry_safe === null || typeof envelope.retry_safe !== "boolean") {
+export const jsonEnvelopeStrictSchema = jsonEnvelopeSchema.superRefine((envelope, ctx) => {
+  if (envelope.ok) return;
+  if (envelope.retry_safe === null || typeof envelope.retry_safe !== "boolean") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["retry_safe"],
+      message: "v18 failure envelope requires retry_safe to be a boolean (not null)",
+    });
+  }
+  if (typeof envelope.blocked_reason !== "string" || envelope.blocked_reason.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["blocked_reason"],
+      message: "v18 failure envelope requires a non-empty blocked_reason string",
+    });
+  }
+  if (!Array.isArray(envelope.errors) || envelope.errors.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["errors"],
+      message: "v18 failure envelope requires errors[] to be a non-empty array",
+    });
+    return;
+  }
+  for (let index = 0; index < envelope.errors.length; index += 1) {
+    const result = v18ErrorEntrySchema.safeParse(envelope.errors[index]);
+    if (result.success) continue;
+    for (const issue of result.error.issues) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["retry_safe"],
-        message: "v18 failure envelope requires retry_safe to be a boolean (not null)",
+        ...issue,
+        path: ["errors", index, ...issue.path],
       });
     }
-    if (typeof envelope.blocked_reason !== "string" || envelope.blocked_reason.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["blocked_reason"],
-        message: "v18 failure envelope requires a non-empty blocked_reason string",
-      });
-    }
-    if (!Array.isArray(envelope.errors) || envelope.errors.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["errors"],
-        message: "v18 failure envelope requires errors[] to be a non-empty array",
-      });
-      return;
-    }
-    for (let index = 0; index < envelope.errors.length; index += 1) {
-      const result = v18ErrorEntrySchema.safeParse(envelope.errors[index]);
-      if (result.success) continue;
-      for (const issue of result.error.issues) {
-        ctx.addIssue({
-          ...issue,
-          path: ["errors", index, ...issue.path],
-        });
-      }
-    }
-  },
-);
+  }
+});
 
 /**
  * Parse and validate an envelope under the strict failure-arm contract.

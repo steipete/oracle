@@ -102,9 +102,7 @@ describe("production unsafe evidence gate enforcement", () => {
 
     expect(written.quarantined).toBe(true);
     expect(written.indexed).toBe(false);
-    expect(written.path).toBe(
-      quarantineFilePath("sess-authorized", "unsafe-authorized", homeDir),
-    );
+    expect(written.path).toBe(quarantineFilePath("sess-authorized", "unsafe-authorized", homeDir));
     expect(await listIndexedEvidence("sess-authorized", homeDir)).toEqual([]);
     expect(await listQuarantinedEvidence("sess-authorized", homeDir)).toHaveLength(1);
   });

@@ -34,10 +34,7 @@ import {
   type BrowserEvidence,
 } from "./contracts.js";
 import { serializeArtifactIndexUpdate } from "./artifact_index_lock.js";
-import {
-  enforceUnsafeEvidenceModeGate,
-  type EvidenceModeGateOptions,
-} from "./evidence_unsafe.js";
+import { enforceUnsafeEvidenceModeGate, type EvidenceModeGateOptions } from "./evidence_unsafe.js";
 
 const SESSIONS_DIRNAME = "sessions";
 const EVIDENCE_DIRNAME = "evidence";

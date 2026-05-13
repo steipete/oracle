@@ -55,7 +55,10 @@ export function resolveEvidenceModeGate(options: EvidenceModeGateOptions = {}): 
 }
 
 export function enforceUnsafeEvidenceModeGate(
-  evidence: Pick<BrowserEvidence, "evidence_id" | "redaction_policy" | "unsafe_artifacts_quarantined">,
+  evidence: Pick<
+    BrowserEvidence,
+    "evidence_id" | "redaction_policy" | "unsafe_artifacts_quarantined"
+  >,
   options: EvidenceModeGateOptions = {},
 ): ReturnType<typeof resolveEvidenceModeGate> {
   const gate = resolveEvidenceModeGate(options);
