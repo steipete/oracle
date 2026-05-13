@@ -418,7 +418,10 @@ function addBooleanFlag(command: Command, flags: string, description: string): v
 }
 
 function addOptionIfMissing(command: Command, option: Option): void {
-  if (hasOption(command, option.long)) {
+  // commander types `Option.long` as `string | undefined` — coalesce so
+  // the lookup uses an empty string (which can't collide with a real
+  // `--long` flag) when the option only carries a short form.
+  if (hasOption(command, option.long ?? "")) {
     return;
   }
   command.addOption(option);
