@@ -38,6 +38,7 @@ import { sanitizeBrowserEvidenceForWrite } from "./evidence_redact_always.js";
 import { pickHighestVisibleEffort } from "./selectors/chatgpt/effortStrategy.js";
 import { buildChatGptCaptureVerdict } from "./providers/chatgptProVerification.js";
 import { normalizeChatGptRun } from "./providers/chatgptResultNormalizer.js";
+import { normalizeGeminiRun } from "./providers/geminiResultNormalizer.js";
 import {
   BROWSER_EVIDENCE_SCHEMA_VERSION,
   V18_BUNDLE_VERSION,
@@ -58,6 +59,12 @@ import type {
   ChatGptProSlot,
   ChatGptProviderResultBuild,
 } from "../oracle/v18/chatgpt_provider_result.js";
+import type {
+  GeminiDeepThinkSlot,
+  GeminiProviderResultBuild,
+} from "../oracle/v18/gemini_provider_result.js";
+import type { GeminiStreamCaptureSummary } from "../gemini-web/streamSafeguards.js";
+import type { GeminiDeepThinkVerificationResult } from "./state/geminiDeepThink.js";
 import type { CaptureVerdict } from "./output-capture/captureVerdict.js";
 import type { EffortStrategyResult } from "./selectors/chatgpt/effortStrategy.js";
 
@@ -312,6 +319,243 @@ export async function emitV18BrowserArtifacts(
     evidence,
     captureVerdict,
     effortVerdict,
+    providerResult,
+    evidenceFilePath: evidenceFilePath(input.sessionId, input.evidenceId, input.homeDir),
+    indexFilePath: evidenceIndexPath(input.sessionId, input.homeDir),
+    evidenceSha256: written.sha256,
+    consistency,
+    blockedErrorCodes,
+    synthesisEligible,
+  };
+}
+
+// ─── Gemini Deep Think orchestrator (oracle-scb) ───────────────────────────
+//
+// The ChatGPT pipeline above is route-specific (provider="chatgpt",
+// chatgpt slot, ChatGPT effort verdict, ChatGPT normalizer). Live
+// Gemini Deep Think runs go through their own FSM
+// (src/browser/state/geminiDeepThink.ts) and capture summary
+// (src/gemini-web/streamSafeguards.ts) so they need a parallel
+// orchestrator that builds the same browser_evidence.v1 shape with
+// provider="gemini" / provider_slot="gemini_deep_think", appends the
+// same evidence_written → run_completed/run_failed ledger pair, and
+// hands off to normalizeGeminiRun.
+//
+// The two orchestrators stay separate (rather than a polymorphic
+// dispatcher) so the ChatGPT path's tight typing and effort logic
+// stay isolated from Gemini's thinking-level / stream-capture shape.
+// Callers pick the orchestrator based on the run's target host; see
+// runLive_emit_artifacts.ts for the wrap-side dispatch.
+
+export interface LiveGeminiBrowserRunCapture {
+  /** Verbatim prompt text the browser submitted. */
+  readonly promptText: string;
+  /** Captured assistant output (markdown if available, plain text otherwise). */
+  readonly answerText: string;
+  /** Gemini stream-ownership capture summary from streamSafeguards.ts. */
+  readonly stream: GeminiStreamCaptureSummary;
+  /** Deep Think verification verdict (effort + same-session check). */
+  readonly deepThink: GeminiDeepThinkVerificationResult;
+  /** Same-session UI verification booleans observed by the FSM. */
+  readonly modeVerified: boolean;
+  readonly verifiedBeforePromptSubmit: boolean;
+}
+
+export interface EmitV18GeminiBrowserArtifactsInput {
+  readonly sessionId: string;
+  readonly homeDir?: string;
+  readonly providerSlot: GeminiDeepThinkSlot;
+  readonly providerResultId: string;
+  readonly evidenceId: string;
+  readonly accessPath: OracleBrowserAccessPath;
+  readonly capture: LiveGeminiBrowserRunCapture;
+  readonly promptManifestSha256: `sha256:${string}`;
+  readonly sourceBaselineSha256: `sha256:${string}`;
+  readonly runId?: string;
+}
+
+export interface EmitV18GeminiBrowserArtifactsResult {
+  readonly evidence: BrowserEvidence;
+  readonly providerResult: GeminiProviderResultBuild;
+  readonly evidenceFilePath: string;
+  readonly indexFilePath: string;
+  readonly evidenceSha256: `sha256:${string}`;
+  readonly consistency: ConsistencyVerdict;
+  readonly blockedErrorCodes: readonly V18ErrorCode[];
+  readonly synthesisEligible: boolean;
+}
+
+function geminiEffortLabelsFromVerdict(
+  verdict: GeminiDeepThinkVerificationResult,
+): readonly string[] {
+  return verdict.observedLabels;
+}
+
+function buildGeminiBrowserEvidence(
+  input: EmitV18GeminiBrowserArtifactsInput,
+): BrowserEvidence {
+  const promptSha = sha(input.capture.promptText);
+  const outputSha = sha(input.capture.answerText);
+  const verdict = input.capture.deepThink;
+  const errorCode = verdict.errorCode;
+  // effort_rank must be a string per browser_evidence.v1 schema. The
+  // Gemini verdict exposes a numeric `rank` (sorted position) plus a
+  // categorical `tier` / `status`; mirror the ChatGPT helper's choice
+  // (verified ⇒ tier label, otherwise status) so downstream consumers
+  // see a stable enum-like string across providers.
+  const effortRank: string = verdict.status === "verified"
+    ? (verdict.tier ?? "highest_visible")
+    : verdict.status;
+
+  const raw = {
+    available_effort_labels_hash: verdict.availableEffortLabelsHash,
+    browser_effort_strategy: "gemini_thinking_level_if_exposed",
+    bundle_version: V18_BUNDLE_VERSION,
+    capture_confidence: input.capture.stream.confidence,
+    created_at: new Date().toISOString(),
+    effort_rank: effortRank,
+    evidence_id: input.evidenceId,
+    evidence_privacy: {
+      stores_account_identifiers: false,
+      stores_cookies: false,
+      stores_raw_dom: false,
+      stores_raw_screenshots: false,
+    },
+    failure_code: errorCode,
+    fix_command: null,
+    mode_verified: input.capture.modeVerified,
+    next_command: null,
+    observed_reasoning_effort_label:
+      verdict.deepThinkLabel ?? verdict.selected ?? geminiEffortLabelsFromVerdict(verdict)[0] ?? "Deep Think",
+    output_text_sha256: outputSha,
+    prompt_sha256: promptSha,
+    prompt_submitted_at: new Date().toISOString(),
+    provider: "gemini",
+    provider_result_id: input.providerResultId,
+    provider_slot: input.providerSlot,
+    reasoning_effort_verified: verdict.status === "verified",
+    redaction_policy: "redacted",
+    requested_mode: "gemini_deep_think",
+    requested_reasoning_effort: "max_browser_available",
+    run_id: input.runId ?? "live-run",
+    schema_version: BROWSER_EVIDENCE_SCHEMA_VERSION,
+    selected_effort_is_highest_visible: verdict.selectedIsHighestVisible,
+    selector_manifest_version: verdict.selectorManifestVersion,
+    session_id_hash: deterministicFixtureHash(`${input.sessionId}:session`),
+    transition_log_sha256: deterministicFixtureHash(`${input.sessionId}:transition`),
+    unsafe_artifacts_quarantined: true,
+    verification_method: "same_session_ui_observation_plus_selector_trace",
+    verification_scope: "same_browser_session_before_prompt_submit",
+    verified_at: new Date().toISOString(),
+    verified_before_prompt_submit: input.capture.verifiedBeforePromptSubmit,
+  };
+  return browserEvidenceSchema.parse(raw) as BrowserEvidence;
+}
+
+function mergedGeminiBlockedErrorCodes(input: {
+  readonly evidence: BrowserEvidence;
+  readonly providerResult: GeminiProviderResultBuild;
+  readonly consistency: ConsistencyVerdict;
+}): readonly V18ErrorCode[] {
+  const codes: V18ErrorCode[] = [];
+  const add = (code: unknown) => {
+    if (isV18ErrorCode(code) && !codes.includes(code)) codes.push(code);
+  };
+  add(input.evidence.failure_code);
+  for (const reason of input.providerResult.blockedReasons) add(reason.code);
+  for (const code of consistencyCodes(input.consistency)) add(code);
+  return codes;
+}
+
+/**
+ * Parallel of {@link emitV18BrowserArtifacts} for the Gemini Deep
+ * Think route. Writes browser_evidence.v1 (provider="gemini",
+ * provider_slot="gemini_deep_think"), appends the same ledger pair
+ * (`evidence_written` then `run_completed` or `run_failed`), and
+ * normalizes the run through normalizeGeminiRun.
+ */
+export async function emitV18GeminiBrowserArtifacts(
+  input: EmitV18GeminiBrowserArtifactsInput,
+): Promise<EmitV18GeminiBrowserArtifactsResult> {
+  // 1. Build evidence from the captured prompt/output + Deep Think verdict.
+  const evidence = buildGeminiBrowserEvidence(input);
+
+  // 2. Sanitise + write to disk (oracle-ejv defense-in-depth).
+  const sanitised = sanitizeBrowserEvidenceForWrite(evidence);
+  const written = await writeEvidence(
+    input.sessionId,
+    sanitised.redacted as unknown as BrowserEvidence,
+    { homeDir: input.homeDir, runId: input.runId },
+  );
+
+  // 3. Append evidence_written milestone.
+  await appendEvidenceLedgerEvent(
+    input.sessionId,
+    {
+      type: "evidence_written",
+      provider_slot: input.providerSlot,
+      evidence_id: input.evidenceId,
+      metadata: {
+        evidence_sha256: written.sha256,
+        index_path: evidenceIndexPath(input.sessionId, input.homeDir),
+      },
+    },
+    { homeDir: input.homeDir },
+  );
+
+  // 4. Normalize through the Gemini provider_result.v1 builder.
+  const providerResult = normalizeGeminiRun({
+    slot: input.providerSlot,
+    providerResultId: input.providerResultId,
+    accessPath: input.accessPath,
+    evidence,
+    capture: input.capture.stream,
+    deepThink: input.capture.deepThink,
+    promptManifestSha256: input.promptManifestSha256,
+    sourceBaselineSha256: input.sourceBaselineSha256,
+  });
+
+  // 5. Hash consistency cross-check.
+  const consistency = verifyHashConsistency({
+    result: providerResult.result,
+    evidence,
+  });
+  const consistencyErrorCodes = consistencyCodes(consistency);
+  const blockedErrorCodes = mergedGeminiBlockedErrorCodes({
+    evidence,
+    providerResult,
+    consistency,
+  });
+
+  const synthesisEligible =
+    !providerResult.synthesisDowngraded &&
+    consistency.consistent &&
+    providerResult.result.status === "success";
+
+  // 6. Final ledger milestone (run_completed on success, run_failed on
+  //    any blocker — captures the failure-arm path so post-mortem
+  //    audits can prove what happened).
+  await appendEvidenceLedgerEvent(
+    input.sessionId,
+    {
+      type: synthesisEligible ? "run_completed" : "run_failed",
+      provider_slot: input.providerSlot,
+      evidence_id: input.evidenceId,
+      metadata: {
+        provider_result_id: providerResult.result.provider_result_id,
+        consistency_codes: consistencyErrorCodes,
+        provider_blocker_codes: blockedErrorCodes.filter(
+          (code) => !consistencyErrorCodes.includes(code),
+        ),
+        blocked_error_codes: blockedErrorCodes,
+        synthesis_eligible: synthesisEligible,
+      },
+    },
+    { homeDir: input.homeDir },
+  );
+
+  return {
+    evidence,
     providerResult,
     evidenceFilePath: evidenceFilePath(input.sessionId, input.evidenceId, input.homeDir),
     indexFilePath: evidenceIndexPath(input.sessionId, input.homeDir),

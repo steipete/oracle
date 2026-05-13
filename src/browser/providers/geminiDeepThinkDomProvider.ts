@@ -579,3 +579,130 @@ export const geminiDeepThinkDomProviderWithFsm = (): WiredGeminiDeepThinkAdapter
  */
 export const geminiDeepThinkWithStrategyDomProviderWithFsm = (): WiredGeminiDeepThinkAdapter =>
   wireGeminiDeepThinkFsm(geminiDeepThinkWithStrategyDomProvider);
+
+// ─── v18 artifact emission (oracle-scb) ────────────────────────────────────
+//
+// Live Gemini Deep Think runs previously produced NO v18 evidence,
+// NO provider_result.v1, and NO evidence_ledger entries — every
+// browser_evidence record came from the ChatGPT pipeline only. The
+// audit-trail therefore contained zero Gemini runs even though the
+// Gemini normalizer / FSM / stream-capture summaries all existed.
+//
+// `emitGeminiDeepThinkV18ArtifactsForRun` packages the
+// orchestrator from src/browser/runLive_v18.ts into a single call the
+// live executor (src/gemini-web/executor.ts) makes AFTER the wired
+// adapter's runProviderDomFlow returns. It pulls the FSM's
+// verification verdict, builds the LiveGeminiBrowserRunCapture from
+// the stream summary the executor already maintains, and emits.
+
+import {
+  emitV18GeminiBrowserArtifacts,
+  type EmitV18GeminiBrowserArtifactsResult,
+  type LiveGeminiBrowserRunCapture,
+} from "../runLive_v18.js";
+import { verifyGeminiDeepThinkCandidate } from "../state/geminiDeepThink.js";
+import type { GeminiStreamCaptureSummary } from "../../gemini-web/streamSafeguards.js";
+import type { OracleBrowserAccessPath } from "../../oracle/v18/provider_access_policy.js";
+
+export interface EmitGeminiDeepThinkArtifactsInput {
+  /** Wired adapter that drove the run — used to read the FSM verdict. */
+  readonly wired: WiredGeminiDeepThinkAdapter;
+  /** Session id for evidence/ledger anchoring. */
+  readonly sessionId: string;
+  /** Verbatim prompt submitted to Gemini. */
+  readonly promptText: string;
+  /** Captured assistant response text (markdown if available). */
+  readonly answerText: string;
+  /** Stream-ownership capture summary from streamSafeguards.ts. */
+  readonly stream: GeminiStreamCaptureSummary;
+  /** Caller-side prompt-manifest sha256. */
+  readonly promptManifestSha256: `sha256:${string}`;
+  /** Caller-side source-baseline sha256. */
+  readonly sourceBaselineSha256: `sha256:${string}`;
+  /** Stable provider_result + evidence ids. */
+  readonly providerResultId: string;
+  readonly evidenceId: string;
+  /** access_path for the result envelope. Defaults to oracle_browser_remote. */
+  readonly accessPath?: OracleBrowserAccessPath;
+  /** Override Oracle home dir for tests. */
+  readonly homeDir?: string;
+  /** Optional run id surfaced on the evidence ledger. */
+  readonly runId?: string;
+  /**
+   * Override the Deep Think verification verdict. When omitted the
+   * helper derives one from the FSM's recorded labels + selection
+   * (typical live-path behaviour); tests pass a known verdict to pin
+   * expectations.
+   */
+  readonly verificationOverride?: Parameters<typeof verifyGeminiDeepThinkCandidate>[0] | null;
+}
+
+function deriveVerificationFromFsm(
+  wired: WiredGeminiDeepThinkAdapter,
+): Parameters<typeof verifyGeminiDeepThinkCandidate>[0] {
+  const ctx = wired.getMachine().context;
+  const deepThinkLabel = ctx.deepThink?.deepThinkLabel ?? "Deep Think";
+  const observedThinkingLevelLabels = ctx.deepThink?.observedLabels ?? [];
+  return {
+    deepThinkLabel,
+    observedThinkingLevelLabels,
+    selectedThinkingLevel: ctx.deepThink?.selected ?? null,
+    thinkingLevelControlExposed: ctx.deepThink?.thinkingLevelControlExposed ?? false,
+  };
+}
+
+/**
+ * Build the LiveGeminiBrowserRunCapture from a wired adapter + the
+ * run's I/O, then drive emitV18GeminiBrowserArtifacts. Exposed as a
+ * single entry point so the gemini-web executor can call it on both
+ * success and failure paths without re-deriving the verdict shape.
+ */
+export async function emitGeminiDeepThinkV18ArtifactsForRun(
+  input: EmitGeminiDeepThinkArtifactsInput,
+): Promise<EmitV18GeminiBrowserArtifactsResult> {
+  const deepThink = verifyGeminiDeepThinkCandidate(
+    input.verificationOverride ?? deriveVerificationFromFsm(input.wired),
+  );
+  const machineState = input.wired.getMachine().state;
+  // The FSM lands in `deep_think_verified_same_session` (or beyond) on
+  // the happy path; before-verify failure states are surfaced via the
+  // verdict's errorCode instead. When the caller passes an explicit
+  // verificationOverride, trust the override's status as the source of
+  // truth — the FSM hasn't necessarily been driven (this is the path
+  // tests + post-hoc audits use).
+  const verifiedStates: readonly string[] = [
+    "deep_think_verified_same_session",
+    "prompt_submitted",
+    "response_streaming",
+    "output_captured_nonempty",
+    "evidence_written",
+    "success",
+  ];
+  const verifiedFromFsm = verifiedStates.includes(machineState);
+  const verifiedFromOverride =
+    input.verificationOverride !== undefined &&
+    input.verificationOverride !== null &&
+    deepThink.status === "verified";
+  const verifiedBeforePromptSubmit = verifiedFromFsm || verifiedFromOverride;
+  const modeVerified = verifiedBeforePromptSubmit && deepThink.status !== "ui_drift_suspected";
+  const capture: LiveGeminiBrowserRunCapture = {
+    promptText: input.promptText,
+    answerText: input.answerText,
+    stream: input.stream,
+    deepThink,
+    modeVerified,
+    verifiedBeforePromptSubmit,
+  };
+  return emitV18GeminiBrowserArtifacts({
+    sessionId: input.sessionId,
+    homeDir: input.homeDir,
+    providerSlot: "gemini_deep_think",
+    providerResultId: input.providerResultId,
+    evidenceId: input.evidenceId,
+    accessPath: input.accessPath ?? "oracle_browser_remote",
+    capture,
+    promptManifestSha256: input.promptManifestSha256,
+    sourceBaselineSha256: input.sourceBaselineSha256,
+    runId: input.runId,
+  });
+}
