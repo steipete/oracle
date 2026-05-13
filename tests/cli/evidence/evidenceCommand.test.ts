@@ -147,7 +147,14 @@ describe("evidence CLI commands", () => {
 
         expect(result.ok).toBe(true);
         expect(result.verified).toHaveLength(2);
-        expect(JSON.parse(output[0])).toMatchObject({ ok: true, artifactCount: 2 });
+        // oracle-eaz: --json now emits a json_envelope.v1 wrapper; the
+        // typed EvidenceVerifyResult lives under `data`.
+        const envelope = JSON.parse(output[0]) as Record<string, unknown>;
+        expect(envelope).toMatchObject({
+          schema_version: "json_envelope.v1",
+          ok: true,
+        });
+        expect(envelope.data).toMatchObject({ ok: true, artifactCount: 2 });
       },
     );
   });

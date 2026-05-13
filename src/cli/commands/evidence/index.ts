@@ -4,6 +4,11 @@ import path from "node:path";
 import { Command } from "commander";
 import { getOracleHomeDir } from "../../../oracleHome.js";
 import { registerEvidenceLedgerCommands } from "./ledger_register.js";
+import {
+  createEnvelope,
+  createErrorEnvelope,
+  type V18ErrorEntry,
+} from "../../../oracle/v18/json_envelope.js";
 
 const INDEX_FILENAMES = [
   "artifact-index.json",
@@ -152,7 +157,19 @@ export async function runEvidenceShow(
     indexPath: loaded.indexPath,
     index: redactForDisplay(loaded.index) as EvidenceArtifactIndex,
   };
-  writeOutput(io, options.json ? JSON.stringify(result, null, 2) : formatIndex(result));
+  if (options.json) {
+    // robot_surface contract (oracle-eaz): every --json surface must
+    // emit json_envelope.v1 so consumers can branch on `ok` and read
+    // recovery fields without parsing prose.
+    const envelope = createEnvelope({
+      ok: true,
+      data: result as unknown as Record<string, unknown>,
+      meta: { tool: "oracle evidence show", session_id: result.session },
+    });
+    writeOutput(io, JSON.stringify(envelope, null, 2));
+  } else {
+    writeOutput(io, formatIndex(result));
+  }
   return result;
 }
 
@@ -191,8 +208,52 @@ export async function runEvidenceVerify(
     verified,
     errors,
   };
-  writeOutput(io, options.json ? JSON.stringify(result, null, 2) : formatVerifyResult(result));
+  if (options.json) {
+    writeOutput(io, JSON.stringify(buildVerifyEnvelope(result), null, 2));
+  } else {
+    writeOutput(io, formatVerifyResult(result));
+  }
   return result;
+}
+
+function buildVerifyEnvelope(result: EvidenceVerifyResult): ReturnType<typeof createEnvelope> {
+  // oracle-eaz: verify rolls up per-artifact failures under a single
+  // v18 taxonomy code (`output_capture_unverified`) so robot callers
+  // get a stable error_code; the granular per-artifact codes survive
+  // inside details and the typed `data` payload so humans / regression
+  // tests still see them.
+  if (result.ok) {
+    return createEnvelope({
+      ok: true,
+      data: result as unknown as Record<string, unknown>,
+      meta: { tool: "oracle evidence verify", session_id: result.session },
+      commands: {
+        show: `oracle evidence show ${result.session} --json`,
+      },
+    });
+  }
+  const taxonomyEntry: V18ErrorEntry = {
+    error_code: "output_capture_unverified",
+    message:
+      result.errors[0]?.message ?? "evidence verification failed (no detailed reason recorded)",
+    details: {
+      session_id: result.session,
+      index_path: result.indexPath,
+      first_issue: result.errors[0] ?? null,
+      issue_count: result.errors.length,
+      // Surface the raw issue codes so robots can branch on the
+      // specific failure mode without trawling messages.
+      issue_codes: result.errors.map((entry) => entry.code),
+    },
+  };
+  return createErrorEnvelope({
+    errors: [taxonomyEntry],
+    meta: { tool: "oracle evidence verify", session_id: result.session },
+    next_command: `oracle evidence verify ${result.session} --json`,
+    fix_command: `oracle evidence show ${result.session} --json`,
+    retry_safe: false,
+    data: result as unknown as Record<string, unknown>,
+  });
 }
 
 async function loadEvidenceIndex(
