@@ -780,4 +780,46 @@ describe("oracle CLI integration", () => {
     },
     INTEGRATION_TIMEOUT,
   );
+
+  test(
+    "honors --max-file-size-bytes for root dry-runs ahead of env defaults",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-max-file-"));
+      const testFile = path.join(oracleHome, "large.txt");
+      await writeFile(testFile, "x".repeat(64), "utf8");
+
+      const env = {
+        ...process.env,
+        ORACLE_HOME_DIR: oracleHome,
+        ORACLE_DISABLE_KEYTAR: "1",
+        ORACLE_MAX_FILE_SIZE_BYTES: "10",
+      };
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--dry-run",
+          "summary",
+          "--engine",
+          "browser",
+          "--prompt",
+          "Integration dry run",
+          "--file",
+          testFile,
+          "--max-file-size-bytes",
+          "128",
+        ],
+        { env },
+      );
+
+      expect(stdout).toContain("[preview]");
+      expect(stdout).toContain("includes 1 inline file");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
 });

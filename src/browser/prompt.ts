@@ -92,7 +92,10 @@ export async function assembleBrowserPrompt(
     }),
   );
 
-  const files = await readFilesFn(textFilePaths, { cwd });
+  const files = await readFilesFn(textFilePaths, {
+    cwd,
+    maxFileSizeBytes: runOptions.maxFileSizeBytes,
+  });
   const basePrompt = (runOptions.prompt ?? "").trim();
   const userPrompt = basePrompt;
   const systemPrompt = runOptions.system?.trim() || "";
