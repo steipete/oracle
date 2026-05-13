@@ -44,6 +44,12 @@ export async function runRemoteAttach(options: RemoteAttachCliOptions): Promise<
     cliMode: "preferred",
     userConfig: undefined,
     env: { ...process.env },
+    // oracle-72u: `--host` is an explicit attach target — it MUST win
+    // over a stale ORACLE_REMOTE_HOST. Without this flag the resolver
+    // returns the env-var's host, so the probe would diagnose the
+    // wrong endpoint silently. attach is a diagnostic surface; the
+    // user's typed host is the intent.
+    preferCli: true,
   });
 
   const { report } = await buildRemoteEndpointReport({

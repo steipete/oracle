@@ -48,12 +48,26 @@ export function resolveRemoteServiceConfig({
   cliMode,
   userConfig,
   env = process.env,
+  preferCli = false,
 }: {
   cliHost?: string;
   cliToken?: string;
   cliMode?: string;
   userConfig?: UserConfig;
   env?: NodeJS.ProcessEnv;
+  /**
+   * Resolve precedence as `cli > env > config > default` for host,
+   * token, and mode (the standard CLI convention — an explicit flag
+   * should win over an inherited environment default).
+   *
+   * Default `false` preserves the historical `env > cli > config >
+   * default` precedence so callers that intentionally let a fleet-wide
+   * ORACLE_REMOTE_HOST override an ambient `--remote-host` keep their
+   * behaviour. Set to `true` from CLI surfaces where the user passing
+   * a `--host` value is an explicit override request (e.g.
+   * `oracle remote attach --host …`, oracle-72u).
+   */
+  preferCli?: boolean;
 }): ResolvedRemoteServiceConfig {
   const configBrowserHost = normalizeString(userConfig?.browser?.remoteHost);
   const configBrowserToken = normalizeString(userConfig?.browser?.remoteToken);
@@ -67,9 +81,15 @@ export function resolveRemoteServiceConfig({
   const cliTokenValue = normalizeString(cliToken);
   const cliModeValue = normalizeMode(cliMode);
 
-  let host = envHost ?? cliHostValue ?? configBrowserHost;
-  let token = envToken ?? cliTokenValue ?? configBrowserToken;
-  const mode = envMode ?? cliModeValue ?? configBrowserMode ?? "preferred";
+  let host = preferCli
+    ? (cliHostValue ?? envHost ?? configBrowserHost)
+    : (envHost ?? cliHostValue ?? configBrowserHost);
+  let token = preferCli
+    ? (cliTokenValue ?? envToken ?? configBrowserToken)
+    : (envToken ?? cliTokenValue ?? configBrowserToken);
+  const mode = preferCli
+    ? (cliModeValue ?? envMode ?? configBrowserMode ?? "preferred")
+    : (envMode ?? cliModeValue ?? configBrowserMode ?? "preferred");
 
   if (mode === "off") {
     host = undefined;
@@ -88,29 +108,56 @@ export function resolveRemoteServiceConfig({
     );
   }
 
-  const hostSource: RemoteServiceConfigSource = envHost
-    ? "env"
-    : cliHostValue
+  // Source attribution mirrors the precedence used for the value itself,
+  // so an attach run that read its host from `--host` reports
+  // `sources.host: "cli"` even when ORACLE_REMOTE_HOST is also set.
+  const hostSource: RemoteServiceConfigSource = preferCli
+    ? cliHostValue
       ? "cli"
-      : configBrowserHost
-        ? "config.browser"
-        : "unset";
+      : envHost
+        ? "env"
+        : configBrowserHost
+          ? "config.browser"
+          : "unset"
+    : envHost
+      ? "env"
+      : cliHostValue
+        ? "cli"
+        : configBrowserHost
+          ? "config.browser"
+          : "unset";
 
-  const tokenSource: RemoteServiceConfigSource = envToken
-    ? "env"
-    : cliTokenValue
+  const tokenSource: RemoteServiceConfigSource = preferCli
+    ? cliTokenValue
       ? "cli"
-      : configBrowserToken
-        ? "config.browser"
-        : "unset";
+      : envToken
+        ? "env"
+        : configBrowserToken
+          ? "config.browser"
+          : "unset"
+    : envToken
+      ? "env"
+      : cliTokenValue
+        ? "cli"
+        : configBrowserToken
+          ? "config.browser"
+          : "unset";
 
-  const modeSource: RemoteServiceConfigSource = envMode
-    ? "env"
-    : cliModeValue
+  const modeSource: RemoteServiceConfigSource = preferCli
+    ? cliModeValue
       ? "cli"
-      : configBrowserMode
-        ? "config.browser"
-        : "default";
+      : envMode
+        ? "env"
+        : configBrowserMode
+          ? "config.browser"
+          : "default"
+    : envMode
+      ? "env"
+      : cliModeValue
+        ? "cli"
+        : configBrowserMode
+          ? "config.browser"
+          : "default";
 
   return {
     host,
