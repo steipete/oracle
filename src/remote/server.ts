@@ -21,6 +21,7 @@ import {
   writeDevToolsActivePort,
 } from "../browser/profileState.js";
 import { normalizeChatgptUrl } from "../browser/utils.js";
+import { sanitizeRemoteRunPayloadForHost } from "./payload_sanitize.js";
 
 export interface RemoteServerOptions {
   host?: string;
@@ -143,7 +144,7 @@ export async function createRemoteServer(
     let payload: RemoteRunPayload | null = null;
     try {
       const body = await readRequestBody(req);
-      payload = JSON.parse(body) as RemoteRunPayload;
+      payload = sanitizeRemoteRunPayloadForHost(JSON.parse(body) as RemoteRunPayload);
       if (payload?.browserConfig) {
         payload.browserConfig.url = normalizeChatgptUrl(payload.browserConfig.url, CHATGPT_URL);
       }
