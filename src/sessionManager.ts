@@ -188,6 +188,7 @@ export interface StoredRunOptions {
   browserAttachments?: "auto" | "never" | "always";
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
+  browserBundleFormat?: "text" | "zip";
   background?: boolean;
   search?: boolean;
   baseUrl?: string;
@@ -511,6 +512,7 @@ export async function initializeSession(
       browserAttachments: options.browserAttachments,
       browserInlineFiles: options.browserInlineFiles,
       browserBundleFiles: options.browserBundleFiles,
+      browserBundleFormat: options.browserBundleFormat,
       background: options.background,
       search: options.search,
       baseUrl: options.baseUrl,

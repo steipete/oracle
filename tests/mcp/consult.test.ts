@@ -169,6 +169,7 @@ describe("summarizeModelRunsForConsult", () => {
         file: ["README.md"],
         browserAttachments: "always",
         browserBundleFiles: true,
+        browserBundleFormat: "zip",
         browserFollowUps: ["challenge", "final"],
       },
       browserConfig: {
@@ -193,6 +194,7 @@ describe("summarizeModelRunsForConsult", () => {
         thinkingTime: "extended",
         attachments: "always",
         bundleFiles: true,
+        bundleFormat: "zip",
         profileDir: "/tmp/oracle-profile",
       },
     });
@@ -201,6 +203,9 @@ describe("summarizeModelRunsForConsult", () => {
     expect(resolved.guidance.join("\n")).toContain("--browser-keep-browser");
     expect(formatConsultDryRunResolved(resolved).join("\n")).toContain(
       "browser thinking time: extended",
+    );
+    expect(formatConsultDryRunResolved(resolved).join("\n")).toContain(
+      "browser bundle format: zip",
     );
   });
 

@@ -13,6 +13,7 @@ export function mapConsultToRunOptions({
   search,
   browserAttachments,
   browserBundleFiles,
+  browserBundleFormat,
   browserFollowUps,
   userConfig,
   env = process.env,
@@ -25,6 +26,7 @@ export function mapConsultToRunOptions({
   search?: boolean;
   browserAttachments?: "auto" | "never" | "always";
   browserBundleFiles?: boolean;
+  browserBundleFormat?: "text" | "zip";
   browserFollowUps?: string[];
   userConfig?: UserConfig;
   env?: NodeJS.ProcessEnv;
@@ -52,6 +54,9 @@ export function mapConsultToRunOptions({
   }
   if (typeof browserBundleFiles === "boolean") {
     result.runOptions.browserBundleFiles = browserBundleFiles;
+  }
+  if (browserBundleFormat) {
+    result.runOptions.browserBundleFormat = browserBundleFormat;
   }
   if (Array.isArray(browserFollowUps)) {
     result.runOptions.browserFollowUps = browserFollowUps
