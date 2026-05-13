@@ -280,7 +280,7 @@ export function normalizeGeminiDeepThinkRunOptions(
     prompt_source: promptSource,
     protected_route: {
       doctor_command: doctorCommand(remoteBrowser),
-      lease_command: `oracle gemini lease --deep-think --ttl 30m --remote-browser ${remoteBrowser} --json`,
+      lease_command: buildLeaseCommand(remoteBrowser),
       run_command: buildRunCommand(model, remoteBrowser, fallback, evidence, promptSource),
     },
   };
@@ -485,6 +485,17 @@ function buildRunCommand(
     `--remote-browser ${remoteBrowser}`,
     `--evidence ${evidence}`,
     promptPart,
+    "--json",
+  ].join(" ");
+}
+
+function buildLeaseCommand(remoteBrowser: GeminiDeepThinkRemoteBrowserMode): string {
+  return [
+    "oracle browser leases acquire",
+    "--providers gemini",
+    "--require deep_think",
+    `--remote-browser ${remoteBrowser}`,
+    `--ttl-seconds ${Math.ceil(DEFAULT_GEMINI_LEASE_TTL_MS / 1000)}`,
     "--json",
   ].join(" ");
 }

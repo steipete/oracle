@@ -258,7 +258,7 @@ export function normalizeChatGptProRunOptions(
     prompt_source: promptSource,
     protected_route: {
       doctor_command: `oracle doctor chatgpt --pro --extended-reasoning --remote-browser ${remoteBrowser} --json`,
-      lease_command: `oracle chatgpt lease --pro --extended-reasoning --ttl 30m --remote-browser ${remoteBrowser} --json`,
+      lease_command: buildLeaseCommand(remoteBrowser),
       run_command: buildRunCommand(model, remoteBrowser, evidence, promptSource),
     },
   };
@@ -454,6 +454,17 @@ function buildRunCommand(
     `--remote-browser ${remoteBrowser}`,
     `--evidence ${evidence}`,
     promptPart,
+    "--json",
+  ].join(" ");
+}
+
+function buildLeaseCommand(remoteBrowser: ChatGptProRemoteBrowserMode): string {
+  return [
+    "oracle browser leases acquire",
+    "--providers chatgpt",
+    "--require pro",
+    `--remote-browser ${remoteBrowser}`,
+    `--ttl-seconds ${Math.ceil(DEFAULT_CHATGPT_PRO_LEASE_TTL_MS / 1000)}`,
     "--json",
   ].join(" ");
 }

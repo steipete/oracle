@@ -193,7 +193,8 @@ export function validateChatGptProFormalPlanRoute(
     warnings,
     commands: {
       doctor: "oracle doctor chatgpt --pro --extended-reasoning --remote-browser preferred --json",
-      lease: "oracle chatgpt lease --pro --extended-reasoning --ttl 30m --json",
+      lease:
+        "oracle browser leases acquire --providers chatgpt --require pro --remote-browser preferred --ttl-seconds 1800 --json",
       run: "oracle --engine browser --provider chatgpt --model chatgpt-pro-latest --chatgpt-pro --extended-reasoning --remote-browser preferred --evidence redacted --prompt-file PROMPT.md --json",
     },
   };

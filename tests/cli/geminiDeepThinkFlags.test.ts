@@ -103,7 +103,9 @@ describe("Gemini Deep Think CLI flag helpers", () => {
     expect(plan.protected_route.doctor_command).toBe(
       "oracle doctor gemini --deep-think --remote-browser preferred --json",
     );
-    expect(plan.protected_route.lease_command).toContain("oracle gemini lease --deep-think");
+    expect(plan.protected_route.lease_command).toBe(
+      "oracle browser leases acquire --providers gemini --require deep_think --remote-browser preferred --ttl-seconds 1800 --json",
+    );
     expect(plan.protected_route.run_command).toContain("--prompt-file PROMPT.md");
   });
 
