@@ -405,12 +405,21 @@ function sanitizeResult(result: BrowserRunResult): BrowserRunResult {
     answerText: result.answerText,
     answerMarkdown: result.answerMarkdown,
     answerHtml: result.answerHtml,
+    archive: result.archive,
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,
+    browserTransport: result.browserTransport,
     chromePid: undefined,
     chromePort: undefined,
+    chromeHost: undefined,
+    chromeBrowserWSEndpoint: undefined,
+    chromeProfileRoot: undefined,
     userDataDir: undefined,
+    chromeTargetId: undefined,
+    tabUrl: result.tabUrl,
+    conversationId: result.conversationId,
+    controllerPid: undefined,
   };
 }
 

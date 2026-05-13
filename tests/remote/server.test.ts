@@ -60,9 +60,28 @@ describe("remote browser service", () => {
             const result: BrowserRunResult = {
               answerText: "hi",
               answerMarkdown: "hi",
+              answerHtml: "<p>hi</p>",
+              archive: {
+                mode: "auto",
+                attempted: true,
+                archived: false,
+                reason: "project-url",
+                conversationUrl: "https://chatgpt.com/c/remote-conversation",
+              },
               tookMs: 1000,
               answerTokens: 42,
               answerChars: 2,
+              browserTransport: "cdp",
+              chromePid: 1234,
+              chromePort: 9222,
+              chromeHost: "127.0.0.1",
+              chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/secret",
+              chromeProfileRoot: "/remote/chrome-profile",
+              userDataDir: "/remote/chrome-profile/user-data",
+              chromeTargetId: "target-secret",
+              tabUrl: "https://chatgpt.com/c/remote-conversation",
+              conversationId: "remote-conversation",
+              controllerPid: 4321,
             };
             return result;
           },
@@ -93,6 +112,19 @@ describe("remote browser service", () => {
 
       expect(clientLogs.some((entry) => entry.includes("uploading attachment"))).toBe(true);
       expect(result.answerText).toBe("hi");
+      expect(result.answerHtml).toBe("<p>hi</p>");
+      expect(result.archive?.conversationUrl).toBe("https://chatgpt.com/c/remote-conversation");
+      expect(result.browserTransport).toBe("cdp");
+      expect(result.tabUrl).toBe("https://chatgpt.com/c/remote-conversation");
+      expect(result.conversationId).toBe("remote-conversation");
+      expect(result.chromePid).toBeUndefined();
+      expect(result.chromePort).toBeUndefined();
+      expect(result.chromeHost).toBeUndefined();
+      expect(result.chromeBrowserWSEndpoint).toBeUndefined();
+      expect(result.chromeProfileRoot).toBeUndefined();
+      expect(result.userDataDir).toBeUndefined();
+      expect(result.chromeTargetId).toBeUndefined();
+      expect(result.controllerPid).toBeUndefined();
       expect(runLog).toEqual(["remote"]);
 
       const healthUnauthorized = await httpGetJson({
