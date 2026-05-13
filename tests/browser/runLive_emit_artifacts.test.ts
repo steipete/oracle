@@ -23,15 +23,10 @@ import {
   evidenceIndexPath,
   readArtifactIndex,
 } from "../../src/oracle/v18/evidence.js";
-import type {
-  BrowserExecutor,
-  LiveBrowserRunCapture,
-} from "../../src/browser/runLive_v18.js";
-import type {
-  BrowserRunOptions,
-  BrowserRunResult,
-  BrowserSessionConfig,
-} from "../../src/browser/types.js";
+import type { BrowserExecutor } from "../../src/browser/leaseIntegration.js";
+import type { LiveBrowserRunCapture } from "../../src/browser/runLive_v18.js";
+import type { BrowserRunOptions, BrowserRunResult } from "../../src/browser/types.js";
+import type { BrowserSessionConfig } from "../../src/sessionStore.js";
 
 const testNonWindows = process.platform === "win32" ? test.skip : test;
 

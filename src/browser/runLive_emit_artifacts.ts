@@ -45,8 +45,8 @@ import type {
 } from "./leaseIntegration.js";
 import type { BrowserRunOptions, BrowserRunResult } from "./types.js";
 import type { OracleBrowserAccessPath } from "../oracle/v18/provider_access_policy.js";
+import type { ChatGptProSlot } from "../oracle/v18/chatgpt_provider_result.js";
 import type {
-  ChatGptProSlot,
   EmitV18BrowserArtifactsResult,
   LiveBrowserRunCapture,
 } from "./runLive_v18.js";
@@ -68,8 +68,6 @@ export interface WrapBrowserExecutorWithV18EmitOptions {
    * launched a local Chrome.
    */
   readonly accessPath?: OracleBrowserAccessPath;
-  /** Override the default model label baked into provider_result.v1. */
-  readonly model?: string;
   /** Override Oracle home dir for evidence writes; defaults to ~/.oracle. */
   readonly homeDir?: string;
   /**
@@ -214,7 +212,6 @@ async function maybeEmit(
       capture,
       promptManifestSha256: emitOptions.promptManifestSha256,
       sourceBaselineSha256: emitOptions.sourceBaselineSha256,
-      model: emitOptions.model,
       runId: options.sessionId,
     });
     if (logger) {
