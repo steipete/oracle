@@ -55,6 +55,7 @@ describe("ChatGPT Pro FSM — taxonomy", () => {
       "mode_verified_same_session",
       "prompt_submitted",
       "response_waiting",
+      "reattach_pending",
       "output_captured",
       "evidence_written",
       "success",
@@ -72,6 +73,7 @@ describe("ChatGPT Pro FSM — taxonomy", () => {
         "output_empty",
         "prompt_submitted_before_verification",
         "remote_browser_unavailable",
+        "remote_browser_unavailable_mid_run",
       ]),
     );
   });
@@ -89,6 +91,9 @@ describe("ChatGPT Pro FSM — taxonomy", () => {
       "prompt_submitted_before_verification",
     );
     expect(errorCodeForFailure("remote_browser_unavailable")).toBe(
+      "remote_browser_unavailable",
+    );
+    expect(errorCodeForFailure("remote_browser_unavailable_mid_run")).toBe(
       "remote_browser_unavailable",
     );
   });

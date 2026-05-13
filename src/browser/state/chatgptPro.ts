@@ -23,6 +23,7 @@
 //   → mode_verified_same_session
 //   → prompt_submitted
 //   → response_waiting
+//   → reattach_pending (recoverable side path when CDP drops mid-run)
 //   → output_captured
 //   → evidence_written
 //   → success
@@ -50,6 +51,7 @@ export const CHATGPT_PRO_LEGAL_STATES = [
   "mode_verified_same_session",
   "prompt_submitted",
   "response_waiting",
+  "reattach_pending",
   "output_captured",
   "evidence_written",
   "success",
@@ -66,6 +68,7 @@ export const CHATGPT_PRO_FAILURE_STATES = [
   "output_empty",
   "prompt_submitted_before_verification",
   "remote_browser_unavailable",
+  "remote_browser_unavailable_mid_run",
 ] as const;
 export type ChatGptProFailureState = (typeof CHATGPT_PRO_FAILURE_STATES)[number];
 
@@ -90,6 +93,7 @@ const FAILURE_ERROR_CODE: Record<ChatGptProFailureState, V18ErrorCode> = {
   output_empty: "output_capture_empty",
   prompt_submitted_before_verification: "prompt_submitted_before_verification",
   remote_browser_unavailable: "remote_browser_unavailable",
+  remote_browser_unavailable_mid_run: "remote_browser_unavailable",
 };
 
 export function isFailureState(state: ChatGptProState): state is ChatGptProFailureState {
@@ -117,6 +121,9 @@ export type ChatGptProEvent =
   | { type: "mode_verified_same_session"; sessionIdHash: `sha256:${string}` }
   | { type: "usage_limit_observed" }
   | { type: "ui_drift_observed"; detail?: string }
+  | { type: "session_lost"; reason?: string; recoveryCommand?: string | null }
+  | { type: "reattach_succeeded"; sessionIdHash?: `sha256:${string}` }
+  | { type: "reattach_budget_exhausted"; reason?: string }
   | { type: "submit_prompt"; promptSha256: `sha256:${string}` }
   | { type: "response_arrived"; outputTextSha256: `sha256:${string}`; bytesLength: number }
   | { type: "evidence_written"; evidenceId: string }
@@ -141,6 +148,10 @@ export interface ChatGptProContext {
   readonly outputBytes: number | null;
   /** Evidence id written to disk. */
   readonly evidenceId: string | null;
+  /** Recovery command surfaced while CDP/browser reattach is pending. */
+  readonly reattachRecoveryCommand: string | null;
+  /** Legal state interrupted by a recoverable CDP/browser disconnect. */
+  readonly stateBeforeReattach: ChatGptProLegalState | null;
   /** Manifest version used for verification — pinned at FSM construction time. */
   readonly selectorManifestVersion: typeof SELECTOR_MANIFEST_VERSION;
   /** Free-form reason for transitioning into a failure state. */
@@ -156,6 +167,8 @@ const EMPTY_CONTEXT: ChatGptProContext = Object.freeze({
   outputTextSha256: null,
   outputBytes: null,
   evidenceId: null,
+  reattachRecoveryCommand: null,
+  stateBeforeReattach: null,
   selectorManifestVersion: SELECTOR_MANIFEST_VERSION,
   failureReason: null,
 });
@@ -276,6 +289,31 @@ export function transition(
     case "ui_drift_observed":
       return failureFrom(context, "ui_drift_suspected", event.detail ?? "ui drift observed");
 
+    case "session_lost":
+      if (!canEnterReattachPending(state)) return noop(state, context);
+      return advance(context, "reattach_pending", {
+        failureReason: formatReattachReason(event),
+        reattachRecoveryCommand: event.recoveryCommand ?? null,
+        stateBeforeReattach: state,
+      });
+
+    case "reattach_succeeded":
+      if (state !== "reattach_pending") return noop(state, context);
+      return advance(context, stateAfterReattach(context), {
+        ...(event.sessionIdHash ? { sessionIdHash: event.sessionIdHash } : {}),
+        failureReason: null,
+        reattachRecoveryCommand: null,
+        stateBeforeReattach: null,
+      });
+
+    case "reattach_budget_exhausted":
+      if (state !== "reattach_pending") return noop(state, context);
+      return failureFrom(
+        context,
+        "remote_browser_unavailable_mid_run",
+        event.reason ?? context.failureReason ?? "CDP reattach budget exhausted",
+      );
+
     case "submit_prompt":
       if (state !== "mode_verified_same_session") return noop(state, context);
       return advance(context, "prompt_submitted", { promptSha256: event.promptSha256 });
@@ -338,6 +376,31 @@ function modeAndEffortVerified(state: ChatGptProState, context: ChatGptProContex
   if (context.effort?.status !== "verified") return false;
   if (!context.sessionIdHash) return false;
   return true;
+}
+
+function canEnterReattachPending(state: ChatGptProState): state is ChatGptProLegalState {
+  return (
+    state === "mode_verified_same_session" ||
+    state === "prompt_submitted" ||
+    state === "response_waiting" ||
+    state === "output_captured" ||
+    state === "evidence_written"
+  );
+}
+
+function formatReattachReason(event: {
+  readonly reason?: string;
+  readonly recoveryCommand?: string | null;
+}): string {
+  const reason = event.reason ?? "CDP session lost during ChatGPT Pro run";
+  return event.recoveryCommand ? `${reason}; recover with ${event.recoveryCommand}` : reason;
+}
+
+function stateAfterReattach(context: ChatGptProContext): ChatGptProLegalState {
+  if (context.stateBeforeReattach === "mode_verified_same_session" && !context.promptSha256) {
+    return "mode_verified_same_session";
+  }
+  return "response_waiting";
 }
 
 function advance(
