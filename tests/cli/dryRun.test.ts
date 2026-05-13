@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { runDryRunSummary } from "../../src/cli/dryRun.js";
+import { DRY_RUN_TIMESTAMP, runDryRunSummary } from "../../src/cli/dryRun.js";
 import type { RunOracleOptions } from "../../src/oracle.js";
 
 const baseRunOptions: RunOracleOptions = {
@@ -28,6 +28,34 @@ describe("runDryRunSummary", () => {
     );
     expect(header?.[0]).toContain("[dry-run]");
     expect(log.mock.calls.some(([entry]) => String(entry).includes("File Token Usage"))).toBe(true);
+  });
+
+  test("prints deterministic API safety plan and stable equal-token file order", async () => {
+    const log = vi.fn();
+    await runDryRunSummary(
+      {
+        engine: "api",
+        runOptions: { ...baseRunOptions, file: ["b.md", "a.md"] },
+        cwd: "/repo",
+        version: "1.2.3",
+        log,
+      },
+      {
+        readFilesImpl: async () => [
+          { path: "/repo/b.md", content: "same content" },
+          { path: "/repo/a.md", content: "same content" },
+        ],
+      },
+    );
+
+    const joined = log.mock.calls.flat().join("\n");
+    expect(joined).toContain(`[dry-run] Generated at: ${DRY_RUN_TIMESTAMP}.`);
+    expect(joined).toContain("[dry-run] Route: api/local; model=gpt-5.2-pro.");
+    expect(joined).toContain("Live provider/browser action: disabled");
+    expect(joined).toContain("Provider/browser locks: not acquired");
+    expect(joined).toMatch(/Prompt hash plan: prompt_sha256=sha256:[a-f0-9]{64}/);
+    expect(joined).toContain('Recovery command plan: no session is created; live runs print "oracle session <id>"');
+    expect(joined.indexOf("a.md")).toBeLessThan(joined.indexOf("b.md"));
   });
 
   test("prints browser attachment summary", async () => {
@@ -90,6 +118,71 @@ describe("runDryRunSummary", () => {
     expect(
       log.mock.calls.some(([entry]) => String(entry).includes("ChatGPT archive policy: auto")),
     ).toBe(true);
+  });
+
+  test("sorts browser dry-run attachments and cookie allowlists", async () => {
+    const log = vi.fn();
+    await runDryRunSummary(
+      {
+        engine: "browser",
+        runOptions: { ...baseRunOptions, model: "gpt-5.1" },
+        cwd: "/repo",
+        version: "3.0.0",
+        log,
+        browserConfig: {
+          cookieSync: true,
+          cookieNames: ["z_cookie", "a_cookie"],
+          remoteChrome: { host: "chrome.internal", port: 9222 },
+        },
+      },
+      {
+        assembleBrowserPromptImpl: async () => ({
+          markdown: "bundle",
+          composerText: "prompt",
+          estimatedInputTokens: 10,
+          attachments: [
+            { path: "/repo/z.txt", displayPath: "z.txt", sizeBytes: 1 },
+            { path: "/repo/a.txt", displayPath: "a.txt", sizeBytes: 1 },
+          ],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "upload",
+          fallback: null,
+        }),
+      },
+    );
+
+    const joined = log.mock.calls.flat().join("\n");
+    expect(joined).toContain("Route: browser/remote-chrome chrome.internal:9222");
+    expect(joined).toContain("Cookies: copy from Chrome (a_cookie, z_cookie).");
+    expect(joined.indexOf("a.txt")).toBeLessThan(joined.indexOf("z.txt"));
+  });
+
+  test("emits no ANSI color when NO_COLOR is set", async () => {
+    const originalNoColor = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    try {
+      const log = vi.fn();
+      await runDryRunSummary(
+        {
+          engine: "api",
+          runOptions: baseRunOptions,
+          cwd: "/repo",
+          version: "1.2.3",
+          log,
+        },
+        { readFilesImpl: async () => [] },
+      );
+      const joined = log.mock.calls.flat().join("\n");
+      expect(joined).not.toMatch(/\x1B\[[0-?]*[ -/]*[@-~]/u);
+    } finally {
+      if (originalNoColor === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = originalNoColor;
+      }
+    }
   });
 
   test("prints browser follow-up summary", async () => {

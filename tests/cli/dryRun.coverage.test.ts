@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { runDryRunSummary, runBrowserPreview } from "../../src/cli/dryRun.js";
+import { DRY_RUN_TIMESTAMP, runDryRunSummary, runBrowserPreview } from "../../src/cli/dryRun.js";
 import type { RunOracleOptions } from "../../src/oracle/types.js";
 
 const baseRunOptions: RunOracleOptions = {
@@ -171,5 +171,52 @@ describe("runDryRunSummary", () => {
     joined = log.mock.calls.flat().join("\n");
     expect(joined).toContain("Composer Text");
     expect(joined).toContain("Preview text");
+  });
+
+  test("browser preview JSON uses sorted keys, sorted attachments, and frozen timestamp", async () => {
+    const log = vi.fn();
+    const assembleBrowserPromptImpl = vi.fn().mockResolvedValue({
+      markdown: "[SYSTEM]\n[USER]",
+      composerText: "Preview text",
+      estimatedInputTokens: 900,
+      attachments: [
+        { path: "/tmp/z.txt", displayPath: "z.txt", sizeBytes: 5 },
+        { path: "/tmp/a.txt", displayPath: "a.txt", sizeBytes: 5 },
+      ],
+      inlineFileCount: 0,
+      tokenEstimateIncludesInlineFiles: false,
+      attachmentsPolicy: "auto",
+      attachmentMode: "upload",
+      fallback: null,
+      bundled: null,
+    });
+
+    await runBrowserPreview(
+      {
+        runOptions: { ...baseRunOptions, browserFollowUps: ["second", "third"] },
+        cwd: "/repo",
+        version: "0.4.1",
+        previewMode: "json",
+        log,
+        browserConfig: { attachRunning: true },
+      },
+      { assembleBrowserPromptImpl },
+    );
+
+    const json = log.mock.calls.flat().find((entry) => String(entry).trim().startsWith("{"));
+    expect(json).toBeDefined();
+    const jsonText = String(json);
+    const parsed = JSON.parse(jsonText);
+    expect(parsed.generatedAt).toBe(DRY_RUN_TIMESTAMP);
+    expect(parsed.liveCall).toBe(false);
+    expect(parsed.attachments.map((entry: { displayPath: string }) => entry.displayPath)).toEqual([
+      "a.txt",
+      "z.txt",
+    ]);
+    expect(parsed.browserFollowUps).toEqual(["second", "third"]);
+    expect(parsed.promptEvidence.prompt_sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(jsonText.indexOf('"attachments"')).toBeLessThan(jsonText.indexOf('"browserFollowUps"'));
+    expect(jsonText.indexOf('"displayPath"')).toBeLessThan(jsonText.indexOf('"path"'));
+    expect(jsonText.indexOf('"generatedAt"')).toBeLessThan(jsonText.indexOf('"inlineFileCount"'));
   });
 });
