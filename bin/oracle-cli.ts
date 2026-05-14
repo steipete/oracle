@@ -154,6 +154,7 @@ interface CliOptions extends OptionValues {
   browserAttachments?: string;
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
+  browserBundleFormat?: "text" | "zip";
   remoteChrome?: string;
   browserPort?: number;
   browserDebugPort?: number;
@@ -699,6 +700,14 @@ program
   )
   .addOption(
     new Option(
+      "--browser-bundle-format <format>",
+      "Bundle format for browser uploads when files are bundled: text (default) or zip.",
+    )
+      .choices(["text", "zip"])
+      .default("text"),
+  )
+  .addOption(
+    new Option(
       "--youtube <url>",
       "YouTube video URL to analyze (Gemini web/cookie mode only; uses your signed-in Chrome cookies for gemini.google.com).",
     ),
@@ -1135,6 +1144,7 @@ function buildRunOptions(
       "auto",
     browserInlineFiles: overrides.browserInlineFiles ?? options.browserInlineFiles ?? false,
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
+    browserBundleFormat: overrides.browserBundleFormat ?? options.browserBundleFormat ?? "text",
     generateImage: overrides.generateImage ?? options.generateImage,
     outputPath: overrides.outputPath ?? options.output,
     browserFollowUps: overrides.browserFollowUps ?? options.browserFollowUp ?? [],
@@ -1363,6 +1373,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserAttachments: stored.browserAttachments,
     browserInlineFiles: stored.browserInlineFiles,
     browserBundleFiles: stored.browserBundleFiles,
+    browserBundleFormat: stored.browserBundleFormat,
     browserFollowUps: stored.browserFollowUps,
     background: stored.background,
     renderPlain: stored.renderPlain,

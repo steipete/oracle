@@ -34,6 +34,8 @@ export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 export type ThinkingTimeLevel = "light" | "standard" | "extended" | "heavy";
 
+export type BrowserBundleFormat = "text" | "zip";
+
 export interface AzureOptions {
   endpoint?: string;
   apiVersion?: string;
@@ -166,6 +168,7 @@ export interface RunOracleOptions {
   browserAttachments?: "auto" | "never" | "always";
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
+  browserBundleFormat?: BrowserBundleFormat;
   /** Browser image generation output path. */
   generateImage?: string;
   /** Optional output path used by browser image operations. */

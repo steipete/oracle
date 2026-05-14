@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { assembleBrowserPrompt } from "../../src/browser/prompt.js";
@@ -21,6 +22,8 @@ function buildOptions(overrides: Partial<RunOracleOptions> = {}): RunOracleOptio
     browserAttachments: overrides.browserAttachments ?? "auto",
     browserInlineFiles: overrides.browserInlineFiles,
     maxFileSizeBytes: overrides.maxFileSizeBytes,
+    browserBundleFiles: overrides.browserBundleFiles,
+    browserBundleFormat: overrides.browserBundleFormat,
   } as RunOracleOptions;
 }
 
@@ -227,6 +230,36 @@ describe("assembleBrowserPrompt", () => {
     expect(result.bundled).toEqual({
       originalCount: 11,
       bundlePath: result.attachments[0]?.displayPath,
+      format: "text",
     });
+  });
+
+  test("supports opt-in ZIP bundles for browser uploads", async () => {
+    const options = buildOptions({
+      file: ["src/a.ts", "src/b.ts"],
+      browserAttachments: "always",
+      browserBundleFiles: true,
+      browserBundleFormat: "zip",
+    });
+    const result = await assembleBrowserPrompt(options, {
+      cwd: "/repo",
+      readFilesImpl: async (paths) =>
+        paths.map((entry) => ({
+          path: path.resolve("/repo", entry),
+          content: `content for ${entry}`,
+        })),
+    });
+
+    expect(result.attachments).toHaveLength(1);
+    expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+    expect(result.bundled).toEqual({
+      originalCount: 2,
+      bundlePath: result.attachments[0]?.displayPath,
+      format: "zip",
+    });
+    const zipBytes = await fs.readFile(result.attachments[0]!.path);
+    expect(zipBytes.subarray(0, 4).toString("hex")).toBe("504b0304");
+    expect(zipBytes.toString("utf8")).toContain("src/a.ts");
+    expect(zipBytes.toString("utf8")).toContain("src/b.ts");
   });
 });
