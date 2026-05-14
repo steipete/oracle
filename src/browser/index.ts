@@ -51,6 +51,7 @@ import {
 } from "./actions/deepResearch.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
+import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
 import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
 import { BrowserAutomationError } from "../oracle/errors.js";
@@ -521,6 +522,21 @@ function shouldCloseOwnedRunTargetAfterRun(options: {
   return options.runStatus === "complete" && options.ownsTarget && !options.keepBrowser;
 }
 
+function buildSkippedModelSelectionEvidence(
+  desiredModel: string | null | undefined,
+  strategy: BrowserModelSelectionEvidence["strategy"],
+): BrowserModelSelectionEvidence {
+  return {
+    requestedModel: desiredModel ?? null,
+    resolvedLabel: null,
+    strategy,
+    status: "skipped",
+    verified: false,
+    source: "config",
+    capturedAt: new Date().toISOString(),
+  };
+}
+
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
   if (!promptText) {
@@ -709,6 +725,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let answerMarkdown = "";
   let answerHtml = "";
   let runStatus: "attempted" | "complete" = "attempted";
+  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let connectionClosedUnexpectedly = false;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
@@ -963,7 +980,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     await captureRuntimeSnapshot();
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
     if (config.desiredModel && modelStrategy !== "ignore") {
-      await raceWithDisconnect(
+      modelSelectionEvidence = await raceWithDisconnect(
         withRetries(
           () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
           {
@@ -991,6 +1008,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
       );
     } else if (modelStrategy === "ignore") {
+      modelSelectionEvidence = buildSkippedModelSelectionEvidence(
+        config.desiredModel,
+        modelStrategy,
+      );
       logger("Model picker: skipped (strategy=ignore)");
     }
     const deepResearch = config.researchMode === "deep";
@@ -1218,6 +1239,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         answerHtml: researchResult.html,
         artifacts: savedArtifacts,
         archive,
+        modelSelection: modelSelectionEvidence,
         tookMs: durationMs,
         answerTokens: tokens,
         answerChars: researchResult.text.length,
@@ -1686,6 +1708,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       generatedImages: imageArtifacts.generatedImages,
       savedImages: imageArtifacts.savedImages,
       archive,
+      modelSelection: modelSelectionEvidence,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -2245,6 +2268,7 @@ async function runRemoteBrowserMode(
   let answerHtml = "";
   let connectionClosedUnexpectedly = false;
   let runStatus: "attempted" | "complete" = "attempted";
+  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
   let connection: Awaited<ReturnType<typeof connectToRemoteChrome>> | null = null;
@@ -2340,7 +2364,7 @@ async function runRemoteBrowserMode(
 
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
     if (config.desiredModel && modelStrategy !== "ignore") {
-      await withRetries(
+      modelSelectionEvidence = await withRetries(
         () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
         {
           retries: 2,
@@ -2359,6 +2383,10 @@ async function runRemoteBrowserMode(
         `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
       );
     } else if (modelStrategy === "ignore") {
+      modelSelectionEvidence = buildSkippedModelSelectionEvidence(
+        config.desiredModel,
+        modelStrategy,
+      );
       logger("Model picker: skipped (strategy=ignore)");
     }
     const deepResearch = config.researchMode === "deep";
@@ -2518,6 +2546,7 @@ async function runRemoteBrowserMode(
         answerHtml: researchResult.html,
         artifacts: savedArtifacts,
         archive,
+        modelSelection: modelSelectionEvidence,
         tookMs: durationMs,
         answerTokens: tokens,
         answerChars: researchResult.text.length,
@@ -2957,6 +2986,7 @@ async function runRemoteBrowserMode(
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       artifacts: savedArtifacts,
       archive,
+      modelSelection: modelSelectionEvidence,
       controllerPid: process.pid,
     };
   } catch (error) {

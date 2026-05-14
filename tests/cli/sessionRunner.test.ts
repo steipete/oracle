@@ -725,6 +725,22 @@ describe("performSessionRun", () => {
       usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, totalTokens: 150 },
       elapsedMs: 2000,
       runtime: { chromePid: 123, chromePort: 9222, userDataDir: "/tmp/profile" },
+      modelSelection: {
+        requestedModel: "GPT-5.5 Pro",
+        resolvedLabel: "Pro",
+        strategy: "select",
+        status: "already-selected",
+        verified: true,
+        source: "chatgpt-model-picker",
+        capturedAt: "2026-05-13T00:00:00.000Z",
+      },
+      warnings: [
+        {
+          code: "browser-pro-fast-large-run",
+          severity: "warning",
+          message: "Large browser Pro run completed quickly.",
+        },
+      ],
       answerText: "Answer",
       artifacts: [{ kind: "transcript", path: "/tmp/transcript.md" }],
     });
@@ -745,7 +761,11 @@ describe("performSessionRun", () => {
     const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({
       status: "completed",
-      browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePid: 123 }) }),
+      browser: expect.objectContaining({
+        runtime: expect.objectContaining({ chromePid: 123 }),
+        modelSelection: expect.objectContaining({ resolvedLabel: "Pro" }),
+        warnings: [expect.objectContaining({ code: "browser-pro-fast-large-run" })],
+      }),
       artifacts: [{ kind: "transcript", path: "/tmp/transcript.md" }],
     });
     expect(finalUpdate).toHaveProperty("errorMessage", undefined);

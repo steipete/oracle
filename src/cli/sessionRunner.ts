@@ -138,6 +138,8 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: result.runtime,
           archive: result.archive,
+          modelSelection: result.modelSelection,
+          warnings: result.warnings,
         },
         artifacts: mergeArtifacts(sessionMeta.artifacts, result.artifacts),
         response: undefined,

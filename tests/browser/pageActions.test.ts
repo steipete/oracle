@@ -29,7 +29,13 @@ describe("ensureModelSelection", () => {
         result: { value: { status: "already-selected", label: "GPT-5.2 Pro" } },
       }),
     } as unknown as ChromeClient["Runtime"];
-    await expect(ensureModelSelection(runtime, "GPT-5.2 Pro", logger)).resolves.toBeUndefined();
+    await expect(ensureModelSelection(runtime, "GPT-5.2 Pro", logger)).resolves.toMatchObject({
+      requestedModel: "GPT-5.2 Pro",
+      resolvedLabel: "GPT-5.2 Pro",
+      status: "already-selected",
+      strategy: "select",
+      verified: true,
+    });
     expect(logger).toHaveBeenCalledWith("Model picker: GPT-5.2 Pro");
   });
 

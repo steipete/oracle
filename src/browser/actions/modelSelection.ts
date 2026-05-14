@@ -1,4 +1,5 @@
 import type { ChromeClient, BrowserLogger, BrowserModelStrategy } from "../types.js";
+import type { BrowserModelSelectionEvidence } from "../../sessionStore.js";
 import {
   COMPOSER_MODEL_SIGNAL_SELECTOR,
   MENU_CONTAINER_SELECTOR,
@@ -16,7 +17,7 @@ export async function ensureModelSelection(
   desiredModel: string,
   logger: BrowserLogger,
   strategy: BrowserModelStrategy = "select",
-) {
+): Promise<BrowserModelSelectionEvidence> {
   const outcome = await Runtime.evaluate({
     expression: buildModelSelectionExpression(desiredModel, strategy),
     awaitPromise: true,
@@ -43,7 +44,15 @@ export async function ensureModelSelection(
         assertResolvedModelSelection(desiredModel, label);
       }
       logger(`Model picker: ${label}`);
-      return;
+      return {
+        requestedModel: desiredModel,
+        resolvedLabel: label,
+        strategy,
+        status: result.status,
+        verified: strategy !== "current",
+        source: "chatgpt-model-picker",
+        capturedAt: new Date().toISOString(),
+      };
     }
     case "option-not-found": {
       await logDomFailure(Runtime, logger, "model-switcher-option");

@@ -3,6 +3,7 @@ import type { SessionMetadata } from "../../src/sessionManager.ts";
 import {
   buildReattachLine,
   formatResponseMetadata,
+  formatBrowserEvidence,
   formatTransportMetadata,
   formatUserErrorMetadata,
   trimBeforeFirstAnswer,
@@ -108,6 +109,40 @@ describe("formatUserErrorMetadata", () => {
         details: { path: "foo.txt" },
       }),
     ).toBe('file-validation | message=Too big | details={"path":"foo.txt"}');
+  });
+});
+
+describe("formatBrowserEvidence", () => {
+  test("formats model selection and warning metadata", () => {
+    const metadata: SessionMetadata = {
+      id: "sess",
+      createdAt: new Date().toISOString(),
+      status: "completed",
+      options: {},
+      browser: {
+        modelSelection: {
+          requestedModel: "GPT-5.5 Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-05-13T00:00:00.000Z",
+        },
+        warnings: [
+          {
+            code: "browser-pro-fast-large-run",
+            severity: "warning",
+            message: "Large browser Pro run completed quickly.",
+          },
+        ],
+      },
+    };
+
+    expect(formatBrowserEvidence(metadata)).toEqual([
+      "model requested=GPT-5.5 Pro; resolved=Pro; status=already-selected; strategy=select; verified=yes",
+      "warning browser-pro-fast-large-run: Large browser Pro run completed quickly.",
+    ]);
   });
 });
 

@@ -1,6 +1,10 @@
 import type CDP from "chrome-remote-interface";
 import type Protocol from "devtools-protocol";
-import type { BrowserRuntimeMetadata } from "../sessionStore.js";
+import type {
+  BrowserModelSelectionEvidence,
+  BrowserRunWarning,
+  BrowserRuntimeMetadata,
+} from "../sessionStore.js";
 import type { SessionArtifact } from "../sessionStore.js";
 import type { ThinkingTimeLevel } from "../oracle/types.js";
 
@@ -133,6 +137,8 @@ export interface BrowserRunResult {
   generatedImages?: BrowserGeneratedImage[];
   savedImages?: SavedBrowserImage[];
   archive?: BrowserArchiveResult;
+  modelSelection?: BrowserModelSelectionEvidence;
+  warnings?: BrowserRunWarning[];
   tookMs: number;
   answerTokens: number;
   answerChars: number;
