@@ -1,7 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import type { RunOracleOptions } from "../../src/oracle.js";
 import type { BrowserSessionConfig } from "../../src/sessionStore.js";
-import { runBrowserSessionExecution } from "../../src/browser/sessionRunner.js";
+import {
+  buildBrowserRunWarningsForTest,
+  runBrowserSessionExecution,
+} from "../../src/browser/sessionRunner.js";
 
 const baseRunOptions: RunOracleOptions = {
   prompt: "Hello world",
@@ -69,6 +72,81 @@ describe("runBrowserSessionExecution", () => {
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
     );
     expect(log).toHaveBeenCalled();
+  });
+
+  test("logs and returns browser model selection evidence", async () => {
+    const log = vi.fn();
+    const result = await runBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: { desiredModel: "GPT-5.5 Pro", modelStrategy: "select" },
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 42,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: vi.fn(async () => ({
+          answerText: "ok",
+          answerMarkdown: "ok",
+          tookMs: 1000,
+          answerTokens: 12,
+          answerChars: 20,
+          modelSelection: {
+            requestedModel: "GPT-5.5 Pro",
+            resolvedLabel: "Pro",
+            strategy: "select" as const,
+            status: "already-selected" as const,
+            verified: true,
+            source: "chatgpt-model-picker" as const,
+            capturedAt: "2026-05-13T00:00:00.000Z",
+          },
+        })),
+      },
+    );
+
+    expect(result.modelSelection).toMatchObject({
+      requestedModel: "GPT-5.5 Pro",
+      resolvedLabel: "Pro",
+      verified: true,
+    });
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining("[browser] Model selection evidence: requested=GPT-5.5 Pro"),
+    );
+  });
+
+  test("warns when a large browser Pro run finishes suspiciously quickly", () => {
+    const warnings = buildBrowserRunWarningsForTest({
+      runOptions: { ...baseRunOptions, model: "gpt-5.5-pro" },
+      browserConfig: { desiredModel: "GPT-5.5 Pro" },
+      inputTokens: 42_641,
+      elapsedMs: 53_000,
+      modelSelection: {
+        requestedModel: "GPT-5.5 Pro",
+        resolvedLabel: null,
+        strategy: "select",
+        status: "unavailable",
+        verified: false,
+        source: "config",
+        capturedAt: "2026-05-13T00:00:00.000Z",
+      },
+    });
+
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        code: "browser-pro-fast-large-run",
+        message: expect.stringContaining("Large browser Pro run completed quickly"),
+      }),
+    ]);
   });
 
   test("passes ChatGPT image output paths into the browser runner", async () => {
