@@ -28,8 +28,17 @@ describe("browser thinking-time selection expression", () => {
     const expression = buildThinkingTimeExpressionForTest("extended");
     expect(expression).toContain("MODEL_BUTTON_SELECTOR");
     expect(expression).toContain("data-model-picker-thinking-effort-action");
+    expect(expression).toContain("data-model-picker-thinking-effort-row");
     expect(expression).toContain("aria-controls");
     expect(expression).toContain("LEVEL_TOKENS");
+  });
+
+  it("targets the selected model row before opening the effort menu", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended");
+    expect(expression).toContain("const findEffortRow");
+    expect(expression).toContain("const rowIsSelected");
+    expect(expression).toContain("if (rowIsSelected(row)) return t;");
+    expect(expression).toContain("return null;");
   });
 
   it("preserves Chinese thinking-effort labels while normalizing", () => {

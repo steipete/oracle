@@ -242,21 +242,36 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
 
     const findModelButton = () => document.querySelector(MODEL_BUTTON_SELECTOR);
     const findTrailingButtons = () => Array.from(document.querySelectorAll(TRAILING_SELECTOR));
+    const findEffortRow = (node) => {
+      let current = node instanceof HTMLElement ? node.parentElement : null;
+      while (current && current !== document.body) {
+        if (current.getAttribute?.('data-model-picker-thinking-effort-row') === 'true') {
+          return current;
+        }
+        current = current.parentElement;
+      }
+      return null;
+    };
+    const rowIsSelected = (row) => {
+      if (!(row instanceof HTMLElement)) return false;
+      const modelItem = row.querySelector('[data-model-picker-thinking-effort-menu-item="true"], [role="menuitemradio"]');
+      if (optionIsSelected(modelItem)) return true;
+      return Boolean(
+        row.querySelector(
+          '[aria-checked="true"], [aria-selected="true"], [aria-current="true"], [data-selected="true"], [data-state="checked"], [data-state="selected"], [data-state="on"]',
+        ),
+      );
+    };
     const pickTrailingForCurrentModel = () => {
       const trailings = findTrailingButtons();
       if (trailings.length === 0) return null;
       if (trailings.length === 1) return trailings[0];
       // Prefer the trailing button whose model row is currently selected.
       for (const t of trailings) {
-        const row = t.closest('[role="menuitem"], [role="menuitemradio"], [data-radix-collection-item]');
-        if (row && (optionIsSelected(row) || row.querySelector('[aria-checked="true"]'))) return t;
+        const row = findEffortRow(t);
+        if (rowIsSelected(row)) return t;
       }
-      // Fallback: first one with non-zero box.
-      for (const t of trailings) {
-        const r = t.getBoundingClientRect?.();
-        if (r && r.width > 0 && r.height > 0) return t;
-      }
-      return trailings[0];
+      return null;
     };
 
     const modelBtn = findModelButton();
