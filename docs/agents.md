@@ -83,13 +83,13 @@ oracle --render --copy -p "$TASK" --file "$RELEVANT_FILES"
 
 …then the agent (or a human) pastes into whichever Pro model they have access to. No keys, no MCP, works everywhere.
 
-For autonomous use, the `--json` envelope is stable:
+For autonomous dry-runs, use the JSON preview to inspect the resolved bundle before spending model time:
 
 ```bash
-oracle --json --model gpt-5.5-pro -p "$TASK" --file "$RELEVANT_FILES"
+oracle --dry-run json --model gpt-5.5-pro -p "$TASK" --file "$RELEVANT_FILES"
 ```
 
-`stdout` carries one JSON object with `answer`, `usage`, `cost`, `sessionId`, `model`, and `lineage`. `stderr` carries human-readable progress that pipes can drop. Exit code is non-zero on failure.
+Completed runs persist answers, usage, cost, session ids, model choices, and lineage under `~/.oracle/sessions/<id>/`. Exit code is non-zero on failure.
 
 ## Multi-agent shared profile (browser mode)
 

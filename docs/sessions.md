@@ -23,7 +23,6 @@ Override the root with `ORACLE_HOME_DIR=/some/path`.
 ```bash
 oracle status                  # last 20 sessions
 oracle status --hours 168      # last week
-oracle status --json           # for scripts
 ```
 
 `status` shows status, model, mode, timestamp, character count, cost, and slug — with a tree of `--followup` lineage:
@@ -42,7 +41,6 @@ pending   gpt-5.2-pro   api     03/01 09:25 AM       900        -  └─ risk-c
 ```bash
 oracle session <id>            # print metadata + answer
 oracle session <id> --render   # print the prompt that was sent
-oracle session <id> --json     # structured output
 ```
 
 Use the slug or a unique id prefix; Oracle resolves both.
@@ -121,7 +119,6 @@ GPT-5.x Pro defaults to background; non-Pro models block by default. Override pe
 
 ```bash
 oracle status --clear --hours 168   # delete sessions older than a week
-oracle status --clear --slug pattern   # delete by slug match
 ```
 
 `--clear` is destructive — preview without it first. Sessions are local files, so `rm -rf ~/.oracle/sessions/<id>` works too.
