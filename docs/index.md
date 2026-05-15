@@ -26,7 +26,7 @@ oracle session <id> --render
 oracle --followup <id> -p "Re-evaluate with this new context" --file "src/**/*.ts"
 ```
 
-`--json` produces a stable envelope on stdout, `--render` emits the assembled markdown, and progress goes to stderr so pipes stay parseable.
+`--render` emits the assembled markdown, sessions persist machine-readable metadata, and progress stays out of saved answers so pipes remain usable.
 
 ## What Oracle does
 

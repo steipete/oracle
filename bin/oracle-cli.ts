@@ -231,8 +231,11 @@ const isTty = process.stdout.isTTY;
 const doctorArgIndex = userCliArgs.indexOf("doctor");
 const doctorJsonRequested =
   doctorArgIndex >= 0 && userCliArgs.slice(doctorArgIndex).includes("--json");
+const docsArgIndex = userCliArgs.indexOf("docs");
+const docsCheckRequested = docsArgIndex >= 0 && userCliArgs[docsArgIndex + 1] === "check";
 const suppressIntro =
   doctorJsonRequested ||
+  docsCheckRequested ||
   (userCliArgs[0] === "bridge" &&
     (userCliArgs[1] === "codex-config" || userCliArgs[1] === "claude-config"));
 
@@ -1012,6 +1015,27 @@ program
   .action(async function (this: Command) {
     const { runProviderDoctor } = await import("../src/cli/providerDoctor.js");
     await runProviderDoctor(this.optsWithGlobals());
+  });
+
+const docsCommand = program.command("docs").description("Documentation maintenance utilities.");
+
+docsCommand
+  .command("check")
+  .description("Check documented CLI flags against Commander help metadata.")
+  .option(
+    "--docs-path <file...>",
+    "Markdown files to check (default README.md and docs/cli-reference.md).",
+  )
+  .option("--json", "Print structured JSON.", false)
+  .action(async (options: { docsPath?: string[]; json?: boolean }) => {
+    const { checkDocsFlags, printDocsCheckResult } = await import("../src/cli/docsCheck.js");
+    const result = await checkDocsFlags({ command: program, paths: options.docsPath });
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      printDocsCheckResult(result);
+    }
+    process.exitCode = result.issues.length > 0 ? 1 : 0;
   });
 
 program
