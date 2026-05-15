@@ -1276,12 +1276,38 @@ describe("oracle CLI integration", () => {
       expect(await readFile(path.join(oracleHome, "answer.gpt-5.1.md"), "utf8")).toContain(
         "Echo(gpt-5.1)",
       );
+      const manifest = JSON.parse(
+        await readFile(path.join(oracleHome, "answer.oracle.json"), "utf8"),
+      );
+      expect(manifest).toMatchObject({
+        version: 1,
+        sessionId,
+        status: "partial",
+        outputBasePath: outputPath,
+        models: [
+          {
+            model: "gpt-5.1",
+            status: "completed",
+            outputPath: path.join(oracleHome, "answer.gpt-5.1.md"),
+            usage: { totalTokens: 20 },
+          },
+          {
+            model: "gemini-3-pro",
+            status: "error",
+          },
+        ],
+      });
+      expect(manifest.models[0].logPath).toContain("gpt-5.1.log");
+      expect(manifest.models[1].logPath).toContain("gemini-3-pro.log");
 
       const savedIndex = result.stdout.indexOf("Saved outputs:");
+      const logsIndex = result.stdout.indexOf("Run logs:");
       const failuresIndex = result.stdout.indexOf("Failures:");
       expect(result.stdout).toContain("Multi-model result: partial success, 1/2 succeeded");
       expect(savedIndex).toBeGreaterThanOrEqual(0);
-      expect(failuresIndex).toBeGreaterThan(savedIndex);
+      expect(logsIndex).toBeGreaterThan(savedIndex);
+      expect(failuresIndex).toBeGreaterThan(logsIndex);
+      expect(result.stdout).toContain("Output manifest:");
       expect(result.stdout).toContain("gemini-3-pro");
 
       await execFileAsync(
