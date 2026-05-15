@@ -53,6 +53,8 @@ The CLI renders per-model logs without interleaving tokens. Aggregate cost/token
 
 With `--write-output /tmp/name.md`, Oracle writes successful answers to per-model files such as `/tmp/name.gpt-5.1.md` and records `/tmp/name.oracle.json`. The manifest includes each model's status, output path, run log path, usage, elapsed time when available, and error category/message for failed models. Terminal summaries print saved outputs first, then run logs, then failures so agents can recover partial results without scraping noisy error blocks.
 
+Common provider failures are normalized before display. Auth, expired-key, quota, rate-limit, and unavailable-model errors include the provider env var name, the provider message, and a short recovery hint; secret values are never printed.
+
 ---
 
 ## Implementation Notes

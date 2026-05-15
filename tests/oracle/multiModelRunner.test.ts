@@ -131,6 +131,18 @@ describe("runMultiModelApiSession", () => {
     expect(statusUpdatesFor("gpt-5.2-pro")).toContain("error");
     expect(statusUpdatesFor("gpt-5.1")).toContain("completed");
     expect(statusUpdatesFor("gemini-3-pro")).toContain("completed");
+    const failedUpdate = updateModelRun.mock.calls
+      .filter(([, model]) => model === "gpt-5.2-pro")
+      .map(([, , updates]) => updates)
+      .find((updates) => updates?.status === "error");
+    expect(failedUpdate?.error).toMatchObject({
+      category: "model-unavailable",
+      message: "model unavailable",
+      details: {
+        provider: "openai",
+        keyEnv: "OPENAI_API_KEY",
+      },
+    });
   });
 
   test("runs grok alongside other models and logs per-model output", async () => {
