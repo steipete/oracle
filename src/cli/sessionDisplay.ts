@@ -29,6 +29,7 @@ import {
   buildResponseOwnerIndex,
   resolveSessionLineage,
 } from "./sessionLineage.js";
+import { formatSessionExecutionLabel } from "./sessionLifecycle.js";
 
 const isTty = (): boolean => Boolean(process.stdout.isTTY);
 const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
@@ -373,6 +374,11 @@ export async function attachSession(
     }
     console.log(`Created: ${metadata.createdAt}`);
     console.log(`Status: ${metadata.status}`);
+    if (metadata.lifecycle) {
+      const attached = metadata.lifecycle.attached ? "attached" : "detached";
+      console.log(`Execution: ${formatSessionExecutionLabel(metadata)} (${attached})`);
+      console.log(`Reattach: ${metadata.lifecycle.reattachCommand}`);
+    }
     if (metadata.models && metadata.models.length > 0) {
       console.log("Models:");
       for (const run of metadata.models) {

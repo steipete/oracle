@@ -243,9 +243,18 @@ export interface SessionMetadata {
   response?: SessionResponseMetadata;
   transport?: SessionTransportMetadata;
   error?: SessionUserErrorMetadata;
+  lifecycle?: SessionLifecycleMetadata;
 }
 
 export type SessionStatus = "pending" | "running" | "completed" | "partial" | "error" | "cancelled";
+
+export interface SessionLifecycleMetadata {
+  engine: "api" | "browser";
+  execution: "foreground" | "background";
+  attached: boolean;
+  detached: boolean;
+  reattachCommand: string;
+}
 
 export interface SessionModelRun {
   model: string;

@@ -210,6 +210,29 @@ describe("attachSession rendering", () => {
     readSessionRequestMock.mockReset();
   });
 
+  test("prints persisted lifecycle metadata", async () => {
+    const lifecycleMeta: SessionMetadata = {
+      ...baseMeta,
+      status: "completed",
+      lifecycle: {
+        engine: "api",
+        execution: "background",
+        attached: false,
+        detached: true,
+        reattachCommand: "oracle session sess",
+      },
+    } as SessionMetadata;
+    readSessionMetadataMock.mockResolvedValue(lifecycleMeta);
+    readSessionLogMock.mockResolvedValue("");
+    readSessionRequestMock.mockResolvedValue({ prompt: "Prompt here" });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await attachSession("sess", { renderMarkdown: false });
+
+    expect(logSpy).toHaveBeenCalledWith("Execution: api/bg (detached)");
+    expect(logSpy).toHaveBeenCalledWith("Reattach: oracle session sess");
+  });
+
   test("prints chain metadata for follow-up sessions", async () => {
     const followupMeta: SessionMetadata = {
       ...baseMeta,
