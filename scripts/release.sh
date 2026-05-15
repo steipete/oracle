@@ -41,8 +41,10 @@ phase_artifacts() {
 
   local tgz="oracle-${VERSION}.tgz"
   mv "$packed" "$tgz"
-  run shasum "$tgz" > "${tgz}.sha1"
-  run shasum -a 256 "$tgz" > "${tgz}.sha256"
+  run shasum "$tgz"
+  shasum "$tgz" > "${tgz}.sha1"
+  run shasum -a 256 "$tgz"
+  shasum -a 256 "$tgz" > "${tgz}.sha256"
 }
 
 phase_publish() {

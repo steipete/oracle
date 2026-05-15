@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1 — Unreleased
+
+### Fixed
+
+- Release: write clean checksum files from `scripts/release.sh artifacts` without helper trace lines.
+
 ## Unreleased
 
 ### Added
