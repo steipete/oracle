@@ -9,7 +9,7 @@ import type {
   SessionArtifact,
   SessionModelRun,
 } from "../sessionStore.js";
-import type { RunOracleOptions, UsageSummary } from "../oracle.js";
+import type { ProviderFailureContext, RunOracleOptions, UsageSummary } from "../oracle.js";
 import {
   runOracle,
   OracleResponseError,
@@ -17,6 +17,7 @@ import {
   extractResponseMetadata,
   asOracleUserError,
   extractTextOutput,
+  classifyProviderFailure,
 } from "../oracle.js";
 import {
   ensureSessionArtifacts,
@@ -399,6 +400,7 @@ export async function performSessionRun({
           savedOutputs,
           modelRuns: sessionWithRuns.models,
           runLogs,
+          runOptions,
           log,
         });
         if (savedOutputs.length > 0) {
@@ -421,11 +423,19 @@ export async function performSessionRun({
       if (hasFailure) {
         log(dim("Failures:"));
         for (const item of summary.rejected) {
-          log(dim(`- ${item.model}: ${formatMultiModelFailure(item.reason)}`));
+          const providerContext = providerFailureContextForModel(item.model, runOptions);
+          log(dim(`- ${item.model}: ${formatMultiModelFailure(item.reason, providerContext)}`));
+          for (const line of formatMultiModelFailureDetails(item.reason, providerContext)) {
+            log(dim(line));
+          }
         }
       }
       if (hasFailure && !allowPartial) {
-        throw summary.rejected[0].reason;
+        const firstFailure = summary.rejected[0];
+        throw sanitizeMultiModelFailureForThrow(
+          firstFailure.reason,
+          providerFailureContextForModel(firstFailure.model, runOptions),
+        );
       }
       return;
     }
@@ -644,10 +654,30 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function formatMultiModelFailure(error: unknown): string {
+function providerFailureContextForModel(
+  model: string,
+  runOptions: RunOracleOptions,
+): ProviderFailureContext {
+  return {
+    model,
+    providerMode: runOptions.provider,
+    azure: runOptions.azure,
+    baseUrl: runOptions.baseUrl,
+    apiKey: runOptions.apiKey,
+  };
+}
+
+function formatMultiModelFailure(
+  error: unknown,
+  context?: string | ProviderFailureContext,
+): string {
   const userError = asOracleUserError(error);
   if (userError) {
     return `${userError.category}, ${userError.message}`;
+  }
+  const providerFailure = classifyProviderFailure(error, context);
+  if (providerFailure) {
+    return providerFailure.label;
   }
   if (error instanceof OracleTransportError) {
     return `${error.reason}, ${error.message}`;
@@ -656,6 +686,45 @@ function formatMultiModelFailure(error: unknown): string {
     return error.message;
   }
   return formatError(error);
+}
+
+function formatMultiModelFailureDetails(
+  error: unknown,
+  context?: string | ProviderFailureContext,
+): string[] {
+  const providerFailure = classifyProviderFailure(error, context);
+  if (!providerFailure) {
+    return [];
+  }
+  const lines: string[] = [];
+  if (providerFailure.keyEnv) {
+    lines.push(`  key: ${providerFailure.keyEnv}`);
+  }
+  lines.push(`  provider said: ${providerFailure.providerMessage}`);
+  lines.push(`  fix: ${providerFailure.fix}`);
+  return lines;
+}
+
+function sanitizeMultiModelFailureForThrow(
+  error: unknown,
+  context?: string | ProviderFailureContext,
+): unknown {
+  const providerFailure = classifyProviderFailure(error, context);
+  if (!providerFailure) {
+    return error;
+  }
+  const modelPrefix = typeof context === "object" && context?.model ? `${context.model}: ` : "";
+  const message = `${modelPrefix}${providerFailure.label}: ${providerFailure.providerMessage}`;
+  if (!(error instanceof Error)) {
+    return new Error(message);
+  }
+  error.message = message;
+  if (error.stack) {
+    const [firstLine, ...rest] = error.stack.split("\n");
+    const prefix = firstLine.includes(":") ? firstLine.split(":", 1)[0] : error.name;
+    error.stack = [prefix ? `${prefix}: ${message}` : message, ...rest].join("\n");
+  }
+  return error;
 }
 
 interface MultiModelManifestRunLog {
@@ -716,6 +785,7 @@ async function writeMultiModelOutputManifest({
   savedOutputs,
   modelRuns,
   runLogs,
+  runOptions,
   log,
 }: {
   baseOutputPath: string;
@@ -725,6 +795,7 @@ async function writeMultiModelOutputManifest({
   savedOutputs: Array<{ model: string; path: string }>;
   modelRuns?: SessionModelRun[];
   runLogs: MultiModelManifestRunLog[];
+  runOptions: RunOracleOptions;
   log: (message: string) => void;
 }): Promise<string | undefined> {
   const manifestPath = deriveOutputManifestPath(baseOutputPath);
@@ -749,6 +820,7 @@ async function writeMultiModelOutputManifest({
     savedOutputs,
     modelRuns,
     runLogs,
+    runOptions,
   });
   try {
     await fs.mkdir(path.dirname(normalizedTarget), { recursive: true });
@@ -769,6 +841,7 @@ function buildMultiModelOutputManifest({
   savedOutputs,
   modelRuns,
   runLogs,
+  runOptions,
 }: {
   baseOutputPath: string;
   sessionId: string;
@@ -777,6 +850,7 @@ function buildMultiModelOutputManifest({
   savedOutputs: Array<{ model: string; path: string }>;
   modelRuns?: SessionModelRun[];
   runLogs: MultiModelManifestRunLog[];
+  runOptions: RunOracleOptions;
 }): MultiModelOutputManifest {
   const outputByModel = new Map(savedOutputs.map((entry) => [entry.model, entry.path]));
   const logsByModel = new Map(runLogs.map((entry) => [entry.model, entry.path]));
@@ -798,14 +872,20 @@ function buildMultiModelOutputManifest({
       const fulfilled = fulfilledByModel.get(model);
       const reason = rejectedByModel.get(model);
       const userError = reason ? asOracleUserError(reason) : undefined;
+      const providerFailure = reason
+        ? classifyProviderFailure(reason, providerFailureContextForModel(model, runOptions))
+        : undefined;
       return {
         model,
         status: fulfilled ? "completed" : reason ? "error" : (run?.status ?? "error"),
         outputPath: outputByModel.get(model),
         logPath: logsByModel.get(model),
-        errorCategory: run?.error?.category ?? userError?.category,
+        errorCategory: run?.error?.category ?? userError?.category ?? providerFailure?.category,
         errorMessage:
-          run?.error?.message ?? userError?.message ?? (reason ? formatError(reason) : undefined),
+          run?.error?.message ??
+          userError?.message ??
+          providerFailure?.label ??
+          (reason ? formatError(reason) : undefined),
         elapsedMs: calculateModelElapsedMs(run),
         usage: run?.usage ?? fulfilled?.usage,
       };
