@@ -25,7 +25,7 @@ import {
   buildRequestBody,
 } from "../src/oracle.js";
 import { isKnownModel } from "../src/oracle/modelResolver.js";
-import type { ModelName, PreviewMode, RunOracleOptions } from "../src/oracle.js";
+import type { ApiProviderMode, ModelName, PreviewMode, RunOracleOptions } from "../src/oracle.js";
 import { CHATGPT_URL } from "../src/browserMode.js";
 import { createRemoteBrowserExecutor } from "../src/remote/client.js";
 import { createGeminiWebExecutor } from "../src/gemini-web/index.js";
@@ -86,6 +86,10 @@ import { applyBrowserDefaultsFromConfig } from "../src/cli/browserDefaults.js";
 import { shouldBlockDuplicatePrompt } from "../src/cli/duplicatePromptGuard.js";
 import { resolveRemoteServiceConfig } from "../src/remote/remoteServiceConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "../src/cli/fileSize.js";
+import {
+  isAzureOpenAICandidateModel,
+  validateProviderRouting,
+} from "../src/oracle/providerRouting.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -175,7 +179,9 @@ interface CliOptions extends OptionValues {
   dryRun?: boolean;
   // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
+  provider?: ApiProviderMode;
   baseUrl?: string;
+  azure?: boolean;
   azureEndpoint?: string;
   azureDeployment?: string;
   azureApiVersion?: string;
@@ -456,6 +462,15 @@ program
     "--base-url <url>",
     "Override the OpenAI-compatible base URL for API runs (e.g. LiteLLM proxy endpoint).",
   )
+  .addOption(
+    new Option(
+      "--provider <provider>",
+      "Choose API provider routing: auto, openai, or azure. Use openai to ignore Azure env/config.",
+    )
+      .choices(["auto", "openai", "azure"])
+      .default("auto"),
+  )
+  .option("--no-azure", "Disable Azure OpenAI routing for this run (same as --provider openai).")
   .option(
     "--azure-endpoint <url>",
     "Azure OpenAI Endpoint (e.g. https://resource.openai.azure.com/).",
@@ -1132,6 +1147,7 @@ function buildRunOptions(
     preview: overrides.preview ?? undefined,
     previewMode: overrides.previewMode ?? options.previewMode,
     apiKey: overrides.apiKey ?? options.apiKey,
+    provider: overrides.provider ?? options.provider,
     baseUrl: normalizedBaseUrl,
     azure,
     sessionId: overrides.sessionId ?? options.sessionId,
@@ -1152,6 +1168,70 @@ function buildRunOptions(
     renderPlain: overrides.renderPlain ?? options.renderPlain ?? false,
     writeOutputPath: overrides.writeOutputPath ?? options.writeOutputPath,
   };
+}
+
+function resolveApiProviderMode(options: Pick<CliOptions, "provider" | "azure">): ApiProviderMode {
+  const provider = options.provider ?? "auto";
+  if (provider === "azure" && options.azure === false) {
+    throw new Error("--provider azure cannot be combined with --no-azure.");
+  }
+  if (options.azure === false) {
+    return "openai";
+  }
+  return provider;
+}
+
+function hasExplicitAzureOption(optionUsesDefault: (name: string) => boolean): boolean {
+  return (
+    !optionUsesDefault("azureEndpoint") ||
+    !optionUsesDefault("azureDeployment") ||
+    !optionUsesDefault("azureApiVersion")
+  );
+}
+
+function formatRouteTargetForLog(raw: string | undefined): string {
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    let routePath = "";
+    if (segments.length > 0) {
+      routePath = `/${segments[0]}`;
+      if (segments.length > 1) {
+        routePath += "/...";
+      }
+    }
+    return `${parsed.host}${routePath}`;
+  } catch {
+    return raw.replace(/^https?:\/\//u, "").replace(/\/+$/u, "");
+  }
+}
+
+function validateApiProviderRoutingForCli(runOptions: RunOracleOptions): void {
+  const models =
+    Array.isArray(runOptions.models) && runOptions.models.length > 0
+      ? runOptions.models
+      : [runOptions.model];
+  for (const model of models) {
+    validateProviderRouting(
+      {
+        model,
+        providerMode: runOptions.provider,
+        azure: runOptions.azure,
+      },
+      {
+        onAzureDeploymentMissing: (state) => {
+          console.log(
+            chalk.dim(
+              `Provider: Azure OpenAI | endpoint: ${formatRouteTargetForLog(state.azureEndpoint)} | deployment: none | key: ${
+                runOptions.apiKey ? "apiKey option" : "AZURE_OPENAI_API_KEY|OPENAI_API_KEY"
+              }`,
+            ),
+          );
+        },
+      },
+    );
+  }
 }
 
 export function enforceBrowserSearchFlag(
@@ -1361,6 +1441,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     preview: false,
     previewMode: undefined,
     apiKey: undefined,
+    provider: stored.provider,
     baseUrl: normalizeBaseUrl(stored.baseUrl),
     azure: stored.azure,
     timeoutSeconds: stored.timeoutSeconds,
@@ -1490,15 +1571,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error("--dry-run cannot be combined with --render-markdown.");
   }
 
-  const preferredEngine = options.engine ?? userConfig.engine;
-  let engine: EngineMode = resolveEngine({
-    engine: preferredEngine,
-    browserFlag: options.browser,
-    env: process.env,
-  });
-  if (options.browser) {
-    console.log(chalk.yellow("`--browser` is deprecated; use `--engine browser` instead."));
-  }
   if (optionUsesDefault("model") && userConfig.model) {
     options.model = userConfig.model;
   }
@@ -1515,6 +1587,72 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     options.baseUrl = userConfig.apiBaseUrl;
   }
 
+  const providerMode = resolveApiProviderMode(options);
+  if (providerMode === "openai") {
+    if (hasExplicitAzureOption(optionUsesDefault)) {
+      throw new Error("--provider openai/--no-azure cannot be combined with Azure options.");
+    }
+    options.azureEndpoint = undefined;
+    options.azureDeployment = undefined;
+    options.azureApiVersion = undefined;
+  } else {
+    if (optionUsesDefault("azureEndpoint")) {
+      if (process.env.AZURE_OPENAI_ENDPOINT) {
+        options.azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+      } else if (userConfig.azure?.endpoint) {
+        options.azureEndpoint = userConfig.azure.endpoint;
+      }
+    }
+    if (optionUsesDefault("azureDeployment")) {
+      if (process.env.AZURE_OPENAI_DEPLOYMENT) {
+        options.azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT;
+      } else if (userConfig.azure?.deployment) {
+        options.azureDeployment = userConfig.azure.deployment;
+      }
+    }
+    if (optionUsesDefault("azureApiVersion")) {
+      if (process.env.AZURE_OPENAI_API_VERSION) {
+        options.azureApiVersion = process.env.AZURE_OPENAI_API_VERSION;
+      } else if (userConfig.azure?.apiVersion) {
+        options.azureApiVersion = userConfig.azure.apiVersion;
+      }
+    }
+    if (providerMode === "azure" && !options.azureEndpoint?.trim()) {
+      throw new Error("--provider azure requires --azure-endpoint or AZURE_OPENAI_ENDPOINT.");
+    }
+  }
+
+  const engineModels = multiModelProvided
+    ? Array.from(new Set(options.models!.map((entry) => resolveApiModel(entry))))
+    : [resolveApiModel(normalizeModelOption(options.model) || DEFAULT_MODEL)];
+  const azureAutoApiRequested =
+    providerMode !== "openai" &&
+    Boolean(options.azureEndpoint?.trim()) &&
+    engineModels.some((model) => isAzureOpenAICandidateModel(model));
+  const explicitApiProviderRequested =
+    providerMode !== "auto" || hasExplicitAzureOption(optionUsesDefault);
+  const preferredEngine =
+    options.engine ?? (explicitApiProviderRequested ? undefined : userConfig.engine);
+  let engine: EngineMode = resolveEngine({
+    engine: preferredEngine,
+    browserFlag: options.browser,
+    apiProviderRequested: explicitApiProviderRequested,
+    env: process.env,
+  });
+  const envEnginePreference = (process.env.ORACLE_ENGINE ?? "").trim().toLowerCase();
+  const browserEngineRequested =
+    options.browser ||
+    options.engine === "browser" ||
+    Boolean(remoteHost) ||
+    (!explicitApiProviderRequested &&
+      (userConfig.engine === "browser" || envEnginePreference === "browser"));
+  if (azureAutoApiRequested && engine === "browser" && !browserEngineRequested) {
+    engine = "api";
+  }
+  if (options.browser) {
+    console.log(chalk.yellow("`--browser` is deprecated; use `--engine browser` instead."));
+  }
+
   if (remoteHost && engine !== "browser") {
     throw new Error("--remote-host requires --engine browser.");
   }
@@ -1523,28 +1661,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   if (options.browserTab && engine !== "browser") {
     throw new Error("--browser-tab requires --engine browser.");
-  }
-
-  if (optionUsesDefault("azureEndpoint")) {
-    if (process.env.AZURE_OPENAI_ENDPOINT) {
-      options.azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    } else if (userConfig.azure?.endpoint) {
-      options.azureEndpoint = userConfig.azure.endpoint;
-    }
-  }
-  if (optionUsesDefault("azureDeployment")) {
-    if (process.env.AZURE_OPENAI_DEPLOYMENT) {
-      options.azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT;
-    } else if (userConfig.azure?.deployment) {
-      options.azureDeployment = userConfig.azure.deployment;
-    }
-  }
-  if (optionUsesDefault("azureApiVersion")) {
-    if (process.env.AZURE_OPENAI_API_VERSION) {
-      options.azureApiVersion = process.env.AZURE_OPENAI_API_VERSION;
-    } else if (userConfig.azure?.apiVersion) {
-      options.azureApiVersion = userConfig.azure.apiVersion;
-    }
   }
 
   const normalizedMultiModels: ModelName[] = multiModelProvided
@@ -1562,17 +1678,20 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const isCodex = primaryModelCandidate.startsWith("gpt-5.1-codex");
   const isClaude = primaryModelCandidate.startsWith("claude");
   const userForcedBrowser = options.browser || options.engine === "browser";
+  const browserExplicitlyRequested = browserEngineRequested;
   const isBrowserCompatible = (model: string) =>
     model.startsWith("gpt-") || model.startsWith("gemini");
   const hasNonBrowserCompatibleTarget =
-    (engine === "browser" || userForcedBrowser) &&
-    (normalizedMultiModels.length > 0
+    normalizedMultiModels.length > 0
       ? normalizedMultiModels.some((model) => !isBrowserCompatible(model))
-      : !isBrowserCompatible(resolvedModelCandidate));
-  if (hasNonBrowserCompatibleTarget) {
+      : !isBrowserCompatible(resolvedModelCandidate);
+  if (browserExplicitlyRequested && hasNonBrowserCompatibleTarget) {
     throw new Error(
       "Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.",
     );
+  }
+  if (engine === "browser" && hasNonBrowserCompatibleTarget) {
+    engine = "api";
   }
   if (isClaude && engine === "browser") {
     console.log(chalk.dim("Browser engine is not supported for Claude models; switching to API."));
@@ -1624,6 +1743,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   resolvedOptions.baseUrl = resolvedBaseUrl;
   resolvedOptions.effectiveModelId = effectiveModelId;
+  resolvedOptions.provider = providerMode;
   resolvedOptions.writeOutputPath = resolveOutputPath(options.writeOutput, process.cwd());
 
   // Decide whether to block until completion:
@@ -1761,6 +1881,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       return;
     }
     // API dry-run/preview path
+    validateApiProviderRoutingForCli(runOptions);
     if (previewMode === "summary") {
       await runDryRunSummary(
         {
@@ -1894,6 +2015,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     background: resolvedOptions.background ?? userConfig.background,
     baseUrl: resolvedBaseUrl,
   });
+  if (sessionMode === "api") {
+    validateApiProviderRoutingForCli(baseRunOptions);
+  }
   enforceBrowserSearchFlag(baseRunOptions, sessionMode, console.log);
   if (sessionMode === "browser" && baseRunOptions.search === false) {
     console.log(
@@ -2151,6 +2275,10 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     }
   }
   const remoteExecutionActive = Boolean(browserDeps);
+
+  if (sessionMode === "api") {
+    validateApiProviderRoutingForCli(runOptions);
+  }
 
   await sessionStore.ensureStorage();
   const notifications = deriveNotificationSettingsFromMetadata(

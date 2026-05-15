@@ -54,12 +54,14 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 
 ## API endpoints
 
-| Flag                  | Purpose                               |
-| --------------------- | ------------------------------------- |
-| `--base-url <url>`    | LiteLLM / Azure / OpenRouter / proxy. |
-| `--azure-endpoint`    | Azure OpenAI endpoint.                |
-| `--azure-deployment`  | Azure deployment name.                |
-| `--azure-api-version` | Azure API version.                    |
+| Flag                  | Purpose                                  |
+| --------------------- | ---------------------------------------- |
+| `--base-url <url>`    | LiteLLM / Azure / OpenRouter / proxy.    |
+| `--provider <mode>`   | API route: `auto`, `openai`, or `azure`. |
+| `--no-azure`          | Ignore Azure env/config for this run.    |
+| `--azure-endpoint`    | Azure OpenAI endpoint.                   |
+| `--azure-deployment`  | Azure deployment name.                   |
+| `--azure-api-version` | Azure API version.                       |
 
 See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrouter.md).
 

@@ -42,6 +42,8 @@ export interface AzureOptions {
   deployment?: string;
 }
 
+export type ApiProviderMode = "auto" | "openai" | "azure";
+
 export type ClientFactory = (
   apiKey: string,
   options?: {
@@ -155,6 +157,7 @@ export interface RunOracleOptions {
   preview?: boolean | string;
   previewMode?: PreviewMode;
   apiKey?: string;
+  provider?: ApiProviderMode;
   baseUrl?: string;
   azure?: AzureOptions;
   sessionId?: string;

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { mkdtemp, writeFile, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -9,6 +9,30 @@ const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
 const CLIENT_FACTORY = path.join(process.cwd(), "tests", "fixtures", "mockClientFactory.cjs");
 const INTEGRATION_TIMEOUT = 60000;
+const AZURE_ENV_KEYS = [
+  "AZURE_OPENAI_ENDPOINT",
+  "AZURE_OPENAI_API_KEY",
+  "AZURE_OPENAI_DEPLOYMENT",
+  "AZURE_OPENAI_API_VERSION",
+] as const;
+const originalAzureEnv = Object.fromEntries(AZURE_ENV_KEYS.map((key) => [key, process.env[key]]));
+
+beforeEach(() => {
+  for (const key of AZURE_ENV_KEYS) {
+    delete process.env[key];
+  }
+});
+
+afterAll(() => {
+  for (const key of AZURE_ENV_KEYS) {
+    const value = originalAzureEnv[key];
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+});
 
 describe("oracle CLI integration", () => {
   test(
@@ -57,6 +81,434 @@ describe("oracle CLI integration", () => {
       expect(metadata.response?.requestId).toBe("mock-req");
       expect(metadata.usage?.totalTokens).toBe(20);
       expect(metadata.options?.effectiveModelId).toBe("gpt-5.1");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "honors --provider openai by ignoring Azure env routing",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-openai-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_ENDPOINT: "https://example-resource.openai.azure.com/",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_API_KEY: "az-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--provider",
+          "openai",
+          "--prompt",
+          "Provider route check",
+          "--model",
+          "gpt-5.1",
+        ],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      const metadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(metadata.options?.azure).toBeUndefined();
+      expect(metadata.options?.provider).toBe("openai");
+      expect(stdout).toContain("Provider: OpenAI | base: api.openai.com | key: OPENAI_API_KEY");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "keeps Gemini dry-runs in browser mode when Azure env is present",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-gemini-azure-"));
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_ENDPOINT: "https://example-resource.openai.azure.com/",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_API_KEY: "az-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        DOTENV_CONFIG_PATH: "/tmp/nonexistent-oracle-env",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+      delete env.OPENAI_API_KEY;
+      delete env.GEMINI_API_KEY;
+      delete env.OPENROUTER_API_KEY;
+      delete env.ORACLE_ENGINE;
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--dry-run",
+          "--prompt",
+          "Gemini browser route check",
+          "--model",
+          "gemini-3-pro",
+        ],
+        { env },
+      );
+
+      expect(stdout).toContain("[preview] Oracle");
+      expect(stdout).toContain("browser mode (gemini-3-pro)");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "honors ORACLE_ENGINE browser when Azure env is present",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-engine-browser-"));
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_ENDPOINT: "https://example-resource.openai.azure.com/",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_API_KEY: "az-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_DEPLOYMENT: "configured-gpt",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_ENGINE: "browser",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        DOTENV_CONFIG_PATH: "/tmp/nonexistent-oracle-env",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+      delete env.OPENAI_API_KEY;
+      delete env.GEMINI_API_KEY;
+      delete env.OPENROUTER_API_KEY;
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--dry-run",
+          "--prompt",
+          "Engine browser route check",
+          "--model",
+          "gpt-5.1",
+        ],
+        { env },
+      );
+
+      expect(stdout).toContain("[preview] Oracle");
+      expect(stdout).toContain("browser mode (gpt-5.1)");
+      expect(stdout).not.toContain("Provider: Azure OpenAI");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "persists explicit Azure provider mode for custom deployment sessions",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-azure-"));
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_ENDPOINT: "https://example-resource.openai.azure.com/",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_API_KEY: "az-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        DOTENV_CONFIG_PATH: "/tmp/nonexistent-oracle-env",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+      delete env.OPENAI_API_KEY;
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--provider",
+          "azure",
+          "--azure-deployment",
+          "my-o3",
+          "--prompt",
+          "Azure provider route check",
+          "--model",
+          "o3-mini",
+          "--no-background",
+          "--wait",
+        ],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      const metadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(metadata.options?.provider).toBe("azure");
+      expect(metadata.options?.azure?.deployment).toBe("my-o3");
+      expect(stdout).toContain(
+        "Provider: Azure OpenAI | endpoint: example-resource.openai.azure.com | deployment: my-o3 | key: AZURE_OPENAI_API_KEY|OPENAI_API_KEY",
+      );
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects missing Azure deployment before detached Pro sessions start",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-detach-azure-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_ENDPOINT: "https://example-resource.openai.azure.com/",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_API_KEY: "az-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--prompt",
+            "Detached Azure provider route check",
+            "--model",
+            "gpt-5-pro",
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/Azure mode requires --azure-deployment/i);
+      }
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      let sessionIds: string[] = [];
+      try {
+        sessionIds = await readdir(sessionsDir);
+      } catch {
+        sessionIds = [];
+      }
+      expect(sessionIds).toEqual([]);
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects forced OpenAI non-OpenAI models before detached Pro sessions start",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-detach-openai-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--provider",
+            "openai",
+            "--prompt",
+            "Detached OpenAI provider route check",
+            "--model",
+            "claude-4.6-sonnet",
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/OpenAI provider cannot run claude-4\.6-sonnet/i);
+      }
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      let sessionIds: string[] = [];
+      try {
+        sessionIds = await readdir(sessionsDir);
+      } catch {
+        sessionIds = [];
+      }
+      expect(sessionIds).toEqual([]);
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects forced OpenAI provider-qualified non-OpenAI dry-runs before sessions start",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-dry-openai-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        DOTENV_CONFIG_PATH: "/tmp/nonexistent-oracle-env",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--dry-run",
+            "--provider",
+            "openai",
+            "--prompt",
+            "Dry-run provider route check",
+            "--model",
+            "anthropic/claude-sonnet-4.5",
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/OpenAI provider cannot run anthropic\/claude-sonnet-4\.5/i);
+      }
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      let sessionIds: string[] = [];
+      try {
+        sessionIds = await readdir(sessionsDir);
+      } catch {
+        sessionIds = [];
+      }
+      expect(sessionIds).toEqual([]);
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects invalid forced provider multi-model runs before any session starts",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-multi-openai-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      try {
+        await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--provider",
+            "openai",
+            "--prompt",
+            "Multi-provider route check",
+            "--models",
+            "gpt-5.1,claude-4.6-sonnet",
+          ],
+          { env },
+        );
+        throw new Error("Expected oracle CLI to fail but it succeeded.");
+      } catch (error) {
+        const stderr =
+          error && typeof error === "object" && error !== null && "stderr" in error
+            ? String((error as { stderr?: unknown }).stderr ?? "")
+            : "";
+        expect(stderr).toMatch(/OpenAI provider cannot run claude-4\.6-sonnet/i);
+      }
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      let sessionIds: string[] = [];
+      try {
+        sessionIds = await readdir(sessionsDir);
+      } catch {
+        sessionIds = [];
+      }
+      expect(sessionIds).toEqual([]);
 
       await rm(oracleHome, { recursive: true, force: true });
     },

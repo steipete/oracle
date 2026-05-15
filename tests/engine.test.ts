@@ -5,6 +5,11 @@ import { resolveEngine, defaultWaitPreference, type EngineMode } from "../src/cl
 const envWithKey = { ...process.env, OPENAI_API_KEY: "sk-test" } as NodeJS.ProcessEnv;
 const envWithoutKey = { ...process.env } as NodeJS.ProcessEnv;
 delete envWithoutKey.OPENAI_API_KEY;
+delete envWithoutKey.AZURE_OPENAI_ENDPOINT;
+delete envWithoutKey.ANTHROPIC_API_KEY;
+delete envWithoutKey.GEMINI_API_KEY;
+delete envWithoutKey.XAI_API_KEY;
+delete envWithoutKey.OPENROUTER_API_KEY;
 delete envWithKey.ORACLE_ENGINE;
 delete envWithoutKey.ORACLE_ENGINE;
 
@@ -32,6 +37,28 @@ describe("resolveEngine", () => {
     // biome-ignore lint/complexity/useLiteralKeys: env var names are uppercase with underscores
     env["ORACLE_ENGINE"] = "api";
     const engine = resolveEngine({ engine: undefined, browserFlag: false, env });
+    expect(engine).toBe<EngineMode>("api");
+  });
+
+  it("does not let Azure env choose API before a model is known", () => {
+    const env = { ...envWithoutKey, AZURE_OPENAI_ENDPOINT: "https://example.openai.azure.com/" };
+    const engine = resolveEngine({ engine: undefined, browserFlag: false, env });
+    expect(engine).toBe<EngineMode>("browser");
+  });
+
+  it("does not treat model-specific provider keys as default GPT API readiness", () => {
+    const env = { ...envWithoutKey, GEMINI_API_KEY: "gm-test" };
+    const engine = resolveEngine({ engine: undefined, browserFlag: false, env });
+    expect(engine).toBe<EngineMode>("browser");
+  });
+
+  it("lets explicit provider routing force api without keys", () => {
+    const engine = resolveEngine({
+      engine: undefined,
+      browserFlag: false,
+      apiProviderRequested: true,
+      env: envWithoutKey,
+    });
     expect(engine).toBe<EngineMode>("api");
   });
 

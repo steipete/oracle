@@ -166,7 +166,7 @@ npx -y @steipete/oracle oracle-mcp
 - Render/copy bundles for manual paste into ChatGPT when automation is blocked.
 - GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
 - OpenAI/Azure follow-up API runs can continue from `--followup <sessionId|responseId>`; for multi-model parents, add `--followup-model <model>`.
-- Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs.
+- Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs; use `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env vars are present.
 - File safety: globs/excludes, size guards, `--files-report`.
 - Sessions you can replay (`oracle status`, `oracle session <id> --render`).
 - Session logs and bundles live in `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
@@ -277,6 +277,7 @@ Browser automation can open or control Chrome, so dry-runs and live runs print a
 | `--youtube <url>`                                               | YouTube video URL to analyze (Gemini browser mode).                                                                                                                                                                                                                                                                                       |
 | `--generate-image <file>`                                       | Generate image and save to file (Gemini browser mode; ChatGPT browser mode saves downloadable image artifacts when present). Extra ChatGPT images save as numbered siblings.                                                                                                                                                              |
 | `--edit-image <file>`                                           | Edit existing image with `--output` (Gemini browser mode). For ChatGPT browser mode, attach source images with `--file` and use `--generate-image` for the output path.                                                                                                                                                                   |
+| `--provider openai\|azure\|auto`, `--no-azure`                  | Choose API provider routing; `openai` / `--no-azure` ignores Azure env/config for the run.                                                                                                                                                                                                                                                |
 | `--azure-endpoint`, `--azure-deployment`, `--azure-api-version` | Target Azure OpenAI endpoints (picks Azure client automatically).                                                                                                                                                                                                                                                                         |
 
 ## Configuration
