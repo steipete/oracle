@@ -92,6 +92,33 @@ const write = vi.fn(() => true);
 const cliVersion = getCliVersion();
 const originalPlatform = process.platform;
 
+async function withExactEnv<T>(
+  updates: Record<string, string | undefined>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const originals = new Map<string, string | undefined>();
+  for (const name of Object.keys(updates)) {
+    originals.set(name, process.env[name]);
+    const value = updates[name];
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [name, value] of originals) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+}
+
 beforeAll(() => {
   // Force macOS platform so browser-mode paths are reachable in Linux/Windows CI
   Object.defineProperty(process, "platform", { value: "darwin" });
@@ -651,6 +678,180 @@ describe("performSessionRun", () => {
     const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
     expect(logsCombined).toContain("Multi-model result: partial success, 1/2 succeeded");
     expect(logsCombined).toContain("Failures:");
+  });
+
+  test("prints classified provider failures with recovery hints", async () => {
+    const sessionMeta = {
+      ...baseSessionMeta,
+      models: [
+        { model: "gpt-5.1", status: "running" },
+        { model: "claude-4.6-sonnet", status: "running" },
+      ],
+    } as SessionMetadata;
+
+    sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
+    sessionStoreMock.readModelLog.mockResolvedValue("Answer:\npartial");
+
+    const summary: MultiModelRunSummary = {
+      fulfilled: [
+        {
+          model: "gpt-5.1" as ModelName,
+          usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, totalTokens: 2, cost: 0 },
+          answerText: "ok",
+          logPath: "log-ok",
+        },
+      ],
+      rejected: [
+        {
+          model: "claude-4.6-sonnet" as ModelName,
+          reason: new Error("invalid x-api-key: sk-ant-secret123456789"),
+        },
+      ],
+      elapsedMs: 500,
+    };
+    vi.mocked(runMultiModelApiSession).mockResolvedValue(summary);
+
+    await withExactEnv(
+      {
+        ANTHROPIC_API_KEY: "ak-native-test-key",
+        OPENROUTER_API_KEY: undefined,
+      },
+      () =>
+        performSessionRun({
+          sessionMeta,
+          runOptions: {
+            ...baseRunOptions,
+            models: ["gpt-5.1", "claude-4.6-sonnet"],
+            partialMode: "ok",
+          },
+          mode: "api",
+          cwd: "/tmp",
+          log,
+          write,
+          version: cliVersion,
+        }),
+    );
+
+    const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
+    expect(logsCombined).toContain("claude-4.6-sonnet: auth failed");
+    expect(logsCombined).toContain("key: ANTHROPIC_API_KEY");
+    expect(logsCombined).toContain("provider said: invalid x-api-key: [redacted]");
+    expect(logsCombined).toContain("fix: refresh ANTHROPIC_API_KEY");
+    expect(logsCombined).toContain("oracle doctor --providers --models claude-4.6-sonnet");
+    expect(logsCombined).not.toContain("sk-ant-secret123456789");
+  });
+
+  test("sanitizes rethrown provider failures when partial success is not allowed", async () => {
+    const sessionMeta = {
+      ...baseSessionMeta,
+      models: [
+        { model: "gpt-5.1", status: "running" },
+        { model: "claude-4.6-sonnet", status: "running" },
+      ],
+    } as SessionMetadata;
+
+    sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
+    sessionStoreMock.readModelLog.mockResolvedValue("Answer:\npartial");
+
+    const summary: MultiModelRunSummary = {
+      fulfilled: [
+        {
+          model: "gpt-5.1" as ModelName,
+          usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, totalTokens: 2, cost: 0 },
+          answerText: "ok",
+          logPath: "log-ok",
+        },
+      ],
+      rejected: [
+        {
+          model: "claude-4.6-sonnet" as ModelName,
+          reason: new Error("invalid x-api-key: sk-ant-secret123456789"),
+        },
+      ],
+      elapsedMs: 500,
+    };
+    vi.mocked(runMultiModelApiSession).mockResolvedValue(summary);
+
+    await expect(
+      withExactEnv(
+        {
+          ANTHROPIC_API_KEY: "ak-native-test-key",
+          OPENROUTER_API_KEY: undefined,
+        },
+        () =>
+          performSessionRun({
+            sessionMeta,
+            runOptions: {
+              ...baseRunOptions,
+              models: ["gpt-5.1", "claude-4.6-sonnet"],
+            },
+            mode: "api",
+            cwd: "/tmp",
+            log,
+            write,
+            version: cliVersion,
+          }),
+      ),
+    ).rejects.toThrow("claude-4.6-sonnet: auth failed");
+
+    const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
+    expect(logsCombined).toContain("ERROR: claude-4.6-sonnet: auth failed");
+    expect(logsCombined).toContain("provider said: invalid x-api-key: [redacted]");
+    expect(logsCombined).not.toContain("sk-ant-secret123456789");
+  });
+
+  test("preserves transport metadata when sanitizing rethrown provider failures", async () => {
+    const sessionMeta = {
+      ...baseSessionMeta,
+      models: [{ model: "gpt-5.2-pro", status: "running" }],
+    } as SessionMetadata;
+
+    sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
+    sessionStoreMock.readModelLog.mockResolvedValue("");
+
+    const summary: MultiModelRunSummary = {
+      fulfilled: [],
+      rejected: [
+        {
+          model: "gpt-5.2-pro" as ModelName,
+          reason: new OracleTransportError(
+            "model-unavailable",
+            "The requested model does not exist for sk-secret123456789",
+          ),
+        },
+      ],
+      elapsedMs: 500,
+    };
+    vi.mocked(runMultiModelApiSession).mockResolvedValue(summary);
+
+    await expect(
+      performSessionRun({
+        sessionMeta,
+        runOptions: {
+          ...baseRunOptions,
+          models: ["gpt-5.2-pro", "gpt-5.1"],
+        },
+        mode: "api",
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toMatchObject({
+      reason: "model-unavailable",
+      message: expect.stringContaining("gpt-5.2-pro: model unavailable"),
+    });
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "error",
+      transport: { reason: "model-unavailable" },
+    });
+    expect(finalUpdate?.errorMessage).toContain("gpt-5.2-pro: model unavailable");
+    expect(finalUpdate?.errorMessage).not.toContain("sk-secret123456789");
+    const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
+    expect(logsCombined).toContain("Transport: model-unavailable");
+    expect(logsCombined).not.toContain("sk-secret123456789");
   });
 
   test("prints tips before the first model heading in multi-model TTY streaming", async () => {
