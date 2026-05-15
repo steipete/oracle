@@ -4,6 +4,7 @@
 
 ### Added
 
+- CLI: add `--perf-trace` / `--perf-trace-path` / `ORACLE_PERF_TRACE` startup timing traces and lazy-load heavy browser/provider/runtime modules to reduce time-to-first-output.
 - API: add `--allow-partial` / `--partial ok` for multi-model runs so advisory panels can exit 0 when at least one model succeeds, while still listing saved outputs and a JSON output manifest before failures.
 - API: classify common provider failures in multi-model summaries and metadata, including auth, expired keys, quota, rate limits, and unavailable models, with secret-safe recovery hints.
 - API: add root `--preflight` provider readiness checks and packed CLI help smoke coverage so stale installed help is caught before release.

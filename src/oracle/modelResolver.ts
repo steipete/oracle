@@ -1,12 +1,22 @@
+import { createRequire } from "node:module";
 import type { ModelConfig, ModelName, KnownModelName, TokenizerFn, ProModelName } from "./types.js";
 import { MODEL_CONFIGS, PRO_MODELS } from "./config.js";
-import { countTokens as countTokensGpt5Pro } from "gpt-tokenizer/model/gpt-5-pro";
 import { pricingFromUsdPerMillion } from "tokentally";
 
 const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 const OPENROUTER_MODELS_ENDPOINT = "https://openrouter.ai/api/v1/models";
+const require = createRequire(import.meta.url);
+let countTokensGpt5ProImpl: TokenizerFn | undefined;
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+const countTokensGpt5Pro: TokenizerFn = (
+  input: unknown,
+  options?: Record<string, unknown>,
+): number => {
+  countTokensGpt5ProImpl ??= require("gpt-tokenizer/model/gpt-5-pro").countTokens as TokenizerFn;
+  return countTokensGpt5ProImpl(input, options);
+};
 
 export function isKnownModel(model: string): model is KnownModelName {
   return Object.hasOwn(MODEL_CONFIGS, model);

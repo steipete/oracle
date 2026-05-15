@@ -1,8 +1,11 @@
-import { countTokens as countTokensGpt5 } from "gpt-tokenizer/model/gpt-5";
-import { countTokens as countTokensGpt5Pro } from "gpt-tokenizer/model/gpt-5-pro";
+import { createRequire } from "node:module";
 import type { ModelConfig, ModelName, KnownModelName, ProModelName, TokenizerFn } from "./types.js";
-import { countTokens as countTokensAnthropicRaw } from "@anthropic-ai/tokenizer";
 import { stringifyTokenizerInput } from "./tokenStringifier.js";
+
+const require = createRequire(import.meta.url);
+let countTokensGpt5Impl: TokenizerFn | undefined;
+let countTokensGpt5ProImpl: TokenizerFn | undefined;
+let countTokensAnthropicImpl: ((input: string) => number) | undefined;
 
 export const DEFAULT_MODEL: ModelName = "gpt-5.5-pro";
 export const PRO_MODELS = new Set<ProModelName>([
@@ -15,8 +18,28 @@ export const PRO_MODELS = new Set<ProModelName>([
   "claude-4.1-opus",
 ]);
 
-const countTokensAnthropic: TokenizerFn = (input: unknown): number =>
-  countTokensAnthropicRaw(stringifyTokenizerInput(input));
+const countTokensGpt5: TokenizerFn = (
+  input: unknown,
+  options?: Record<string, unknown>,
+): number => {
+  countTokensGpt5Impl ??= require("gpt-tokenizer/model/gpt-5").countTokens as TokenizerFn;
+  return countTokensGpt5Impl(input, options);
+};
+
+const countTokensGpt5Pro: TokenizerFn = (
+  input: unknown,
+  options?: Record<string, unknown>,
+): number => {
+  countTokensGpt5ProImpl ??= require("gpt-tokenizer/model/gpt-5-pro").countTokens as TokenizerFn;
+  return countTokensGpt5ProImpl(input, options);
+};
+
+const countTokensAnthropic: TokenizerFn = (input: unknown): number => {
+  countTokensAnthropicImpl ??= require("@anthropic-ai/tokenizer").countTokens as (
+    input: string,
+  ) => number;
+  return countTokensAnthropicImpl(stringifyTokenizerInput(input));
+};
 
 export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
   "gpt-5.5-pro": {

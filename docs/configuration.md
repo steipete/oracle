@@ -129,3 +129,10 @@ oracle \
 
 - `--zombie-timeout <ms|s|m|h>` overrides the stale-session cutoff used by `oracle status`.
 - `--zombie-last-activity` uses last log activity instead of start time to detect stale sessions.
+
+## Performance traces
+
+- `--perf-trace` writes a JSON timing trace with startup, first output, root command, and exit marks.
+- `--perf-trace-path /tmp/oracle.json` or `--perf-trace=/tmp/oracle.json` writes to an explicit path.
+- `ORACLE_PERF_TRACE=1` writes `.oracle-perf-<timestamp>-<pid>.json` in the current directory.
+- `ORACLE_PERF_TRACE=/tmp/oracle.json` writes to an explicit path.

@@ -19,7 +19,8 @@ import type {
   PartialMode,
   ThinkingTimeLevel,
 } from "./oracle.js";
-import { DEFAULT_MODEL, formatElapsed } from "./oracle.js";
+import { DEFAULT_MODEL } from "./oracle/config.js";
+import { formatElapsed } from "./oracle/format.js";
 import { safeModelSlug } from "./oracle/modelResolver.js";
 import { getOracleHomeDir } from "./oracleHome.js";
 

@@ -44,15 +44,16 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 
 ## Run control
 
-| Flag                                  | Purpose                                                                                |
-| ------------------------------------- | -------------------------------------------------------------------------------------- |
-| `--wait`                              | Block on background API runs.                                                          |
-| `--timeout <seconds\|duration\|auto>` | Overall API deadline. `auto` = 60m for Pro, 120s otherwise; accepts values like `10m`. |
-| `--background`, `--no-background`     | Force Responses API background mode on/off.                                            |
-| `--http-timeout <ms\|s\|m\|h>`        | Override the HTTP client timeout; explicit `--timeout` values are reused when omitted. |
-| `--allow-partial`, `--partial <mode>` | Accept partial multi-model success when mode is `ok`; default mode is `fail`.          |
-| `--preflight`                         | Check redacted provider readiness for requested API model(s), then exit.               |
-| `--heartbeat <seconds>`               | Emit progress heartbeats; browser mode reports thinking-sidecar liveness.              |
+| Flag                                       | Purpose                                                                                |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `--wait`                                   | Block on background API runs.                                                          |
+| `--timeout <seconds\|duration\|auto>`      | Overall API deadline. `auto` = 60m for Pro, 120s otherwise; accepts values like `10m`. |
+| `--background`, `--no-background`          | Force Responses API background mode on/off.                                            |
+| `--http-timeout <ms\|s\|m\|h>`             | Override the HTTP client timeout; explicit `--timeout` values are reused when omitted. |
+| `--allow-partial`, `--partial <mode>`      | Accept partial multi-model success when mode is `ok`; default mode is `fail`.          |
+| `--preflight`                              | Check redacted provider readiness for requested API model(s), then exit.               |
+| `--perf-trace`, `--perf-trace-path <path>` | Write CLI startup / first-output timing trace JSON.                                    |
+| `--heartbeat <seconds>`                    | Emit progress heartbeats; browser mode reports thinking-sidecar liveness.              |
 
 ## API endpoints
 

@@ -1,14 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { BrowserSessionConfig } from "../sessionStore.js";
-import type { ModelName, ThinkingTimeLevel } from "../oracle.js";
-import {
-  CHATGPT_URL,
-  DEFAULT_MODEL_STRATEGY,
-  DEFAULT_MODEL_TARGET,
-  normalizeChatgptUrl,
-  parseDuration,
-} from "../browserMode.js";
+import type { ModelName, ThinkingTimeLevel } from "../oracle/types.js";
+import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "../browser/constants.js";
+import { normalizeChatgptUrl } from "../browser/utils.js";
+import { parseDuration } from "../duration.js";
 import { normalizeBrowserModelStrategy } from "../browser/modelStrategy.js";
 import type {
   BrowserArchiveMode,

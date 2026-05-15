@@ -1,6 +1,6 @@
 import chalk from "chalk";
-import { DEFAULT_MODEL } from "../oracle.js";
-import type { ApiProviderMode, AzureOptions, ModelName } from "../oracle.js";
+import { DEFAULT_MODEL } from "../oracle/config.js";
+import type { ApiProviderMode, AzureOptions, ModelName } from "../oracle/types.js";
 import { resolveApiModel } from "./options.js";
 import { loadUserConfig, type UserConfig } from "../config.js";
 import { buildProviderRoutePlan, type ProviderRoutePlan } from "../oracle/providerRoutePlan.js";

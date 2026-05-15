@@ -1,9 +1,9 @@
 import { InvalidArgumentError, type Command } from "commander";
-import { parseDuration } from "../browserMode.js";
+import { parseDuration } from "../duration.js";
 import path from "node:path";
 import fg from "fast-glob";
 import type { ModelName, PreviewMode } from "../oracle.js";
-import { DEFAULT_MODEL, MODEL_CONFIGS } from "../oracle.js";
+import { DEFAULT_MODEL, MODEL_CONFIGS } from "../oracle/config.js";
 
 export function collectPaths(
   value: string | string[] | undefined,

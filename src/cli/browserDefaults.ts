@@ -1,6 +1,7 @@
-import { normalizeChatgptUrl, CHATGPT_URL } from "../browserMode.js";
+import { CHATGPT_URL } from "../browser/constants.js";
+import { normalizeChatgptUrl } from "../browser/utils.js";
 import type { UserConfig } from "../config.js";
-import type { ThinkingTimeLevel } from "../oracle.js";
+import type { ThinkingTimeLevel } from "../oracle/types.js";
 import type {
   BrowserArchiveMode,
   BrowserModelStrategy,

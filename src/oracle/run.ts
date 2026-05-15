@@ -27,7 +27,8 @@ import {
   describeTransportError,
   toTransportError,
 } from "./errors.js";
-import { createDefaultClientFactory, isCustomBaseUrl } from "./client.js";
+import { isCustomBaseUrl } from "./baseUrl.js";
+import { createDefaultClientFactory } from "./client.js";
 import { formatBaseUrlForLog, maskApiKey } from "./logging.js";
 import { startHeartbeat } from "../heartbeat.js";
 import { startOscProgress } from "./oscProgress.js";

@@ -1,4 +1,4 @@
-import { isCustomBaseUrl } from "./client.js";
+import { isCustomBaseUrl } from "./baseUrl.js";
 import { formatBaseUrlForLog, maskApiKey } from "./logging.js";
 import {
   defaultOpenRouterBaseUrl,

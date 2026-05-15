@@ -19,30 +19,7 @@ import type {
 import { createGeminiClient } from "./gemini.js";
 import { createClaudeClient } from "./claude.js";
 import { isOpenRouterBaseUrl } from "./modelResolver.js";
-
-/**
- * Known native API base URLs that should still use their dedicated SDKs.
- * Any other custom base URL is treated as an OpenAI-compatible proxy and
- * all models are routed through the chat/completions adapter.
- */
-const NATIVE_API_HOSTS = [
-  "api.openai.com",
-  "api.anthropic.com",
-  "generativelanguage.googleapis.com",
-  "api.x.ai",
-];
-
-export function isCustomBaseUrl(baseUrl: string | undefined): boolean {
-  if (!baseUrl) return false;
-  try {
-    const url = new URL(baseUrl);
-    return !NATIVE_API_HOSTS.some(
-      (host) => url.hostname === host || url.hostname.endsWith(`.${host}`),
-    );
-  } catch {
-    return false;
-  }
-}
+import { isCustomBaseUrl } from "./baseUrl.js";
 
 export function buildAzureResponsesBaseUrl(endpoint: string): string {
   return `${endpoint.replace(/\/+$/, "")}/openai/v1`;

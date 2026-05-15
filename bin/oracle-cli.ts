@@ -17,18 +17,15 @@ import { resolveDashPrompt } from "../src/cli/stdin.js";
 import chalk from "chalk";
 import type { SessionMetadata, SessionMode, BrowserSessionConfig } from "../src/sessionStore.js";
 import { sessionStore, pruneOldSessions } from "../src/sessionStore.js";
-import {
-  DEFAULT_MODEL,
-  MODEL_CONFIGS,
-  readFiles,
-  estimateRequestTokens,
-  buildRequestBody,
-} from "../src/oracle.js";
+import { DEFAULT_MODEL, MODEL_CONFIGS } from "../src/oracle/config.js";
 import { isKnownModel } from "../src/oracle/modelResolver.js";
-import type { ApiProviderMode, ModelName, PreviewMode, RunOracleOptions } from "../src/oracle.js";
-import { CHATGPT_URL } from "../src/browserMode.js";
-import { createRemoteBrowserExecutor } from "../src/remote/client.js";
-import { createGeminiWebExecutor } from "../src/gemini-web/index.js";
+import type {
+  ApiProviderMode,
+  ModelName,
+  PreviewMode,
+  RunOracleOptions,
+} from "../src/oracle/types.js";
+import { CHATGPT_URL } from "../src/browser/constants.js";
 import { applyHelpStyling } from "../src/cli/help.js";
 import {
   collectPaths,
@@ -53,36 +50,24 @@ import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
 import { shouldDetachSession } from "../src/cli/detach.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
-import { buildBrowserConfig, resolveBrowserModelLabel } from "../src/cli/browserConfig.js";
-import { performSessionRun } from "../src/cli/sessionRunner.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
-import { attachSession, showStatus, formatCompletionSummary } from "../src/cli/sessionDisplay.js";
 import { formatCompactNumber } from "../src/cli/format.js";
 import { formatIntroLine } from "../src/cli/tagline.js";
 import { warnIfOversizeBundle } from "../src/cli/bundleWarnings.js";
 import { formatRenderedMarkdown } from "../src/cli/renderOutput.js";
 import { resolveRenderFlag, resolveRenderPlain } from "../src/cli/renderFlags.js";
-import { resolveGeminiModelId } from "../src/oracle/gemini.js";
-import {
-  handleSessionCommand,
-  type StatusOptions,
-  formatSessionCleanupMessage,
-} from "../src/cli/sessionCommand.js";
+import { resolveGeminiModelId } from "../src/oracle/geminiModels.js";
+import type { StatusOptions } from "../src/cli/sessionCommand.js";
 import { isErrorLogged } from "../src/cli/errorUtils.js";
-import { handleSessionAlias, handleStatusFlag } from "../src/cli/rootAlias.js";
 import { resolveOutputPath } from "../src/cli/writeOutputPath.js";
-import { showBrowserTabsStatus } from "../src/cli/browserTabs.js";
 import { getCliVersion } from "../src/version.js";
-import { runDryRunSummary, runBrowserPreview } from "../src/cli/dryRun.js";
-import { launchTui } from "../src/cli/tui/index.js";
 import {
   resolveNotificationSettings,
   deriveNotificationSettingsFromMetadata,
   type NotificationSettings,
 } from "../src/cli/notifier.js";
 import { loadUserConfig, type UserConfig } from "../src/config.js";
-import { applyBrowserDefaultsFromConfig } from "../src/cli/browserDefaults.js";
 import { shouldBlockDuplicatePrompt } from "../src/cli/duplicatePromptGuard.js";
 import { resolveRemoteServiceConfig } from "../src/remote/remoteServiceConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "../src/cli/fileSize.js";
@@ -90,9 +75,12 @@ import {
   isAzureOpenAICandidateModel,
   validateProviderRouting,
 } from "../src/oracle/providerRouting.js";
-import { buildProviderRoutePlan } from "../src/oracle/providerRoutePlan.js";
-import { printProviderPlans } from "../src/cli/providerDoctor.js";
 import { buildSessionLifecycle, formatSessionLifecycleBlock } from "../src/cli/sessionLifecycle.js";
+import {
+  buildDetachedPerfTraceEnv,
+  createPerfTrace,
+  isTraceValueFlag,
+} from "../src/cli/perfTrace.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -182,6 +170,8 @@ interface CliOptions extends OptionValues {
   dryRun?: boolean;
   route?: boolean;
   preflight?: boolean;
+  perfTrace?: boolean;
+  perfTracePath?: string;
   // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
   provider?: ApiProviderMode;
@@ -222,27 +212,124 @@ const LEGACY_FLAG_ALIASES = new Map<string, string>([
   ["--[no-]notify-sound", "--notify-sound"],
   ["--[no-]background", "--background"],
 ]);
-const normalizedArgv = process.argv.map((arg, index) => {
+const legacyNormalizedArgv = process.argv.map((arg, index) => {
   if (index < 2) return arg;
   return LEGACY_FLAG_ALIASES.get(arg) ?? arg;
 });
-const rawCliArgs = normalizedArgv.slice(2);
-const userCliArgs = rawCliArgs[0] === CLI_ENTRYPOINT ? rawCliArgs.slice(1) : rawCliArgs;
+const rawCliArgs = legacyNormalizedArgv.slice(2);
+const hasCliEntrypointArg = rawCliArgs[0] === CLI_ENTRYPOINT;
+const originalUserCliArgs = hasCliEntrypointArg ? rawCliArgs.slice(1) : rawCliArgs;
+const perfTraceArgs = normalizePerfTraceArgs(originalUserCliArgs);
+const userCliArgs = perfTraceArgs.args;
+const normalizedArgv = [
+  ...legacyNormalizedArgv.slice(0, 2),
+  ...(hasCliEntrypointArg ? [CLI_ENTRYPOINT] : []),
+  ...userCliArgs,
+];
+const routingCliArgs = stripPerfTraceArgs(userCliArgs);
 const isTty = process.stdout.isTTY;
-const doctorArgIndex = userCliArgs.indexOf("doctor");
+const perfTrace = createPerfTrace({
+  value: perfTraceArgs.value,
+  argv: userCliArgs,
+  version: VERSION,
+});
+process.once("exit", (code) => {
+  try {
+    perfTrace.flush(code);
+  } catch (error) {
+    console.error(`Failed to write perf trace: ${error instanceof Error ? error.message : error}`);
+  }
+});
+
+function stripPerfTraceArgs(args: string[]): string[] {
+  const stripped: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--perf-trace") continue;
+    if (arg === "--perf-trace-path") {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--perf-trace-path=")) continue;
+    stripped.push(arg);
+  }
+  return stripped;
+}
+
+function normalizePerfTraceArgs(args: string[]): {
+  args: string[];
+  error?: string;
+  value?: boolean | string;
+} {
+  const normalized: string[] = [];
+  let skipNextValue = false;
+  let value: boolean | string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (skipNextValue) {
+      normalized.push(arg);
+      skipNextValue = false;
+      continue;
+    }
+    if (arg === "--") {
+      normalized.push(...args.slice(index));
+      break;
+    }
+    if (arg.startsWith("--perf-trace=")) {
+      const tracePath = arg.slice("--perf-trace=".length);
+      if (tracePath) {
+        normalized.push("--perf-trace", "--perf-trace-path", tracePath);
+        value = tracePath;
+      } else {
+        normalized.push("--perf-trace");
+        value = true;
+      }
+      continue;
+    }
+    if (arg === "--perf-trace-path") {
+      const tracePath = args[index + 1];
+      if (!tracePath || tracePath.startsWith("-")) {
+        return { args: normalized, error: "option '--perf-trace-path <path>' argument missing" };
+      }
+      normalized.push(arg, tracePath);
+      value = tracePath;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith("--perf-trace-path=") && !arg.slice("--perf-trace-path=".length)) {
+      return { args: normalized, error: "option '--perf-trace-path <path>' argument missing" };
+    }
+    if (arg.startsWith("--perf-trace-path=")) {
+      value = arg.slice("--perf-trace-path=".length);
+    } else if (arg === "--perf-trace") {
+      value ??= true;
+    }
+
+    normalized.push(arg);
+    const equalsIndex = arg.indexOf("=");
+    const flag = equalsIndex >= 0 ? arg.slice(0, equalsIndex) : arg;
+    skipNextValue = equalsIndex < 0 && isTraceValueFlag(flag);
+  }
+
+  return { args: normalized, value };
+}
+
+const doctorArgIndex = routingCliArgs.indexOf("doctor");
 const doctorJsonRequested =
-  doctorArgIndex >= 0 && userCliArgs.slice(doctorArgIndex).includes("--json");
-const docsArgIndex = userCliArgs.indexOf("docs");
-const docsCheckRequested = docsArgIndex >= 0 && userCliArgs[docsArgIndex + 1] === "check";
+  doctorArgIndex >= 0 && routingCliArgs.slice(doctorArgIndex).includes("--json");
+const docsArgIndex = routingCliArgs.indexOf("docs");
+const docsCheckRequested = docsArgIndex >= 0 && routingCliArgs[docsArgIndex + 1] === "check";
 const suppressIntro =
   doctorJsonRequested ||
   docsCheckRequested ||
-  (userCliArgs[0] === "bridge" &&
-    (userCliArgs[1] === "codex-config" || userCliArgs[1] === "claude-config"));
+  (routingCliArgs[0] === "bridge" &&
+    (routingCliArgs[1] === "codex-config" || routingCliArgs[1] === "claude-config"));
 
 const program = new Command();
 let introPrinted = false;
-program.hook("preAction", () => {
+program.hook("preAction", (_thisCommand, actionCommand) => {
+  perfTrace.mark("pre-action", { command: actionCommand.name() || "root" });
   if (suppressIntro) return;
   if (introPrinted) return;
   console.log(formatIntroLine(VERSION, { env: process.env, richTty: isTty }));
@@ -253,10 +340,10 @@ program.hook("preAction", async (thisCommand) => {
   if (thisCommand !== program) {
     return;
   }
-  if (userCliArgs.some((arg) => arg === "--help" || arg === "-h")) {
+  if (routingCliArgs.some((arg) => arg === "--help" || arg === "-h")) {
     return;
   }
-  if (userCliArgs.length === 0) {
+  if (routingCliArgs.length === 0) {
     // Let the root action handle zero-arg entry (help + hint to `oracle tui`).
     return;
   }
@@ -272,7 +359,7 @@ program.hook("preAction", async (thisCommand) => {
     opts.prompt = resolvedPrompt;
     thisCommand.setOptionValue("prompt", resolvedPrompt);
   }
-  if (shouldRequirePrompt(userCliArgs, opts)) {
+  if (shouldRequirePrompt(routingCliArgs, opts)) {
     console.log(
       chalk.yellow('Prompt is required. Provide it via --prompt "<text>" or positional [prompt].'),
     );
@@ -436,6 +523,18 @@ program
   )
   .option("--route", "Print API provider route plan and exit.", false)
   .option("--preflight", "Check API provider readiness for the requested model(s) and exit.", false)
+  .addOption(
+    new Option(
+      "--perf-trace",
+      "Write CLI performance timing trace JSON (or set ORACLE_PERF_TRACE=1/path).",
+    ).default(false),
+  )
+  .addOption(
+    new Option(
+      "--perf-trace-path <path>",
+      "Write CLI performance timing trace JSON to an explicit path.",
+    ).default(undefined),
+  )
   .addOption(new Option("--exec-session <id>").hideHelp())
   .addOption(new Option("--session <id>").hideHelp())
   .addOption(
@@ -993,6 +1092,7 @@ program
   .command("tui")
   .description("Launch the interactive terminal UI for humans (no automation).")
   .action(async () => {
+    const { launchTui } = await import("../src/cli/tui/index.js");
     await sessionStore.ensureStorage();
     await launchTui({ version: VERSION, printIntro: false });
   });
@@ -1079,6 +1179,7 @@ program
   )
   .addOption(new Option("--clean", "Deprecated alias for --clear.").default(false).hideHelp())
   .action(async (sessionId, _options: StatusOptions, cmd: Command) => {
+    const { handleSessionCommand } = await import("../src/cli/sessionCommand.js");
     await handleSessionCommand(sessionId, cmd);
   });
 
@@ -1111,6 +1212,7 @@ program
         process.exitCode = 1;
         return;
       }
+      const { showBrowserTabsStatus } = await import("../src/cli/browserTabs.js");
       await showBrowserTabsStatus();
       return;
     }
@@ -1127,6 +1229,7 @@ program
       const includeAll = statusOptions.all;
       const result = await sessionStore.deleteOlderThan({ hours, includeAll });
       const scope = includeAll ? "all stored sessions" : `sessions older than ${hours}h`;
+      const { formatSessionCleanupMessage } = await import("../src/cli/sessionCommand.js");
       console.log(formatSessionCleanupMessage(result, scope));
       return;
     }
@@ -1146,10 +1249,12 @@ program
       const renderMarkdown = Boolean(
         statusOptions.render || statusOptions.renderMarkdown || autoRender,
       );
+      const { attachSession } = await import("../src/cli/sessionDisplay.js");
       await attachSession(sessionId, { renderMarkdown, renderPrompt: !statusOptions.hidePrompt });
       return;
     }
     const showExamples = usesDefaultStatusFilters(command);
+    const { showStatus } = await import("../src/cli/sessionDisplay.js");
     await showStatus({
       hours: statusOptions.all ? Infinity : statusOptions.hours,
       includeAll: statusOptions.all,
@@ -1548,7 +1653,9 @@ function getBrowserConfigFromMetadata(metadata: SessionMetadata): BrowserSession
 }
 
 async function runRootCommand(options: CliOptions): Promise<void> {
+  perfTrace.mark("root-command-start");
   if (process.env.ORACLE_FORCE_TUI === "1") {
+    const { launchTui } = await import("../src/cli/tui/index.js");
     await sessionStore.ensureStorage();
     await launchTui({ version: VERSION, printIntro: false });
     return;
@@ -1624,7 +1731,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
   }
 
-  if (userCliArgs.length === 0) {
+  if (routingCliArgs.length === 0) {
     console.log(
       chalk.yellow(
         "No prompt or subcommand supplied. Run `oracle --help` or `oracle tui` for the TUI.",
@@ -1682,6 +1789,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
           ),
         }
       : undefined;
+    const { buildProviderRoutePlan } = await import("../src/oracle/providerRoutePlan.js");
     const plans = engineModels.map((model) =>
       buildProviderRoutePlan({
         model,
@@ -1691,6 +1799,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
         env: process.env,
       }),
     );
+    const { printProviderPlans } = await import("../src/cli/providerDoctor.js");
     printProviderPlans(plans, { title: options.preflight ? "Provider preflight" : "Route plan" });
     process.exitCode = plans.some((plan) => !plan.ok) ? 1 : 0;
     return;
@@ -1867,11 +1976,19 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     waitPreference = true;
   }
 
-  if (await handleStatusFlag(options, { attachSession, showStatus })) {
+  if (options.status) {
+    const { attachSession, showStatus } = await import("../src/cli/sessionDisplay.js");
+    if (options.session) {
+      await attachSession(options.session);
+    } else {
+      await showStatus({ hours: 24, includeAll: false, limit: 100, showExamples: true });
+    }
     return;
   }
 
-  if (await handleSessionAlias(options, { attachSession })) {
+  if (options.session) {
+    const { attachSession } = await import("../src/cli/sessionDisplay.js");
+    await attachSession(options.session);
     return;
   }
 
@@ -1891,6 +2008,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     const modelConfig = isKnownModel(resolvedModel)
       ? MODEL_CONFIGS[resolvedModel]
       : MODEL_CONFIGS["gpt-5.1"];
+    const { buildRequestBody } = await import("../src/oracle/request.js");
+    const { estimateRequestTokens } = await import("../src/oracle/tokenEstimate.js");
     const requestBody = buildRequestBody({
       modelConfig,
       systemPrompt: bundle.systemPrompt,
@@ -1932,19 +2051,20 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   const getSource = (key: keyof CliOptions) =>
     program.getOptionValueSource?.(key as string) ?? undefined;
+  const { applyBrowserDefaultsFromConfig } = await import("../src/cli/browserDefaults.js");
   applyBrowserDefaultsFromConfig(options, userConfig, getSource);
 
   const sessionMode: SessionMode = engine === "browser" ? "browser" : "api";
-  const browserModelLabelOverride =
-    sessionMode === "browser" ? resolveBrowserModelLabel(cliModelArg, resolvedModel) : undefined;
-  const browserConfig =
-    sessionMode === "browser"
-      ? await buildBrowserConfig({
-          ...options,
-          model: resolvedModel,
-          browserModelLabel: browserModelLabelOverride,
-        })
-      : undefined;
+  const browserConfig = await (async (): Promise<BrowserSessionConfig | undefined> => {
+    if (sessionMode !== "browser") return undefined;
+    const { buildBrowserConfig, resolveBrowserModelLabel } =
+      await import("../src/cli/browserConfig.js");
+    return buildBrowserConfig({
+      ...options,
+      model: resolvedModel,
+      browserModelLabel: resolveBrowserModelLabel(cliModelArg, resolvedModel),
+    });
+  })();
 
   if (previewMode) {
     if (!options.prompt) {
@@ -1975,6 +2095,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       baseUrl: resolvedBaseUrl,
     });
     if (engine === "browser") {
+      const { runBrowserPreview } = await import("../src/cli/dryRun.js");
       await runBrowserPreview(
         {
           runOptions,
@@ -1990,6 +2111,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
     // API dry-run/preview path
     validateApiProviderRoutingForCli(runOptions);
+    const { runDryRunSummary } = await import("../src/cli/dryRun.js");
     if (previewMode === "summary") {
       await runDryRunSummary(
         {
@@ -2058,6 +2180,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       ? options.file.filter((f: string) => !isMediaFile(f))
       : options.file;
     if (filesToValidate.length > 0) {
+      const { readFiles } = await import("../src/oracle/files.js");
       await readFiles(filesToValidate, {
         cwd: process.cwd(),
         maxFileSizeBytes: resolvedOptions.maxFileSizeBytes,
@@ -2074,11 +2197,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
   if (browserConfig && remoteHost) {
+    const { createRemoteBrowserExecutor } = await import("../src/remote/client.js");
     browserDeps = {
       executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   } else if (browserConfig && resolvedModel.startsWith("gemini")) {
+    const { createGeminiWebExecutor } = await import("../src/gemini-web/index.js");
     browserDeps = {
       executeBrowser: createGeminiWebExecutor({
         youtube: options.youtube,
@@ -2102,6 +2227,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       previewMode: undefined,
       baseUrl: resolvedBaseUrl,
     });
+    const { runDryRunSummary } = await import("../src/cli/dryRun.js");
     await runDryRunSummary(
       {
         engine,
@@ -2213,6 +2339,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   if (detached) {
     console.log(chalk.blue(`Reattach via: oracle session ${sessionMeta.id}`));
+    const { attachSession } = await import("../src/cli/sessionDisplay.js");
     await attachSession(sessionMeta.id, { suppressMetadata: true });
   }
 }
@@ -2255,6 +2382,7 @@ async function runInteractiveSession(
     logLine(line);
   }
   try {
+    const { performSessionRun } = await import("../src/cli/sessionRunner.js");
     await performSessionRun({
       sessionMeta,
       runOptions,
@@ -2271,6 +2399,7 @@ async function runInteractiveSession(
     });
     const latest = await sessionStore.readSession(sessionMeta.id);
     if (!suppressSummary) {
+      const { formatCompletionSummary } = await import("../src/cli/sessionDisplay.js");
       const summary = latest ? formatCompletionSummary(latest, { includeSlug: true }) : null;
       if (summary) {
         console.log("\n" + chalk.green.bold(summary));
@@ -2286,10 +2415,11 @@ async function launchDetachedSession(sessionId: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     try {
       const args = ["--", CLI_ENTRYPOINT, "--exec-session", sessionId];
+      const env = buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId);
       const child = spawn(process.execPath, args, {
         detached: true,
         stdio: "ignore",
-        env: process.env,
+        env,
       });
       child.once("error", reject);
       child.once("spawn", () => {
@@ -2336,6 +2466,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
       ? runOptions.file.filter((f) => !isMediaFile(f))
       : runOptions.file;
     if (filesToValidate.length > 0) {
+      const { readFiles } = await import("../src/oracle/files.js");
       await readFiles(filesToValidate, {
         cwd,
         maxFileSizeBytes: runOptions.maxFileSizeBytes,
@@ -2373,11 +2504,13 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
   if (browserConfig && remoteHost) {
+    const { createRemoteBrowserExecutor } = await import("../src/remote/client.js");
     browserDeps = {
       executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   } else if (browserConfig && runOptions.model.startsWith("gemini")) {
+    const { createGeminiWebExecutor } = await import("../src/gemini-web/index.js");
     browserDeps = {
       executeBrowser: createGeminiWebExecutor({
         youtube: storedOptions.youtube,
@@ -2489,6 +2622,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   }
   if (detached) {
     console.log(chalk.blue(`Reattach via: oracle session ${sessionMeta.id}`));
+    const { attachSession } = await import("../src/cli/sessionDisplay.js");
     await attachSession(sessionMeta.id, { suppressMetadata: true });
   }
 }
@@ -2511,6 +2645,7 @@ async function executeSession(sessionId: string) {
     userConfig.notify,
   );
   try {
+    const { performSessionRun } = await import("../src/cli/sessionRunner.js");
     await performSessionRun({
       sessionMeta: metadata,
       runOptions,
@@ -2642,6 +2777,12 @@ program.action(async function (this: Command) {
 });
 
 async function main(): Promise<void> {
+  if (perfTraceArgs.error) {
+    console.error(`error: ${perfTraceArgs.error}`);
+    console.error("(use --help for usage)");
+    process.exitCode = 1;
+    return;
+  }
   const parsePromise = program.parseAsync(normalizedArgv);
   const sigintPromise = once(process, "SIGINT").then(() => "sigint" as const);
   const result = await Promise.race([parsePromise.then(() => "parsed" as const), sigintPromise]);
