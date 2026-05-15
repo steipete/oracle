@@ -56,6 +56,18 @@ oracle status                  # find the running one
 oracle session <id>            # blocks until done, then prints the answer
 ```
 
+Every new run prints a lifecycle block so foreground and detached behavior is explicit:
+
+```text
+Session: 20260515-name-panel
+Mode: api background
+Models: 3 parallel
+Detach: yes, polling
+Reattach: oracle session 20260515-name-panel
+```
+
+`oracle status` uses compact mode labels such as `api/fg`, `api/bg`, and `br/fg`; `oracle session <id>` shows the persisted execution state.
+
 To block in the original command, pass `--wait`:
 
 ```bash

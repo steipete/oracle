@@ -92,6 +92,7 @@ import {
 } from "../src/oracle/providerRouting.js";
 import { buildProviderRoutePlan } from "../src/oracle/providerRoutePlan.js";
 import { printProviderPlans } from "../src/cli/providerDoctor.js";
+import { buildSessionLifecycle, formatSessionLifecycleBlock } from "../src/cli/sessionLifecycle.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -2150,6 +2151,13 @@ async function runRootCommand(options: CliOptions): Promise<void> {
         );
         return false;
       });
+  const lifecycle = buildSessionLifecycle({
+    engine,
+    detached,
+    reattachCommand: `oracle session ${sessionMeta.id}`,
+  });
+  await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+  const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
 
   if (!waitPreference) {
     if (!detached) {
@@ -2157,9 +2165,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    console.log(
-      chalk.blue(`Session running in background. Reattach via: oracle session ${sessionMeta.id}`),
-    );
+    for (const line of formatSessionLifecycleBlock(sessionWithLifecycle)) {
+      console.log(line);
+    }
     console.log(
       chalk.dim("Pro runs can take up to 60 minutes (usually 10-15). Add --wait to stay attached."),
     );
@@ -2168,7 +2176,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   if (detached === false) {
     await runInteractiveSession(
-      sessionMeta,
+      sessionWithLifecycle,
       liveRunOptions,
       sessionMode,
       browserConfig,
@@ -2219,6 +2227,10 @@ async function runInteractiveSession(
     writeChunk(chunk);
     return true;
   };
+  for (const line of formatSessionLifecycleBlock(sessionMeta)) {
+    console.log(line);
+    logLine(line);
+  }
   try {
     await performSessionRun({
       sessionMeta,
@@ -2414,6 +2426,13 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
         );
         return false;
       });
+  const lifecycle = buildSessionLifecycle({
+    engine,
+    detached,
+    reattachCommand: `oracle session ${sessionMeta.id}`,
+  });
+  await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+  const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
 
   if (!waitPreference) {
     if (!detached) {
@@ -2421,9 +2440,9 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
       process.exitCode = 1;
       return;
     }
-    console.log(
-      chalk.blue(`Session running in background. Reattach via: oracle session ${sessionMeta.id}`),
-    );
+    for (const line of formatSessionLifecycleBlock(sessionWithLifecycle)) {
+      console.log(line);
+    }
     console.log(
       chalk.dim("Pro runs can take up to 60 minutes (usually 10-15). Add --wait to stay attached."),
     );
@@ -2432,7 +2451,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
 
   if (detached === false) {
     await runInteractiveSession(
-      sessionMeta,
+      sessionWithLifecycle,
       liveRunOptions,
       sessionMode,
       browserConfig,
