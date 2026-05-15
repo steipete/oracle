@@ -1230,6 +1230,76 @@ describe("oracle CLI integration", () => {
   );
 
   test(
+    "allows partial multi-model success and reports saved outputs before failures",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-multi-partial-"));
+      const outputPath = path.join(oracleHome, "answer.md");
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        GEMINI_API_KEY: "gk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: path.join(process.cwd(), "tests", "fixtures", "mockPolyClient.cjs"),
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_TEST_FAIL_MODEL: "gemini-3-pro",
+      };
+
+      const result = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--prompt",
+          "Partial multi-model run prompt long enough",
+          "--models",
+          "gpt-5.1,gemini-3-pro",
+          "--allow-partial",
+          "--write-output",
+          outputPath,
+        ],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      const sessionDir = path.join(sessionsDir, sessionId);
+      const metadata = JSON.parse(await readFile(path.join(sessionDir, "meta.json"), "utf8"));
+      expect(metadata.status).toBe("partial");
+      expect(metadata.options?.partialMode).toBe("ok");
+      expect(await readFile(path.join(oracleHome, "answer.gpt-5.1.md"), "utf8")).toContain(
+        "Echo(gpt-5.1)",
+      );
+
+      const savedIndex = result.stdout.indexOf("Saved outputs:");
+      const failuresIndex = result.stdout.indexOf("Failures:");
+      expect(result.stdout).toContain("Multi-model result: partial success, 1/2 succeeded");
+      expect(savedIndex).toBeGreaterThanOrEqual(0);
+      expect(failuresIndex).toBeGreaterThan(savedIndex);
+      expect(result.stdout).toContain("gemini-3-pro");
+
+      await execFileAsync(
+        process.execPath,
+        ["--import", "tsx", CLI_ENTRY, "--exec-session", sessionId],
+        {
+          env,
+        },
+      );
+      const rerunMetadata = JSON.parse(await readFile(path.join(sessionDir, "meta.json"), "utf8"));
+      expect(rerunMetadata.status).toBe("partial");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "accepts shorthand multi-model list and normalizes to canonical IDs",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-multi-shorthand-"));
