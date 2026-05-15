@@ -61,7 +61,7 @@
     "@google/genai": "^2.0.1",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@steipete/sweet-cookie": "^0.2.0",
+    "@steipete/sweet-cookie": "^0.3.0",
     "chalk": "^5.6.2",
     "chrome-launcher": "^1.2.1",
     "chrome-remote-interface": "^0.34.0",
@@ -70,7 +70,7 @@
     "dotenv": "^17.4.2",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
-    "inquirer": "13.4.2",
+    "inquirer": "13.4.3",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
@@ -84,17 +84,17 @@
   },
   "devDependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
-    "@types/chrome-remote-interface": "^0.33.0",
+    "@types/chrome-remote-interface": "^0.34.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.6.0",
-    "@typescript/native-preview": "7.0.0-dev.20260508.1",
-    "@vitest/coverage-v8": "4.1.5",
-    "devtools-protocol": "0.0.1627472",
+    "@typescript/native-preview": "7.0.0-dev.20260515.1",
+    "@vitest/coverage-v8": "4.1.6",
+    "devtools-protocol": "0.0.1629771",
     "es-toolkit": "^1.46.1",
     "esbuild": "^0.28.0",
-    "oxfmt": "0.48.0",
+    "oxfmt": "0.50.0",
     "oxlint": "^1.62.0",
-    "puppeteer-core": "^24.42.0",
+    "puppeteer-core": "^25.0.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
@@ -113,7 +113,7 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1627472",
+      "devtools-protocol": "0.0.1629771",
       "vite": "7.3.2"
     },
     "onlyBuiltDependencies": [
