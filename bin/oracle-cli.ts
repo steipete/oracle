@@ -379,7 +379,7 @@ program
   .addOption(new Option("--no-notify-sound", "Disable notification sounds.").default(undefined))
   .addOption(
     new Option(
-      "--timeout <seconds|auto>",
+      "--timeout <seconds|duration|auto>",
       "Overall timeout before aborting the API call (auto = 60m for Pro models, 120s otherwise).",
     )
       .argParser(parseTimeoutOption)
@@ -1146,6 +1146,14 @@ function buildRunOptions(
     throw new Error("Prompt is required.");
   }
   const normalizedBaseUrl = normalizeBaseUrl(overrides.baseUrl ?? options.baseUrl);
+  const timeoutSeconds =
+    overrides.timeoutSeconds ?? (options.timeout as number | "auto" | undefined);
+  const resolvedTimeoutMs =
+    typeof timeoutSeconds === "number" && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+      ? timeoutSeconds * 1000
+      : undefined;
+  const httpTimeoutMs = overrides.httpTimeoutMs ?? options.httpTimeout ?? resolvedTimeoutMs;
+  const zombieTimeoutMs = overrides.zombieTimeoutMs ?? options.zombieTimeout ?? resolvedTimeoutMs;
   const azure =
     options.azureEndpoint || overrides.azure?.endpoint
       ? {
@@ -1168,9 +1176,9 @@ function buildRunOptions(
     maxInput: overrides.maxInput ?? options.maxInput,
     maxOutput: overrides.maxOutput ?? options.maxOutput,
     system: overrides.system ?? options.system,
-    timeoutSeconds: overrides.timeoutSeconds ?? (options.timeout as number | "auto" | undefined),
-    httpTimeoutMs: overrides.httpTimeoutMs ?? options.httpTimeout,
-    zombieTimeoutMs: overrides.zombieTimeoutMs ?? options.zombieTimeout,
+    timeoutSeconds,
+    httpTimeoutMs,
+    zombieTimeoutMs,
     zombieUseLastActivity: overrides.zombieUseLastActivity ?? options.zombieLastActivity,
     silent: overrides.silent ?? options.silent,
     search: overrides.search ?? options.search,

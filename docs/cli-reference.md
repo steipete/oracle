@@ -44,13 +44,13 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 
 ## Run control
 
-| Flag                              | Purpose                                                                   |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `--wait`                          | Block on background API runs.                                             |
-| `--timeout <seconds\|auto>`       | Overall API deadline. `auto` = 60m for Pro, 120s otherwise.               |
-| `--background`, `--no-background` | Force Responses API background mode on/off.                               |
-| `--http-timeout <ms\|s\|m\|h>`    | HTTP client timeout (default 20m).                                        |
-| `--heartbeat <seconds>`           | Emit progress heartbeats; browser mode reports thinking-sidecar liveness. |
+| Flag                                  | Purpose                                                                                |
+| ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `--wait`                              | Block on background API runs.                                                          |
+| `--timeout <seconds\|duration\|auto>` | Overall API deadline. `auto` = 60m for Pro, 120s otherwise; accepts values like `10m`. |
+| `--background`, `--no-background`     | Force Responses API background mode on/off.                                            |
+| `--http-timeout <ms\|s\|m\|h>`        | Override the HTTP client timeout; explicit `--timeout` values are reused when omitted. |
+| `--heartbeat <seconds>`               | Emit progress heartbeats; browser mode reports thinking-sidecar liveness.              |
 
 ## API endpoints
 

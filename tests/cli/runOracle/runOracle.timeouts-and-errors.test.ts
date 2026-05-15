@@ -51,6 +51,61 @@ describe("timeouts", () => {
       { client, log: () => {}, write: () => true, wait, now: () => nowRef.t },
     );
   });
+
+  test("derives HTTP timeout from explicit overall timeout", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const captured: Array<{ httpTimeoutMs?: number }> = [];
+
+    await runOracle(
+      {
+        prompt: "Timeout route check",
+        model: "gpt-5.1",
+        background: false,
+        timeoutSeconds: 600,
+      },
+      {
+        apiKey: "sk-test",
+        clientFactory: (_apiKey, options) => {
+          captured.push({ httpTimeoutMs: options?.httpTimeoutMs });
+          return client;
+        },
+        log: () => {},
+        write: () => true,
+      },
+    );
+
+    expect(captured).toEqual([{ httpTimeoutMs: 600_000 }]);
+  });
+
+  test("keeps explicit shorter HTTP timeout and logs the precedence", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const captured: Array<{ httpTimeoutMs?: number }> = [];
+    const logs: string[] = [];
+
+    await runOracle(
+      {
+        prompt: "Timeout route check",
+        model: "gpt-5.1",
+        background: false,
+        timeoutSeconds: 600,
+        httpTimeoutMs: 30_000,
+      },
+      {
+        apiKey: "sk-test",
+        clientFactory: (_apiKey, options) => {
+          captured.push({ httpTimeoutMs: options?.httpTimeoutMs });
+          return client;
+        },
+        log: (line) => logs.push(line),
+        write: () => true,
+      },
+    );
+
+    expect(captured).toEqual([{ httpTimeoutMs: 30_000 }]);
+    expect(logs.join("\n")).toContain("transport can fail before overall timeout");
+  });
 });
 
 describe("runOracle preview mode", () => {

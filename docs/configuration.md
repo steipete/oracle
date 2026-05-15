@@ -119,8 +119,9 @@ oracle \
 
 ## API timeouts
 
-- `--timeout <seconds|auto>` controls the overall API deadline for a run.
-- `--http-timeout <ms|s|m|h>` overrides the HTTP client timeout for API requests (default 20m).
+- `--timeout <seconds|duration|auto>` controls the overall API deadline for a run. Bare numbers are seconds; duration values such as `10m` and `2h` are supported.
+- `--http-timeout <ms|s|m|h>` overrides the HTTP client timeout for API requests. If omitted, explicit `--timeout` values are reused for transport.
+- Explicit `--timeout` values also set the stale-session cutoff unless `--zombie-timeout` is provided.
 - Defaults: `auto` = 60 m for Pro models; non-pro API models use `120s` if you don’t set a value.
 - Heartbeat messages print the live remaining time so you can see when the client-side deadline will fire.
 
