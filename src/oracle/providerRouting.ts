@@ -33,6 +33,7 @@ export function resolveProviderRoutingState({
   const azureEndpoint = azure?.endpoint?.trim();
   const azureDeploymentOption = azure?.deployment?.trim();
   const isNonOpenAIModel = provider !== "openai" && provider !== "other";
+  const isProviderQualifiedModelId = model.includes("/");
 
   if (providerMode === "azure" && !azureEndpoint) {
     throw new PromptValidationError(
@@ -71,9 +72,8 @@ export function resolveProviderRoutingState({
     providerMode !== "openai" &&
     !isNonOpenAIModel &&
     (providerMode === "azure" ||
-      isOpenAIFamilyModel ||
-      Boolean(azureDeploymentOption) ||
-      isCustomAzureModelId),
+      (!isProviderQualifiedModelId &&
+        (isOpenAIFamilyModel || Boolean(azureDeploymentOption) || isCustomAzureModelId))),
   );
   const implicitAzureDeploymentName =
     isAzureOpenAI &&

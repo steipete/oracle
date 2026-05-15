@@ -13,6 +13,7 @@
   "ignorePatterns": [
     "scripts/browser-tools.ts",
     "node_modules/**/*",
+    ".pnpm-store/**/*",
     "coverage/**/*",
     ".bun-check/**/*"
   ]
