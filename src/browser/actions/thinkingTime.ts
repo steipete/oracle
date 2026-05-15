@@ -13,7 +13,8 @@ type ThinkingTimeOutcome =
   | { status: "switched"; label?: string | null }
   | { status: "chip-not-found" }
   | { status: "menu-not-found" }
-  | { status: "option-not-found" };
+  | { status: "option-not-found" }
+  | { status: "model-kind-not-found"; modelKind?: string | null };
 
 /**
  * Selects a specific thinking time level in ChatGPT's composer.
@@ -29,9 +30,12 @@ export async function ensureThinkingTime(
   Runtime: ChromeClient["Runtime"],
   level: ThinkingTimeLevel,
   logger: BrowserLogger,
+  desiredModel?: string | null,
 ) {
-  const result = await evaluateThinkingTimeSelection(Runtime, level);
+  const result = await evaluateThinkingTimeSelection(Runtime, level, desiredModel);
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
+  const targetModelKind = inferThinkingTargetModelKind(desiredModel);
+  const strictProEffort = targetModelKind === "pro" && level === "extended";
 
   switch (result?.status) {
     case "already-selected":
@@ -42,11 +46,23 @@ export async function ensureThinkingTime(
       return;
     case "chip-not-found":
     case "menu-not-found":
-    case "option-not-found": {
+    case "option-not-found":
+    case "model-kind-not-found": {
       await logDomFailure(Runtime, logger, `thinking-${result.status}`);
-      logger(
-        `Thinking time: ${result.status.replaceAll("-", " ")} (requested ${capitalizedLevel}); continuing with ChatGPT default.`,
-      );
+      const kindHint =
+        result.status === "model-kind-not-found" && result.modelKind
+          ? ` for ${result.modelKind}`
+          : targetModelKind
+            ? ` for ${targetModelKind}`
+            : "";
+      const message = `Thinking time: ${result.status.replaceAll("-", " ")}${kindHint} (requested ${capitalizedLevel})`;
+      if (
+        strictProEffort &&
+        (result.status === "option-not-found" || result.status === "model-kind-not-found")
+      ) {
+        throw new Error(`${message}; refusing to submit without confirmed Pro Extended.`);
+      }
+      logger(`${message}; continuing with ChatGPT default.`);
       return;
     }
     default: {
@@ -68,9 +84,10 @@ export async function ensureThinkingTimeIfAvailable(
   Runtime: ChromeClient["Runtime"],
   level: ThinkingTimeLevel,
   logger: BrowserLogger,
+  desiredModel?: string | null,
 ): Promise<boolean> {
   try {
-    const result = await evaluateThinkingTimeSelection(Runtime, level);
+    const result = await evaluateThinkingTimeSelection(Runtime, level, desiredModel);
     const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
 
     switch (result?.status) {
@@ -83,6 +100,7 @@ export async function ensureThinkingTimeIfAvailable(
       case "chip-not-found":
       case "menu-not-found":
       case "option-not-found":
+      case "model-kind-not-found":
         if (logger.verbose) {
           logger(`Thinking time: ${result.status.replaceAll("-", " ")}; continuing with default.`);
         }
@@ -106,9 +124,10 @@ export async function ensureThinkingTimeIfAvailable(
 async function evaluateThinkingTimeSelection(
   Runtime: ChromeClient["Runtime"],
   level: ThinkingTimeLevel,
+  desiredModel?: string | null,
 ): Promise<ThinkingTimeOutcome | undefined> {
   const outcome = await Runtime.evaluate({
-    expression: buildThinkingTimeExpression(level),
+    expression: buildThinkingTimeExpression(level, desiredModel),
     awaitPromise: true,
     returnByValue: true,
   });
@@ -116,11 +135,15 @@ async function evaluateThinkingTimeSelection(
   return outcome.result?.value as ThinkingTimeOutcome | undefined;
 }
 
-function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
+function buildThinkingTimeExpression(
+  level: ThinkingTimeLevel,
+  desiredModel?: string | null,
+): string {
   const menuContainerLiteral = JSON.stringify(MENU_CONTAINER_SELECTOR);
   const menuItemLiteral = JSON.stringify(MENU_ITEM_SELECTOR);
   const modelButtonLiteral = JSON.stringify(MODEL_BUTTON_SELECTOR);
   const targetLevelLiteral = JSON.stringify(level.toLowerCase());
+  const targetModelKindLiteral = JSON.stringify(inferThinkingTargetModelKind(desiredModel));
 
   return `(async () => {
     ${buildClickDispatcher()}
@@ -129,6 +152,7 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
     const MENU_ITEM_SELECTOR = ${menuItemLiteral};
     const MODEL_BUTTON_SELECTOR = ${modelButtonLiteral};
     const TARGET_LEVEL = ${targetLevelLiteral};
+    const TARGET_MODEL_KIND = ${targetModelKindLiteral};
 
     // Bilingual matchers: English level token + observed Chinese variants.
     const LEVEL_TOKENS = {
@@ -154,6 +178,7 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
       const t = normalize(text);
       return targetTokens.some((tok) => t.includes(String(tok).toLowerCase()));
     };
+    const hasToken = (text, token) => normalize(text).split(' ').includes(token);
     const optionIsSelected = (node) => {
       if (!(node instanceof HTMLElement)) return false;
       const ariaChecked = node.getAttribute('aria-checked');
@@ -242,6 +267,7 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
 
     const findModelButton = () => document.querySelector(MODEL_BUTTON_SELECTOR);
     const findTrailingButtons = () => Array.from(document.querySelectorAll(TRAILING_SELECTOR));
+    const KIND_NOT_FOUND = { kindNotFound: true };
     const findEffortRow = (node) => {
       let current = node instanceof HTMLElement ? node.parentElement : null;
       while (current && current !== document.body) {
@@ -262,6 +288,58 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
         ),
       );
     };
+    const rowForTrailing = (trailing) =>
+      trailing.closest('[role="menuitem"], [role="menuitemradio"], [data-radix-collection-item]');
+    const rowTextForTrailing = (trailing) => {
+      const row = rowForTrailing(trailing) || findEffortRow(trailing);
+      return normalize(
+        (row?.getAttribute?.('aria-label') ?? '') + ' ' +
+        (row?.getAttribute?.('data-testid') ?? '') + ' ' +
+        (row?.textContent ?? '') + ' ' +
+        (trailing.getAttribute?.('aria-label') ?? '') + ' ' +
+        (trailing.getAttribute?.('data-testid') ?? '')
+      );
+    };
+    const testIdTextForTrailing = (trailing) => {
+      const row = rowForTrailing(trailing) || findEffortRow(trailing);
+      return normalize(
+        (row?.getAttribute?.('data-testid') ?? '') + ' ' +
+        (trailing.getAttribute?.('data-testid') ?? '')
+      );
+    };
+    const modelKindFromTrailing = (trailing) => {
+      const idText = testIdTextForTrailing(trailing);
+      if (!idText.includes('model switcher')) return null;
+      const modelPart = normalize(idText.replace(/\\bthinking effort\\b.*$/, ''));
+      if (hasToken(modelPart, 'pro')) return 'pro';
+      if (hasToken(modelPart, 'thinking')) return 'thinking';
+      if (hasToken(modelPart, 'instant')) return 'instant';
+      return null;
+    };
+    const trailingMatchesTargetModelKind = (trailing) => {
+      if (!TARGET_MODEL_KIND) return false;
+      const idKind = modelKindFromTrailing(trailing);
+      if (idKind) return idKind === TARGET_MODEL_KIND;
+      const text = rowTextForTrailing(trailing);
+      if (TARGET_MODEL_KIND === 'pro') {
+        return hasToken(text, 'pro') && !hasToken(text, 'thinking');
+      }
+      if (TARGET_MODEL_KIND === 'thinking') {
+        return hasToken(text, 'thinking') && !hasToken(text, 'pro');
+      }
+      if (TARGET_MODEL_KIND === 'instant') {
+        return hasToken(text, 'instant') && !hasToken(text, 'thinking') && !hasToken(text, 'pro');
+      }
+      return false;
+    };
+    const hasStableBox = (node) => {
+      const r = node.getBoundingClientRect?.();
+      return Boolean(r && r.width > 0 && r.height > 0 && node.getAttribute?.('aria-hidden') !== 'true');
+    };
+    const pickSingleStableTrailing = (trailings) => {
+      const visible = trailings.filter((t) => hasStableBox(t));
+      return visible.length === 1 ? visible[0] : null;
+    };
     const pickTrailingForCurrentModel = () => {
       const trailings = findTrailingButtons();
       if (trailings.length === 0) return null;
@@ -271,12 +349,28 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
         const row = findEffortRow(t);
         if (rowIsSelected(row)) return t;
       }
+      if (TARGET_MODEL_KIND) {
+        const targetTrailings = trailings.filter((t) => trailingMatchesTargetModelKind(t));
+        return pickSingleStableTrailing(targetTrailings) || KIND_NOT_FOUND;
+      }
       return null;
     };
 
     const modelBtn = findModelButton();
     if (!modelBtn) {
       return { status: 'chip-not-found' };
+    }
+    const modelButtonLabel = normalize(
+      (modelBtn.getAttribute?.('aria-label') ?? '') + ' ' + (modelBtn.textContent ?? '')
+    );
+    if (
+      TARGET_MODEL_KIND === 'pro' &&
+      TARGET_LEVEL === 'extended' &&
+      hasToken(modelButtonLabel, 'pro') &&
+      hasToken(modelButtonLabel, 'extended') &&
+      !hasToken(modelButtonLabel, 'thinking')
+    ) {
+      return { status: 'already-selected', label: modelBtn.textContent?.trim?.() || null };
     }
 
     // Open model menu (idempotent — leaves it open if already open).
@@ -295,6 +389,10 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
     if (!trailing) {
       closeOpenMenus();
       return { status: 'chip-not-found' };
+    }
+    if (trailing.kindNotFound) {
+      closeOpenMenus();
+      return { status: 'model-kind-not-found', modelKind: TARGET_MODEL_KIND };
     }
 
     dispatchClickSequence(trailing);
@@ -349,6 +447,31 @@ function buildThinkingTimeExpression(level: ThinkingTimeLevel): string {
   })()`;
 }
 
-export function buildThinkingTimeExpressionForTest(level: ThinkingTimeLevel = "extended"): string {
-  return buildThinkingTimeExpression(level);
+export function buildThinkingTimeExpressionForTest(
+  level: ThinkingTimeLevel = "extended",
+  desiredModel?: string | null,
+): string {
+  return buildThinkingTimeExpression(level, desiredModel);
+}
+
+function inferThinkingTargetModelKind(
+  desiredModel?: string | null,
+): "pro" | "thinking" | "instant" | null {
+  const normalized = (desiredModel ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  const tokens = normalized.split(" ");
+  if (tokens.includes("pro")) return "pro";
+  if (tokens.includes("thinking")) return "thinking";
+  if (tokens.includes("instant")) return "instant";
+  return null;
+}
+
+export function inferThinkingTargetModelKindForTest(
+  desiredModel?: string | null,
+): "pro" | "thinking" | "instant" | null {
+  return inferThinkingTargetModelKind(desiredModel);
 }

@@ -299,6 +299,8 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const hasProComposerPill = () =>");
     expect(expression).toContain("const withProPillSignal = (label) =>");
     expect(expression).toContain("return resolved + ' + Pro'");
+    expect(expression).toContain("hasToken(label, 'pro') && !hasToken(label, 'thinking')");
+    expect(expression).not.toContain('button[aria-label*="Pro"]');
     expect(expression).toContain("normalizedLabel === 'chatgpt' && hasProComposerPill()");
   });
 
@@ -333,12 +335,22 @@ describe("browser model selection matchers", () => {
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5")).toThrow(
       /requires GPT-5.5 Pro/,
     );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Extended")).toThrow(
+      /requires GPT-5.5 Pro/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking Extended")).toThrow(
+      /requires GPT-5.5 Pro/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking Pro")).toThrow(
+      /requires GPT-5.5 Pro/,
+    );
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "ChatGPT")).toThrow(
       /requires GPT-5.5 Pro/,
     );
     // Both the new bare "Pro" label and the legacy "GPT-5.5 Pro" should pass.
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Pro")).not.toThrow();
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5 Pro")).not.toThrow();
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Extended Pro")).not.toThrow();
     expect(() => assertResolvedModelSelectionForTest("Pro", "Thinking 5.5 Heavy")).toThrow(
       /requires GPT-5.5 Pro/,
     );

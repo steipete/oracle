@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Browser: fail closed when GPT-5.5 Pro Extended effort cannot be confirmed instead of silently submitting with the wrong or default effort.
 - Release: write clean checksum files from `scripts/release.sh artifacts` without helper trace lines.
 
 ## 0.12.0 — 2026-05-15

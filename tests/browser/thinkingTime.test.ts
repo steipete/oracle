@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildThinkingTimeExpressionForTest } from "../../src/browser/actions/thinkingTime.js";
+import {
+  buildThinkingTimeExpressionForTest,
+  inferThinkingTargetModelKindForTest,
+} from "../../src/browser/actions/thinkingTime.js";
 
 describe("browser thinking-time selection expression", () => {
   it("uses centralized menu selectors and normalized matching", () => {
@@ -38,12 +41,180 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("const findEffortRow");
     expect(expression).toContain("const rowIsSelected");
     expect(expression).toContain("if (rowIsSelected(row)) return t;");
-    expect(expression).toContain("return null;");
+    expect(expression).toContain("modelKindFromTrailing");
+    expect(expression).toContain("model-kind-not-found");
   });
 
   it("preserves Chinese thinking-effort labels while normalizing", () => {
     const expression = buildThinkingTimeExpressionForTest("heavy");
     expect(expression).toContain("\\u4e00-\\u9fa5");
     expect(expression).toContain("'重度'");
+  });
+
+  it("infers target model kind with token matching", () => {
+    expect(inferThinkingTargetModelKindForTest("gpt-5.5-pro")).toBe("pro");
+    expect(inferThinkingTargetModelKindForTest("Thinking 5.5")).toBe("thinking");
+    expect(inferThinkingTargetModelKindForTest("Instant")).toBe("instant");
+    expect(inferThinkingTargetModelKindForTest("gpt-5.5")).toBeNull();
+    expect(inferThinkingTargetModelKindForTest("profile")).toBeNull();
+    expect(inferThinkingTargetModelKindForTest("prototype")).toBeNull();
+    expect(inferThinkingTargetModelKindForTest("project")).toBeNull();
+  });
+
+  it("uses current ChatGPT data-testid shape to target the Pro effort row", async () => {
+    class FakeEventTarget {
+      dispatchEvent(_event: unknown): boolean {
+        return true;
+      }
+    }
+
+    class FakeElement extends FakeEventTarget {
+      constructor(
+        public textContent: string,
+        private readonly attributes: Readonly<Record<string, string>> = {},
+        private readonly parent: FakeElement | null = null,
+        private readonly onDispatch?: () => void,
+      ) {
+        super();
+      }
+
+      get parentElement(): FakeElement | null {
+        return this.parent;
+      }
+
+      getAttribute(name: string): string | null {
+        return this.attributes[name] ?? null;
+      }
+
+      querySelector(selector: string): FakeElement | null {
+        if (selector.includes("data-model-picker-thinking-effort-menu-item")) {
+          return this.attributes["aria-checked"] ? this : null;
+        }
+        return null;
+      }
+
+      querySelectorAll(_selector: string): FakeElement[] {
+        return [];
+      }
+
+      closest(_selector: string): FakeElement | null {
+        return this.parent;
+      }
+
+      matches(_selector: string): boolean {
+        return false;
+      }
+
+      getBoundingClientRect(): { width: number; height: number } {
+        return { width: 24, height: 24 };
+      }
+
+      override dispatchEvent(event: unknown): boolean {
+        this.onDispatch?.();
+        return super.dispatchEvent(event);
+      }
+    }
+
+    class FakeMouseEvent {
+      constructor(
+        public readonly type: string,
+        public readonly init?: unknown,
+      ) {}
+    }
+
+    let proClicks = 0;
+    let thinkingClicks = 0;
+    let now = 0;
+    const modelButton = new FakeElement("Extended", {
+      "data-testid": "model-switcher-dropdown-button",
+      "aria-expanded": "true",
+    });
+    const thinkingRow = new FakeElement("", {
+      "data-model-picker-thinking-effort-row": "true",
+      "data-testid": "model-switcher-gpt-5-5-thinking-thinking-effort",
+    });
+    const thinkingTrailing = new FakeElement(
+      "",
+      {
+        "data-model-picker-thinking-effort-action": "true",
+        "data-testid": "model-switcher-gpt-5-5-thinking-thinking-effort",
+      },
+      thinkingRow,
+      () => {
+        thinkingClicks += 1;
+      },
+    );
+    const proRow = new FakeElement("", {
+      "data-model-picker-thinking-effort-row": "true",
+      "data-testid": "model-switcher-gpt-5-5-pro-thinking-effort",
+    });
+    const proTrailing = new FakeElement(
+      "",
+      {
+        "data-model-picker-thinking-effort-action": "true",
+        "data-testid": "model-switcher-gpt-5-5-pro-thinking-effort",
+      },
+      proRow,
+      () => {
+        proClicks += 1;
+      },
+    );
+    const documentStub = {
+      body: new FakeElement(""),
+      querySelector: (selector: string) =>
+        selector.includes("model-switcher-dropdown-button") ? modelButton : null,
+      querySelectorAll: (selector: string) =>
+        selector.includes("data-model-picker-thinking-effort-action")
+          ? [thinkingTrailing, proTrailing]
+          : [],
+      dispatchEvent: () => true,
+    };
+    const performanceStub = {
+      now: () => {
+        now += 500;
+        return now;
+      },
+    };
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    const windowStub = {
+      PointerEvent: FakeMouseEvent,
+      MouseEvent: FakeMouseEvent,
+      Event: FakeMouseEvent,
+    };
+    const evaluate = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${expression};`,
+    ) as (
+      document: unknown,
+      performance: unknown,
+      setTimeout: unknown,
+      window: unknown,
+      EventTarget: unknown,
+      PointerEvent: unknown,
+      MouseEvent: unknown,
+      HTMLElement: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      evaluate(
+        documentStub,
+        performanceStub,
+        (callback: () => void) => callback(),
+        windowStub,
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "menu-not-found" });
+    expect(proClicks).toBeGreaterThan(0);
+    expect(thinkingClicks).toBe(0);
   });
 });

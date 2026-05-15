@@ -1019,7 +1019,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
       await raceWithDisconnect(
-        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
+        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger, config.desiredModel), {
           retries: 2,
           delayMs: 300,
           onRetry: (attempt, error) => {
@@ -1031,6 +1031,25 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           },
         }),
       );
+      if (config.desiredModel && modelStrategy !== "ignore") {
+        modelSelectionEvidence = await raceWithDisconnect(
+          withRetries(
+            () =>
+              ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
+            {
+              retries: 2,
+              delayMs: 300,
+              onRetry: (attempt, error) => {
+                if (options.verbose) {
+                  logger(
+                    `[retry] Model picker post-thinking verification attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                  );
+                }
+              },
+            },
+          ),
+        );
+      }
     }
     if (deepResearch) {
       await raceWithDisconnect(
@@ -2393,17 +2412,36 @@ async function runRemoteBrowserMode(
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
-      await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
-        retries: 2,
-        delayMs: 300,
-        onRetry: (attempt, error) => {
-          if (options.verbose) {
-            logger(
-              `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-            );
-          }
+      await withRetries(
+        () => ensureThinkingTime(Runtime, thinkingTime, logger, config.desiredModel),
+        {
+          retries: 2,
+          delayMs: 300,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
         },
-      });
+      );
+      if (config.desiredModel && modelStrategy !== "ignore") {
+        modelSelectionEvidence = await withRetries(
+          () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
+          {
+            retries: 2,
+            delayMs: 300,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Model picker post-thinking verification attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
+          },
+        );
+      }
     }
     if (deepResearch) {
       await withRetries(() => activateDeepResearch(Runtime, Input, logger), {
