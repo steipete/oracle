@@ -4,7 +4,7 @@
 
 ### Added
 
-- API: add `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env/config is present, print redacted provider routing for API runs, and fail early when Azure routing lacks a deployment.
+- API: add `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env/config is present, add `oracle doctor --providers` and `--route` redacted route diagnostics, keep provider-qualified model IDs on OpenRouter/proxy routes instead of accidental Azure/native routes, and fail early when Azure routing lacks a deployment.
 - Browser/MCP: add opt-in ZIP formatting for bundled browser uploads with `--browser-bundle-format zip` / `browserBundleFormat: "zip"`, preserving individual file names in one ChatGPT attachment.
 
 ### Fixed

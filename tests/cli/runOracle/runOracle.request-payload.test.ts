@@ -90,6 +90,41 @@ describe("runOracle request payload", () => {
     expect(captured).toEqual([{ apiKey: "sk-test", baseUrl: "https://litellm.test/v1" }]);
   });
 
+  test("does not fallback to OpenRouter for first-party models with explicit proxy baseUrl", async () => {
+    const originalOpenai = process.env.OPENAI_API_KEY;
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    process.env.OPENROUTER_API_KEY = "or-route-key";
+
+    try {
+      await expect(
+        runOracle(
+          {
+            prompt: "Custom endpoint route",
+            model: "gpt-5.4",
+            baseUrl: "https://litellm.test/v1",
+            background: false,
+          },
+          {
+            log: () => {},
+            write: () => true,
+          },
+        ),
+      ).rejects.toThrow(/Missing OPENAI_API_KEY/);
+    } finally {
+      if (originalOpenai === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalOpenai;
+      }
+      if (originalOpenRouter === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+      } else {
+        process.env.OPENROUTER_API_KEY = originalOpenRouter;
+      }
+    }
+  });
+
   test("logs the first-party OpenAI route", async () => {
     const stream = new MockStream([], buildResponse());
     const client = new MockClient(stream);
@@ -257,6 +292,288 @@ describe("runOracle request payload", () => {
     expect(logs.join("\n")).toContain(
       "Provider: OpenAI | base: api.openai.com | key: OPENAI_API_KEY",
     );
+  });
+
+  test("routes provider-qualified model ids through OpenRouter even when native keys exist", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+    const originalAnthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY;
+    const captured: Array<{ apiKey: string; baseUrl?: string; model?: string }> = [];
+    const logs: string[] = [];
+    process.env.ANTHROPIC_API_KEY = "ak-native";
+    delete process.env.ANTHROPIC_BASE_URL;
+    process.env.OPENROUTER_API_KEY = "or-route-key";
+
+    try {
+      await runOracle(
+        {
+          prompt: "Provider qualified route",
+          model: "anthropic/claude-sonnet-4.5",
+          background: false,
+        },
+        {
+          clientFactory: (apiKey, options) => {
+            captured.push({ apiKey, baseUrl: options?.baseUrl, model: options?.model });
+            return client;
+          },
+          log: (message: string) => logs.push(message),
+          write: () => true,
+        },
+      );
+    } finally {
+      if (originalAnthropic === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropic;
+      }
+      if (originalAnthropicBaseUrl === undefined) {
+        delete process.env.ANTHROPIC_BASE_URL;
+      } else {
+        process.env.ANTHROPIC_BASE_URL = originalAnthropicBaseUrl;
+      }
+      if (originalOpenRouter === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+      } else {
+        process.env.OPENROUTER_API_KEY = originalOpenRouter;
+      }
+    }
+
+    expect(captured).toEqual([
+      {
+        apiKey: "or-route-key",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "anthropic/claude-sonnet-4.5",
+      },
+    ]);
+    expect(client.lastRequest?.model).toBe("anthropic/claude-sonnet-4.5");
+    expect(logs.join("\n")).toContain(
+      "Provider: OpenRouter | base: openrouter.ai/api/... | key: OPENROUTER_API_KEY",
+    );
+  });
+
+  test("routes provider-qualified ids through OpenRouter even when native base env exists", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+    const originalAnthropicBaseUrl = process.env.ANTHROPIC_BASE_URL;
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY;
+    const captured: Array<{ apiKey: string; baseUrl?: string; model?: string }> = [];
+    process.env.ANTHROPIC_API_KEY = "ak-native";
+    process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+    process.env.OPENROUTER_API_KEY = "or-route-key";
+
+    try {
+      await runOracle(
+        {
+          prompt: "Provider qualified route",
+          model: "anthropic/claude-sonnet-4.5",
+          background: false,
+        },
+        {
+          clientFactory: (apiKey, options) => {
+            captured.push({ apiKey, baseUrl: options?.baseUrl, model: options?.model });
+            return client;
+          },
+          log: () => {},
+          write: () => true,
+        },
+      );
+    } finally {
+      if (originalAnthropic === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropic;
+      }
+      if (originalAnthropicBaseUrl === undefined) {
+        delete process.env.ANTHROPIC_BASE_URL;
+      } else {
+        process.env.ANTHROPIC_BASE_URL = originalAnthropicBaseUrl;
+      }
+      if (originalOpenRouter === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+      } else {
+        process.env.OPENROUTER_API_KEY = originalOpenRouter;
+      }
+    }
+
+    expect(captured).toEqual([
+      {
+        apiKey: "or-route-key",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "anthropic/claude-sonnet-4.5",
+      },
+    ]);
+  });
+
+  test("preserves explicit baseUrl for provider-qualified model ids", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY;
+    const captured: Array<{ apiKey: string; baseUrl?: string; model?: string }> = [];
+    const logs: string[] = [];
+    delete process.env.ANTHROPIC_API_KEY;
+    process.env.OPENROUTER_API_KEY = "or-route-key";
+
+    try {
+      await runOracle(
+        {
+          prompt: "Provider qualified proxy route",
+          model: "anthropic/claude-sonnet-4.5",
+          baseUrl: "https://litellm.test/v1",
+          background: false,
+        },
+        {
+          clientFactory: (apiKey, options) => {
+            captured.push({ apiKey, baseUrl: options?.baseUrl, model: options?.model });
+            return client;
+          },
+          log: (message: string) => logs.push(message),
+          write: () => true,
+        },
+      );
+    } finally {
+      if (originalAnthropic === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalAnthropic;
+      }
+      if (originalOpenRouter === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+      } else {
+        process.env.OPENROUTER_API_KEY = originalOpenRouter;
+      }
+    }
+
+    expect(captured).toEqual([
+      {
+        apiKey: "or-route-key",
+        baseUrl: "https://litellm.test/v1",
+        model: "anthropic/claude-sonnet-4.5",
+      },
+    ]);
+    expect(logs.join("\n")).toContain(
+      "Provider: OpenAI-compatible | base: litellm.test/v1 | key: OPENROUTER_API_KEY",
+    );
+  });
+
+  test("routes provider-qualified ids through OpenRouter instead of native base URLs", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const originalOpenai = process.env.OPENAI_API_KEY;
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY;
+    const captured: Array<{ apiKey: string; baseUrl?: string; model?: string }> = [];
+    const logs: string[] = [];
+    process.env.OPENAI_API_KEY = "sk-native";
+    process.env.OPENROUTER_API_KEY = "or-route-key";
+
+    try {
+      await runOracle(
+        {
+          prompt: "Provider qualified native base route",
+          model: "openai/gpt-4o-mini",
+          baseUrl: "https://api.openai.com/v1",
+          background: false,
+        },
+        {
+          clientFactory: (apiKey, options) => {
+            captured.push({ apiKey, baseUrl: options?.baseUrl, model: options?.model });
+            return client;
+          },
+          log: (message: string) => logs.push(message),
+          write: () => true,
+        },
+      );
+    } finally {
+      if (originalOpenai === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalOpenai;
+      }
+      if (originalOpenRouter === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+      } else {
+        process.env.OPENROUTER_API_KEY = originalOpenRouter;
+      }
+    }
+
+    expect(captured).toEqual([
+      {
+        apiKey: "or-route-key",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4o-mini",
+      },
+    ]);
+    expect(logs.join("\n")).toContain(
+      "Provider: OpenRouter | base: openrouter.ai/api/... | key: OPENROUTER_API_KEY",
+    );
+  });
+
+  test("routes provider-qualified ids to OpenRouter before auto Azure env routing", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const originalAzureKey = process.env.AZURE_OPENAI_API_KEY;
+    const originalOpenaiBaseUrl = process.env.OPENAI_BASE_URL;
+    const originalOpenRouter = process.env.OPENROUTER_API_KEY;
+    const captured: Array<{ apiKey: string; azure?: unknown; baseUrl?: string; model?: string }> =
+      [];
+    process.env.AZURE_OPENAI_API_KEY = "az-route-key";
+    delete process.env.OPENAI_BASE_URL;
+    process.env.OPENROUTER_API_KEY = "or-route-key";
+
+    try {
+      await runOracle(
+        {
+          prompt: "Provider qualified OpenAI route",
+          model: "openai/gpt-4o-mini",
+          azure: {
+            endpoint: "https://example-resource.openai.azure.com/",
+            deployment: "gpt-prod",
+          },
+          background: false,
+        },
+        {
+          clientFactory: (apiKey, options) => {
+            captured.push({
+              apiKey,
+              azure: options?.azure,
+              baseUrl: options?.baseUrl,
+              model: options?.model,
+            });
+            return client;
+          },
+          log: () => {},
+          write: () => true,
+        },
+      );
+    } finally {
+      if (originalAzureKey === undefined) {
+        delete process.env.AZURE_OPENAI_API_KEY;
+      } else {
+        process.env.AZURE_OPENAI_API_KEY = originalAzureKey;
+      }
+      if (originalOpenaiBaseUrl === undefined) {
+        delete process.env.OPENAI_BASE_URL;
+      } else {
+        process.env.OPENAI_BASE_URL = originalOpenaiBaseUrl;
+      }
+      if (originalOpenRouter === undefined) {
+        delete process.env.OPENROUTER_API_KEY;
+      } else {
+        process.env.OPENROUTER_API_KEY = originalOpenRouter;
+      }
+    }
+
+    expect(captured).toEqual([
+      {
+        apiKey: "or-route-key",
+        azure: undefined,
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4o-mini",
+      },
+    ]);
   });
 
   test("rejects forced OpenAI provider mode for known non-OpenAI models", async () => {
