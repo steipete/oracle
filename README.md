@@ -167,9 +167,34 @@ npx -y @steipete/oracle oracle-mcp
 - GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
 - OpenAI/Azure follow-up API runs can continue from `--followup <sessionId|responseId>`; for multi-model parents, add `--followup-model <model>`.
 - Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs; use `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env vars are present.
+- Redacted provider checks via `oracle doctor --providers`, `--route`, and `--preflight` before spending API time.
 - File safety: globs/excludes, size guards, `--files-report`.
 - Sessions you can replay (`oracle status`, `oracle session <id> --render`).
 - Session logs and bundles live in `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
+
+## API provider checks
+
+Use these before expensive API or multi-model runs:
+
+```bash
+oracle doctor --providers --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro
+oracle --preflight --models gpt-5.4,gemini-3-pro
+oracle --provider openai --route --model gpt-5.4
+```
+
+`doctor` and `--preflight` print redacted readiness only: provider route, base host, key source, Azure state, and local configuration errors. `--route` shows the selected route and exits before creating a session. If Azure env/config is present but you want first-party OpenAI, add `--provider openai` or `--no-azure`.
+
+For advisory panels where one good answer is useful, combine partial success with explicit output files:
+
+```bash
+oracle \
+  --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro \
+  --allow-partial \
+  --write-output /tmp/oracle-panel.md \
+  -p "Compare these naming options"
+```
+
+Successful models write per-model files such as `/tmp/oracle-panel.gpt-5.4.md`; Oracle also writes `/tmp/oracle-panel.oracle.json` with successes, failures, output paths, and provider failure categories.
 
 ## Follow-up and lineage
 

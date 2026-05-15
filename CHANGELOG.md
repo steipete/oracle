@@ -9,6 +9,7 @@
 - API: add root `--preflight` provider readiness checks and packed CLI help smoke coverage so stale installed help is caught before release.
 - Sessions: print and persist a compact lifecycle block showing foreground/background execution, detach state, model count, and reattach command.
 - Docs: add `oracle docs check` / `pnpm docs:check` to catch documented flags that are missing from Commander help metadata.
+- Docs: document provider preflight, route diagnostics, partial multi-model recovery, and output manifest workflows in README/provider docs.
 - API: add `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env/config is present, add `oracle doctor --providers` and `--route` redacted route diagnostics, keep provider-qualified model IDs on OpenRouter/proxy routes instead of accidental Azure/native routes, and fail early when Azure routing lacks a deployment.
 - Browser/MCP: add opt-in ZIP formatting for bundled browser uploads with `--browser-bundle-format zip` / `browserBundleFormat: "zip"`, preserving individual file names in one ChatGPT attachment.
 

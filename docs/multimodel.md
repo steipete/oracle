@@ -31,6 +31,19 @@ Execution flow: CLI normalizes the `--models` list, builds the prompt/files once
 
 When some models fail, Oracle prints a structured multi-model result. If `--write-output` is set, saved outputs are listed before failures so agents and humans can recover the usable answers first.
 
+For advisory panels, preflight keys/routes first and allow partial success when one strong answer is useful:
+
+```bash
+oracle --preflight --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro
+oracle \
+  --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro \
+  --allow-partial \
+  --write-output /tmp/panel.md \
+  -p "Compare these options and recommend one."
+```
+
+Default mode remains strict: without `--allow-partial` / `--partial ok`, any failed model exits 1 after printing the partial summary.
+
 ---
 
 ## Session Storage
