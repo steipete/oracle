@@ -41,6 +41,7 @@ export interface AzureOptions {
 }
 
 export type ApiProviderMode = "auto" | "openai" | "azure";
+export type PartialMode = "fail" | "ok";
 
 export type ClientFactory = (
   apiKey: string,
@@ -186,6 +187,8 @@ export interface RunOracleOptions {
   background?: boolean;
   /** Optional absolute path to save only the assistant's final text output. */
   writeOutputPath?: string;
+  /** Multi-model failure policy: fail the command or accept partial success. */
+  partialMode?: PartialMode;
   /** Number of seconds to wait before timing out, or 'auto' to use model defaults. */
   timeoutSeconds?: number | "auto";
   /** Override HTTP client timeout (milliseconds). */

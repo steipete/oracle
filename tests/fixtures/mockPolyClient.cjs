@@ -47,7 +47,12 @@ function makeResponse(body) {
 function mockClientFactory() {
   return {
     responses: {
-      stream: async (body) => new MockStream(makeResponse(body)),
+      stream: async (body) => {
+        if (process.env.ORACLE_TEST_FAIL_MODEL === body.model) {
+          throw new Error(`mock failure for ${body.model}`);
+        }
+        return new MockStream(makeResponse(body));
+      },
       create: async (body) => makeResponse(body),
       retrieve: async () => makeResponse({}),
     },

@@ -404,7 +404,8 @@ export async function attachSession(
     }
   }
 
-  const shouldTrimIntro = initialStatus === "completed" || initialStatus === "error";
+  const shouldTrimIntro =
+    initialStatus === "completed" || initialStatus === "partial" || initialStatus === "error";
   if (options?.renderPrompt !== false) {
     const prompt = await readStoredPrompt(sessionId);
     if (prompt) {
@@ -539,7 +540,7 @@ export async function attachSession(
     if (!latest) {
       break;
     }
-    if (latest.status === "completed" || latest.status === "error") {
+    if (latest.status === "completed" || latest.status === "partial" || latest.status === "error") {
       await printNew();
       flushRemainder();
       if (!options?.suppressMetadata) {
@@ -547,10 +548,11 @@ export async function attachSession(
           console.log("\nResult:");
           console.log(`Session failed: ${latest.errorMessage}`);
         }
-        if (latest.status === "completed" && latest.usage) {
+        if ((latest.status === "completed" || latest.status === "partial") && latest.usage) {
           const summary = formatCompletionSummary(latest, { includeSlug: true });
           if (summary) {
-            console.log(`\n${chalk.green.bold(summary)}`);
+            const color = latest.status === "partial" ? chalk.yellow.bold : chalk.green.bold;
+            console.log(`\n${color(summary)}`);
           } else {
             const usage = latest.usage;
             console.log(

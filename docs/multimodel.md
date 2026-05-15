@@ -19,14 +19,17 @@ This document describes the architecture for Oracle’s multi-model mode. A sing
 
 ## CLI Surface
 
-| Flag                                     | Description                                                                                                       |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `--model <name>`                         | When multi-model is not requested, behavior is unchanged.                                                         |
-| `--models <comma-separated>`             | Multi-model fan-out. Accepts `MODEL_CONFIGS` keys and aliases (“5.1 instant”). Mutually exclusive with `--model`. |
-| `oracle session --status --model <name>` | Filters the status table to only show sessions that touched `<name>`.                                             |
-| `oracle session <id> --model <name>`     | Shows only the metadata/log for `<name>`; omit the flag to display all models sequentially.                       |
+| Flag                                      | Description                                                                                                       |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--model <name>`                          | When multi-model is not requested, behavior is unchanged.                                                         |
+| `--models <comma-separated>`              | Multi-model fan-out. Accepts `MODEL_CONFIGS` keys and aliases (“5.1 instant”). Mutually exclusive with `--model`. |
+| `--allow-partial`, `--partial <fail\|ok>` | Default `fail` exits 1 if any model fails. `ok` exits 0 when at least one model succeeds.                         |
+| `oracle session --status --model <name>`  | Filters the status table to only show sessions that touched `<name>`.                                             |
+| `oracle session <id> --model <name>`      | Shows only the metadata/log for `<name>`; omit the flag to display all models sequentially.                       |
 
 Execution flow: CLI normalizes the `--models` list, builds the prompt/files once, then dispatches per-model runs with isolated logs. Standard output prints each model section sequentially (`[gpt-5.1-pro] …`, then `[gemini-3-pro] …`).
+
+When some models fail, Oracle prints a structured multi-model result. If `--write-output` is set, saved outputs are listed before failures so agents and humans can recover the usable answers first.
 
 ---
 

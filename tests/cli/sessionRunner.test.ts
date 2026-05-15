@@ -563,6 +563,9 @@ describe("performSessionRun", () => {
     const logsCombined = logSpy.mock.calls.map((c) => c[0]).join("\n");
     expect(logsCombined).toContain("Calling gpt-5.1, gemini-3-pro");
     expect(logsCombined).toContain("1/2 models");
+    expect(logsCombined).toContain("Multi-model result: partial success, 1/2 succeeded");
+    expect(logsCombined).toContain("Failures:");
+    expect(logsCombined).toContain("gemini-3-pro: boom");
 
     writeSpy.mockRestore();
     logSpy.mockRestore();
@@ -572,6 +575,53 @@ describe("performSessionRun", () => {
     } else {
       (process.stdout as { isTTY?: boolean }).isTTY = originalTty;
     }
+  });
+
+  test("allows partial multi-model success when requested", async () => {
+    const sessionMeta = {
+      ...baseSessionMeta,
+      models: [
+        { model: "gpt-5.1", status: "running" },
+        { model: "gemini-3-pro", status: "running" },
+      ],
+    } as SessionMetadata;
+
+    sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
+    sessionStoreMock.readModelLog.mockResolvedValue("Answer:\npartial");
+
+    const summary: MultiModelRunSummary = {
+      fulfilled: [
+        {
+          model: "gpt-5.1" as ModelName,
+          usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, totalTokens: 2, cost: 0 },
+          answerText: "ok",
+          logPath: "log-ok",
+        },
+      ],
+      rejected: [{ model: "gemini-3-pro" as ModelName, reason: new Error("boom") }],
+      elapsedMs: 500,
+    };
+    vi.mocked(runMultiModelApiSession).mockResolvedValue(summary);
+
+    await performSessionRun({
+      sessionMeta,
+      runOptions: {
+        ...baseRunOptions,
+        models: ["gpt-5.1", "gemini-3-pro"],
+        partialMode: "ok",
+      },
+      mode: "api",
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({ status: "partial" });
+    const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
+    expect(logsCombined).toContain("Multi-model result: partial success, 1/2 succeeded");
+    expect(logsCombined).toContain("Failures:");
   });
 
   test("prints tips before the first model heading in multi-model TTY streaming", async () => {
