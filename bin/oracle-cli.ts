@@ -90,6 +90,8 @@ import {
   isAzureOpenAICandidateModel,
   validateProviderRouting,
 } from "../src/oracle/providerRouting.js";
+import { buildProviderRoutePlan } from "../src/oracle/providerRoutePlan.js";
+import { printProviderPlans } from "../src/cli/providerDoctor.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -177,6 +179,7 @@ interface CliOptions extends OptionValues {
   heartbeat?: number;
   status?: boolean;
   dryRun?: boolean;
+  route?: boolean;
   // tri-state: `true` (forced wait), `false` (forced detach), `undefined` (auto)
   wait?: boolean;
   provider?: ApiProviderMode;
@@ -222,9 +225,13 @@ const normalizedArgv = process.argv.map((arg, index) => {
 const rawCliArgs = normalizedArgv.slice(2);
 const userCliArgs = rawCliArgs[0] === CLI_ENTRYPOINT ? rawCliArgs.slice(1) : rawCliArgs;
 const isTty = process.stdout.isTTY;
+const doctorArgIndex = userCliArgs.indexOf("doctor");
+const doctorJsonRequested =
+  doctorArgIndex >= 0 && userCliArgs.slice(doctorArgIndex).includes("--json");
 const suppressIntro =
-  userCliArgs[0] === "bridge" &&
-  (userCliArgs[1] === "codex-config" || userCliArgs[1] === "claude-config");
+  doctorJsonRequested ||
+  (userCliArgs[0] === "bridge" &&
+    (userCliArgs[1] === "codex-config" || userCliArgs[1] === "claude-config"));
 
 const program = new Command();
 let introPrinted = false;
@@ -420,6 +427,7 @@ program
       .preset("summary")
       .default(false),
   )
+  .option("--route", "Print API provider route plan and exit.", false)
   .addOption(new Option("--exec-session <id>").hideHelp())
   .addOption(new Option("--session <id>").hideHelp())
   .addOption(
@@ -976,6 +984,28 @@ program
   });
 
 program
+  .command("doctor")
+  .description("Diagnose Oracle API provider readiness and routing.")
+  .option("--providers", "Inspect API provider keys and route choices.", false)
+  .option("--models <models>", "Comma-separated API model list to inspect.")
+  .option("-m, --model <model>", "Single API model to inspect.")
+  .addOption(
+    new Option("--provider <provider>", "Choose API provider routing: auto, openai, or azure.")
+      .choices(["auto", "openai", "azure"])
+      .default("auto"),
+  )
+  .option("--no-azure", "Disable Azure OpenAI routing for this inspection.")
+  .option("--azure-endpoint <url>", "Azure OpenAI Endpoint.")
+  .option("--azure-deployment <name>", "Azure OpenAI Deployment Name.")
+  .option("--azure-api-version <version>", "Azure OpenAI API Version.")
+  .option("--base-url <url>", "Override OpenAI-compatible base URL.")
+  .option("--json", "Print structured JSON.", false)
+  .action(async function (this: Command) {
+    const { runProviderDoctor } = await import("../src/cli/providerDoctor.js");
+    await runProviderDoctor(this.optsWithGlobals());
+  });
+
+program
   .command("session [id]")
   .description("Attach to a stored session or list recent sessions when no ID is provided.")
   .option(
@@ -1187,6 +1217,10 @@ function hasExplicitAzureOption(optionUsesDefault: (name: string) => boolean): b
     !optionUsesDefault("azureDeployment") ||
     !optionUsesDefault("azureApiVersion")
   );
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  return values.find((value) => value?.trim());
 }
 
 function formatRouteTargetForLog(raw: string | undefined): string {
@@ -1479,17 +1513,14 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const userConfig = (await loadUserConfig()).config;
   const helpRequested = rawCliArgs.some((arg: string) => arg === "--help" || arg === "-h");
   const multiModelProvided = Array.isArray(options.models) && options.models.length > 0;
-  if (multiModelProvided) {
-    const modelFromConfigOrCli = normalizeModelOption(options.model ?? userConfig.model ?? "");
-    if (modelFromConfigOrCli) {
-      throw new Error("--models cannot be combined with --model.");
-    }
-  }
   const optionUsesDefault = (name: string): boolean => {
     // Commander reports undefined for untouched options, so treat undefined/default the same
     const source = program.getOptionValueSource?.(name);
     return source == null || source === "default";
   };
+  if (multiModelProvided && !optionUsesDefault("model") && normalizeModelOption(options.model)) {
+    throw new Error("--models cannot be combined with --model.");
+  }
   if (helpRequested) {
     if (options.verbose) {
       console.log("");
@@ -1559,10 +1590,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     program.outputHelp();
     return;
   }
-  const retentionHours = typeof options.retainHours === "number" ? options.retainHours : undefined;
-  await sessionStore.ensureStorage();
-  await pruneOldSessions(retentionHours, (message) => console.log(chalk.dim(message)));
-
   if (options.debugHelp) {
     printDebugHelp(program.name());
     return;
@@ -1571,7 +1598,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error("--dry-run cannot be combined with --render-markdown.");
   }
 
-  if (optionUsesDefault("model") && userConfig.model) {
+  if (!multiModelProvided && optionUsesDefault("model") && userConfig.model) {
     options.model = userConfig.model;
   }
   if (optionUsesDefault("search") && userConfig.search) {
@@ -1588,6 +1615,47 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   const providerMode = resolveApiProviderMode(options);
+  const engineModels = multiModelProvided
+    ? Array.from(new Set(options.models!.map((entry) => resolveApiModel(entry))))
+    : [resolveApiModel(normalizeModelOption(options.model) || DEFAULT_MODEL)];
+  if (options.route) {
+    const routeAzureEndpoint = firstNonEmpty(
+      options.azureEndpoint,
+      process.env.AZURE_OPENAI_ENDPOINT,
+      userConfig.azure?.endpoint,
+    );
+    const configuredAzureForRoute = routeAzureEndpoint
+      ? {
+          endpoint: routeAzureEndpoint,
+          deployment: firstNonEmpty(
+            options.azureDeployment,
+            process.env.AZURE_OPENAI_DEPLOYMENT,
+            userConfig.azure?.deployment,
+          ),
+          apiVersion: firstNonEmpty(
+            options.azureApiVersion,
+            process.env.AZURE_OPENAI_API_VERSION,
+            userConfig.azure?.apiVersion,
+          ),
+        }
+      : undefined;
+    const plans = engineModels.map((model) =>
+      buildProviderRoutePlan({
+        model,
+        providerMode,
+        azure: configuredAzureForRoute,
+        baseUrl: options.baseUrl,
+        env: process.env,
+      }),
+    );
+    printProviderPlans(plans, { title: "Route plan" });
+    process.exitCode = plans.some((plan) => !plan.ok) ? 1 : 0;
+    return;
+  }
+
+  const retentionHours = typeof options.retainHours === "number" ? options.retainHours : undefined;
+  await sessionStore.ensureStorage();
+  await pruneOldSessions(retentionHours, (message) => console.log(chalk.dim(message)));
   if (providerMode === "openai") {
     if (hasExplicitAzureOption(optionUsesDefault)) {
       throw new Error("--provider openai/--no-azure cannot be combined with Azure options.");
@@ -1622,9 +1690,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
   }
 
-  const engineModels = multiModelProvided
-    ? Array.from(new Set(options.models!.map((entry) => resolveApiModel(entry))))
-    : [resolveApiModel(normalizeModelOption(options.model) || DEFAULT_MODEL)];
   const azureAutoApiRequested =
     providerMode !== "openai" &&
     Boolean(options.azureEndpoint?.trim()) &&

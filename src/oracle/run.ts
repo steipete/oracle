@@ -184,13 +184,27 @@ export async function runOracle(
   const hasXaiKey = Boolean(optionsApiKey) || Boolean(process.env.XAI_API_KEY);
 
   let baseUrl = options.baseUrl?.trim();
+  const providerQualifiedOpenRouterCandidate =
+    !isAzureOpenAI && providerMode !== "openai" && options.model.includes("/");
+  if (
+    baseUrl &&
+    providerQualifiedOpenRouterCandidate &&
+    !isOpenRouterBaseUrl(baseUrl) &&
+    !isCustomBaseUrl(baseUrl)
+  ) {
+    baseUrl = undefined;
+  }
   if (!baseUrl) {
+    let envBaseUrl: string | undefined;
     if (options.model.startsWith("grok")) {
-      baseUrl = resolvedXaiBaseUrl;
+      envBaseUrl = resolvedXaiBaseUrl;
     } else if (provider === "anthropic") {
-      baseUrl = process.env.ANTHROPIC_BASE_URL?.trim();
+      envBaseUrl = process.env.ANTHROPIC_BASE_URL?.trim();
     } else {
-      baseUrl = process.env.OPENAI_BASE_URL?.trim();
+      envBaseUrl = process.env.OPENAI_BASE_URL?.trim();
+    }
+    if (!providerQualifiedOpenRouterCandidate || (envBaseUrl && isCustomBaseUrl(envBaseUrl))) {
+      baseUrl = envBaseUrl;
     }
   }
   const providerKeyMissing =
@@ -202,8 +216,13 @@ export async function runOracle(
         (provider === "google" && !hasGeminiKey) ||
         (provider === "xai" && !hasXaiKey) ||
         provider === "other");
+  const providerQualifiedOpenRouterRoute = providerQualifiedOpenRouterCandidate && !baseUrl;
   const openRouterFallback =
-    providerMode !== "openai" && providerKeyMissing && Boolean(openRouterApiKey);
+    !baseUrl &&
+    (providerQualifiedOpenRouterRoute ||
+      (providerMode !== "openai" &&
+        providerKeyMissing &&
+        (provider === "other" || Boolean(openRouterApiKey))));
   if (!baseUrl || openRouterFallback) {
     if (openRouterFallback) {
       baseUrl = defaultOpenRouterBase;
