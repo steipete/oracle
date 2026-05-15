@@ -13,6 +13,7 @@ import type {
 } from "./browser/types.js";
 import type {
   TransportFailureReason,
+  ApiProviderMode,
   AzureOptions,
   ModelName,
   ThinkingTimeLevel,
@@ -182,6 +183,7 @@ export interface StoredRunOptions {
   browserBundleFiles?: boolean;
   background?: boolean;
   search?: boolean;
+  provider?: ApiProviderMode;
   baseUrl?: string;
   azure?: AzureOptions;
   effectiveModelId?: string;
@@ -559,6 +561,7 @@ export async function initializeSession(
       browserBundleFiles: options.browserBundleFiles,
       background: options.background,
       search: options.search,
+      provider: options.provider,
       baseUrl: options.baseUrl,
       azure: options.azure,
       timeoutSeconds: options.timeoutSeconds,
