@@ -2,6 +2,11 @@
 
 ## 0.12.1 — Unreleased
 
+### Changed
+
+- Docs: update the bundled Oracle skill for GPT-5.5 Pro and current provider/preflight/perf-trace guidance (#204). Thanks @TomBener!
+- Dependencies: update transitive fast-uri, hono, ip-address, express-rate-limit, and Vite to patched versions for Dependabot alerts (#205, #206, #207).
+
 ### Fixed
 
 - Release: write clean checksum files from `scripts/release.sh artifacts` without helper trace lines.

@@ -113,7 +113,8 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1627472"
+      "devtools-protocol": "0.0.1627472",
+      "vite": "7.3.2"
     },
     "onlyBuiltDependencies": [
       "esbuild"

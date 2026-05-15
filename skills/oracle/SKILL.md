@@ -1,6 +1,6 @@
 ---
 name: oracle
-description: Use the @steipete/oracle CLI to bundle a prompt plus the right files and get a second-model review (API or browser) for debugging, refactors, design checks, or cross-validation.
+description: "Oracle second-model review: bundle prompts/files, debug, refactor, design-check."
 ---
 
 # Oracle (CLI) — best use
@@ -36,6 +36,10 @@ Recommended defaults:
 - Token/cost sanity:
   - `npx -y @steipete/oracle --dry-run summary --files-report -p "<task>" --file "src/**"`
 
+- Startup/perf trace:
+  - `npx -y @steipete/oracle --perf-trace --perf-trace-path /tmp/oracle-perf.json --dry-run summary -p "<task>" --file "src/**"`
+  - Use when CLI startup or time-to-first-output feels slow; inspect `first-output` and `exit`.
+
 - Browser run (main path; long-running is normal):
   - `npx -y @steipete/oracle --engine browser --model gpt-5.5-pro -p "<task>" --file "src/**"`
 
@@ -66,6 +70,7 @@ Recommended defaults:
 
 - Target: keep total input under ~196k tokens.
 - Use `--files-report` (and/or `--dry-run json`) to spot the token hogs before spending.
+- Use `--perf-trace` / `ORACLE_PERF_TRACE=1` for startup and first-output timing. Traces redact prompts, tokens, keys, cookies, and inline cookie payloads; detached API children write a session-suffixed sidecar trace.
 - If you need hidden/advanced knobs: `npx -y @steipete/oracle --help --verbose`.
 
 ## Engines (API vs browser)
@@ -80,15 +85,34 @@ Recommended defaults:
   - Host: `oracle serve --host 0.0.0.0 --port 9473 --token <secret>`
   - Client: `oracle --engine browser --remote-host <host:port> --remote-token <secret> -p "<task>" --file "src/**"`
 
+## API preflight
+
+- API runs require explicit user consent and cost money.
+- Before API runs, check provider readiness without printing secrets:
+  - `oracle doctor --providers --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro`
+  - `oracle --preflight --models gpt-5.4,gemini-3-pro`
+  - `oracle --route --model gpt-5.4`
+- If the user wants first-party OpenAI, pass `--provider openai` or `--no-azure`. This prevents exported Azure env/config from hijacking the route:
+  - `oracle --provider openai --engine api --model gpt-5.5-pro ...`
+- For advisory multi-model panels where partial success is useful, use `--allow-partial --write-output <path>` so successful model files and the `<stem>.oracle.json` manifest are easy to recover:
+  - `oracle --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro --allow-partial --write-output /tmp/panel.md -p "<task>"`
+- `--timeout 10m` is the normal user-facing API deadline; Oracle derives the HTTP transport timeout unless `--http-timeout` is explicitly set.
+- If the exported `OPENAI_API_KEY` is invalid and the user wants their personal OpenAI key, use `$one-password` in one persistent tmux session. Known item: `API Key - OpenAI - Personal`, field `api_key`. Inject only into the single Oracle command; never print the key:
+  - `OPENAI_API_KEY="$(op item get 'API Key - OpenAI - Personal' --account my.1password.com --fields label=api_key --reveal)" oracle --provider openai --engine api --model gpt-5.5-pro ...`
+- For debugging Oracle itself, prefer the local checkout after pulling `~/Projects/oracle`:
+  - `pnpm -C ~/Projects/oracle run build`
+  - `node ~/Projects/oracle/dist/scripts/run-cli.js ...`
+
 ## Sessions + slugs (don’t lose work)
 
 - Stored under `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
 - Browser runs save durable files under `~/.oracle/sessions/<id>/artifacts/`, including `transcript.md`, Deep Research reports, and downloaded ChatGPT-generated images when available.
-- Runs may detach or take a long time (browser + GPT‑5.5 Pro often does). If the CLI times out: don’t re-run; reattach.
+- Runs may detach or take a long time (browser/API + GPT‑5.5 Pro often does). If the CLI times out: don’t re-run; reattach.
   - List: `oracle status --hours 72`
   - Attach: `oracle session <id> --render`
 - Use `--slug "<3-5 words>"` to keep session IDs readable.
 - Duplicate prompt guard exists; use `--force` only when you truly want a fresh run.
+- CLI guardrails: root runs without a prompt exit nonzero; `--dry-run` conflicts with `--render` / `--render-markdown`; Ctrl-C exits foreground API runs with code 130 while browser cleanup/reattach still runs.
 
 ## Prompt template (high signal)
 
