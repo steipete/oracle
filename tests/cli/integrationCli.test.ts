@@ -127,7 +127,7 @@ describe("oracle CLI integration", () => {
   );
 
   test(
-    "SIGINT exits promptly with code 130",
+    "SIGINT exits promptly",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-sigint-"));
       const markerPath = path.join(oracleHome, "continued-after-sigint");
@@ -198,8 +198,12 @@ module.exports = () => ({
       child.kill("SIGINT");
       const exit = await waitForChildExit(child, 5000);
 
-      expect(exit).toEqual({ code: 130, signal: null });
-      expect(output).toContain("Cancelled.");
+      if (process.platform === "win32") {
+        expect(exit).toEqual({ code: null, signal: "SIGINT" });
+      } else {
+        expect(exit).toEqual({ code: 130, signal: null });
+        expect(output).toContain("Cancelled.");
+      }
       await expect(readFile(markerPath, "utf8")).rejects.toThrow();
       await rm(oracleHome, { recursive: true, force: true });
     },

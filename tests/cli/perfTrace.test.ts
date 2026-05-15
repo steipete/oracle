@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
 import {
@@ -13,7 +14,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
-const TSX_LOADER = path.join(process.cwd(), "node_modules", "tsx", "dist", "loader.mjs");
+const TSX_LOADER = pathToFileURL(
+  path.join(process.cwd(), "node_modules", "tsx", "dist", "loader.mjs"),
+).href;
 const CLI_TIMEOUT = 15_000;
 
 describe("CLI performance traces", () => {
