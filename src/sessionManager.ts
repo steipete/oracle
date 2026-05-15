@@ -16,6 +16,7 @@ import type {
   AzureOptions,
   BrowserBundleFormat,
   ModelName,
+  PartialMode,
   ThinkingTimeLevel,
 } from "./oracle.js";
 import { DEFAULT_MODEL, formatElapsed } from "./oracle.js";
@@ -199,6 +200,7 @@ export interface StoredRunOptions {
   effectiveModelId?: string;
   renderPlain?: boolean;
   writeOutputPath?: string;
+  partialMode?: PartialMode;
   timeoutSeconds?: number | "auto";
   httpTimeoutMs?: number;
   zombieTimeoutMs?: number;
@@ -243,7 +245,7 @@ export interface SessionMetadata {
   error?: SessionUserErrorMetadata;
 }
 
-export type SessionStatus = "pending" | "running" | "completed" | "error" | "cancelled";
+export type SessionStatus = "pending" | "running" | "completed" | "partial" | "error" | "cancelled";
 
 export interface SessionModelRun {
   model: string;
@@ -526,6 +528,7 @@ export async function initializeSession(
       zombieTimeoutMs: options.zombieTimeoutMs,
       zombieUseLastActivity: options.zombieUseLastActivity,
       writeOutputPath: options.writeOutputPath,
+      partialMode: options.partialMode,
       waitPreference: options.waitPreference,
       youtube: options.youtube,
       generateImage: options.generateImage,

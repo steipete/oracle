@@ -51,6 +51,7 @@ const originalChalkLevel = chalk.level;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  waitMock.mockClear();
   Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
   chalk.level = 1;
   vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -415,6 +416,29 @@ describe("attachSession rendering", () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Δ"));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("$1.23"));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("slug=sess"));
+  });
+
+  test("treats partial sessions as terminal", async () => {
+    const partialMeta: SessionMetadata = {
+      ...baseMeta,
+      status: "partial",
+      model: "gpt-5.1",
+      mode: "api",
+      elapsedMs: 1234,
+      usage: { inputTokens: 10, outputTokens: 20, reasoningTokens: 0, totalTokens: 30 },
+    } as SessionMetadata;
+    readSessionMetadataMock.mockResolvedValue(partialMeta);
+    sessionStoreMock.readSession.mockResolvedValue(partialMeta);
+    readSessionLogMock.mockResolvedValue("Answer:\npartial result");
+    readSessionRequestMock.mockResolvedValue({ prompt: "Prompt here" });
+    const writeSpy = vi.spyOn(process.stdout, "write");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await attachSession("sess", { renderMarkdown: false });
+
+    expect(writeSpy).toHaveBeenCalledWith(expect.stringContaining("Answer:\npartial result"));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("↑"));
+    expect(waitMock).not.toHaveBeenCalled();
   });
 
   test("falls back to metadata prompt when request is missing", async () => {

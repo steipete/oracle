@@ -337,8 +337,17 @@ export async function performSessionRun({
       log(statusColor(line1));
 
       const hasFailure = summary.rejected.length > 0;
+      const allowPartial = runOptions.partialMode === "ok" && summary.fulfilled.length > 0;
+      if (hasFailure) {
+        const resultLabel = summary.fulfilled.length > 0 ? "partial success" : "failed";
+        log(
+          statusColor(
+            `Multi-model result: ${resultLabel}, ${summary.fulfilled.length}/${multiModels.length} succeeded`,
+          ),
+        );
+      }
       await sessionStore.updateSession(sessionMeta.id, {
-        status: hasFailure ? "error" : "completed",
+        status: hasFailure ? (allowPartial ? "partial" : "error") : "completed",
         completedAt: new Date().toISOString(),
         usage: aggregateUsage,
         elapsedMs: summary.elapsedMs,
@@ -380,6 +389,12 @@ export async function performSessionRun({
         }
       }
       if (hasFailure) {
+        log(dim("Failures:"));
+        for (const item of summary.rejected) {
+          log(dim(`- ${item.model}: ${formatMultiModelFailure(item.reason)}`));
+        }
+      }
+      if (hasFailure && !allowPartial) {
         throw summary.rejected[0].reason;
       }
       return;
@@ -597,6 +612,20 @@ function mergeArtifacts(
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatMultiModelFailure(error: unknown): string {
+  const userError = asOracleUserError(error);
+  if (userError) {
+    return `${userError.category}, ${userError.message}`;
+  }
+  if (error instanceof OracleTransportError) {
+    return `${error.reason}, ${error.message}`;
+  }
+  if (error instanceof OracleResponseError) {
+    return error.message;
+  }
+  return formatError(error);
 }
 
 async function writeAssistantOutput(

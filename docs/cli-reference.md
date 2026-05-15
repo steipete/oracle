@@ -50,6 +50,7 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 | `--timeout <seconds\|duration\|auto>` | Overall API deadline. `auto` = 60m for Pro, 120s otherwise; accepts values like `10m`. |
 | `--background`, `--no-background`     | Force Responses API background mode on/off.                                            |
 | `--http-timeout <ms\|s\|m\|h>`        | Override the HTTP client timeout; explicit `--timeout` values are reused when omitted. |
+| `--allow-partial`, `--partial <mode>` | Accept partial multi-model success when mode is `ok`; default mode is `fail`.          |
 | `--heartbeat <seconds>`               | Emit progress heartbeats; browser mode reports thinking-sidecar liveness.              |
 
 ## API endpoints

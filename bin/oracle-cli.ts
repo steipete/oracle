@@ -192,6 +192,8 @@ interface CliOptions extends OptionValues {
   retainHours?: number;
   writeOutput?: string;
   writeOutputPath?: string;
+  allowPartial?: boolean;
+  partial?: "fail" | "ok";
 }
 
 type ResolvedCliOptions = Omit<CliOptions, "model"> & {
@@ -449,6 +451,12 @@ program
   .option(
     "--write-output <path>",
     "Write only the final assistant message to this file (overwrites; multi-model appends .<model> before the extension).",
+  )
+  .option("--allow-partial", "Exit 0 for multi-model runs when at least one model succeeds.", false)
+  .addOption(
+    new Option("--partial <mode>", "Multi-model failure policy (fail | ok).")
+      .choices(["fail", "ok"])
+      .default(undefined),
   )
   .option("--verbose-render", "Show render/TTY diagnostics when replaying sessions.", false)
   .addOption(
@@ -1154,6 +1162,7 @@ function buildRunOptions(
       : undefined;
   const httpTimeoutMs = overrides.httpTimeoutMs ?? options.httpTimeout ?? resolvedTimeoutMs;
   const zombieTimeoutMs = overrides.zombieTimeoutMs ?? options.zombieTimeout ?? resolvedTimeoutMs;
+  const partialMode = options.allowPartial ? "ok" : options.partial;
   const azure =
     options.azureEndpoint || overrides.azure?.endpoint
       ? {
@@ -1180,6 +1189,7 @@ function buildRunOptions(
     httpTimeoutMs,
     zombieTimeoutMs,
     zombieUseLastActivity: overrides.zombieUseLastActivity ?? options.zombieLastActivity,
+    partialMode,
     silent: overrides.silent ?? options.silent,
     search: overrides.search ?? options.search,
     preview: overrides.preview ?? undefined,
@@ -1490,6 +1500,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     httpTimeoutMs: stored.httpTimeoutMs,
     zombieTimeoutMs: stored.zombieTimeoutMs,
     zombieUseLastActivity: stored.zombieUseLastActivity,
+    partialMode: stored.partialMode,
     sessionId: metadata.id,
     verbose: stored.verbose,
     heartbeatIntervalMs: stored.heartbeatIntervalMs,
