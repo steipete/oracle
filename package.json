@@ -48,6 +48,7 @@
     "test:mcp:unit": "vitest run tests/mcp*.test.ts tests/mcp/**/*.test.ts",
     "test:mcp:mcporter": "pnpm dlx mcporter list oracle-local --schema --config config/mcporter.json && pnpm dlx mcporter call oracle-local.sessions limit:1 --config config/mcporter.json",
     "test:browser": "pnpm run build && tsx scripts/test-browser.ts && ./scripts/browser-smoke.sh",
+    "test:packed-cli": "node scripts/packed-cli-smoke.mjs",
     "test:live": "ORACLE_LIVE_TEST=1 vitest run tests/live --exclude tests/live/openai-live.test.ts",
     "test:live:fast": "ORACLE_LIVE_TEST=1 ORACLE_LIVE_TEST_FAST=1 vitest run tests/live/browser-fast-live.test.ts",
     "test:pro": "ORACLE_LIVE_TEST=1 vitest run tests/live/openai-live.test.ts",

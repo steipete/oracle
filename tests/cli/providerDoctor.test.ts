@@ -118,6 +118,43 @@ describe("provider doctor CLI", () => {
   );
 
   test(
+    "prints provider preflight without a prompt or session storage",
+    async () => {
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-preflight-openai-key",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        GEMINI_API_KEY: "gk-preflight-gemini-key",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_ENDPOINT: "",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_API_KEY: "",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        AZURE_OPENAI_DEPLOYMENT: "",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: "/dev/null",
+      };
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        ["--import", "tsx", CLI_ENTRY, "--preflight", "--models", "gpt-5.4,gemini-3-pro"],
+        { env },
+      );
+
+      expect(stdout).toContain("Provider preflight");
+      expect(stdout).toContain("gpt-5.4: ok");
+      expect(stdout).toContain("gemini-3-pro: ok");
+      expect(stdout).toContain("key: OPENAI_API_KEY=sk-p");
+      expect(stdout).toContain("key: GEMINI_API_KEY=gk-p");
+      expect(stdout).not.toContain("Prompt is required");
+      expect(stdout).not.toContain("sk-preflight-openai-key");
+      expect(stdout).not.toContain("gk-preflight-gemini-key");
+    },
+    CLI_TIMEOUT,
+  );
+
+  test(
     "root route models ignore configured default model",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-route-models-config-"));

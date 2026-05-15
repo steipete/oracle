@@ -6,6 +6,7 @@
 
 - API: add `--allow-partial` / `--partial ok` for multi-model runs so advisory panels can exit 0 when at least one model succeeds, while still listing saved outputs and a JSON output manifest before failures.
 - API: classify common provider failures in multi-model summaries and metadata, including auth, expired keys, quota, rate limits, and unavailable models, with secret-safe recovery hints.
+- API: add root `--preflight` provider readiness checks and packed CLI help smoke coverage so stale installed help is caught before release.
 - Sessions: print and persist a compact lifecycle block showing foreground/background execution, detach state, model count, and reattach command.
 - Docs: add `oracle docs check` / `pnpm docs:check` to catch documented flags that are missing from Commander help metadata.
 - API: add `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env/config is present, add `oracle doctor --providers` and `--route` redacted route diagnostics, keep provider-qualified model IDs on OpenRouter/proxy routes instead of accidental Azure/native routes, and fail early when Azure routing lacks a deployment.

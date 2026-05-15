@@ -51,18 +51,20 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 | `--background`, `--no-background`     | Force Responses API background mode on/off.                                            |
 | `--http-timeout <ms\|s\|m\|h>`        | Override the HTTP client timeout; explicit `--timeout` values are reused when omitted. |
 | `--allow-partial`, `--partial <mode>` | Accept partial multi-model success when mode is `ok`; default mode is `fail`.          |
+| `--preflight`                         | Check redacted provider readiness for requested API model(s), then exit.               |
 | `--heartbeat <seconds>`               | Emit progress heartbeats; browser mode reports thinking-sidecar liveness.              |
 
 ## API endpoints
 
-| Flag                  | Purpose                                  |
-| --------------------- | ---------------------------------------- |
-| `--base-url <url>`    | LiteLLM / Azure / OpenRouter / proxy.    |
-| `--provider <mode>`   | API route: `auto`, `openai`, or `azure`. |
-| `--no-azure`          | Ignore Azure env/config for this run.    |
-| `--azure-endpoint`    | Azure OpenAI endpoint.                   |
-| `--azure-deployment`  | Azure deployment name.                   |
-| `--azure-api-version` | Azure API version.                       |
+| Flag                  | Purpose                                   |
+| --------------------- | ----------------------------------------- |
+| `--base-url <url>`    | LiteLLM / Azure / OpenRouter / proxy.     |
+| `--provider <mode>`   | API route: `auto`, `openai`, or `azure`.  |
+| `--no-azure`          | Ignore Azure env/config for this run.     |
+| `--route`             | Print redacted API route plan, then exit. |
+| `--azure-endpoint`    | Azure OpenAI endpoint.                    |
+| `--azure-deployment`  | Azure deployment name.                    |
+| `--azure-api-version` | Azure API version.                        |
 
 See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrouter.md).
 
