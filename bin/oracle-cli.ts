@@ -2,7 +2,6 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { once } from "node:events";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
 // Allow `npx @steipete/oracle oracle-mcp` to resolve the MCP server even though npx runs the default binary.
@@ -363,8 +362,7 @@ program.hook("preAction", async (thisCommand) => {
     console.log(
       chalk.yellow('Prompt is required. Provide it via --prompt "<text>" or positional [prompt].'),
     );
-    thisCommand.help({ error: false });
-    process.exitCode = 1;
+    thisCommand.help({ error: true });
     return;
   }
 });
@@ -1744,7 +1742,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     printDebugHelp(program.name());
     return;
   }
-  if (options.dryRun && options.renderMarkdown) {
+  if (options.dryRun && renderMarkdown) {
     throw new Error("--dry-run cannot be combined with --render-markdown.");
   }
 
@@ -2783,12 +2781,19 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const parsePromise = program.parseAsync(normalizedArgv);
-  const sigintPromise = once(process, "SIGINT").then(() => "sigint" as const);
-  const result = await Promise.race([parsePromise.then(() => "parsed" as const), sigintPromise]);
-  if (result === "sigint") {
+  const handleSigint = (): void => {
     console.log(chalk.yellow("\nCancelled."));
     process.exitCode = 130;
+    // Browser/serve modes install their own SIGINT cleanup after this top-level handler.
+    if (process.listenerCount("SIGINT") === 0) {
+      process.exit(130);
+    }
+  };
+  process.once("SIGINT", handleSigint);
+  try {
+    await program.parseAsync(normalizedArgv);
+  } finally {
+    process.off("SIGINT", handleSigint);
   }
 }
 

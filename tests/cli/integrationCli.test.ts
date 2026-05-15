@@ -2,7 +2,13 @@ import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import { mkdtemp, writeFile, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { execFile } from "node:child_process";
+import {
+  type ChildProcessByStdio,
+  execFile,
+  spawn,
+  type ExecFileOptions,
+} from "node:child_process";
+import type { Readable } from "node:stream";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -34,7 +40,172 @@ afterAll(() => {
   }
 });
 
+function execCli(
+  args: string[],
+  options: ExecFileOptions = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      ["--import", "tsx", CLI_ENTRY, ...args],
+      options,
+      (error, stdout, stderr) => {
+        const code = typeof error?.code === "number" ? error.code : error ? 1 : 0;
+        resolve({
+          code,
+          stdout: typeof stdout === "string" ? stdout : stdout.toString("utf8"),
+          stderr: typeof stderr === "string" ? stderr : stderr.toString("utf8"),
+        });
+      },
+    );
+  });
+}
+
+type CliChild = ChildProcessByStdio<null, Readable, Readable>;
+
+function waitForChildExit(
+  child: CliChild,
+  timeoutMs: number,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error(`child did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal });
+    });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function waitForChildOutput(child: CliChild, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      child.stdout.off("data", done);
+      child.stderr.off("data", done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    child.stdout.once("data", done);
+    child.stderr.once("data", done);
+  });
+}
+
 describe("oracle CLI integration", () => {
+  test(
+    "exits nonzero when root options omit the required prompt",
+    async () => {
+      const result = await execCli(["--engine", "api"], { timeout: INTEGRATION_TIMEOUT });
+
+      expect(result.code).toBe(1);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("Prompt is required");
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "rejects dry-run combined with either render flag spelling",
+    async () => {
+      for (const renderFlag of ["--render-markdown", "--render"]) {
+        const result = await execCli(["--dry-run", renderFlag, "-p", "render conflict"], {
+          timeout: INTEGRATION_TIMEOUT,
+        });
+
+        expect(result.code).toBe(1);
+        expect(`${result.stdout}\n${result.stderr}`).toContain(
+          "--dry-run cannot be combined with --render-markdown.",
+        );
+      }
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "SIGINT exits promptly with code 130",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-sigint-"));
+      const markerPath = path.join(oracleHome, "continued-after-sigint");
+      const factoryPath = path.join(oracleHome, "slowFactory.cjs");
+      await writeFile(
+        factoryPath,
+        `
+const fs = require("node:fs");
+module.exports = () => ({
+  responses: {
+    stream: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+      fs.writeFileSync(${JSON.stringify(markerPath)}, "continued");
+      return {
+        async *[Symbol.asyncIterator]() {},
+        finalResponse: async () => ({ id: "slow-test", status: "completed" }),
+      };
+    },
+    create: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+      fs.writeFileSync(${JSON.stringify(markerPath)}, "continued");
+      return { id: "slow-test", status: "completed" };
+    },
+    retrieve: async (id) => ({ id, status: "completed" }),
+  },
+});
+`,
+        "utf8",
+      );
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-sigint",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: factoryPath,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+      const child = spawn(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--provider",
+          "openai",
+          "--model",
+          "gpt-5.1",
+          "--no-background",
+          "-p",
+          "interrupt slow client",
+        ],
+        { env, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      let output = "";
+      child.stdout.on("data", (chunk) => {
+        output += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        output += String(chunk);
+      });
+
+      await waitForChildOutput(child, 2000);
+      child.kill("SIGINT");
+      const exit = await waitForChildExit(child, 5000);
+
+      expect(exit).toEqual({ code: 130, signal: null });
+      expect(output).toContain("Cancelled.");
+      await expect(readFile(markerPath, "utf8")).rejects.toThrow();
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
   test(
     "stores session metadata using stubbed client factory",
     async () => {
