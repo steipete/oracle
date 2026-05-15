@@ -435,7 +435,7 @@ describe("performSessionRun", () => {
       version: 1,
       sessionId: "sess-1",
       status: "completed",
-      outputBasePath: "/tmp/out.md",
+      outputBasePath: path.resolve("/tmp/out.md"),
       models: [
         {
           model: "gpt-5.2-pro",
