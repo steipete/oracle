@@ -372,6 +372,12 @@ export async function runOracle(
         : DEFAULT_TIMEOUT_NON_PRO_MS / 1000
       : options.timeoutSeconds;
   const timeoutMs = timeoutSeconds * 1000;
+  const httpTimeoutMs =
+    typeof options.httpTimeoutMs === "number" &&
+    Number.isFinite(options.httpTimeoutMs) &&
+    options.httpTimeoutMs > 0
+      ? options.httpTimeoutMs
+      : timeoutMs;
   // Track the concrete model id we dispatch to (especially for Gemini preview aliases)
   const effectiveModelId =
     azureDeploymentName ??
@@ -464,6 +470,12 @@ export async function runOracle(
     if (isLongRunningModel) {
       log(dim("This model can take up to 60 minutes (usually replies much faster)."));
     }
+    if (options.verbose || isLongRunningModel || httpTimeoutMs < timeoutMs) {
+      const timeoutLine = `Timeouts | overall: ${formatElapsed(timeoutMs)} | transport: ${formatElapsed(httpTimeoutMs)}`;
+      const timeoutNote =
+        httpTimeoutMs < timeoutMs ? " | note: transport can fail before overall timeout" : "";
+      log(dim(`${timeoutLine}${timeoutNote}`));
+    }
     if (options.verbose || isLongRunningModel) {
       log(dim("Press Ctrl+C to cancel."));
     }
@@ -527,7 +539,7 @@ export async function runOracle(
         : modelConfig.model.startsWith("gemini")
           ? resolveGeminiModelId(effectiveModelId as ModelName)
           : effectiveModelId,
-      httpTimeoutMs: options.httpTimeoutMs,
+      httpTimeoutMs,
     });
   logVerbose("Dispatching request to API...");
   if (options.verbose) {

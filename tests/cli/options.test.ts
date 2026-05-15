@@ -11,6 +11,7 @@ import {
   inferModelFromLabel,
   normalizeModelOption,
   parseHeartbeatOption,
+  parseTimeoutOption,
   mergePathLikeOptions,
   dedupePathInputs,
 } from "../../src/cli/options.ts";
@@ -146,6 +147,25 @@ describe("parseHeartbeatOption", () => {
   test("rejects negative or non-numeric values", () => {
     expect(() => parseHeartbeatOption("-5")).toThrow(InvalidArgumentError);
     expect(() => parseHeartbeatOption("nope")).toThrow(InvalidArgumentError);
+  });
+});
+
+describe("parseTimeoutOption", () => {
+  test("keeps bare numbers as seconds", () => {
+    expect(parseTimeoutOption("10")).toBe(10);
+    expect(parseTimeoutOption("1.5")).toBe(1.5);
+  });
+
+  test("accepts duration units", () => {
+    expect(parseTimeoutOption("10m")).toBe(600);
+    expect(parseTimeoutOption("2h")).toBe(7200);
+    expect(parseTimeoutOption("90s")).toBe(90);
+  });
+
+  test("accepts auto and rejects invalid values", () => {
+    expect(parseTimeoutOption("auto")).toBe("auto");
+    expect(() => parseTimeoutOption("nope")).toThrow(InvalidArgumentError);
+    expect(() => parseTimeoutOption("0")).toThrow(InvalidArgumentError);
   });
 });
 

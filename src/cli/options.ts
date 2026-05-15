@@ -169,11 +169,19 @@ export function parseTimeoutOption(value: string | undefined): number | "auto" |
   if (value == null) return undefined;
   const normalized = value.trim().toLowerCase();
   if (normalized === "auto") return "auto";
-  const parsed = Number.parseFloat(normalized);
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    throw new InvalidArgumentError('Timeout must be a positive number of seconds or "auto".');
+  if (/^[0-9]+(?:\.[0-9]+)?$/.test(normalized)) {
+    const parsed = Number.parseFloat(normalized);
+    if (parsed > 0) {
+      return parsed;
+    }
   }
-  return parsed;
+  const parsedMs = parseDuration(normalized, Number.NaN);
+  if (!Number.isFinite(parsedMs) || parsedMs <= 0) {
+    throw new InvalidArgumentError(
+      'Timeout must be a positive number of seconds, a duration like "10m", or "auto".',
+    );
+  }
+  return parsedMs / 1000;
 }
 
 export function parseDurationOption(value: string | undefined, label: string): number | undefined {
