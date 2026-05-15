@@ -8,6 +8,10 @@
 
 - Browser: record ChatGPT model-selection evidence in session metadata and CLI output so Pro browser runs show the selected model proof (#195). Thanks @pdurlej!
 
+#### Docs
+
+- Docs: document provider preflight, route diagnostics, partial multi-model recovery, and output manifest workflows in README/provider docs.
+
 ### Added
 
 - CLI: add `oracle remote doctor|status|attach [--json]` to diagnose the configured remote browser endpoint. `doctor` probes TCP + `/health`, `status` snapshots the resolved endpoint config without touching the network, and `attach --host <host:port> --token-env <ENV>` probes a caller-supplied target without ever placing the token on the command line. `oracle bridge doctor --json` emits the same `remote_browser_endpoint.v1`-shaped envelope so scripts can parse a single wire format across all four commands.

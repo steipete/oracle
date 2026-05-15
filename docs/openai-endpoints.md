@@ -31,6 +31,25 @@ Notes:
 - For Responses API runs, Azure expects `model` to be your deployment name. Use `--azure-deployment` or `azure.deployment` when the deployment name does not exactly match the CLI model alias.
 - `AZURE_OPENAI_API_VERSION` is still accepted for back-compat, but Azure's v1 Responses endpoint does not require it.
 
+## Provider diagnostics
+
+Check provider readiness before an API run:
+
+```bash
+oracle doctor --providers --models gpt-5.4,claude-4.6-sonnet,gemini-3-pro
+oracle --preflight --models gpt-5.4,gemini-3-pro
+oracle --route --model gpt-5.4
+```
+
+The output is redacted and local: provider, base host, key source, Azure status, and missing-route errors. These commands exit before sending a prompt or creating a session.
+
+When Azure env/config is present, GPT-family API models route through Azure unless you force first-party OpenAI:
+
+```bash
+oracle --provider openai --route --model gpt-5.4
+oracle --no-azure --route --model gpt-5.4
+```
+
 ### CLI Configuration
 
 You can also pass the Azure settings via CLI flags (env for the key is still recommended):
