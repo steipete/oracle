@@ -2785,7 +2785,7 @@ async function main(): Promise<void> {
     console.log(chalk.yellow("\nCancelled."));
     process.exitCode = 130;
     // Browser/serve modes install their own SIGINT cleanup after this top-level handler.
-    if (process.listenerCount("SIGINT") === 0) {
+    if (process.listenerCount("SIGINT") <= 1) {
       process.exit(130);
     }
   };
