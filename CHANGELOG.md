@@ -6,6 +6,7 @@
 
 - Docs: update the bundled Oracle skill for GPT-5.5 Pro and current provider/preflight/perf-trace guidance (#204). Thanks @TomBener!
 - Dependencies: update transitive fast-uri, hono, ip-address, express-rate-limit, and Vite to patched versions for Dependabot alerts (#205, #206, #207).
+- Dependencies: update Gemini, sweet-cookie, Puppeteer, Vitest, Inquirer, tsx, oxfmt/oxlint, DevTools Protocol, and related type/tooling packages (#209).
 
 ### Fixed
 
