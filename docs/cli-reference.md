@@ -55,6 +55,13 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 | `--perf-trace`, `--perf-trace-path <path>` | Write CLI startup / first-output timing trace JSON.                                    |
 | `--heartbeat <seconds>`                    | Emit progress heartbeats; browser mode reports thinking-sidecar liveness.              |
 
+Notes:
+
+- `--dry-run` is mutually exclusive with `--render` / `--render-markdown`; choose the preview or rendered bundle path.
+- Missing root prompts exit nonzero after help so scripts fail closed.
+- Ctrl-C exits foreground API runs with code 130. Browser runs still keep their cleanup / reattach path.
+- `--perf-trace=/tmp/oracle.json` is accepted in addition to `--perf-trace-path`; `ORACLE_PERF_TRACE=1` writes a local `.oracle-perf-…json` file.
+
 ## API endpoints
 
 | Flag                  | Purpose                                   |

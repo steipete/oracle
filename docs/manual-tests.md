@@ -61,6 +61,20 @@ Run this when touching session serialization, file IO helpers, or CLI flag plumb
 3. Multi-model spot-check: `oracle --models "gpt-5.1-pro,gemini-3-pro" --prompt "two files" --write-output /tmp/out.md --wait`
    - Confirm `/tmp/out.gpt-5.1-pro.md` and `/tmp/out.gemini-3-pro.md` exist with distinct content.
 
+### CLI guardrails and perf traces
+
+Run this when touching top-level CLI startup, option parsing, signal handling, or trace output.
+
+1. Missing prompt:
+   `pnpm run oracle -- --engine api`
+   - Expect help plus a nonzero exit code.
+2. Preview conflict:
+   `pnpm run oracle -- --dry-run summary --render --prompt "conflict"`
+   - Expect a clear conflict error and nonzero exit.
+3. Perf trace:
+   `pnpm run oracle -- --perf-trace --perf-trace-path /tmp/oracle-perf.json --dry-run summary --prompt "trace smoke"`
+   - Confirm the JSON contains `cli-module-ready`, `root-command-start`, `first-output`, and `exit`, and prompt/key-like argv values are redacted.
+
 ### Lightweight Browser CLI (manual exploration)
 
 Before running any agent-driven debugging, you can rely on the TypeScript CLI in `scripts/browser-tools.ts`:

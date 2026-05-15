@@ -71,13 +71,26 @@ oracle --dry-run summary --files-report \
 
 ## 4. Multi-model cross-check
 
+Check keys/routes first:
+
+```bash
+oracle doctor --providers --models gpt-5.5-pro,gemini-3-pro,claude-4.6-sonnet
+```
+
 ```bash
 oracle -p "Cross-check the data layer assumptions" \
   --models gpt-5.5-pro,gemini-3-pro,claude-4.6-sonnet \
+  --allow-partial --write-output /tmp/oracle-panel.md \
   --file "src/**/*.ts"
 ```
 
-One command, three providers. Oracle aggregates cost and token usage per model. See [Multi-model](multimodel.md) for output formats and [Mythical Pro Agents](mythical-pro-agents.md) for picking the right combo.
+One command, three providers. Oracle aggregates cost and token usage per model, writes per-model output files, and can keep successful answers when one provider fails auth or quota. See [Multi-model](multimodel.md) for output formats and [Mythical Pro Agents](mythical-pro-agents.md) for picking the right combo.
+
+Need startup proof for a slow CLI path?
+
+```bash
+oracle --perf-trace --perf-trace-path /tmp/oracle-perf.json --dry-run summary -p "Quick smoke"
+```
 
 ## 5. Reattach to a long run
 

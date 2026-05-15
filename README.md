@@ -72,6 +72,18 @@ npx -y @steipete/oracle --engine api --model gpt-5.2-pro --followup resp_abc1234
 # Preview without spending tokens
 npx -y @steipete/oracle --dry-run summary -p "Check release notes" --file docs/release-notes.md
 
+# Check provider routing/readiness before an API panel
+npx -y @steipete/oracle doctor --providers --models gpt-5.5-pro,gemini-3-pro,claude-4.6-sonnet
+
+# Multi-model advisory panel with recoverable partial success
+npx -y @steipete/oracle --models gpt-5.5-pro,gemini-3-pro,claude-4.6-sonnet \
+  --allow-partial --write-output /tmp/panel.md \
+  -p "Review the naming options" --file docs/naming.md
+
+# Trace startup and time-to-first-output
+npx -y @steipete/oracle --perf-trace --perf-trace-path /tmp/oracle-perf.json \
+  --dry-run summary -p "Quick smoke"
+
 # Browser run (no API key, will open ChatGPT)
 npx -y @steipete/oracle --engine browser -p "Walk through the UI smoke test" --file "src/**/*.ts"
 
@@ -116,6 +128,8 @@ Engine auto-picks API when `OPENAI_API_KEY` is set, otherwise browser; browser i
 - Browser archiving: by default, successful non-project, non-Deep-Research, non-multi-turn ChatGPT one-shots are archived after local artifacts are saved. Use `--browser-archive never` to disable or `--browser-archive always` to force archiving after a successful browser run. Archived chats remain manageable in ChatGPT.
 - Conversation mode guidance: use one-shot browser runs for narrow bug reports or quick file-set reviews; use explicit browser follow-ups for ambiguous architecture/product tradeoffs where a challenge pass and final decision are valuable; use Deep Research for broad public-web questions that need citations. Oracle never invents follow-ups automatically.
 - Project Sources: `oracle project-sources list|add --chatgpt-url <project-url>` manages the Project Sources tab in ChatGPT browser mode. v1 is append-only (`list`, `add`, `--dry-run`) so agents can share explicit project context without deleting or replacing user sources.
+- Fast failure: root runs without a prompt exit nonzero after printing help; `--dry-run` conflicts with `--render` / `--render-markdown`; foreground API runs exit 130 on Ctrl-C while browser cleanup and session recovery still run.
+- Performance traces: `--perf-trace` / `ORACLE_PERF_TRACE=1` writes JSON timing marks for startup, root command, first output, and exit. `--perf-trace-path` or `--perf-trace=/tmp/oracle.json` selects the path; detached API children write a session-suffixed sidecar trace.
 - AGENTS.md/CLAUDE.md:
   ```
   - Oracle bundles a prompt plus the right files so another AI (GPT 5 Pro + more) can answer. Use when stuck/bugs/reviewing.

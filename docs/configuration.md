@@ -136,3 +136,6 @@ oracle \
 - `--perf-trace-path /tmp/oracle.json` or `--perf-trace=/tmp/oracle.json` writes to an explicit path.
 - `ORACLE_PERF_TRACE=1` writes `.oracle-perf-<timestamp>-<pid>.json` in the current directory.
 - `ORACLE_PERF_TRACE=/tmp/oracle.json` writes to an explicit path.
+- Trace args are secret-safe: prompt text, tokens, cookie payloads, inline cookies, and API key-like values are redacted.
+- Detached API runs write a session-suffixed child trace beside the requested trace path so startup and background execution can be inspected separately.
+- Useful events: `cli-module-ready`, `pre-action`, `root-command-start`, `first-output`, `command-action-complete`, and `exit`.
