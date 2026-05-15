@@ -4,6 +4,10 @@
 
 ### Upstream sync v0.13.x
 
+#### Changed
+
+- Dependencies: update Gemini, sweet-cookie, Puppeteer, Vitest, Inquirer, tsx, oxfmt/oxlint, DevTools Protocol, and related type/tooling packages (#209).
+
 #### Fixed
 
 - Browser: record ChatGPT model-selection evidence in session metadata and CLI output so Pro browser runs show the selected model proof (#195). Thanks @pdurlej!
