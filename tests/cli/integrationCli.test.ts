@@ -140,6 +140,54 @@ describe("oracle CLI integration", () => {
   );
 
   test(
+    "stores resolved transport and stale timeouts from explicit overall timeout",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-timeout-plan-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+
+      await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--prompt",
+          "Timeout plan check",
+          "--model",
+          "gpt-5.1",
+          "--timeout",
+          "10m",
+        ],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      const metadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(metadata.options?.timeoutSeconds).toBe(600);
+      expect(metadata.options?.httpTimeoutMs).toBe(600_000);
+      expect(metadata.options?.zombieTimeoutMs).toBe(600_000);
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "keeps Gemini dry-runs in browser mode when Azure env is present",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-gemini-azure-"));

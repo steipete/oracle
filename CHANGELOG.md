@@ -16,6 +16,11 @@
 
 ### Fixed
 
+- API: parse duration-style `--timeout` values such as `10m`, derive the HTTP transport timeout and stale-session cutoff from explicit overall timeouts, and warn when an explicit shorter `--http-timeout` can fail first.
+- Browser: select thinking effort from the currently checked ChatGPT model row so Pro Extended runs do not fall back to the Thinking row's effort control.
+- Browser: record ChatGPT model-selection evidence in session metadata and CLI output so Pro browser runs show the selected model proof (#195). Thanks @pdurlej!
+- Browser: target ChatGPT's renamed bare Pro picker row for Pro browser runs while keeping older Pro CLI aliases mapped to the current browser target (#190, fixes #182). Thanks @jungdaesuh!
+- Browser: recognize current ChatGPT attachment chips without treating stale page-level chips as ready, and keep the longer send-button wait scoped to attachment uploads (#192). Thanks @li-aolong!
 - Browser/v18: drive live Gemini Deep Think runs through the verification state machine and emit a complete v18 audit trail. The DOM provider now refuses to submit a prompt until same-session Deep Think verification has succeeded, and successful or failed runs each write a sanitised `browser_evidence.v1` (provider=`gemini`, slot=`gemini_deep_think`) plus a `provider_result.v1` and the matching `evidence_written` + `run_completed`/`run_failed` ledger pair, so `oracle evidence show|verify` and ledger audits now cover Gemini runs the way they already covered ChatGPT.
 - CLI: `oracle evidence show <session> --json` and `oracle evidence verify <session> --json` now emit a `json_envelope.v1` wrapper (with the typed result in `data`, the v18 recovery contract fields on the failure arm, and granular per-artifact issue codes preserved in `errors[0].details.issue_codes`) so robot consumers see the same envelope shape every other `--json` surface uses. Human (non-`--json`) output is unchanged.
 - CLI: `oracle remote attach --host <h:p>` now always probes the explicit `--host` value even when `ORACLE_REMOTE_HOST` is set to a different (stale) target. Token handling still routes through `--token-env` so the token never appears on the command line.
