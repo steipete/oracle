@@ -417,6 +417,7 @@ describe("performSessionRun", () => {
       .calls;
     const expectedProPath = path.resolve("/tmp/out.gpt-5.2-pro.md");
     const expectedGeminiPath = path.resolve("/tmp/out.gemini-3-pro.md");
+    const expectedManifestPath = path.resolve("/tmp/out.oracle.json");
     expect(writeCalls).toContainEqual([
       expectedProPath,
       expect.stringContaining("pro answer\n"),
@@ -427,9 +428,37 @@ describe("performSessionRun", () => {
       expect.stringContaining("gemini answer\n"),
       "utf8",
     ]);
+    const manifestCall = writeCalls.find((call) => call[0] === expectedManifestPath);
+    expect(manifestCall).toBeDefined();
+    const manifest = JSON.parse(manifestCall?.[1] as string);
+    expect(manifest).toMatchObject({
+      version: 1,
+      sessionId: "sess-1",
+      status: "completed",
+      outputBasePath: "/tmp/out.md",
+      models: [
+        {
+          model: "gpt-5.2-pro",
+          status: "completed",
+          outputPath: expectedProPath,
+          logPath: "log-pro",
+          usage: { totalTokens: 3 },
+        },
+        {
+          model: "gemini-3-pro",
+          status: "completed",
+          outputPath: expectedGeminiPath,
+          logPath: "log-gemini",
+          usage: { totalTokens: 3 },
+        },
+      ],
+    });
     const logLines = log.mock.calls.map((c) => c[0]).join("\n");
     expect(logLines).toContain("Saved outputs:");
     expect(logLines).toContain(`gpt-5.2-pro -> ${expectedProPath}`);
+    expect(logLines).toContain(`Output manifest: ${expectedManifestPath}`);
+    expect(logLines).toContain("Run logs:");
+    expect(logLines).toContain("gemini-3-pro -> log-gemini");
   });
 
   test("prints one aggregate header and colored summary for multi-model runs", async () => {

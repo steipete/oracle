@@ -7,6 +7,7 @@ import type {
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
   SessionArtifact,
+  SessionModelRun,
 } from "../sessionStore.js";
 import type { RunOracleOptions, UsageSummary } from "../oracle.js";
 import {
@@ -32,7 +33,7 @@ import {
 } from "./notifier.js";
 import { sessionStore } from "../sessionStore.js";
 import { wait } from "../sessionManager.js";
-import { runMultiModelApiSession } from "../oracle/multiModelRunner.js";
+import { runMultiModelApiSession, type MultiModelRunSummary } from "../oracle/multiModelRunner.js";
 import { MODEL_CONFIGS, DEFAULT_SYSTEM_PROMPT } from "../oracle/config.js";
 import { isKnownModel } from "../oracle/modelResolver.js";
 import { resolveModelConfig } from "../oracle/modelResolver.js";
@@ -381,9 +382,38 @@ export async function performSessionRun({
             savedOutputs.push({ model: entry.model, path: savedPath });
           }
         }
+        const sessionWithRuns = (await readSessionForManifest(sessionMeta.id)) ?? {
+          ...sessionMeta,
+          models: sessionMeta.models,
+        };
+        const runLogs = await collectMultiModelRunLogs(
+          sessionMeta.id,
+          sessionWithRuns.models,
+          summary,
+        );
+        const manifestPath = await writeMultiModelOutputManifest({
+          baseOutputPath: runOptions.writeOutputPath,
+          sessionId: sessionMeta.id,
+          status: hasFailure ? (allowPartial ? "partial" : "error") : "completed",
+          summary,
+          savedOutputs,
+          modelRuns: sessionWithRuns.models,
+          runLogs,
+          log,
+        });
         if (savedOutputs.length > 0) {
           log(dim("Saved outputs:"));
           for (const item of savedOutputs) {
+            log(dim(`- ${item.model} -> ${item.path}`));
+          }
+        }
+        if (manifestPath) {
+          log(dim(`Output manifest: ${manifestPath}`));
+        }
+        if (runLogs.length > 0) {
+          log(dim(""));
+          log(dim("Run logs:"));
+          for (const item of runLogs) {
             log(dim(`- ${item.model} -> ${item.path}`));
           }
         }
@@ -626,6 +656,196 @@ function formatMultiModelFailure(error: unknown): string {
     return error.message;
   }
   return formatError(error);
+}
+
+interface MultiModelManifestRunLog {
+  model: string;
+  path: string;
+}
+
+interface MultiModelOutputManifest {
+  version: 1;
+  sessionId: string;
+  status: "completed" | "partial" | "error";
+  outputBasePath: string;
+  createdAt: string;
+  models: Array<{
+    model: string;
+    status: string;
+    outputPath?: string;
+    logPath?: string;
+    errorCategory?: string;
+    errorMessage?: string;
+    elapsedMs?: number;
+    usage?: UsageSummary;
+  }>;
+}
+
+export function deriveOutputManifestPath(basePath: string): string {
+  const ext = path.extname(basePath);
+  const stem = path.basename(basePath, ext);
+  const dir = path.dirname(basePath);
+  return path.join(dir, `${stem}.oracle.json`);
+}
+
+async function collectMultiModelRunLogs(
+  sessionId: string,
+  modelRuns: SessionModelRun[] | undefined,
+  summary: MultiModelRunSummary,
+): Promise<MultiModelManifestRunLog[]> {
+  const sessionDir = await resolveSessionDir(sessionId);
+  const logsByModel = new Map<string, string>();
+  for (const run of modelRuns ?? []) {
+    if (run.log?.path) {
+      logsByModel.set(run.model, resolveSessionPath(sessionDir, run.log.path));
+    }
+  }
+  for (const entry of summary.fulfilled) {
+    if (!logsByModel.has(entry.model)) {
+      logsByModel.set(entry.model, entry.logPath);
+    }
+  }
+  return [...logsByModel.entries()].map(([model, logPath]) => ({ model, path: logPath }));
+}
+
+async function writeMultiModelOutputManifest({
+  baseOutputPath,
+  sessionId,
+  status,
+  summary,
+  savedOutputs,
+  modelRuns,
+  runLogs,
+  log,
+}: {
+  baseOutputPath: string;
+  sessionId: string;
+  status: "completed" | "partial" | "error";
+  summary: MultiModelRunSummary;
+  savedOutputs: Array<{ model: string; path: string }>;
+  modelRuns?: SessionModelRun[];
+  runLogs: MultiModelManifestRunLog[];
+  log: (message: string) => void;
+}): Promise<string | undefined> {
+  const manifestPath = deriveOutputManifestPath(baseOutputPath);
+  const normalizedTarget = path.resolve(manifestPath);
+  const normalizedSessionsDir = path.resolve(sessionStore.sessionsDir());
+  if (
+    normalizedTarget === normalizedSessionsDir ||
+    normalizedTarget.startsWith(`${normalizedSessionsDir}${path.sep}`)
+  ) {
+    log(
+      dim(
+        `output manifest skipped: refusing to write inside session storage (${normalizedSessionsDir}).`,
+      ),
+    );
+    return undefined;
+  }
+  const manifest = buildMultiModelOutputManifest({
+    baseOutputPath,
+    sessionId,
+    status,
+    summary,
+    savedOutputs,
+    modelRuns,
+    runLogs,
+  });
+  try {
+    await fs.mkdir(path.dirname(normalizedTarget), { recursive: true });
+    await fs.writeFile(normalizedTarget, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    return normalizedTarget;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    log(dim(`output manifest failed (${reason}); session completed anyway.`));
+    return undefined;
+  }
+}
+
+function buildMultiModelOutputManifest({
+  baseOutputPath,
+  sessionId,
+  status,
+  summary,
+  savedOutputs,
+  modelRuns,
+  runLogs,
+}: {
+  baseOutputPath: string;
+  sessionId: string;
+  status: "completed" | "partial" | "error";
+  summary: MultiModelRunSummary;
+  savedOutputs: Array<{ model: string; path: string }>;
+  modelRuns?: SessionModelRun[];
+  runLogs: MultiModelManifestRunLog[];
+}): MultiModelOutputManifest {
+  const outputByModel = new Map(savedOutputs.map((entry) => [entry.model, entry.path]));
+  const logsByModel = new Map(runLogs.map((entry) => [entry.model, entry.path]));
+  const runsByModel = new Map((modelRuns ?? []).map((run) => [run.model, run]));
+  const fulfilledByModel = new Map(summary.fulfilled.map((entry) => [entry.model, entry]));
+  const rejectedByModel = new Map(summary.rejected.map((entry) => [entry.model, entry.reason]));
+  const orderedModels = [
+    ...summary.fulfilled.map((entry) => entry.model),
+    ...summary.rejected.map((entry) => entry.model),
+  ];
+  return {
+    version: 1,
+    sessionId,
+    status,
+    outputBasePath: path.resolve(baseOutputPath),
+    createdAt: new Date().toISOString(),
+    models: orderedModels.map((model) => {
+      const run = runsByModel.get(model);
+      const fulfilled = fulfilledByModel.get(model);
+      const reason = rejectedByModel.get(model);
+      const userError = reason ? asOracleUserError(reason) : undefined;
+      return {
+        model,
+        status: fulfilled ? "completed" : reason ? "error" : (run?.status ?? "error"),
+        outputPath: outputByModel.get(model),
+        logPath: logsByModel.get(model),
+        errorCategory: run?.error?.category ?? userError?.category,
+        errorMessage:
+          run?.error?.message ?? userError?.message ?? (reason ? formatError(reason) : undefined),
+        elapsedMs: calculateModelElapsedMs(run),
+        usage: run?.usage ?? fulfilled?.usage,
+      };
+    }),
+  };
+}
+
+function calculateModelElapsedMs(run?: SessionModelRun): number | undefined {
+  if (!run?.startedAt || !run.completedAt) {
+    return undefined;
+  }
+  const startedMs = Date.parse(run.startedAt);
+  const completedMs = Date.parse(run.completedAt);
+  if (!Number.isFinite(startedMs) || !Number.isFinite(completedMs) || completedMs < startedMs) {
+    return undefined;
+  }
+  return completedMs - startedMs;
+}
+
+async function readSessionForManifest(sessionId: string): Promise<SessionMetadata | null> {
+  try {
+    return (await sessionStore.readSession(sessionId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveSessionDir(sessionId: string): Promise<string | null> {
+  try {
+    return (await sessionStore.getPaths(sessionId)).dir;
+  } catch {
+    return null;
+  }
+}
+
+function resolveSessionPath(sessionDir: string | null, targetPath: string): string {
+  if (path.isAbsolute(targetPath) || !sessionDir) {
+    return targetPath;
+  }
+  return path.join(sessionDir, targetPath);
 }
 
 async function writeAssistantOutput(

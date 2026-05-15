@@ -20,20 +20,20 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 
 ## Core consult flags
 
-| Flag                              | Purpose                                                          |
-| --------------------------------- | ---------------------------------------------------------------- |
-| `-p, --prompt <text>`             | Required prompt.                                                 |
-| `-f, --file <paths...>`           | Files / dirs / globs. Repeatable. `!` prefix = exclude.          |
-| `-e, --engine <api\|browser>`     | Force engine. Default: auto-pick.                                |
-| `-m, --model <name>`              | Single model. See [Mythical Pro Agents](mythical-pro-agents.md). |
-| `--models <list>`                 | Comma-separated multi-model run (API only).                      |
-| `--slug <name>`                   | Stable session slug.                                             |
-| `--render`                        | Print the assembled bundle to stdout.                            |
-| `--copy`                          | Copy the bundle to the clipboard.                                |
-| `--json`                          | Emit a stable JSON envelope on stdout.                           |
-| `--write-output <path>`           | Save the final answer to a file.                                 |
-| `--files-report`                  | Print per-file token usage.                                      |
-| `--dry-run [summary\|json\|full]` | Preview without sending.                                         |
+| Flag                              | Purpose                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `-p, --prompt <text>`             | Required prompt.                                                                                 |
+| `-f, --file <paths...>`           | Files / dirs / globs. Repeatable. `!` prefix = exclude.                                          |
+| `-e, --engine <api\|browser>`     | Force engine. Default: auto-pick.                                                                |
+| `-m, --model <name>`              | Single model. See [Mythical Pro Agents](mythical-pro-agents.md).                                 |
+| `--models <list>`                 | Comma-separated multi-model run (API only).                                                      |
+| `--slug <name>`                   | Stable session slug.                                                                             |
+| `--render`                        | Print the assembled bundle to stdout.                                                            |
+| `--copy`                          | Copy the bundle to the clipboard.                                                                |
+| `--json`                          | Emit a stable JSON envelope on stdout.                                                           |
+| `--write-output <path>`           | Save the final answer to a file; multi-model runs add per-model files plus `<stem>.oracle.json`. |
+| `--files-report`                  | Print per-file token usage.                                                                      |
+| `--dry-run [summary\|json\|full]` | Preview without sending.                                                                         |
 
 ## Followup / lineage
 
