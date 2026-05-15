@@ -56,6 +56,13 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 | `--http-timeout <ms\|s\|m\|h>`    | HTTP client timeout (default 20m).                                        |
 | `--heartbeat <seconds>`           | Emit progress heartbeats; browser mode reports thinking-sidecar liveness. |
 
+Notes:
+
+- `--dry-run` is mutually exclusive with `--render` / `--render-markdown`; choose the preview or rendered bundle path.
+- Missing root prompts exit nonzero after help so scripts fail closed.
+- Ctrl-C exits foreground API runs with code 130. Browser runs still keep their cleanup / reattach path.
+- `--perf-trace=/tmp/oracle.json` is accepted in addition to `--perf-trace-path`; `ORACLE_PERF_TRACE=1` writes a local `.oracle-perf-…json` file.
+
 ## API endpoints
 
 | Flag                  | Purpose                               |
