@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildThinkingTimeExpressionForTest,
+  ensureThinkingTime,
   inferThinkingTargetModelKindForTest,
 } from "../../src/browser/actions/thinkingTime.js";
 
@@ -216,5 +217,61 @@ describe("browser thinking-time selection expression", () => {
     ).resolves.toEqual({ status: "menu-not-found" });
     expect(proClicks).toBeGreaterThan(0);
     expect(thinkingClicks).toBe(0);
+  });
+
+  it("does not trust the model button label as Pro Extended effort proof", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    expect(expression).not.toContain("const modelButtonLabel = normalize");
+    expect(expression).not.toContain("hasToken(modelButtonLabel, 'extended')");
+  });
+
+  it("fails closed for any unconfirmed Pro Extended effort status", async () => {
+    const statuses = [
+      "chip-not-found",
+      "menu-not-found",
+      "option-not-found",
+      "model-kind-not-found",
+      "unknown-status",
+      undefined,
+    ] as const;
+
+    for (const status of statuses) {
+      const runtime = {
+        evaluate: async () => ({
+          result: {
+            value:
+              status === undefined
+                ? undefined
+                : status === "model-kind-not-found"
+                  ? { status, modelKind: "pro" }
+                  : { status },
+          },
+        }),
+      };
+
+      await expect(
+        ensureThinkingTime(runtime as never, "extended", (() => {}) as never, "gpt-5.5-pro"),
+      ).rejects.toThrow(/refusing to submit without confirmed Pro Extended/);
+    }
+  });
+
+  it("keeps thinking effort best-effort when no target model kind is provided", async () => {
+    const runtime = {
+      evaluate: async () => ({
+        result: { value: { status: "model-kind-not-found", modelKind: null } },
+      }),
+    };
+    const logs: string[] = [];
+
+    await expect(
+      ensureThinkingTime(
+        runtime as never,
+        "extended",
+        ((message: string) => logs.push(message)) as never,
+        null,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(logs.at(-1)).toContain("continuing with ChatGPT default");
   });
 });

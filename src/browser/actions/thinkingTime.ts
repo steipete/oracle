@@ -56,10 +56,7 @@ export async function ensureThinkingTime(
             ? ` for ${targetModelKind}`
             : "";
       const message = `Thinking time: ${result.status.replaceAll("-", " ")}${kindHint} (requested ${capitalizedLevel})`;
-      if (
-        strictProEffort &&
-        (result.status === "option-not-found" || result.status === "model-kind-not-found")
-      ) {
+      if (strictProEffort) {
         throw new Error(`${message}; refusing to submit without confirmed Pro Extended.`);
       }
       logger(`${message}; continuing with ChatGPT default.`);
@@ -67,6 +64,11 @@ export async function ensureThinkingTime(
     }
     default: {
       await logDomFailure(Runtime, logger, "thinking-time-unknown");
+      if (strictProEffort) {
+        throw new Error(
+          `Thinking time: unknown outcome selecting ${capitalizedLevel}; refusing to submit without confirmed Pro Extended.`,
+        );
+      }
       logger(
         `Thinking time: unknown outcome selecting ${capitalizedLevel}; continuing with ChatGPT default.`,
       );
@@ -360,19 +362,6 @@ function buildThinkingTimeExpression(
     if (!modelBtn) {
       return { status: 'chip-not-found' };
     }
-    const modelButtonLabel = normalize(
-      (modelBtn.getAttribute?.('aria-label') ?? '') + ' ' + (modelBtn.textContent ?? '')
-    );
-    if (
-      TARGET_MODEL_KIND === 'pro' &&
-      TARGET_LEVEL === 'extended' &&
-      hasToken(modelButtonLabel, 'pro') &&
-      hasToken(modelButtonLabel, 'extended') &&
-      !hasToken(modelButtonLabel, 'thinking')
-    ) {
-      return { status: 'already-selected', label: modelBtn.textContent?.trim?.() || null };
-    }
-
     // Open model menu (idempotent — leaves it open if already open).
     if (modelBtn.getAttribute('aria-expanded') !== 'true') {
       dispatchClickSequence(modelBtn);

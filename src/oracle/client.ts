@@ -4,7 +4,7 @@ import type {
   ChatCompletionChunk,
   ChatCompletionCreateParamsStreaming,
   ChatCompletionCreateParamsNonStreaming,
-} from "openai/resources/chat/completions";
+} from "openai/resources/chat";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type {

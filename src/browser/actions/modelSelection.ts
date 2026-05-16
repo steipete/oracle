@@ -262,7 +262,9 @@ function buildModelSelectionExpression(
       const resolved = label || '';
       if (!wantsPro || !hasProComposerPill()) return resolved;
       const normalized = normalizeText(resolved);
-      if (!normalized || normalized.includes('pro')) return resolved;
+      if (!normalized) return resolved;
+      if (normalized.includes('thinking')) return 'Pro';
+      if (normalized.includes('pro')) return resolved;
       return resolved + ' + Pro';
     };
     const getResolvedLabel = (fallback) =>
@@ -278,7 +280,15 @@ function buildModelSelectionExpression(
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
-      if (wantsPro && normalizedLabel === 'chatgpt' && hasProComposerPill()) {
+      if (
+        wantsPro &&
+        hasProComposerPill() &&
+        (normalizedLabel === 'chatgpt' ||
+          normalizedLabel === 'extended' ||
+          normalizedLabel === 'standard' ||
+          normalizedLabel === 'heavy' ||
+          normalizedLabel === 'light')
+      ) {
         return true;
       }
       if (desiredVersion) {
