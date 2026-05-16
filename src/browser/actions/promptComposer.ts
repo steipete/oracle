@@ -334,10 +334,35 @@ async function waitForDomReady(
 }
 
 function buildAttachmentReadyExpression(attachmentNames: string[]): string {
-  const namesLiteral = JSON.stringify(attachmentNames.map((name) => name.toLowerCase()));
+  const attachmentExpectations = attachmentNames.map((name) => {
+    const normalized = name.toLowerCase().replace(/\s+/g, " ").trim();
+    return {
+      name: normalized,
+      stem: normalized.replace(/\.[a-z0-9]{1,10}$/i, ""),
+    };
+  });
+  const namesLiteral = JSON.stringify(attachmentExpectations);
   return `(() => {
-    const names = ${namesLiteral};
+    const expected = ${namesLiteral};
     const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
+    const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    const matchesExpected = (value, item) => {
+      const text = normalize(value);
+      if (!text) return false;
+      if (text.includes(item.name)) return true;
+      if (item.stem && item.stem.length >= 4 && text.includes(item.stem)) return true;
+      if (text.includes('…') || text.includes('...')) {
+        const marker = text.includes('…') ? '…' : '...';
+        const [prefixRaw, suffixRaw] = text.split(marker);
+        const prefix = normalize(prefixRaw);
+        const suffix = normalize(suffixRaw);
+        const target = item.stem && item.stem.length >= 4 ? item.stem : item.name;
+        const matchesPrefix = !prefix || target.includes(prefix);
+        const matchesSuffix = !suffix || target.includes(suffix);
+        return matchesPrefix && matchesSuffix;
+      }
+      return false;
+    };
     // Restrict to attachment affordances; never scan generic div/span nodes (prompt text can contain the file name).
     const attachmentSelectors = [
       '[data-testid*="chip"]',
@@ -413,7 +438,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       pushText(grandparent);
       return pieces.join(' ').toLowerCase();
     };
-    const match = (node, name) => collectLabelHaystack(node).includes(name);
+    const match = (node, item) => matchesExpected(collectLabelHaystack(node), item);
     const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
     const collectChipNodes = () => {
       const seen = new Set();
@@ -433,14 +458,14 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     };
     const chipNodes = collectChipNodes();
 
-    const chipsReady = names.every((name) =>
-      chipNodes.some((node) => match(node, name)),
+    const chipsReady = expected.every((item) =>
+      chipNodes.some((node) => match(node, item)),
     );
-    const inputsReady = names.every((name) =>
+    const inputsReady = expected.every((item) =>
       attachmentRoots.some((root) =>
         Array.from(root.querySelectorAll('input[type="file"]')).some((el) =>
           Array.from((el instanceof HTMLInputElement ? el.files : []) || []).some((file) =>
-            file?.name?.toLowerCase?.().includes(name),
+            matchesExpected(file?.name, item),
           ),
         ),
       ),
@@ -457,7 +482,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       );
       return Boolean(removeSibling);
     }).length;
-    const countReady = chipNodes.length >= names.length && removeAffordanceCount >= names.length;
+    const countReady = chipNodes.length >= expected.length && removeAffordanceCount >= expected.length;
 
     return chipsReady || inputsReady || countReady;
   })()`;

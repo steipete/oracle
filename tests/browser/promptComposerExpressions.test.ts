@@ -142,6 +142,10 @@ describe("prompt composer attachment expressions", () => {
     // Walks into ancestor and descendant text so filenames buried in nested spans are still found.
     expect(expression).toContain("collectLabelHaystack");
     expect(expression).toContain("parentElement");
+    // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching on the
+    // expected basename stem keeps the send check aligned with the upload check.
+    expect(expression).toContain("item.stem");
+    expect(expression).toContain("text.includes(item.stem)");
     // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
     // see at least as many chip-shaped nodes (each with a Remove affordance) as we
     // uploaded.
@@ -234,6 +238,32 @@ describe("prompt composer attachment expressions", () => {
     ]);
 
     expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
+  });
+
+  test("attachment ready check tolerates duplicate-renamed chips", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README(1).md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README(1).md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check tolerates ellipsized chip names", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "paper1…v3"),
+          new FakeElement("button", { "aria-label": "Remove file 1: paper1…v3" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
   });
 
   test("attachment ready check still rejects prompt-only filename matches", () => {
