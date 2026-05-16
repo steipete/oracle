@@ -334,14 +334,93 @@ async function waitForDomReady(
 }
 
 function buildAttachmentReadyExpression(attachmentNames: string[]): string {
-  const namesLiteral = JSON.stringify(attachmentNames.map((name) => name.toLowerCase()));
+  const attachmentExpectations = attachmentNames.map((name) => {
+    const normalized = name.toLowerCase().replace(/\s+/g, " ").trim();
+    return {
+      name: normalized,
+      stem: normalized.replace(/\.[a-z0-9]{1,10}$/i, ""),
+    };
+  });
+  const namesLiteral = JSON.stringify(attachmentExpectations);
   return `(() => {
-    const names = ${namesLiteral};
-    const composer =
-      document.querySelector('[data-testid*="composer"]') ||
-      document.querySelector('form') ||
-      document.body ||
-      document;
+    const expected = ${namesLiteral};
+    const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
+    const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
+    const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    const matchesExpected = (value, item) => {
+      const text = normalize(value);
+      if (!text) return false;
+      if (text.includes(item.name)) return true;
+      if (item.stem && item.stem.length >= 4 && text.includes(item.stem)) return true;
+      if (text.includes('…') || text.includes('...')) {
+        const marker = text.includes('…') ? '…' : '...';
+        const [prefixRaw, suffixRaw] = text.split(marker);
+        const prefix = normalize(prefixRaw);
+        const suffix = normalize(suffixRaw);
+        const target = item.stem && item.stem.length >= 4 ? item.stem : item.name;
+        const matchesPrefix = !prefix || target.includes(prefix);
+        const matchesSuffix = !suffix || target.includes(suffix);
+        return matchesPrefix && matchesSuffix;
+      }
+      return false;
+    };
+    const isVisible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const findPromptNode = () => {
+      for (const selector of inputSelectors) {
+        const nodes = Array.from(document.querySelectorAll(selector));
+        for (const node of nodes) {
+          if (node instanceof HTMLElement && isVisible(node)) return node;
+        }
+      }
+      for (const selector of inputSelectors) {
+        const node = document.querySelector(selector);
+        if (node) return node;
+      }
+      return null;
+    };
+    const attachmentSelectors = [
+      'input[type="file"]',
+      '[data-testid*="chip"]',
+      '[data-testid*="attachment"]',
+      '[data-testid*="upload"]',
+      '[data-testid*="file"]',
+      '[aria-label*="Remove"]',
+      '[aria-label*="remove"]',
+    ];
+    const locateComposerRoot = () => {
+      const promptNode = findPromptNode();
+      if (promptNode) {
+        const initial =
+          promptNode.closest('[data-testid*="composer"]') ??
+          promptNode.closest('form') ??
+          promptNode.parentElement ??
+          document.body;
+        let current = initial;
+        let fallback = initial;
+        while (current && current !== document.body) {
+          const hasSend = sendSelectors.some((selector) => current.querySelector(selector));
+          if (hasSend) {
+            fallback = current;
+            const hasAttachment = attachmentSelectors.some((selector) => current.querySelector(selector));
+            if (hasAttachment) return current;
+          }
+          current = current.parentElement;
+        }
+        return fallback ?? initial;
+      }
+      return document.querySelector('form') ?? document.body ?? document;
+    };
+    const composer = locateComposerRoot();
+    const composerScope = (() => {
+      if (!composer) return document;
+      const parent = composer.parentElement;
+      const parentHasSend = parent && sendSelectors.some((selector) => parent.querySelector(selector));
+      return parentHasSend ? parent : composer;
+    })();
     // Walk node + ancestors (up to grandparent) + descendants to gather every textual hint.
     // ChatGPT's current chip DOM nests the filename inside truncated child spans, so checking
     // only the node's own textContent/aria/title misses the match.
@@ -370,10 +449,10 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       pushText(grandparent);
       return pieces.join(' ').toLowerCase();
     };
-    const match = (node, name) => collectLabelHaystack(node).includes(name);
+    const match = (node, item) => matchesExpected(collectLabelHaystack(node), item);
 
     // Restrict to attachment affordances; never scan generic div/span nodes (prompt text can contain the file name).
-    const attachmentSelectors = [
+    const chipSelectors = [
       '[data-testid*="chip"]',
       '[data-testid*="attachment"]',
       '[data-testid*="upload"]',
@@ -387,12 +466,12 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       '[aria-label*="remove attachment"]',
       'button[aria-label*="remove attachment"]',
     ];
-    const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
+    const attachmentRoots = Array.from(new Set([composerScope, composer])).filter(Boolean);
     const collectChipNodes = () => {
       const seen = new Set();
       const collected = [];
       for (const root of attachmentRoots) {
-        for (const node of Array.from(root.querySelectorAll(attachmentSelectors.join(',')))) {
+        for (const node of Array.from(root.querySelectorAll(chipSelectors.join(',')))) {
           if (!(node instanceof HTMLElement)) continue;
           // Skip elements clearly inside the editable input (composer textarea may contain
           // filename text in the user's prompt — avoid mistaking that for a chip).
@@ -406,14 +485,14 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     };
     const chipNodes = collectChipNodes();
 
-    const chipsReady = names.every((name) =>
-      chipNodes.some((node) => match(node, name)),
+    const chipsReady = expected.every((item) =>
+      chipNodes.some((node) => match(node, item)),
     );
-    const inputsReady = names.every((name) =>
+    const inputsReady = expected.every((item) =>
       attachmentRoots.some((root) =>
         Array.from(root.querySelectorAll('input[type="file"]')).some((el) =>
           Array.from((el instanceof HTMLInputElement ? el.files : []) || []).some((file) =>
-            file?.name?.toLowerCase?.().includes(name),
+            matchesExpected(file?.name, item),
           ),
         ),
       ),
@@ -430,7 +509,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       );
       return Boolean(removeSibling);
     }).length;
-    const countReady = chipNodes.length >= names.length && removeAffordanceCount >= names.length;
+    const countReady = chipNodes.length >= expected.length && removeAffordanceCount >= expected.length;
 
     return chipsReady || inputsReady || countReady;
   })()`;
