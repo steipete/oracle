@@ -21,10 +21,18 @@ const OPENAI_ENV = {
   OPENAI_BASE_URL: "https://api.openai.com/v1",
   // biome-ignore lint/style/useNamingConvention: environment variable key
   OPENROUTER_API_KEY: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_ENDPOINT: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_API_KEY: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_DEPLOYMENT: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_API_VERSION: "",
 };
 const isAccessOrAuthError = (reason: unknown): boolean => {
   const message = String(reason ?? "");
-  return /model_not_found|does not exist|not a valid model ID|no allowed providers|access|permission|api[_ ]?key[_ ]?invalid|invalid api key|unauthenticated|missing required authentication|requires an api key|transport error|invalid JSON response|empty response|Unexpected end of JSON input/i.test(
+  return /model_not_found|does not exist|not a valid model ID|no allowed providers|access|permission|api[_ ]?key[_ ]?invalid|invalid api key|invalid x-api-key|api key expired|API_KEY_INVALID|unauthenticated|missing required authentication|requires an api key|transport error|invalid JSON response|empty response|Unexpected end of JSON input/i.test(
     message,
   );
 };
