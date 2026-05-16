@@ -15,10 +15,18 @@ const evaluateImmediateModelSelectionExpression = (
   targetModel: string,
   buttonLabel: string,
   composerLabel = "",
+  proPillLabel = "",
 ): unknown => {
   const expression = buildModelSelectionExpressionForTest(targetModel);
   const modelButton = { textContent: buttonLabel };
   const composerSignal = composerLabel ? { textContent: composerLabel } : null;
+  const proPill = proPillLabel
+    ? {
+        textContent: proPillLabel,
+        getAttribute: (name: string) => (name === "aria-label" ? proPillLabel : null),
+        matches: (selector: string) => selector.includes("__composer-pill"),
+      }
+    : null;
   const documentStub = {
     querySelector: (selector: string) => {
       if (selector.includes("model-switcher-dropdown-button")) {
@@ -32,7 +40,7 @@ const evaluateImmediateModelSelectionExpression = (
       }
       return null;
     },
-    querySelectorAll: () => [],
+    querySelectorAll: () => (proPill ? [proPill] : []),
     title: "",
     body: { innerText: "" },
   };
@@ -299,7 +307,31 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("const hasProComposerPill = () =>");
     expect(expression).toContain("const withProPillSignal = (label) =>");
     expect(expression).toContain("return resolved + ' + Pro'");
-    expect(expression).toContain("normalizedLabel === 'chatgpt' && hasProComposerPill()");
+    expect(expression).toContain("if (normalized.includes('thinking')) return 'Pro'");
+    expect(expression).toContain("normalizedLabel === 'extended'");
+    expect(expression).toContain("hasToken(label, 'pro') && !hasToken(label, 'thinking')");
+    expect(expression).not.toContain('button[aria-label*="Pro"]');
+    expect(expression).toContain("hasProComposerPill()");
+  });
+
+  it("does not let a standalone thinking chip pollute Pro model verification", () => {
+    const result = evaluateImmediateModelSelectionExpression(
+      "gpt-5.5-pro",
+      "ChatGPT",
+      "Thinking Extended",
+      "Pro, click to remove",
+    );
+    expect(result).toEqual({ status: "already-selected", label: "Pro" });
+  });
+
+  it("accepts a Pro pill plus effort label as the current Pro model", () => {
+    const result = evaluateImmediateModelSelectionExpression(
+      "gpt-5.5-pro",
+      "Extended",
+      "",
+      "Pro, click to remove",
+    );
+    expect(result).toEqual({ status: "already-selected", label: "Extended + Pro" });
   });
 
   it("hard-rejects Thinking candidates when targeting Pro", () => {
@@ -333,12 +365,22 @@ describe("browser model selection matchers", () => {
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5")).toThrow(
       /requires GPT-5.5 Pro/,
     );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Extended")).toThrow(
+      /requires GPT-5.5 Pro/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking Extended")).toThrow(
+      /requires GPT-5.5 Pro/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Thinking Pro")).toThrow(
+      /requires GPT-5.5 Pro/,
+    );
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "ChatGPT")).toThrow(
       /requires GPT-5.5 Pro/,
     );
     // Both the new bare "Pro" label and the legacy "GPT-5.5 Pro" should pass.
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Pro")).not.toThrow();
     expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "GPT-5.5 Pro")).not.toThrow();
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.5-pro", "Extended Pro")).not.toThrow();
     expect(() => assertResolvedModelSelectionForTest("Pro", "Thinking 5.5 Heavy")).toThrow(
       /requires GPT-5.5 Pro/,
     );
