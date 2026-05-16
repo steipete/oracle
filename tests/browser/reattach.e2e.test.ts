@@ -78,6 +78,58 @@ describe("browser reattach end-to-end (simulated)", () => {
     }
   }, 20_000);
 
+  test("does not reattach a chrome-disconnected session without a conversation URL", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-reattach-"));
+    const { setOracleHomeDirOverrideForTest } = await import("../../src/oracleHome.js");
+    setOracleHomeDirOverrideForTest(tmpHome);
+
+    try {
+      const { resumeBrowserSession } = await import("../../src/browser/reattach.js");
+      const resumeMock = vi.mocked(resumeBrowserSession);
+      resumeMock.mockResolvedValue({ answerText: "should not happen", answerMarkdown: "nope" });
+
+      const { sessionStore } = await import("../../src/sessionStore.js");
+      const { attachSession } = await import("../../src/cli/sessionDisplay.js");
+
+      await sessionStore.ensureStorage();
+      const sessionMeta = await sessionStore.createSession(
+        {
+          prompt: "Test prompt",
+          model: "gpt-5.2-pro",
+          mode: "browser",
+          browserConfig: {},
+        },
+        "/repo",
+      );
+      await sessionStore.updateSession(sessionMeta.id, {
+        status: "running",
+        startedAt: new Date().toISOString(),
+        mode: "browser",
+        browser: {
+          config: {},
+          runtime: {
+            chromePort: 51559,
+            chromeHost: "127.0.0.1",
+            chromeTargetId: "t-1",
+            tabUrl: "https://chatgpt.com/",
+          },
+        },
+        response: { status: "running", incompleteReason: "chrome-disconnected" },
+      });
+
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      await attachSession(sessionMeta.id, { suppressMetadata: true, renderPrompt: false });
+
+      logSpy.mockRestore();
+
+      expect(resumeMock).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(tmpHome, { recursive: true, force: true });
+      setOracleHomeDirOverrideForTest(null);
+    }
+  }, 20_000);
+
   test("reattaches completed Deep Research sessions that only captured a tool placeholder", async () => {
     const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-reattach-"));
     const { setOracleHomeDirOverrideForTest } = await import("../../src/oracleHome.js");

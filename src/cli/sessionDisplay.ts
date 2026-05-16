@@ -13,6 +13,7 @@ import { sessionStore, wait } from "../sessionStore.js";
 import { formatTokenCount, formatTokenValue } from "../oracle/runUtils.js";
 import type { BrowserLogger } from "../browser/types.js";
 import { resumeBrowserSession } from "../browser/reattach.js";
+import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
 import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
@@ -262,10 +263,12 @@ export async function attachSession(
     );
   const completedDeepResearchPlaceholder =
     metadata.status === "completed" && deepResearchPlaceholderCapture;
+  const hasRecoverableConversation = hasRecoverableChatGptConversation(runtime);
   const canReattach =
     (statusAllowsReattach || completedDeepResearchPlaceholder) &&
     metadata.mode === "browser" &&
     hasFallbackSessionInfo &&
+    hasRecoverableConversation &&
     (hasChromeDisconnect ||
       hasIncompleteCapture ||
       completedDeepResearchPlaceholder ||
