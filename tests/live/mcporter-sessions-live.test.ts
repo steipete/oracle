@@ -14,6 +14,16 @@ const OPENAI_ENV = {
   OPENAI_BASE_URL: "https://api.openai.com/v1",
   // biome-ignore lint/style/useNamingConvention: environment variable key
   OPENROUTER_API_KEY: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  CHROME_DEVTOOLS_URL: "http://127.0.0.1:0",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_ENDPOINT: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_API_KEY: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_DEPLOYMENT: "",
+  // biome-ignore lint/style/useNamingConvention: environment variable key
+  AZURE_OPENAI_API_VERSION: "",
 };
 const MCP_CONFIG = path.join(process.cwd(), "config", "mcporter.json");
 const ORACLE_MCP_BIN = path.join(process.cwd(), "dist", "bin", "oracle-mcp.js");

@@ -46,7 +46,7 @@
     "test": "vitest run",
     "test:mcp": "pnpm run build && pnpm run test:mcp:unit && pnpm run test:mcp:mcporter",
     "test:mcp:unit": "vitest run tests/mcp*.test.ts tests/mcp/**/*.test.ts",
-    "test:mcp:mcporter": "pnpm dlx mcporter list oracle-local --schema --config config/mcporter.json && pnpm dlx mcporter call oracle-local.sessions limit:1 --config config/mcporter.json",
+    "test:mcp:mcporter": "CHROME_DEVTOOLS_URL=http://127.0.0.1:0 pnpm dlx mcporter list oracle-local --schema --config config/mcporter.json && CHROME_DEVTOOLS_URL=http://127.0.0.1:0 pnpm dlx mcporter call oracle-local.sessions limit:1 --config config/mcporter.json",
     "test:browser": "pnpm run build && tsx scripts/test-browser.ts && ./scripts/browser-smoke.sh",
     "test:packed-cli": "node scripts/packed-cli-smoke.mjs",
     "test:live": "ORACLE_LIVE_TEST=1 vitest run tests/live --exclude tests/live/openai-live.test.ts",
