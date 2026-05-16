@@ -509,7 +509,10 @@ export async function performSessionRun({
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
       const recoverableRuntime = runtime ?? sessionMeta.browser?.runtime;
-      if (!hasRecoverableChatGptConversation(recoverableRuntime)) {
+      if (
+        !hasRecoverableChatGptConversation(recoverableRuntime) &&
+        recoverableRuntime?.promptSubmitted !== true
+      ) {
         log(
           dim(
             "Chrome disconnected before a ChatGPT conversation was created; marking session error.",
@@ -543,7 +546,7 @@ export async function performSessionRun({
             details: userError.details,
           },
         });
-        return;
+        throw error;
       }
       log(dim("Chrome disconnected before completion; keeping session running for reattach."));
       if (modelForStatus) {

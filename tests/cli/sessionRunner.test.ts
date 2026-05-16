@@ -1258,16 +1258,18 @@ describe("performSessionRun", () => {
     );
     vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
 
-    await performSessionRun({
-      sessionMeta: baseSessionMeta,
-      runOptions: baseRunOptions,
-      mode: "browser",
-      browserConfig: { chromePath: null },
-      cwd: "/tmp",
-      log,
-      write,
-      version: cliVersion,
-    });
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow(/Chrome window closed/);
 
     const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({

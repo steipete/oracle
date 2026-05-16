@@ -15,10 +15,10 @@ export function hasRecoverableChatGptConversation(
   }
   try {
     const url = new URL(tabUrl);
-    if (url.hostname !== "chatgpt.com") {
+    if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") {
       return false;
     }
-    return /^\/c\/[^/]+/.test(url.pathname);
+    return /(?:^|\/)c\/[^/]+/.test(url.pathname);
   } catch {
     return false;
   }

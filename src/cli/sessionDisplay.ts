@@ -264,11 +264,18 @@ export async function attachSession(
   const completedDeepResearchPlaceholder =
     metadata.status === "completed" && deepResearchPlaceholderCapture;
   const hasRecoverableConversation = hasRecoverableChatGptConversation(runtime);
+  const hasLiveChromeFallback = Boolean(
+    (metadata.status === "running" || hasIncompleteCapture || completedDeepResearchPlaceholder) &&
+    (runtime?.chromePort || runtime?.chromeBrowserWSEndpoint || runtime?.chromeProfileRoot),
+  );
   const canReattach =
     (statusAllowsReattach || completedDeepResearchPlaceholder) &&
     metadata.mode === "browser" &&
     hasFallbackSessionInfo &&
-    hasRecoverableConversation &&
+    (hasRecoverableConversation ||
+      runtime?.promptSubmitted ||
+      hasLiveChromeFallback ||
+      completedDeepResearchPlaceholder) &&
     (hasChromeDisconnect ||
       hasIncompleteCapture ||
       completedDeepResearchPlaceholder ||

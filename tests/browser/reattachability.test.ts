@@ -10,6 +10,14 @@ describe("hasRecoverableChatGptConversation", () => {
     expect(hasRecoverableChatGptConversation({ tabUrl: "https://chatgpt.com/c/abc123" })).toBe(
       true,
     );
+    expect(
+      hasRecoverableChatGptConversation({
+        tabUrl: "https://chatgpt.com/g/g-p-demo/project/c/abc123",
+      }),
+    ).toBe(true);
+    expect(hasRecoverableChatGptConversation({ tabUrl: "https://chat.openai.com/c/abc123" })).toBe(
+      true,
+    );
   });
 
   test("rejects ChatGPT home and project shell URLs", () => {
