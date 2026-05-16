@@ -90,7 +90,7 @@ function assertResolvedModelSelection(desiredModel: string, resolvedLabel: strin
   if (
     !hasCurrentProSignal(resolved) ||
     hasLegacyProVersionLabel(resolved) ||
-    (resolved.includes("thinking") && !resolved.includes("pro"))
+    resolved.includes("thinking")
   ) {
     throw new Error(
       `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires GPT-5.5 Pro. Use model "gpt-5.5" with browser thinking time for the Thinking variant.`,
@@ -106,14 +106,7 @@ function normalizeResolvedModelLabel(value: string): string {
 }
 
 function hasCurrentProSignal(resolved: string): boolean {
-  return (
-    resolved.includes(" pro") ||
-    resolved.endsWith("pro") ||
-    resolved.includes("pro ") ||
-    resolved.includes("extended") ||
-    resolved.includes("gpt-5.5-pro") ||
-    resolved.includes("gpt 5 5 pro")
-  );
+  return normalizeResolvedModelLabel(resolved).split(" ").includes("pro");
 }
 
 function hasLegacyProVersionLabel(resolved: string): boolean {
@@ -177,6 +170,7 @@ function buildModelSelectionExpression(
         .replace(/\\s+/g, ' ')
         .trim();
     };
+    const hasToken = (value, token) => normalizeText(value).split(' ').includes(token);
     // Normalize every candidate token to keep fuzzy matching deterministic.
     const normalizedTarget = normalizeText(PRIMARY_LABEL);
     const normalizedTokens = Array.from(new Set([normalizedTarget, ...LABEL_TOKENS]))
@@ -222,7 +216,17 @@ function buildModelSelectionExpression(
       return false;
     };
     const hasProComposerPill = () => Boolean(
-      document.querySelector('button.__composer-pill, button[aria-label="Pro, click to remove"]')
+      Array.from(document.querySelectorAll('button.__composer-pill, button[aria-label]'))
+        .filter((node) => {
+          const label = normalizeText(node.getAttribute?.('aria-label') ?? '');
+          return node.matches?.('button.__composer-pill') || label.includes('click to remove');
+        })
+        .some((node) => {
+          const label = normalizeText(
+            (node.getAttribute?.('aria-label') ?? '') + ' ' + (node.textContent ?? '')
+          );
+          return hasToken(label, 'pro') && !hasToken(label, 'thinking');
+        })
     );
 
     const button = document.querySelector(BUTTON_SELECTOR);
@@ -258,7 +262,9 @@ function buildModelSelectionExpression(
       const resolved = label || '';
       if (!wantsPro || !hasProComposerPill()) return resolved;
       const normalized = normalizeText(resolved);
-      if (!normalized || normalized.includes('pro')) return resolved;
+      if (!normalized) return resolved;
+      if (normalized.includes('thinking')) return 'Pro';
+      if (normalized.includes('pro')) return resolved;
       return resolved + ' + Pro';
     };
     const getResolvedLabel = (fallback) =>
@@ -274,7 +280,15 @@ function buildModelSelectionExpression(
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
-      if (wantsPro && normalizedLabel === 'chatgpt' && hasProComposerPill()) {
+      if (
+        wantsPro &&
+        hasProComposerPill() &&
+        (normalizedLabel === 'chatgpt' ||
+          normalizedLabel === 'extended' ||
+          normalizedLabel === 'standard' ||
+          normalizedLabel === 'heavy' ||
+          normalizedLabel === 'light')
+      ) {
         return true;
       }
       if (desiredVersion) {
