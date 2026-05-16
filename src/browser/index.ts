@@ -567,6 +567,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const runtimeHintCb = options.runtimeHintCb;
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
+  let promptSubmitted = false;
   let tabLease: BrowserTabLease | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
@@ -580,6 +581,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
       conversationId,
+      promptSubmitted,
       userDataDir,
       controllerPid: process.pid,
     };
@@ -595,6 +597,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       const message = error instanceof Error ? error.message : String(error);
       logger(`Failed to persist runtime hint: ${message}`);
     }
+  };
+  const markPromptSubmitted = async (): Promise<void> => {
+    if (promptSubmitted) {
+      return;
+    }
+    promptSubmitted = true;
+    await emitRuntimeHint();
   };
   if (config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") {
     logger(
@@ -1116,6 +1125,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         inputTimeoutMs: config.inputTimeoutMs ?? undefined,
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames,
+        onPromptSubmitted: markPromptSubmitted,
       };
       await runProviderSubmissionFlow(chatgptDomProvider, {
         prompt,
@@ -1124,6 +1134,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         log: logger,
         state: providerState,
       });
+      await markPromptSubmitted();
       const providerBaselineTurns = providerState.baselineTurns;
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
@@ -1251,6 +1262,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+        promptSubmitted,
         controllerPid: process.pid,
       };
     }
@@ -1345,6 +1357,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               chromeTargetId: lastTargetId,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             },
           },
@@ -1433,6 +1446,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               chromeTargetId: lastTargetId,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             };
             throw new BrowserAutomationError(
@@ -1720,6 +1734,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+      promptSubmitted,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -1736,6 +1751,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         userDataDir,
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
+        promptSubmitted,
         controllerPid: process.pid,
       };
       const reuseProfileHint =
@@ -1783,6 +1799,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           userDataDir,
           chromeTargetId: lastTargetId,
           tabUrl: lastUrl,
+          promptSubmitted,
           controllerPid: process.pid,
         },
       },
@@ -2236,6 +2253,7 @@ async function runRemoteBrowserMode(
   let remoteTargetId: string | null = null;
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
+  let promptSubmitted = false;
   let attachedExistingTab = false;
   let ownsTarget = true;
   const runtimeHintCb = options.runtimeHintCb;
@@ -2250,6 +2268,7 @@ async function runRemoteBrowserMode(
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+        promptSubmitted,
         controllerPid: process.pid,
       });
       await tabLease?.update({
@@ -2262,6 +2281,13 @@ async function runRemoteBrowserMode(
       const message = error instanceof Error ? error.message : String(error);
       logger(`Failed to persist runtime hint: ${message}`);
     }
+  };
+  const markPromptSubmitted = async (): Promise<void> => {
+    if (promptSubmitted) {
+      return;
+    }
+    promptSubmitted = true;
+    await emitRuntimeHint();
   };
   const startedAt = Date.now();
   let answerText = "";
@@ -2463,6 +2489,7 @@ async function runRemoteBrowserMode(
         inputTimeoutMs: config.inputTimeoutMs ?? undefined,
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames,
+        onPromptSubmitted: markPromptSubmitted,
       };
       await runProviderSubmissionFlow(chatgptDomProvider, {
         prompt,
@@ -2471,6 +2498,7 @@ async function runRemoteBrowserMode(
         log: logger,
         state: providerState,
       });
+      await markPromptSubmitted();
       const providerBaselineTurns = providerState.baselineTurns;
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
@@ -2560,6 +2588,7 @@ async function runRemoteBrowserMode(
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+        promptSubmitted,
         controllerPid: process.pid,
       };
     }
@@ -2653,6 +2682,7 @@ async function runRemoteBrowserMode(
               chromeTargetId: remoteTargetId ?? undefined,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             },
           },
@@ -2749,6 +2779,7 @@ async function runRemoteBrowserMode(
               chromeTargetId: remoteTargetId ?? undefined,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             };
             throw new BrowserAutomationError(
@@ -2989,6 +3020,7 @@ async function runRemoteBrowserMode(
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+      promptSubmitted,
       artifacts: savedArtifacts,
       archive,
       modelSelection: modelSelectionEvidence,
@@ -3016,6 +3048,7 @@ async function runRemoteBrowserMode(
         chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
+        promptSubmitted,
         controllerPid: process.pid,
       },
     });

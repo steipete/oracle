@@ -152,6 +152,7 @@ export interface BrowserRunResult {
   chromeTargetId?: string;
   tabUrl?: string;
   conversationId?: string;
+  promptSubmitted?: boolean;
   controllerPid?: number;
 }
 

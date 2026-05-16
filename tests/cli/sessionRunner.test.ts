@@ -1244,6 +1244,53 @@ describe("performSessionRun", () => {
     );
   });
 
+  test("marks early browser disconnect as error before a conversation exists", async () => {
+    const automationError = new BrowserAutomationError(
+      "Chrome window closed before oracle reached the composer.",
+      {
+        stage: "connection-lost",
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/",
+        },
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow(/Chrome window closed/);
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "error",
+      response: { status: "error", incompleteReason: "chrome-disconnected" },
+      browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePort: 9222 }) }),
+    });
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      "gpt-5.2-pro",
+      expect.objectContaining({
+        status: "error",
+        response: { status: "error", incompleteReason: "chrome-disconnected" },
+      }),
+    );
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).toContain(
+      "Chrome disconnected before a ChatGPT conversation was created; marking session error.",
+    );
+  });
+
   test("marks browser capture incomplete when assistant response times out", async () => {
     const automationError = new BrowserAutomationError("assistant timed out", {
       stage: "assistant-timeout",
