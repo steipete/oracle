@@ -4,7 +4,8 @@ import { buildAttachmentReadyExpressionForTest } from "../../src/browser/actions
 describe("prompt composer attachment expressions", () => {
   test("attachment ready check does not match prompt text", () => {
     const expression = buildAttachmentReadyExpressionForTest(["oracle-attach-verify.txt"]);
-    expect(expression).toContain("document.querySelector('[data-testid*=\"composer\"]')");
+    expect(expression).toContain("locateComposerRoot");
+    expect(expression).toContain("promptNode.closest('[data-testid*=\"composer\"]')");
     expect(expression).toContain("attachmentRoots");
     expect(expression).toContain('input[type="file"]');
     expect(expression).toContain('[aria-label*="Remove file"]');
@@ -22,6 +23,10 @@ describe("prompt composer attachment expressions", () => {
     // Walks into ancestor and descendant text so filenames buried in nested spans are still found.
     expect(expression).toContain("collectLabelHaystack");
     expect(expression).toContain("parentElement");
+    // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching on the
+    // expected basename stem keeps the send check aligned with the upload check.
+    expect(expression).toContain("item.stem");
+    expect(expression).toContain("text.includes(item.stem)");
     // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
     // see at least as many chip-shaped nodes (each with a Remove affordance) as we
     // uploaded.
@@ -32,7 +37,10 @@ describe("prompt composer attachment expressions", () => {
   test("attachment ready check stays scoped to the active composer", () => {
     const expression = buildAttachmentReadyExpressionForTest(["paper1_plan_v3.md"]);
 
-    expect(expression).toContain("const attachmentRoots = Array.from(new Set([composer]))");
+    expect(expression).toContain(
+      "const attachmentRoots = Array.from(new Set([composerScope, composer]))",
+    );
     expect(expression).not.toContain("new Set([composer, document])");
+    expect(expression).not.toContain("new Set([composerScope, composer, document])");
   });
 });
