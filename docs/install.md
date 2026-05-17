@@ -33,7 +33,7 @@ npx -y @steipete/oracle --help
 pnpx @steipete/oracle --help
 ```
 
-`npx` is fine for CI, ad-hoc scripts, or when you don't want a global binary on the box. Cache the package in CI by pinning the version (`@steipete/oracle@0.12.0`) so you don't re-download on every job.
+`npx` is fine for CI, ad-hoc scripts, or when you don't want a global binary on the box. Cache the package in CI by pinning the version (`@steipete/oracle@0.12.1`) so you don't re-download on every job.
 
 ## API keys (optional)
 
