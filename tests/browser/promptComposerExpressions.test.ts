@@ -5,7 +5,11 @@ describe("prompt composer attachment expressions", () => {
   test("attachment ready check does not match prompt text", () => {
     const expression = buildAttachmentReadyExpressionForTest(["oracle-attach-verify.txt"]);
     expect(expression).toContain("resolveComposerRoot");
+    expect(expression).toContain("const inputSelectors =");
     expect(expression).toContain("document.querySelector('form[data-type=\"unified-composer\"]')");
+    expect(expression).toContain(
+      "inputSelectors.map((selector) => document.querySelector(selector))",
+    );
     expect(expression).toContain("promptNode?.closest?.('form')");
     expect(expression).toContain("attachmentRoots");
     expect(expression).toContain('input[type="file"]');
@@ -40,14 +44,15 @@ describe("prompt composer attachment expressions", () => {
 
   test("attachment ready check does not scope to composer child buttons", () => {
     const expression = buildAttachmentReadyExpressionForTest(["figure-review.jpg"]);
+    const compactExpression = expression.replace(/\s+/g, " ");
 
     expect(expression).toContain("const composer = resolveComposerRoot()");
     expect(expression).toContain(
       "const composerLike = document.querySelector('[data-testid*=\"composer\"]')",
     );
     expect(expression).toContain("return composerLike?.closest?.('form') || composerLike");
-    expect(expression).not.toContain(
-      "const composer =\n      document.querySelector('[data-testid*=\"composer\"]')",
+    expect(compactExpression).not.toMatch(
+      /const composer = document\.querySelector\('\[data-testid\*="composer"\]'\)/,
     );
   });
 });

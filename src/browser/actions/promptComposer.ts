@@ -335,13 +335,12 @@ async function waitForDomReady(
 
 function buildAttachmentReadyExpression(attachmentNames: string[]): string {
   const namesLiteral = JSON.stringify(attachmentNames.map((name) => name.toLowerCase()));
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   return `(() => {
     const names = ${namesLiteral};
+    const inputSelectors = ${inputSelectorsLiteral};
     const resolveComposerRoot = () => {
-      const promptNode =
-        document.querySelector('#prompt-textarea') ||
-        document.querySelector('[name="prompt-textarea"]') ||
-        document.querySelector('[contenteditable="true"][aria-label*="Chat"]');
+      const promptNode = inputSelectors.map((selector) => document.querySelector(selector)).find(Boolean);
       const promptForm = promptNode?.closest?.('form');
       const form =
         document.querySelector('form[data-type="unified-composer"]') ||
