@@ -81,6 +81,7 @@ function runtimeKeySource({
   if (
     optionsApiKey &&
     (route.isAzureOpenAI ||
+      providerMode === "openai" ||
       route.provider === "openai" ||
       route.providerLabel === "OpenAI-compatible")
   ) {
