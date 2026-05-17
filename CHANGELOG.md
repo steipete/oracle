@@ -12,6 +12,9 @@
 ### Fixed
 
 - MCP: keep local mcporter smokes from failing when the optional Chrome DevTools browser endpoint env var is unset.
+- Sessions: allocate same-slug session directories atomically, recreate missing per-model log directories, and persist zombie/dead-browser status reconciliation from session listings.
+- API: share provider route resolution between doctor/preflight and runtime requests so route diagnostics match real execution.
+- CLI: rethrow sanitized multi-model provider failures without mutating or linking the raw provider error, keeping secrets out of logs and error chains.
 - Browser: mark Chrome disconnects before a recoverable ChatGPT conversation as errors instead of leaving sessions running for impossible reattach. Thanks @pdurlej!
 - Browser: fail closed when GPT-5.5 Pro Extended effort cannot be confirmed instead of silently submitting with the wrong or default effort. Thanks @pdurlej!
 - Release: write clean checksum files from `scripts/release.sh artifacts` without helper trace lines.
