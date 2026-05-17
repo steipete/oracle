@@ -1,7 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
-import { createServer } from "node:net";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import os from "node:os";
 import { setOracleHomeDirOverrideForTest } from "../src/oracleHome.js";
@@ -136,6 +134,23 @@ describe("session lifecycle", () => {
     expect(logText).toContain("Second chunk");
   });
 
+  test("createSessionLogWriter recreates missing per-model log directory", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Model log history", model: "gpt-5.2-pro" },
+      "/tmp/cwd",
+    );
+    await rm(path.join(sessionModule.getSessionsDir(), meta.id, "models"), {
+      recursive: true,
+      force: true,
+    });
+    const writer = sessionModule.createSessionLogWriter(meta.id, "gemini-3-pro");
+    writer.logLine("Gemini line");
+    writer.stream.end();
+    await new Promise<void>((resolve) => writer.stream.once("close", () => resolve()));
+    const logText = await sessionModule.readModelLog(meta.id, "gemini-3-pro");
+    expect(logText).toContain("Gemini line");
+  });
+
   test("readSessionLog falls back to empty string when no log exists", async () => {
     expect(await sessionModule.readSessionLog("missing")).toBe("");
   });
@@ -151,6 +166,25 @@ describe("session lifecycle", () => {
     );
     expect(first.id).toBe("alpha-beta-gamma");
     expect(second.id).toBe("alpha-beta-gamma-2");
+  });
+
+  test("initializeSession atomically allocates unique ids under parallel same-slug creation", async () => {
+    const sessions = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        sessionModule.initializeSession(
+          {
+            prompt: `Parallel slug ${index}`,
+            model: "gpt-5.2-pro",
+            slug: "parallel slug race",
+          },
+          "/tmp/cwd",
+        ),
+      ),
+    );
+    const ids = sessions.map((session) => session.id).sort();
+    expect(new Set(ids).size).toBe(sessions.length);
+    expect(ids).toContain("parallel-slug-race");
+    expect(ids).toContain("parallel-slug-race-8");
   });
 
   test("initializeSession can restart from a base slug override and appends suffix on conflict", async () => {
@@ -188,9 +222,6 @@ describe("session lifecycle", () => {
   });
 
   test("keeps running browser sessions when Chrome runtime is reachable", async () => {
-    const server = createServer();
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const port = (server.address() as AddressInfo).port;
     const meta = await sessionModule.initializeSession(
       { prompt: "Browser live", model: "gpt-5.2-pro", mode: "browser" },
       "/tmp/cwd",
@@ -201,13 +232,10 @@ describe("session lifecycle", () => {
       browser: {
         runtime: {
           chromePid: process.pid,
-          chromePort: port,
-          chromeHost: "127.0.0.1",
         },
       },
     });
     const refreshed = await sessionModule.readSessionMetadata(meta.id);
-    await new Promise<void>((resolve) => server.close(() => resolve()));
     expect(refreshed?.status).toBe("running");
   });
 

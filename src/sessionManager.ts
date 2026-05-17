@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, mkdirSync } from "node:fs";
 import type { WriteStream } from "node:fs";
 import net from "node:net";
 import type {
@@ -395,14 +395,26 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
-async function ensureUniqueSessionId(baseSlug: string): Promise<string> {
+function isFileExistsError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+
+async function reserveUniqueSessionDir(baseSlug: string): Promise<string> {
   let candidate = baseSlug;
   let suffix = 2;
-  while (await fileExists(sessionDir(candidate))) {
+  for (;;) {
+    const dir = sessionDir(candidate);
+    try {
+      await fs.mkdir(dir, { recursive: false });
+      return candidate;
+    } catch (error) {
+      if (!isFileExistsError(error)) {
+        throw error;
+      }
+    }
     candidate = `${baseSlug}-${suffix}`;
     suffix += 1;
   }
-  return candidate;
 }
 
 async function listModelRunFiles(sessionId: string): Promise<SessionModelRun[]> {
@@ -480,9 +492,7 @@ export async function initializeSession(
   await ensureSessionStorage();
   const baseSlug =
     baseSlugOverride || createSessionId(options.prompt || DEFAULT_SLUG, options.slug);
-  const sessionId = await ensureUniqueSessionId(baseSlug);
-  const dir = sessionDir(sessionId);
-  await ensureDir(dir);
+  const sessionId = await reserveUniqueSessionDir(baseSlug);
   const mode = options.mode ?? "api";
   const browserConfig = options.browserConfig;
   const modelList: ModelName[] =
@@ -641,7 +651,7 @@ async function attachModelRuns(meta: SessionMetadata, sessionId: string): Promis
 export function createSessionLogWriter(sessionId: string, model?: string): SessionLogWriter {
   const targetPath = model ? modelLogPath(sessionId, model) : logPath(sessionId);
   if (model) {
-    void ensureDir(modelsDir(sessionId));
+    mkdirSync(modelsDir(sessionId), { recursive: true });
   }
   const stream = createWriteStream(targetPath, { flags: "a" });
   const logLine = (line = ""): void => {
