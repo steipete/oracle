@@ -219,6 +219,11 @@ describe("session lifecycle", () => {
     expect(zombie?.errorMessage).toMatch(/zombie/i);
     const persisted = await sessionModule.readSessionMetadata(meta.id);
     expect(persisted?.status).toBe("error");
+    const storedRaw = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(storedRaw.status).toBe("error");
+    expect(storedRaw.errorMessage).toMatch(/zombie/i);
   });
 
   test("keeps running browser sessions when Chrome runtime is reachable", async () => {
@@ -258,6 +263,16 @@ describe("session lifecycle", () => {
     const refreshed = await sessionModule.readSessionMetadata(meta.id);
     expect(refreshed?.status).toBe("error");
     expect(refreshed?.errorMessage).toMatch(/chrome/i);
+    const rawBeforeList = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(rawBeforeList.status).toBe("running");
+    await sessionModule.listSessionsMetadata();
+    const rawAfterList = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(rawAfterList.status).toBe("error");
+    expect(rawAfterList.errorMessage).toMatch(/chrome/i);
   });
 });
 
