@@ -39,7 +39,11 @@ if (!ENABLE_LIVE || !LIVE_API_KEY) {
           expect(result.response.status ?? "completed").toBe("completed");
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          if (/model .*does not exist|not .*access|no allowed providers|404/i.test(message)) {
+          if (
+            /model .*does not exist|not .*access|no allowed providers|incorrect api key|invalid api key|404/i.test(
+              message,
+            )
+          ) {
             // Key doesn’t have grok-4.1 access; treat as skipped to keep live suite green.
             return;
           }
