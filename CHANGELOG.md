@@ -2,6 +2,10 @@
 
 ## 0.12.2 — Unreleased
 
+### Fixed
+
+- Browser: resolve attachment readiness from the actual ChatGPT composer form so image uploads do not stall after matching composer child buttons.
+
 ## 0.12.1 — 2026-05-17
 
 ### Changed

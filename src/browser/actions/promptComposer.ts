@@ -337,11 +337,21 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
   const namesLiteral = JSON.stringify(attachmentNames.map((name) => name.toLowerCase()));
   return `(() => {
     const names = ${namesLiteral};
-    const composer =
-      document.querySelector('[data-testid*="composer"]') ||
-      document.querySelector('form') ||
-      document.body ||
-      document;
+    const resolveComposerRoot = () => {
+      const promptNode =
+        document.querySelector('#prompt-textarea') ||
+        document.querySelector('[name="prompt-textarea"]') ||
+        document.querySelector('[contenteditable="true"][aria-label*="Chat"]');
+      const promptForm = promptNode?.closest?.('form');
+      const form =
+        document.querySelector('form[data-type="unified-composer"]') ||
+        promptForm ||
+        document.querySelector('form');
+      if (form) return form;
+      const composerLike = document.querySelector('[data-testid*="composer"]');
+      return composerLike?.closest?.('form') || composerLike || document.body || document;
+    };
+    const composer = resolveComposerRoot();
     // Walk node + ancestors (up to grandparent) + descendants to gather every textual hint.
     // ChatGPT's current chip DOM nests the filename inside truncated child spans, so checking
     // only the node's own textContent/aria/title misses the match.
