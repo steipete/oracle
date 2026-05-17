@@ -78,18 +78,24 @@ function runtimeKeySource({
   providerMode: string;
   optionsApiKey?: string;
 }): string {
+  if (
+    optionsApiKey &&
+    (route.isAzureOpenAI ||
+      route.provider === "openai" ||
+      route.providerLabel === "OpenAI-compatible")
+  ) {
+    return "apiKey option";
+  }
   if (route.isAzureOpenAI) {
-    return optionsApiKey ? "apiKey option" : "AZURE_OPENAI_API_KEY|OPENAI_API_KEY";
+    return "AZURE_OPENAI_API_KEY|OPENAI_API_KEY";
   }
   if (providerMode === "openai") {
-    return optionsApiKey ? "apiKey option" : "OPENAI_API_KEY";
+    return "OPENAI_API_KEY";
   }
   if (isOpenRouterBaseUrl(route.baseUrl) || route.openRouterFallback || route.model.includes("/")) {
     return "OPENROUTER_API_KEY";
   }
-  if (route.model.startsWith("gpt")) {
-    return optionsApiKey ? "apiKey option" : "OPENAI_API_KEY";
-  }
+  if (route.model.startsWith("gpt")) return "OPENAI_API_KEY";
   if (route.model.startsWith("gemini")) return "GEMINI_API_KEY";
   if (route.model.startsWith("claude")) return "ANTHROPIC_API_KEY";
   if (route.model.startsWith("grok")) return "XAI_API_KEY";

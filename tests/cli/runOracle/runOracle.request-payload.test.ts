@@ -459,6 +459,31 @@ describe("runOracle request payload", () => {
     );
   });
 
+  test("logs explicit key source for provider-qualified custom proxy routes", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const logs: string[] = [];
+
+    await runOracle(
+      {
+        prompt: "Provider qualified proxy route",
+        model: "anthropic/claude-sonnet-4.5",
+        baseUrl: "https://litellm.test/v1",
+        background: false,
+      },
+      {
+        apiKey: "proxy-test-key",
+        client,
+        log: (message: string) => logs.push(message),
+        write: () => true,
+      },
+    );
+
+    expect(logs.join("\n")).toContain(
+      "Provider: OpenAI-compatible | base: litellm.test/v1 | key: apiKey option",
+    );
+  });
+
   test("routes provider-qualified ids through OpenRouter instead of native base URLs", async () => {
     const stream = new MockStream([], buildResponse());
     const client = new MockClient(stream);
