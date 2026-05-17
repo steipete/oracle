@@ -40,11 +40,7 @@ import { createMarkdownStreamer } from "markdansi";
 import { executeBackgroundResponse } from "./background.js";
 import { formatTokenEstimate, formatTokenValue, resolvePreviewMode } from "./runUtils.js";
 import { estimateUsdCost } from "tokentally";
-import {
-  isOpenRouterBaseUrl,
-  isProModel,
-  resolveModelConfig,
-} from "./modelResolver.js";
+import { isOpenRouterBaseUrl, isProModel, resolveModelConfig } from "./modelResolver.js";
 import { validateProviderRouting } from "./providerRouting.js";
 import {
   formatRouteTargetForLog,
@@ -395,11 +391,11 @@ export async function runOracle(
     ? undefined
     : modelConfig.model.startsWith("gemini")
       ? proxyCompatibleBaseUrl
-        : proxyCompatibleBaseUrl
-          ? proxyCompatibleBaseUrl
-          : modelConfig.model.startsWith("claude")
-            ? baseUrl
-            : baseUrl;
+      : proxyCompatibleBaseUrl
+        ? proxyCompatibleBaseUrl
+        : modelConfig.model.startsWith("claude")
+          ? baseUrl
+          : baseUrl;
   const clientInstance: ClientLike =
     client ??
     clientFactory(apiKey, {

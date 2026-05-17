@@ -867,7 +867,9 @@ describe("performSessionRun", () => {
     const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
     expect(logsCombined).toContain("Transport: model-unavailable");
     expect(logsCombined).not.toContain("sk-secret123456789");
-    expect(transportError.message).toBe("The requested model does not exist for sk-secret123456789");
+    expect(transportError.message).toBe(
+      "The requested model does not exist for sk-secret123456789",
+    );
   });
 
   test("prints tips before the first model heading in multi-model TTY streaming", async () => {
