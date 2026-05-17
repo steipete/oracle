@@ -40,7 +40,31 @@ export interface ProviderRoutePlan {
   error?: string;
 }
 
+export interface ResolvedProviderRoute extends ProviderRoutePlan {
+  nativeProvider: NonNullable<ModelConfig["provider"]>;
+  baseUrl?: string;
+  apiKey?: string;
+  openRouterFallback: boolean;
+  azureEndpoint?: string;
+}
+
+export function resolveProviderRoute(input: ProviderRoutePlanInput): ResolvedProviderRoute {
+  return buildResolvedProviderRoute(input);
+}
+
 export function buildProviderRoutePlan(input: ProviderRoutePlanInput): ProviderRoutePlan {
+  const {
+    apiKey: _apiKey,
+    baseUrl: _baseUrl,
+    nativeProvider: _nativeProvider,
+    openRouterFallback: _openRouterFallback,
+    azureEndpoint: _azureEndpoint,
+    ...plan
+  } = buildResolvedProviderRoute(input);
+  return plan;
+}
+
+function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProviderRoute {
   const env = input.env ?? process.env;
   const providerMode = input.providerMode ?? "auto";
   const azureConfigured = Boolean(input.azure?.endpoint?.trim());
@@ -82,7 +106,12 @@ export function buildProviderRoutePlan(input: ProviderRoutePlanInput): ProviderR
       keySource: key.source,
       keyPreview: key.preview,
       keyPresent: key.present,
+      apiKey: key.value,
+      nativeProvider: provider,
+      baseUrl: input.baseUrl,
+      openRouterFallback: false,
       isAzureOpenAI,
+      azureEndpoint: state?.azureEndpoint ?? input.azure?.endpoint,
       azureConfigured,
       azureDeploymentName: state?.azureDeploymentName,
       azureNote: azureNote(providerMode, azureConfigured, isAzureOpenAI),
@@ -186,7 +215,12 @@ export function buildProviderRoutePlan(input: ProviderRoutePlanInput): ProviderR
     keySource: key.source,
     keyPreview: key.preview,
     keyPresent: key.present,
+    apiKey: key.value,
+    nativeProvider: provider,
+    baseUrl,
+    openRouterFallback,
     isAzureOpenAI,
+    azureEndpoint: state.azureEndpoint,
     azureConfigured,
     azureDeploymentName: state.azureDeploymentName,
     azureNote: azureNote(providerMode, azureConfigured, isAzureOpenAI),
@@ -239,9 +273,14 @@ function getKeyForRoute({
   openRouterFallback: boolean;
   apiKey?: string;
   env: NodeJS.ProcessEnv;
-}): { source: string; preview: string; present: boolean } {
+}): { source: string; preview: string; present: boolean; value?: string } {
   if (apiKey) {
-    return { source: "apiKey option", preview: maskApiKey(apiKey) ?? "set", present: true };
+    return {
+      source: "apiKey option",
+      preview: maskApiKey(apiKey) ?? "set",
+      present: true,
+      value: apiKey,
+    };
   }
   if (isAzureOpenAI) {
     return readKey(["AZURE_OPENAI_API_KEY", "OPENAI_API_KEY"], env);
@@ -276,11 +315,16 @@ function getKeyForRoute({
 function readKey(
   names: string[],
   env: NodeJS.ProcessEnv,
-): { source: string; preview: string; present: boolean } {
+): { source: string; preview: string; present: boolean; value?: string } {
   for (const name of names) {
     const value = env[name]?.trim();
     if (value) {
-      return { source: name, preview: `${name}=${maskApiKey(value) ?? "set"}`, present: true };
+      return {
+        source: name,
+        preview: `${name}=${maskApiKey(value) ?? "set"}`,
+        present: true,
+        value,
+      };
     }
   }
   return { source: names.join("|"), preview: "missing", present: false };
