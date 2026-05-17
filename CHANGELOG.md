@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.12.2 — Unreleased
+
 ## 0.12.1 — 2026-05-17
 
 ### Changed
