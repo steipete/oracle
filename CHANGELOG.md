@@ -11,6 +11,9 @@
 #### Fixed
 
 - Browser: record ChatGPT model-selection evidence in session metadata and CLI output so Pro browser runs show the selected model proof (#195). Thanks @pdurlej!
+- Sessions: allocate same-slug session directories atomically, recreate missing per-model log directories, and persist zombie/dead-browser status reconciliation from session listings.
+- API: share provider route resolution between doctor/preflight and runtime requests so route diagnostics match real execution.
+- CLI: rethrow sanitized multi-model provider failures without mutating or linking the raw provider error, keeping secrets out of logs and error chains.
 
 #### Docs
 
