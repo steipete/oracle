@@ -759,13 +759,22 @@ function sanitizeMultiModelFailureForThrow(
   if (!(error instanceof Error)) {
     return new Error(message);
   }
-  error.message = message;
-  if (error.stack) {
-    const [firstLine, ...rest] = error.stack.split("\n");
-    const prefix = firstLine.includes(":") ? firstLine.split(":", 1)[0] : error.name;
-    error.stack = [prefix ? `${prefix}: ${message}` : message, ...rest].join("\n");
+  let sanitized: Error;
+  if (error instanceof OracleTransportError) {
+    sanitized = new OracleTransportError(error.reason, message);
+  } else if (error instanceof OracleResponseError) {
+    sanitized = new OracleResponseError(message, error.response);
+  } else {
+    sanitized = new Error(message);
+    sanitized.name = error.name;
   }
-  return error;
+  if (error.stack) {
+    const [, ...rest] = error.stack.split("\n");
+    sanitized.stack = [sanitized.name ? `${sanitized.name}: ${message}` : message, ...rest].join(
+      "\n",
+    );
+  }
+  return sanitized;
 }
 
 interface MultiModelManifestRunLog {

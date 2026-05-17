@@ -691,6 +691,7 @@ describe("performSessionRun", () => {
 
     sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
     sessionStoreMock.readModelLog.mockResolvedValue("Answer:\npartial");
+    const providerError = new Error("invalid x-api-key: sk-ant-secret123456789");
 
     const summary: MultiModelRunSummary = {
       fulfilled: [
@@ -704,7 +705,7 @@ describe("performSessionRun", () => {
       rejected: [
         {
           model: "claude-4.6-sonnet" as ModelName,
-          reason: new Error("invalid x-api-key: sk-ant-secret123456789"),
+          reason: providerError,
         },
       ],
       elapsedMs: 500,
@@ -752,6 +753,7 @@ describe("performSessionRun", () => {
 
     sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
     sessionStoreMock.readModelLog.mockResolvedValue("Answer:\npartial");
+    const providerError = new Error("invalid x-api-key: sk-ant-secret123456789");
 
     const summary: MultiModelRunSummary = {
       fulfilled: [
@@ -765,15 +767,16 @@ describe("performSessionRun", () => {
       rejected: [
         {
           model: "claude-4.6-sonnet" as ModelName,
-          reason: new Error("invalid x-api-key: sk-ant-secret123456789"),
+          reason: providerError,
         },
       ],
       elapsedMs: 500,
     };
     vi.mocked(runMultiModelApiSession).mockResolvedValue(summary);
 
-    await expect(
-      withExactEnv(
+    let thrown: unknown;
+    try {
+      await withExactEnv(
         {
           ANTHROPIC_API_KEY: "ak-native-test-key",
           OPENROUTER_API_KEY: undefined,
@@ -791,13 +794,19 @@ describe("performSessionRun", () => {
             write,
             version: cliVersion,
           }),
-      ),
-    ).rejects.toThrow("claude-4.6-sonnet: auth failed");
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("claude-4.6-sonnet: auth failed");
+    expect((thrown as Error & { cause?: unknown }).cause).toBeUndefined();
 
     const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
     expect(logsCombined).toContain("ERROR: claude-4.6-sonnet: auth failed");
     expect(logsCombined).toContain("provider said: invalid x-api-key: [redacted]");
     expect(logsCombined).not.toContain("sk-ant-secret123456789");
+    expect(providerError.message).toBe("invalid x-api-key: sk-ant-secret123456789");
   });
 
   test("preserves transport metadata when sanitizing rethrown provider failures", async () => {
@@ -808,24 +817,26 @@ describe("performSessionRun", () => {
 
     sessionStoreMock.readSession.mockResolvedValue(sessionMeta);
     sessionStoreMock.readModelLog.mockResolvedValue("");
+    const transportError = new OracleTransportError(
+      "model-unavailable",
+      "The requested model does not exist for sk-secret123456789",
+    );
 
     const summary: MultiModelRunSummary = {
       fulfilled: [],
       rejected: [
         {
           model: "gpt-5.2-pro" as ModelName,
-          reason: new OracleTransportError(
-            "model-unavailable",
-            "The requested model does not exist for sk-secret123456789",
-          ),
+          reason: transportError,
         },
       ],
       elapsedMs: 500,
     };
     vi.mocked(runMultiModelApiSession).mockResolvedValue(summary);
 
-    await expect(
-      performSessionRun({
+    let thrown: unknown;
+    try {
+      await performSessionRun({
         sessionMeta,
         runOptions: {
           ...baseRunOptions,
@@ -836,11 +847,15 @@ describe("performSessionRun", () => {
         log,
         write,
         version: cliVersion,
-      }),
-    ).rejects.toMatchObject({
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
       reason: "model-unavailable",
       message: expect.stringContaining("gpt-5.2-pro: model unavailable"),
     });
+    expect((thrown as Error & { cause?: unknown }).cause).toBeUndefined();
 
     const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({
@@ -852,6 +867,7 @@ describe("performSessionRun", () => {
     const logsCombined = log.mock.calls.map((c) => c[0]).join("\n");
     expect(logsCombined).toContain("Transport: model-unavailable");
     expect(logsCombined).not.toContain("sk-secret123456789");
+    expect(transportError.message).toBe("The requested model does not exist for sk-secret123456789");
   });
 
   test("prints tips before the first model heading in multi-model TTY streaming", async () => {
