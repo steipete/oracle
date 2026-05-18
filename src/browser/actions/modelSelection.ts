@@ -229,7 +229,30 @@ function buildModelSelectionExpression(
         })
     );
 
-    const button = document.querySelector(BUTTON_SELECTOR);
+    const isVisibleElement = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const looksLikeModelPill = (node) => {
+      if (!(node instanceof HTMLElement) || !node.matches('button.__composer-pill')) return false;
+      if (!isVisibleElement(node)) return false;
+      const label = normalizeText(
+        (node.textContent ?? '') + ' ' + (node.getAttribute('aria-label') ?? '') + ' ' + (node.getAttribute('title') ?? '')
+      );
+      if (!label) return false;
+      if (label.includes('click to remove')) return false;
+      const modelTokens = ['chatgpt', 'gpt', 'instant', 'thinking', 'pro', 'extended', 'standard', 'heavy', 'light'];
+      return modelTokens.some((token) => hasToken(label, token));
+    };
+    const findModelButton = () => {
+      const explicit = document.querySelector(BUTTON_SELECTOR);
+      if (explicit) return explicit;
+      return Array.from(document.querySelectorAll('button.__composer-pill')).find(looksLikeModelPill) ?? null;
+    };
+
+    const button = findModelButton();
     if (!button) {
       return { status: 'button-missing' };
     }
@@ -280,6 +303,16 @@ function buildModelSelectionExpression(
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
+      if (
+        wantsThinking &&
+        !hasProComposerPill() &&
+        (normalizedLabel === 'extended' ||
+          normalizedLabel === 'standard' ||
+          normalizedLabel === 'heavy' ||
+          normalizedLabel === 'light')
+      ) {
+        return true;
+      }
       if (
         wantsPro &&
         hasProComposerPill() &&
@@ -382,9 +415,6 @@ function buildModelSelectionExpression(
       if (dataSelected === 'true' || selectedStates.includes(dataState)) {
         return true;
       }
-      if (node.querySelector('[data-testid*="check"], [role="img"][data-icon="check"], svg[data-icon="check"], .trailing svg')) {
-        return true;
-      }
       return false;
     };
 
@@ -460,7 +490,6 @@ function buildModelSelectionExpression(
         normalizedText.includes('thinking') || normalizedTestId.includes('thinking');
       const candidateHasLegacyProVersion = labelHasLegacyProVersion(normalizedText);
       const candidateHasPro =
-        candidateGpt55VisibleAlias ||
         labelHasProWord(normalizedText) ||
         normalizedText.includes('proresearch') ||
         normalizedTestId.includes('pro');
@@ -468,6 +497,7 @@ function buildModelSelectionExpression(
       if (wantsPro && candidateHasLegacyProVersion) return 0;
       if (wantsPro && !candidateHasPro) return 0;
       if (wantsThinking && candidateHasPro) return 0;
+      if (wantsThinking && !candidateHasThinking) return 0;
       if (desiredVersion === '5-5' && normalizedText && !candidateGpt55VisibleAlias) {
         const candidateHasVersion =
           normalizedText.includes('5 5') ||
@@ -533,10 +563,15 @@ function buildModelSelectionExpression(
       return Math.max(score, 0);
     };
 
+    const hasModelSwitcherItem = (node) =>
+      Boolean(node?.querySelector?.('[data-testid^="model-switcher-"]'));
+    const queryPickerMenus = () =>
+      Array.from(document.querySelectorAll(${menuContainerLiteral})).filter(hasModelSwitcherItem);
+
     const findBestOption = () => {
       // Walk through every menu item and keep whichever earns the highest score.
       let bestMatch = null;
-      const menus = Array.from(document.querySelectorAll(${menuContainerLiteral}));
+      const menus = queryPickerMenus();
       for (const menu of menus) {
         const buttons = Array.from(menu.querySelectorAll(${menuItemLiteral}));
         for (const option of buttons) {
@@ -592,10 +627,8 @@ function buildModelSelectionExpression(
         return body.includes('temporary chat');
       };
       const collectAvailableOptions = () => {
-        const menuRoots = Array.from(document.querySelectorAll(${menuContainerLiteral}));
-        const nodes = menuRoots.length > 0
-          ? menuRoots.flatMap((root) => Array.from(root.querySelectorAll(${menuItemLiteral})))
-          : Array.from(document.querySelectorAll(${menuItemLiteral}));
+        const menuRoots = queryPickerMenus();
+        const nodes = menuRoots.flatMap((root) => Array.from(root.querySelectorAll(${menuItemLiteral})));
         const labels = nodes
           .map((node) => (node?.textContent ?? '').trim())
           .filter(Boolean)
@@ -603,7 +636,7 @@ function buildModelSelectionExpression(
         return labels.slice(0, 12);
       };
       const ensureMenuOpen = () => {
-        const menuOpen = document.querySelector('[role="menu"], [data-radix-collection-root]');
+        const menuOpen = queryPickerMenus().length > 0;
         if (!menuOpen && performance.now() - lastPointerClick > REOPEN_INTERVAL_MS) {
           pointerClick();
         }
@@ -621,7 +654,7 @@ function buildModelSelectionExpression(
         ensureMenuOpen();
         const match = findBestOption();
         if (match) {
-          if (activeSelectionMatchesTarget()) {
+          if (optionIsSelected(match.node) || activeSelectionMatchesTarget()) {
             closeMenu();
             resolve({ status: 'already-selected', label: getResolvedLabel(match.label) });
             return;
