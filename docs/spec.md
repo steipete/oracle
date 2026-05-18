@@ -37,7 +37,7 @@ The bundle Oracle ships is deterministic given the same args and same files. Tha
 Auto-pick rules:
 
 1. If `--engine` is set, use it.
-2. Else if `engine` is set in `~/.oracle/config.json`, use it.
+2. Else if `engine` is set in the effective config, use it. The effective config starts with `~/.oracle/config.json`, then layers project `.oracle/config.json` files from parent folders to the current directory.
 3. Else if `OPENAI_API_KEY` (or another supported API key) is set, use API.
 4. Else use browser.
 

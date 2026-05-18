@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
+import { PROJECT_CONFIG_RELATIVE_PATH } from "../../src/config.js";
 
 // biome-ignore lint/complexity/useRegexLiterals: constructor form avoids control-char lint noise.
 const ansiRegex = new RegExp("\\x1B\\[[0-9;]*m", "g");
@@ -77,5 +78,31 @@ describe("oracle bridge doctor", () => {
     expect(output).toMatch(/remoteToken:\s+missing/i);
     expect(output).toMatch(/Problems:/i);
     expect(process.exitCode).toBe(1);
+  });
+
+  it("reports project-only config separately from the missing user config", async () => {
+    const originalCwd = process.cwd();
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-bridge-project-"));
+    await fs.mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+    const projectConfigPath = path.join(repoDir, PROJECT_CONFIG_RELATIVE_PATH);
+    await fs.writeFile(projectConfigPath, `{ engine: "browser" }`, "utf8");
+    const resolvedProjectConfigPath = await fs.realpath(projectConfigPath);
+
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((msg) => logs.push(String(msg)));
+
+    try {
+      process.chdir(repoDir);
+      await runBridgeDoctor({ verbose: false });
+    } finally {
+      process.chdir(originalCwd);
+      await fs.rm(repoDir, { recursive: true, force: true });
+    }
+
+    const output = stripAnsi(logs.join("\n"));
+    expect(output).toContain(`Config: ${path.join(tempDir, "config.json")} (missing)`);
+    expect(output).toContain(`Project config: ${resolvedProjectConfigPath}`);
+    expect(output).toMatch(/Default engine:\s+browser/i);
+    expect(process.exitCode ?? 0).toBe(0);
   });
 });

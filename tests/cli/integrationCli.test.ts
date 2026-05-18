@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
-import { mkdtemp, writeFile, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readdir, readFile, rm, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -13,6 +13,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
+const TSX_LOADER = path.join(process.cwd(), "node_modules", "tsx", "dist", "loader.mjs");
 const CLIENT_FACTORY = path.join(process.cwd(), "tests", "fixtures", "mockClientFactory.cjs");
 const INTEGRATION_TIMEOUT = 60000;
 const AZURE_ENV_KEYS = [
@@ -452,6 +453,148 @@ module.exports = () => ({
       expect(stdout).not.toContain("Provider: Azure OpenAI");
 
       await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "honors project browser config when Azure env is present",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-project-azure-home-"));
+      const repoDir = await mkdtemp(path.join(os.tmpdir(), "oracle-project-azure-repo-"));
+      await mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+      await writeFile(
+        path.join(repoDir, ".oracle", "config.json"),
+        `{ engine: "browser", browser: { chatgptUrl: "https://chatgpt.com/g/g-p-demo/project" } }`,
+        "utf8",
+      );
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      env.AZURE_OPENAI_ENDPOINT = "https://example-resource.openai.azure.com/";
+      env.AZURE_OPENAI_API_KEY = "az-integration";
+      env.AZURE_OPENAI_DEPLOYMENT = "configured-gpt";
+      env.DOTENV_CONFIG_PATH = "/tmp/nonexistent-oracle-env";
+      env.ORACLE_HOME_DIR = oracleHome;
+      env.ORACLE_DISABLE_KEYTAR = "1";
+      delete env.ORACLE_ENGINE;
+      delete env.OPENAI_API_KEY;
+      delete env.GEMINI_API_KEY;
+      delete env.OPENROUTER_API_KEY;
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          TSX_LOADER,
+          CLI_ENTRY,
+          "--dry-run",
+          "--prompt",
+          "Project browser route check",
+          "--model",
+          "gpt-5.1",
+        ],
+        { env, cwd: repoDir },
+      );
+
+      expect(stdout).toContain("[preview] Oracle");
+      expect(stdout).toContain("browser mode (gpt-5.1)");
+      expect(stdout).not.toContain("Provider: Azure OpenAI");
+
+      await rm(oracleHome, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "honors ORACLE_ENGINE api over project config engine",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-project-engine-home-"));
+      const repoDir = await mkdtemp(path.join(os.tmpdir(), "oracle-project-engine-repo-"));
+      await mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+      await writeFile(
+        path.join(repoDir, ".oracle", "config.json"),
+        `{ engine: "browser", model: "gpt-5.5-pro" }`,
+        "utf8",
+      );
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      env.DOTENV_CONFIG_PATH = "/tmp/nonexistent-oracle-env";
+      env.ORACLE_HOME_DIR = oracleHome;
+      env.ORACLE_ENGINE = "api";
+      env.ORACLE_DISABLE_KEYTAR = "1";
+      delete env.OPENAI_API_KEY;
+      delete env.GEMINI_API_KEY;
+      delete env.OPENROUTER_API_KEY;
+
+      const { stdout } = await execFileAsync(
+        process.execPath,
+        ["--import", TSX_LOADER, CLI_ENTRY, "--dry-run", "--prompt", "Engine env route check"],
+        { env, cwd: repoDir },
+      );
+
+      expect(stdout).toContain("[dry-run] Oracle");
+      expect(stdout).toContain("would call gpt-5.5-pro");
+      expect(stdout).not.toContain("browser mode");
+
+      await rm(oracleHome, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
+    "honors API engine overrides over project browser config for API-only models",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-project-api-home-"));
+      const repoDir = await mkdtemp(path.join(os.tmpdir(), "oracle-project-api-repo-"));
+      await mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+      await writeFile(
+        path.join(repoDir, ".oracle", "config.json"),
+        `{ engine: "browser" }`,
+        "utf8",
+      );
+      const env: NodeJS.ProcessEnv = { ...process.env };
+      env.DOTENV_CONFIG_PATH = "/tmp/nonexistent-oracle-env";
+      env.ORACLE_HOME_DIR = oracleHome;
+      env.ORACLE_DISABLE_KEYTAR = "1";
+      delete env.ORACLE_ENGINE;
+      delete env.OPENAI_API_KEY;
+      delete env.GEMINI_API_KEY;
+      delete env.OPENROUTER_API_KEY;
+
+      for (const scenario of [
+        { args: ["--engine", "api"], envEngine: undefined },
+        { args: [], envEngine: "api" },
+      ]) {
+        const scenarioEnv = { ...env };
+        if (scenario.envEngine) {
+          scenarioEnv.ORACLE_ENGINE = scenario.envEngine;
+        } else {
+          delete scenarioEnv.ORACLE_ENGINE;
+        }
+
+        const { stdout } = await execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            TSX_LOADER,
+            CLI_ENTRY,
+            "--dry-run",
+            ...scenario.args,
+            "--model",
+            "claude-4.6-sonnet",
+            "--prompt",
+            "Explicit API route check",
+          ],
+          { env: scenarioEnv, cwd: repoDir, timeout: INTEGRATION_TIMEOUT },
+        );
+
+        expect(stdout).toContain("[dry-run] Oracle");
+        expect(stdout).toContain("would call claude-4.6-sonnet");
+        expect(stdout).not.toContain("browser mode");
+      }
+
+      await rm(oracleHome, { recursive: true, force: true });
+      await rm(repoDir, { recursive: true, force: true });
     },
     INTEGRATION_TIMEOUT,
   );

@@ -8,6 +8,7 @@
 
 ### Changed
 
+- Config: layer safe project defaults from `.oracle/config.json` files discovered upward from the current working directory, so repos can pin workflow defaults like ChatGPT Project URLs without copying the user config.
 - Website: point package/homepage metadata and generated site chrome at `https://askoracle.sh` instead of the GitHub repository.
 
 ### Fixed

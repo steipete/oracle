@@ -146,4 +146,4 @@ See [Browser Mode](browser-mode.md) for usage.
 
 - `oracle --help` — short usage.
 - `oracle --help --verbose` — every flag, including hidden ones.
-- [Configuration](configuration.md) — `~/.oracle/config.json` defaults.
+- [Configuration](configuration.md) — `~/.oracle/config.json` and project `.oracle/config.json` defaults.

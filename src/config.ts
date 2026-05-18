@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import JSON5 from "json5";
 import { getOracleHomeDir } from "./oracleHome.js";
@@ -96,33 +97,207 @@ export interface UserConfig {
   sessionRetentionHours?: number;
 }
 
-function resolveConfigPath(): string {
+export const PROJECT_CONFIG_RELATIVE_PATH = path.join(".oracle", "config.json");
+
+function resolveUserConfigPath(): string {
   return path.join(getOracleHomeDir(), "config.json");
 }
 
 export interface LoadConfigResult {
   config: UserConfig;
+  /** The user config path; `loaded` refers to this path only. */
+  path: string;
+  /** All config files that were actually loaded, including project configs. */
+  paths: string[];
+  loaded: boolean;
+}
+
+export interface LoadUserConfigOptions {
+  cwd?: string;
+  includeProject?: boolean;
+}
+
+interface ReadConfigResult {
+  config: UserConfig;
   path: string;
   loaded: boolean;
 }
 
-export async function loadUserConfig(): Promise<LoadConfigResult> {
-  const CONFIG_PATH = resolveConfigPath();
+export async function loadUserConfig(
+  options: LoadUserConfigOptions = {},
+): Promise<LoadConfigResult> {
+  const userConfigPath = resolveUserConfigPath();
+  const userConfig = await readConfigFile(userConfigPath);
+  const projectConfigPaths =
+    options.includeProject === false
+      ? []
+      : await discoverProjectConfigPaths({
+          cwd: options.cwd ?? process.cwd(),
+          userConfigPath,
+        });
+
+  const loadedConfigs: ReadConfigResult[] = [];
+  if (userConfig.loaded) {
+    loadedConfigs.push(userConfig);
+  }
+
+  let merged = userConfig.loaded ? userConfig.config : {};
+  for (const projectConfigPath of projectConfigPaths) {
+    const projectConfig = await readConfigFile(projectConfigPath);
+    if (!projectConfig.loaded) continue;
+    loadedConfigs.push(projectConfig);
+    merged = mergeUserConfig(merged, sanitizeProjectConfig(projectConfig.config));
+  }
+
+  const loadedPaths = loadedConfigs.map((entry) => entry.path);
+  return {
+    config: merged,
+    path: userConfigPath,
+    paths: loadedPaths,
+    loaded: userConfig.loaded,
+  };
+}
+
+async function readConfigFile(configPath: string): Promise<ReadConfigResult> {
   try {
-    const raw = await fs.readFile(CONFIG_PATH, "utf8");
+    const raw = await fs.readFile(configPath, "utf8");
     const parsed = JSON5.parse(raw) as UserConfig;
-    return { config: parsed ?? {}, path: CONFIG_PATH, loaded: true };
+    return { config: parsed ?? {}, path: configPath, loaded: true };
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "ENOENT") {
-      return { config: {}, path: CONFIG_PATH, loaded: false };
+      return { config: {}, path: configPath, loaded: false };
     }
     console.warn(
-      `Failed to read ${CONFIG_PATH}: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to read ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
     );
-    return { config: {}, path: CONFIG_PATH, loaded: false };
+    return { config: {}, path: configPath, loaded: false };
   }
 }
+
 export function configPath(): string {
-  return resolveConfigPath();
+  return resolveUserConfigPath();
+}
+
+async function discoverProjectConfigPaths({
+  cwd,
+  userConfigPath,
+}: {
+  cwd: string;
+  userConfigPath: string;
+}): Promise<string[]> {
+  const start = path.resolve(cwd);
+  const home = os.homedir();
+  const candidates: string[] = [];
+  const seen = new Set<string>([path.resolve(userConfigPath)]);
+  let current = start;
+
+  while (true) {
+    if (current === home) {
+      break;
+    }
+
+    const candidate = path.join(current, PROJECT_CONFIG_RELATIVE_PATH);
+    const resolved = path.resolve(candidate);
+    if (!seen.has(resolved)) {
+      try {
+        const stat = await fs.stat(resolved);
+        if (stat.isFile()) {
+          candidates.unshift(resolved);
+          seen.add(resolved);
+        }
+      } catch (error) {
+        if ((error as { code?: string }).code !== "ENOENT") {
+          console.warn(
+            `Failed to inspect ${resolved}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  return candidates;
+}
+
+function mergeUserConfig(base: UserConfig, override: UserConfig): UserConfig {
+  return deepMerge(base, override) as UserConfig;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deepMerge(base: unknown, override: unknown): unknown {
+  if (!isRecord(base) || !isRecord(override)) {
+    return override;
+  }
+
+  const result: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    const existing = result[key];
+    result[key] = isRecord(existing) && isRecord(value) ? deepMerge(existing, value) : value;
+  }
+  return result;
+}
+
+function sanitizeProjectConfig(config: UserConfig): UserConfig {
+  const sanitized: UserConfig = {};
+
+  if (config.engine !== undefined) sanitized.engine = config.engine;
+  if (config.model !== undefined) sanitized.model = config.model;
+  if (config.search !== undefined) sanitized.search = config.search;
+  if (config.maxFileSizeBytes !== undefined) sanitized.maxFileSizeBytes = config.maxFileSizeBytes;
+  if (config.notify !== undefined) sanitized.notify = config.notify;
+  if (config.heartbeatSeconds !== undefined) sanitized.heartbeatSeconds = config.heartbeatSeconds;
+  if (config.filesReport !== undefined) sanitized.filesReport = config.filesReport;
+  if (config.background !== undefined) sanitized.background = config.background;
+  if (config.promptSuffix !== undefined) sanitized.promptSuffix = config.promptSuffix;
+
+  if (config.browser) {
+    sanitized.browser = {};
+    const browser = config.browser;
+    const allowedBrowserKeys: Array<keyof BrowserConfigDefaults> = [
+      "attachRunning",
+      "timeoutMs",
+      "inputTimeoutMs",
+      "assistantRecheckDelayMs",
+      "assistantRecheckTimeoutMs",
+      "reuseChromeWaitMs",
+      "profileLockTimeoutMs",
+      "maxConcurrentTabs",
+      "autoReattachDelayMs",
+      "autoReattachIntervalMs",
+      "autoReattachTimeoutMs",
+      "cookieSyncWaitMs",
+      "hideWindow",
+      "keepBrowser",
+      "modelStrategy",
+      "thinkingTime",
+      "researchMode",
+      "archiveConversations",
+      "manualLogin",
+    ];
+
+    for (const key of allowedBrowserKeys) {
+      if (browser[key] !== undefined) {
+        sanitized.browser[key] = browser[key] as never;
+      }
+    }
+
+    const chatgptUrl = browser.chatgptUrl ?? browser.url;
+    if (chatgptUrl !== undefined) {
+      sanitized.browser.chatgptUrl = chatgptUrl;
+      sanitized.browser.url = chatgptUrl;
+    }
+  }
+
+  return sanitized;
 }

@@ -12,8 +12,14 @@ export interface BridgeDoctorCliOptions {
 }
 
 export async function runBridgeDoctor(_options: BridgeDoctorCliOptions): Promise<void> {
-  const { config: userConfig, path: configPath, loaded } = await loadUserConfig();
+  const {
+    config: userConfig,
+    path: configPath,
+    paths: configPaths,
+    loaded: userConfigLoaded,
+  } = await loadUserConfig();
   const version = getCliVersion();
+  const projectConfigPaths = configPaths.filter((entry) => entry !== configPath);
 
   const resolvedRemote = resolveRemoteServiceConfig({
     cliHost: undefined,
@@ -30,7 +36,11 @@ export async function runBridgeDoctor(_options: BridgeDoctorCliOptions): Promise
   lines.push(chalk.dim(`OS: ${process.platform} ${os.release()} (${process.arch})`));
   lines.push(chalk.dim(`Node: ${process.version}`));
   lines.push(chalk.dim(`Oracle: ${version}`));
-  lines.push(chalk.dim(`Config: ${loaded ? configPath : "(missing)"}`));
+  lines.push(chalk.dim(`Config: ${userConfigLoaded ? configPath : `${configPath} (missing)`}`));
+  if (projectConfigPaths.length > 0) {
+    const label = projectConfigPaths.length === 1 ? "Project config" : "Project configs";
+    lines.push(chalk.dim(`${label}: ${projectConfigPaths.join(", ")}`));
+  }
   if (userConfig.engine) {
     lines.push(chalk.dim(`Default engine: ${userConfig.engine}`));
   }

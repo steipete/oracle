@@ -40,6 +40,28 @@ describe("resolveEngine", () => {
     expect(engine).toBe<EngineMode>("api");
   });
 
+  it("lets ORACLE_ENGINE override config engine", () => {
+    const env = { ...envWithoutKey } as NodeJS.ProcessEnv;
+    env.ORACLE_ENGINE = "api";
+    const engine = resolveEngine({
+      engine: undefined,
+      configEngine: "browser",
+      browserFlag: false,
+      env,
+    });
+    expect(engine).toBe<EngineMode>("api");
+  });
+
+  it("uses config engine before auto-detecting from API keys", () => {
+    const engine = resolveEngine({
+      engine: undefined,
+      configEngine: "browser",
+      browserFlag: false,
+      env: envWithKey,
+    });
+    expect(engine).toBe<EngineMode>("browser");
+  });
+
   it("does not let Azure env choose API before a model is known", () => {
     const env = { ...envWithoutKey, AZURE_OPENAI_ENDPOINT: "https://example.openai.azure.com/" };
     const engine = resolveEngine({ engine: undefined, browserFlag: false, env });

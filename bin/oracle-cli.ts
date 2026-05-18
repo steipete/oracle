@@ -1846,21 +1846,24 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     engineModels.some((model) => isAzureOpenAICandidateModel(model));
   const explicitApiProviderRequested =
     providerMode !== "auto" || hasExplicitAzureOption(optionUsesDefault);
-  const preferredEngine =
-    options.engine ?? (explicitApiProviderRequested ? undefined : userConfig.engine);
+  const envEnginePreference = (process.env.ORACLE_ENGINE ?? "").trim().toLowerCase();
+  const explicitApiEngineRequested =
+    options.engine === "api" || (!options.engine && envEnginePreference === "api");
+  const configBrowserEngineRequested =
+    userConfig.engine === "browser" && !explicitApiEngineRequested && !explicitApiProviderRequested;
   let engine: EngineMode = resolveEngine({
-    engine: preferredEngine,
+    engine: options.engine,
+    configEngine: userConfig.engine,
     browserFlag: options.browser,
     apiProviderRequested: explicitApiProviderRequested,
     env: process.env,
   });
-  const envEnginePreference = (process.env.ORACLE_ENGINE ?? "").trim().toLowerCase();
   const browserEngineRequested =
     options.browser ||
     options.engine === "browser" ||
     Boolean(remoteHost) ||
-    (!explicitApiProviderRequested &&
-      (userConfig.engine === "browser" || envEnginePreference === "browser"));
+    configBrowserEngineRequested ||
+    (!options.engine && !explicitApiProviderRequested && envEnginePreference === "browser");
   if (azureAutoApiRequested && engine === "browser" && !browserEngineRequested) {
     engine = "api";
   }
@@ -1927,7 +1930,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const includesGeminiApiOnly = (
     normalizedMultiModels.length > 0 ? normalizedMultiModels : [resolvedModel]
   ).some((model) => model === "gemini-3.1-pro");
-  if ((userForcedBrowser || userConfig.engine === "browser") && includesGeminiApiOnly) {
+  if (browserExplicitlyRequested && includesGeminiApiOnly) {
     throw new Error(
       "gemini-3.1-pro is API-only today. Use --engine api or switch to gemini-3-pro for Gemini web.",
     );

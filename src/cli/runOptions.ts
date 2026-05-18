@@ -40,14 +40,17 @@ export function resolveRunOptionsFromConfig({
   userConfig,
   env = process.env,
 }: ResolveRunOptionsInput): ResolvedRunOptions {
-  const resolvedEngine = resolveEngineWithConfig({
+  const resolvedEngine = resolveEngine({
     engine,
     configEngine: userConfig?.engine,
     env,
   });
+  const envEnginePreference = (env.ORACLE_ENGINE ?? "").trim().toLowerCase();
   const browserRequested = engine === "browser";
-  const browserConfigured = userConfig?.engine === "browser";
-  const envBrowserConfigured = (env.ORACLE_ENGINE ?? "").trim().toLowerCase() === "browser";
+  const explicitApiEngineRequested = engine === "api" || (!engine && envEnginePreference === "api");
+  const browserConfigured = userConfig?.engine === "browser" && !explicitApiEngineRequested;
+  const envBrowserConfigured = !engine && envEnginePreference === "browser";
+  const browserEngineRequested = browserRequested || browserConfigured || envBrowserConfigured;
   const requestedModelList = Array.isArray(models) ? models : [];
   const normalizedRequestedModels = requestedModelList
     .map((entry) => normalizeModelOption(entry))
@@ -69,7 +72,7 @@ export function resolveRunOptionsFromConfig({
   const browserCompatibilityModels: ModelName[] =
     normalizedRequestedModels.length > 0 ? allModels : [browserModel];
   const includesGeminiApiOnly = allModels.some((m) => m === "gemini-3.1-pro");
-  if ((browserRequested || browserConfigured) && includesGeminiApiOnly) {
+  if (browserEngineRequested && includesGeminiApiOnly) {
     throw new PromptValidationError(
       "gemini-3.1-pro is API-only today. Use --engine api or switch to gemini-3-pro for Gemini web.",
       { engine: "browser", models: allModels },
@@ -77,8 +80,7 @@ export function resolveRunOptionsFromConfig({
   }
   const isBrowserCompatible = (m: string) => m.startsWith("gpt-") || m.startsWith("gemini");
   const hasNonBrowserCompatibleTarget =
-    (browserRequested || browserConfigured) &&
-    browserCompatibilityModels.some((m) => !isBrowserCompatible(m));
+    browserEngineRequested && browserCompatibilityModels.some((m) => !isBrowserCompatible(m));
   if (hasNonBrowserCompatibleTarget) {
     throw new PromptValidationError(
       "Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.",
@@ -89,9 +91,7 @@ export function resolveRunOptionsFromConfig({
   const azure = resolveAzureOptions(userConfig, env);
   const azureAutoApi =
     Boolean(azure?.endpoint) &&
-    !browserRequested &&
-    !browserConfigured &&
-    !envBrowserConfigured &&
+    !browserEngineRequested &&
     allModels.some(isAzureOpenAICandidateModel);
   const engineCoercedToApi =
     engineWasBrowser && (isCodex || isClaude || isGrok || isGeminiApiOnly || azureAutoApi);
@@ -149,26 +149,6 @@ export function resolveRunOptionsFromConfig({
   };
 
   return { runOptions, resolvedEngine: fixedEngine, engineCoercedToApi };
-}
-
-function resolveEngineWithConfig({
-  engine,
-  configEngine,
-  apiProviderRequested,
-  env,
-}: {
-  engine?: EngineMode;
-  configEngine?: EngineMode;
-  apiProviderRequested?: boolean;
-  env: NodeJS.ProcessEnv;
-}): EngineMode {
-  if (engine) return engine;
-  const envOverride = (env.ORACLE_ENGINE ?? "").trim().toLowerCase();
-  if (envOverride === "api" || envOverride === "browser") {
-    return envOverride as EngineMode;
-  }
-  if (configEngine) return configEngine;
-  return resolveEngine({ engine: undefined, apiProviderRequested, env });
 }
 
 function resolveAzureOptions(
