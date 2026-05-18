@@ -395,6 +395,17 @@ describe("browser model selection matchers", () => {
     expect(testIdTokens).toContain("gpt-5.2-instant");
   });
 
+  it("includes instant tokens for gpt-5.5-instant", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.5-instant");
+    expect(labelTokens.some((t) => t.includes("instant"))).toBe(true);
+    expect(labelTokens.some((t) => t.includes("5.5") || t.includes("5-5"))).toBe(true);
+    expect(testIdTokens).toContain("model-switcher-gpt-5-5-instant");
+    expect(testIdTokens).toContain("gpt-5.5-instant");
+    // Bare 5.5 picker testid must NOT leak in — that would cause the Instant
+    // request to match the default "Thinking 5.5" row.
+    expect(testIdTokens).not.toContain("model-switcher-gpt-5-5");
+  });
+
   it("closes the menu after a successful selection path", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.4");
     expect(expression).toContain("const closeMenu = () =>");

@@ -802,7 +802,13 @@ function buildModelMatchersLiteral(targetModel: string): {
       testIdTokens.add("gpt-5-5-thinking");
       testIdTokens.add("gpt-5.5-thinking");
     }
-    if (!base.includes("pro") && !base.includes("thinking")) {
+    if (base.includes("instant")) {
+      push("instant", labelTokens);
+      testIdTokens.add("model-switcher-gpt-5-5-instant");
+      testIdTokens.add("gpt-5-5-instant");
+      testIdTokens.add("gpt-5.5-instant");
+    }
+    if (!base.includes("pro") && !base.includes("thinking") && !base.includes("instant")) {
       testIdTokens.add("model-switcher-gpt-5-5");
     }
     testIdTokens.add("gpt-5-5");

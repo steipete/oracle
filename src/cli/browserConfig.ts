@@ -25,6 +25,7 @@ const DEFAULT_CHROME_PROFILE = "Default";
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
   ["gpt-5.5-pro", "Pro"],
+  ["gpt-5.5-instant", "Instant"],
   ["gpt-5.5", "Thinking 5.5"],
   ["gpt-5.4-pro", "Pro"],
   ["gpt-5.2-thinking", "GPT-5.2 Thinking"],
@@ -88,7 +89,12 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
     return model;
   }
 
-  if (normalized === "gpt-5.5-pro" || normalized === "gpt-5.5" || normalized === "gpt-5.4") {
+  if (
+    normalized === "gpt-5.5-pro" ||
+    normalized === "gpt-5.5-instant" ||
+    normalized === "gpt-5.5" ||
+    normalized === "gpt-5.4"
+  ) {
     return normalized;
   }
 
