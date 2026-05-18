@@ -112,18 +112,40 @@ describe("promptComposer", () => {
         ["oracle-attach-verify.txt"],
       );
       const assertion = expect(promise).rejects.toThrow(/clickable send button/i);
-      // Deadline is 45_000ms; advance a bit past it so the timeout fires.
-      await vi.advanceTimersByTimeAsync(46_000);
+      // Deadline is 120_000ms; advance a bit past it so the timeout fires.
+      await vi.advanceTimersByTimeAsync(121_000);
       await assertion;
     } finally {
       vi.useRealTimers();
     }
   });
 
+  test("clicks enabled send button even when attachment ready matching is stale", async () => {
+    const runtime = {
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+        if (expression.includes("dispatchClickSequence")) {
+          return { result: { value: "clicked" } };
+        }
+        return { result: { value: false } };
+      }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.attemptSendButton(runtime as never, (() => undefined) as never, [
+        "oracle-large-attachment-20260518.txt",
+      ]),
+    ).resolves.toBe(true);
+    expect(runtime.evaluate).toHaveBeenCalledTimes(1);
+  });
+
   test("only attachment sends get the longer send-button deadline", () => {
     expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
     expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
-    expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"])).toBe(45_000);
+    expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"])).toBe(120_000);
+    expect(promptComposer.sendButtonTimeoutMs(["large.txt"], 600_000)).toBe(600_000);
+    expect(promptComposer.sendButtonTimeoutMs(["large.txt"], 30_000)).toBe(120_000);
   });
 
   test("marks prompt submitted before commit verification finishes", async () => {

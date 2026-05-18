@@ -202,7 +202,12 @@ export async function submitPrompt(
     );
   }
 
-  const clicked = await attemptSendButton(runtime, logger, deps?.attachmentNames);
+  const clicked = await attemptSendButton(
+    runtime,
+    logger,
+    deps?.attachmentNames,
+    deps.inputTimeoutMs ?? undefined,
+  );
   if (!clicked) {
     await input.dispatchKeyEvent({
       type: "keyDown",
@@ -444,6 +449,7 @@ async function attemptSendButton(
   Runtime: ChromeClient["Runtime"],
   _logger?: BrowserLogger,
   attachmentNames?: string[],
+  timeoutMs?: number | null,
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
   const script = `(() => {
@@ -480,23 +486,21 @@ async function attemptSendButton(
   })()`;
 
   // Give attachment-bearing submissions more headroom. ChatGPT's chip render can
-  // settle slowly for multi-file uploads, but plain text sends should keep the
-  // shorter historical deadline.
-  const deadline = Date.now() + sendButtonTimeoutMs(attachmentNames);
+  // settle slowly for large or multi-file uploads, but plain text sends should
+  // keep the shorter historical deadline.
+  const deadline = Date.now() + sendButtonTimeoutMs(attachmentNames, timeoutMs);
   while (Date.now() < deadline) {
+    const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
+    if (result.value === "clicked") {
+      return true;
+    }
     if (needAttachment) {
       const ready = await Runtime.evaluate({
         expression: buildAttachmentReadyExpression(attachmentNames),
         returnByValue: true,
       });
-      if (!ready?.result?.value) {
-        await delay(150);
-        continue;
-      }
-    }
-    const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
-    if (result.value === "clicked") {
-      return true;
+      await delay(ready?.result?.value ? 100 : 150);
+      continue;
     }
     if (result.value === "missing") {
       break;
@@ -516,8 +520,13 @@ async function attemptSendButton(
   return false;
 }
 
-function sendButtonTimeoutMs(attachmentNames?: string[]): number {
-  return Array.isArray(attachmentNames) && attachmentNames.length > 0 ? 45_000 : 20_000;
+function sendButtonTimeoutMs(attachmentNames?: string[], timeoutMs?: number | null): number {
+  if (!Array.isArray(attachmentNames) || attachmentNames.length === 0) {
+    return 20_000;
+  }
+  const configuredTimeout =
+    typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 0;
+  return Math.max(120_000, configuredTimeout);
 }
 
 async function verifyPromptCommitted(

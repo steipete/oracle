@@ -2,6 +2,10 @@
 
 ## 0.12.2 — Unreleased
 
+### Fixed
+
+- Browser: click ChatGPT's enabled send button for attachment prompts even when large-file chip matching is stale, and honor the input timeout while waiting for attachment sends.
+
 ## 0.12.1 — 2026-05-17
 
 ### Changed
