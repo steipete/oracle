@@ -483,22 +483,24 @@ async function attemptSendButton(
   // settle slowly for multi-file uploads, but plain text sends should keep the
   // shorter historical deadline.
   const deadline = Date.now() + sendButtonTimeoutMs(attachmentNames);
+  let attachmentReady = !needAttachment;
   while (Date.now() < deadline) {
     if (needAttachment) {
       const ready = await Runtime.evaluate({
         expression: buildAttachmentReadyExpression(attachmentNames),
         returnByValue: true,
       });
-      if (!ready?.result?.value) {
-        await delay(150);
-        continue;
-      }
+      attachmentReady = Boolean(ready?.result?.value);
     }
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
     if (result.value === "clicked") {
       return true;
     }
     if (result.value === "missing") {
+      if (needAttachment) {
+        await delay(attachmentReady ? 250 : 500);
+        continue;
+      }
       break;
     }
     await delay(100);

@@ -120,6 +120,33 @@ describe("promptComposer", () => {
     }
   });
 
+  test("probes send button while attachment chip readiness is still pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("dispatchClickSequence")) {
+            return { result: { value: "clicked" } };
+          }
+          return { result: { value: false } };
+        }),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.attemptSendButton(
+        runtime as never,
+        (() => undefined) as never,
+        ["oracle-attach-verify.txt"],
+      );
+      const assertion = expect(promise).resolves.toBe(true);
+      await vi.advanceTimersByTimeAsync(46_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("only attachment sends get the longer send-button deadline", () => {
     expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
     expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
