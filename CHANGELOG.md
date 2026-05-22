@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.2 — Unreleased
+
+### Fixed
+
+- Browser: resolve attachment readiness from the active ChatGPT composer so uploaded files do not false-fail with `attachment-send-not-ready` when the Send button is already clickable. Thanks @enieuwy!
+
 ## 0.12.1 — Unreleased
 
 ### Fixed

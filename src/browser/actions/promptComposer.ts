@@ -337,8 +337,51 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
   const namesLiteral = JSON.stringify(attachmentNames.map((name) => name.toLowerCase()));
   return `(() => {
     const names = ${namesLiteral};
+    const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
+    // Restrict to attachment affordances; never scan generic div/span nodes (prompt text can contain the file name).
+    const attachmentSelectors = [
+      '[data-testid*="chip"]',
+      '[data-testid*="attachment"]',
+      '[data-testid*="upload"]',
+      '[data-testid*="file"]',
+      '[aria-label*="Remove file"]',
+      'button[aria-label*="Remove file"]',
+      '[aria-label*="remove file"]',
+      'button[aria-label*="remove file"]',
+      '[aria-label*="Remove attachment"]',
+      'button[aria-label*="Remove attachment"]',
+      '[aria-label*="remove attachment"]',
+      'button[aria-label*="remove attachment"]',
+    ];
+    const sendButton = sendSelectors
+      .map((selector) => document.querySelector(selector))
+      .find(Boolean);
+    const isUsableComposerRoot = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      if (String(node.tagName || '').toLowerCase() === 'button') return false;
+      const testId = String(node.getAttribute?.('data-testid') || '').toLowerCase();
+      if (!testId.includes('composer')) return false;
+      return !(
+        testId.includes('footer') ||
+        testId.includes('action') ||
+        testId.includes('plus') ||
+        testId.includes('send')
+      );
+    };
+    const closestComposerRoot = (node) => {
+      let current = node instanceof HTMLElement ? node : null;
+      while (current) {
+        if (isUsableComposerRoot(current)) return current;
+        current = current.parentElement;
+      }
+      return null;
+    };
+    const firstComposerRoot = () =>
+      Array.from(document.querySelectorAll('[data-testid*="composer"]')).find(isUsableComposerRoot) || null;
     const composer =
-      document.querySelector('[data-testid*="composer"]') ||
+      closestComposerRoot(sendButton) ||
+      sendButton?.closest?.('form') ||
+      firstComposerRoot() ||
       document.querySelector('form') ||
       document.body ||
       document;
@@ -371,22 +414,6 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       return pieces.join(' ').toLowerCase();
     };
     const match = (node, name) => collectLabelHaystack(node).includes(name);
-
-    // Restrict to attachment affordances; never scan generic div/span nodes (prompt text can contain the file name).
-    const attachmentSelectors = [
-      '[data-testid*="chip"]',
-      '[data-testid*="attachment"]',
-      '[data-testid*="upload"]',
-      '[data-testid*="file"]',
-      '[aria-label*="Remove file"]',
-      'button[aria-label*="Remove file"]',
-      '[aria-label*="remove file"]',
-      'button[aria-label*="remove file"]',
-      '[aria-label*="Remove attachment"]',
-      'button[aria-label*="Remove attachment"]',
-      '[aria-label*="remove attachment"]',
-      'button[aria-label*="remove attachment"]',
-    ];
     const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
     const collectChipNodes = () => {
       const seen = new Set();
