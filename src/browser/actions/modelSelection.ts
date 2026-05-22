@@ -314,9 +314,6 @@ function buildModelSelectionExpression(
       ) {
         return true;
       }
-      if (wantsInstant && desiredVersion === '5-5' && normalizedLabel === 'instant') {
-        return true;
-      }
       if (
         wantsPro &&
         hasProComposerPill() &&
@@ -636,6 +633,16 @@ function buildModelSelectionExpression(
       const waitStart = performance.now();
       const check = () => {
         if (activeSelectionMatchesTarget()) {
+          resolve('target');
+          return;
+        }
+        const currentButtonLabel = normalizeText(getButtonLabel());
+        if (
+          wantsInstant &&
+          desiredVersion === '5-5' &&
+          currentButtonLabel === 'instant' &&
+          currentButtonLabel !== previousButtonLabel
+        ) {
           resolve('target');
           return;
         }
