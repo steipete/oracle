@@ -146,7 +146,11 @@ const evaluateMenuModelSelectionExpression = async (
         modelButton.textContent = item.label;
       }),
   );
-  const menu = new FakeElement(options.map((item) => item.label).join(" "), { role: "menu" }, modelOptions);
+  const menu = new FakeElement(
+    options.map((item) => item.label).join(" "),
+    { role: "menu" },
+    modelOptions,
+  );
   const menus = [...extraMenus, menu];
   const documentStub = {
     querySelector: (selector: string) => {
@@ -395,6 +399,34 @@ describe("browser model selection matchers", () => {
     expect(testIdTokens).toContain("gpt-5.2-instant");
   });
 
+  it("includes instant tokens for gpt-5.5-instant", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.5-instant");
+    expect(labelTokens.some((t) => t.includes("instant"))).toBe(true);
+    expect(labelTokens.some((t) => t.includes("5.5") || t.includes("5-5"))).toBe(true);
+    expect(testIdTokens).toContain("model-switcher-gpt-5-5-instant");
+    expect(testIdTokens).toContain("gpt-5.5-instant");
+    // Bare 5.5 picker testid must NOT leak in — that would cause the Instant
+    // request to match the default "Thinking 5.5" row.
+    expect(testIdTokens).not.toContain("model-switcher-gpt-5-5");
+    expect(testIdTokens).toContain("gpt-5-5");
+    expect(testIdTokens).toContain("gpt55");
+  });
+
+  it("hard-rejects non-Instant candidates when targeting Instant", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Instant");
+    expect(expression).toContain("const candidateHasInstant =");
+    expect(expression).toContain("if (wantsInstant && !candidateHasInstant) return 0;");
+  });
+
+  it("selects the observed bare GPT-5.5 row when its label is Instant", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("GPT-5.5 Instant", {
+        label: "Instant",
+        testId: "model-switcher-gpt-5-5",
+      }),
+    ).resolves.toEqual({ status: "switched", label: "Instant" });
+  });
+
   it("closes the menu after a successful selection path", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.4");
     expect(expression).toContain("const closeMenu = () =>");
@@ -565,11 +597,9 @@ describe("browser model selection matchers", () => {
     };
 
     await expect(
-      evaluateMenuModelSelectionExpression(
-        "Thinking 5.5",
-        { label: "Thinking Heavy" },
-        [markedPickerMenu],
-      ),
+      evaluateMenuModelSelectionExpression("Thinking 5.5", { label: "Thinking Heavy" }, [
+        markedPickerMenu,
+      ]),
     ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
   });
 
@@ -647,9 +677,9 @@ describe("browser model selection matchers", () => {
       allowBlank: false,
     });
     expect(buildComposerSignalMatchersForTest("GPT-5.2 Instant")).toEqual({
-      includesAny: [],
+      includesAny: ["instant"],
       excludesAny: ["thinking", "pro"],
-      allowBlank: true,
+      allowBlank: false,
     });
   });
 

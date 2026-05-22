@@ -506,9 +506,12 @@ function buildModelSelectionExpression(
         labelHasProWord(normalizedText) ||
         normalizedText.includes('proresearch') ||
         normalizedTestId.includes('pro');
+      const candidateHasInstant =
+        normalizedText.includes('instant') || normalizedTestId.includes('instant');
       if (wantsPro && candidateHasThinking) return 0;
       if (wantsPro && candidateHasLegacyProVersion) return 0;
       if (wantsPro && !candidateHasPro) return 0;
+      if (wantsInstant && !candidateHasInstant) return 0;
       if (wantsThinking && candidateHasPro) return 0;
       if (wantsThinking && !candidateHasThinking) return 0;
       if (desiredVersion === '5-5' && normalizedText && !candidateGpt55VisibleAlias) {
@@ -633,6 +636,16 @@ function buildModelSelectionExpression(
           resolve('target');
           return;
         }
+        const currentButtonLabel = normalizeText(getButtonLabel());
+        if (
+          wantsInstant &&
+          desiredVersion === '5-5' &&
+          currentButtonLabel === 'instant' &&
+          currentButtonLabel !== previousButtonLabel
+        ) {
+          resolve('target');
+          return;
+        }
         if (selectionStateChanged(previousButtonLabel, previousComposerSignal)) {
           resolve('changed');
           return;
@@ -752,7 +765,7 @@ function buildComposerSignalMatchers(targetModel: string): ComposerSignalMatcher
     return { includesAny: ["thinking"], excludesAny: ["pro"], allowBlank: false };
   }
   if (normalized.includes("instant")) {
-    return { includesAny: [], excludesAny: ["thinking", "pro"], allowBlank: true };
+    return { includesAny: ["instant"], excludesAny: ["thinking", "pro"], allowBlank: false };
   }
   return { includesAny: [], excludesAny: ["thinking", "pro"], allowBlank: true };
 }
@@ -802,7 +815,13 @@ function buildModelMatchersLiteral(targetModel: string): {
       testIdTokens.add("gpt-5-5-thinking");
       testIdTokens.add("gpt-5.5-thinking");
     }
-    if (!base.includes("pro") && !base.includes("thinking")) {
+    if (base.includes("instant")) {
+      push("instant", labelTokens);
+      testIdTokens.add("model-switcher-gpt-5-5-instant");
+      testIdTokens.add("gpt-5-5-instant");
+      testIdTokens.add("gpt-5.5-instant");
+    }
+    if (!base.includes("pro") && !base.includes("thinking") && !base.includes("instant")) {
       testIdTokens.add("model-switcher-gpt-5-5");
     }
     testIdTokens.add("gpt-5-5");

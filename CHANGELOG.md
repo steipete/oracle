@@ -2,6 +2,10 @@
 
 ## 0.12.2 — Unreleased
 
+### Added
+
+- Browser: target ChatGPT's GPT-5.5 "Instant" picker row when `--model gpt-5.5-instant` (or label aliases like `"ChatGPT 5.5 Instant"` / `"5.5 fast"`) is requested, with dedicated picker testids so the selection no longer falls through to the bare 5.5 "Thinking" row. Browser-only; the API catalog is not modified. Thanks @LoukikNaik!
+
 ### Fixed
 
 - Browser: resolve attachment readiness from the active ChatGPT composer so uploaded files do not false-fail with `attachment-send-not-ready` when the Send button is already clickable. Thanks @enieuwy!
