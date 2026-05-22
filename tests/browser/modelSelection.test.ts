@@ -492,18 +492,28 @@ describe("browser model selection matchers", () => {
   });
 
   it("recognizes effort-only labels as selected Thinking when no Pro pill is present", () => {
-    const result = evaluateImmediateModelSelectionExpression("Thinking 5.5", "Heavy");
-    expect(result).toEqual({ status: "already-selected", label: "Heavy" });
+    const result = evaluateImmediateModelSelectionExpression("Thinking 5.5", "Heavy", "Thinking");
+    expect(result).toEqual({ status: "already-selected", label: "Thinking" });
   });
 
-  it("limits effort-only selected Thinking labels to current GPT-5.5 targets", () => {
+  it("requires a current GPT-5.5 model signal before accepting effort-only labels", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.2-thinking");
     expect(expression).toContain("desiredVersion === '5-5' &&");
+    expect(expression).toContain("isTargetGpt55VisibleAlias(readComposerModelSignal())");
+  });
+
+  it("accepts exact version row ids for Thinking models without Thinking in the label", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("Thinking 5.4", {
+        label: "GPT-5.4",
+        testId: "model-switcher-gpt-5-4",
+      }),
+    ).resolves.toEqual({ status: "switched", label: "GPT-5.4" });
   });
 
   it("finds the current model pill when ChatGPT omits aria-haspopup", () => {
-    const result = evaluateComposerPillFallbackExpression("Thinking 5.5", "Heavy");
-    expect(result).toEqual({ status: "already-selected", label: "Heavy" });
+    const result = evaluateComposerPillFallbackExpression("Thinking 5.5", "Thinking Heavy");
+    expect(result).toEqual({ status: "already-selected", label: "Thinking Heavy" });
   });
 
   it("does not treat per-row thinking effort controls as model options", () => {

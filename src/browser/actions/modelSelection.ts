@@ -292,6 +292,8 @@ function buildModelSelectionExpression(
     };
     const getResolvedLabel = (fallback) =>
       withProPillSignal(getComposerModelLabel() || getButtonLabel() || fallback);
+    const isThinkingEffortLabel = (label) =>
+      label === 'extended' || label === 'standard' || label === 'heavy' || label === 'light';
     if (MODEL_STRATEGY === 'current') {
       const currentLabel = getResolvedLabel(PRIMARY_LABEL);
       return {
@@ -307,10 +309,8 @@ function buildModelSelectionExpression(
         wantsThinking &&
         desiredVersion === '5-5' &&
         !hasProComposerPill() &&
-        (normalizedLabel === 'extended' ||
-          normalizedLabel === 'standard' ||
-          normalizedLabel === 'heavy' ||
-          normalizedLabel === 'light')
+        isThinkingEffortLabel(normalizedLabel) &&
+        isTargetGpt55VisibleAlias(readComposerModelSignal())
       ) {
         return true;
       }
@@ -335,6 +335,14 @@ function buildModelSelectionExpression(
       if (wantsPro && labelHasLegacyProVersion(normalizedLabel)) return false;
       if (wantsPro && !labelHasProWord(normalizedLabel)) return false;
       if (wantsInstant && !normalizedLabel.includes('instant')) return false;
+      if (
+        wantsThinking &&
+        desiredVersion === '5-4' &&
+        !normalizedLabel.includes('pro') &&
+        !normalizedLabel.includes('instant')
+      ) {
+        return true;
+      }
       if (wantsThinking && !normalizedLabel.includes('thinking')) return false;
       // Also reject if button has variants we DON'T want
       if (!wantsPro && normalizedLabel.includes(' pro')) return false;
@@ -426,6 +434,7 @@ function buildModelSelectionExpression(
       }
       let score = 0;
       const normalizedTestId = (testid ?? '').toLowerCase();
+      let exactTestIdMatch = false;
       if (normalizedTestId) {
         if (desiredVersion) {
           // data-testid strings have been observed with both dotted and dashed versions (e.g. gpt-5.2-pro vs gpt-5-2-pro).
@@ -472,6 +481,7 @@ function buildModelSelectionExpression(
         // Exact testid matches take priority over substring matches
         const exactMatch = TEST_IDS.find((id) => id && normalizedTestId === id);
         if (exactMatch) {
+          exactTestIdMatch = true;
           score += 1500;
           if (exactMatch.startsWith('model-switcher-')) score += 200;
         } else {
@@ -488,7 +498,9 @@ function buildModelSelectionExpression(
       }
       const candidateGpt55VisibleAlias = isTargetGpt55VisibleAlias(normalizedText);
       const candidateHasThinking =
-        normalizedText.includes('thinking') || normalizedTestId.includes('thinking');
+        normalizedText.includes('thinking') ||
+        normalizedTestId.includes('thinking') ||
+        (wantsThinking && desiredVersion === '5-4' && exactTestIdMatch);
       const candidateHasLegacyProVersion = labelHasLegacyProVersion(normalizedText);
       const candidateHasPro =
         labelHasProWord(normalizedText) ||
