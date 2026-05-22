@@ -335,13 +335,27 @@ describe("ensureLoggedIn", () => {
       runLoginProbeForLabels([], {
         fetchStatus: 401,
         composerVisible: true,
-        appSignal: "model",
+        appSignal: "profile",
       }),
     ).resolves.toMatchObject({
       ok: true,
       status: 401,
       appAuthenticated: true,
       domLoginCta: false,
+    });
+  });
+
+  test("does not accept blocked backend probe with only a model pill", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 401,
+        composerVisible: true,
+        appSignal: "model",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      appAuthenticated: false,
     });
   });
 

@@ -579,14 +579,11 @@ function buildLoginProbeExpression(timeoutMs: number): string {
       if (!rect || rect.width <= 0 || rect.height <= 0 || style.display === 'none' || style.visibility === 'hidden') {
         return false;
       }
-      // Logged-in users always have at least one of: profile button, prior chat history,
-      // or the composer model pill (Heavy/Pro/etc). Anonymous/guest composer lacks all of these.
+      // Logged-in users should have an account affordance or prior chat history. Generic
+      // composer/model pills also appear in guest sessions, so they are not auth proof.
       const profileButton = document.querySelector('[data-testid="accounts-profile-button"]');
       const historyItem = document.querySelector('[data-testid^="history-item-"]');
-      const modelPill = document.querySelector(
-        '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"], button.__composer-pill',
-      );
-      return Boolean(profileButton || historyItem || modelPill);
+      return Boolean(profileButton || historyItem);
     };
 
     let backend = await readBackendDetail();
