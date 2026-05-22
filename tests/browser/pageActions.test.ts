@@ -372,6 +372,21 @@ describe("ensureLoggedIn", () => {
     });
   });
 
+  test("does not accept plain forbidden backend responses without Cloudflare markers", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 403,
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 403,
+      cfBlocked: false,
+      appAuthenticated: true,
+    });
+  });
+
   test("keeps auth pages and visible login CTAs authoritative", async () => {
     await expect(
       runLoginProbeForLabels([], {

@@ -614,7 +614,6 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     const apiBlocked =
       cfBlocked ||
       status === 401 ||
-      status === 403 ||
       status === 429 ||
       status === 503 ||
       status === 0;
