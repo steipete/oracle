@@ -392,10 +392,16 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
         const [prefixRaw, suffixRaw] = text.split(marker);
         const prefix = normalize(prefixRaw);
         const suffix = normalize(suffixRaw);
-        const target = item.stem && item.stem.length >= 4 ? item.stem : item.name;
-        const matchesPrefix = !prefix || target.includes(prefix);
-        const matchesSuffix = !suffix || target.includes(suffix);
-        return matchesPrefix && matchesSuffix;
+        const prefixParts = prefix.split(' ').filter(Boolean);
+        const suffixParts = suffix.split(' ').filter(Boolean);
+        const prefixes = [prefix, prefixParts[prefixParts.length - 1] || ''];
+        const suffixes = [suffix, suffixParts[0] || ''];
+        const targets = [item.name, item.stem && item.stem.length >= 4 ? item.stem : ''].filter(Boolean);
+        return targets.some((target) => {
+          const matchesPrefix = prefixes.some((part) => !part || target.includes(part));
+          const matchesSuffix = suffixes.some((part) => !part || target.includes(part));
+          return matchesPrefix && matchesSuffix;
+        });
       }
       return false;
     };

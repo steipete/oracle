@@ -391,6 +391,19 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
   });
 
+  test("attachment ready check tolerates ellipsized chip names with extensions", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "paper1…v3.md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: paper1…v3.md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
+  });
+
   test("attachment ready check still rejects prompt-only filename matches", () => {
     const fileName = "oracle-diagnostic-unique-20260521.txt";
     const document = new FakeDocument([
