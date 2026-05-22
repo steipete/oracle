@@ -339,6 +339,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     return {
       name: normalized,
       stem: normalized.replace(/\.[a-z0-9]{1,10}$/i, ""),
+      extension: normalized.match(/(\.[a-z0-9]{1,10})$/i)?.[1] ?? "",
     };
   });
   const namesLiteral = JSON.stringify(attachmentExpectations);
@@ -350,7 +351,15 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       const text = normalize(value);
       if (!text) return false;
       if (text.includes(item.name)) return true;
-      if (item.stem && item.stem.length >= 4 && text.includes(item.stem)) return true;
+      if (
+        item.stem &&
+        item.stem.length >= 4 &&
+        item.extension &&
+        text.includes(item.stem + '(') &&
+        text.includes(item.extension)
+      ) {
+        return true;
+      }
       if (text.includes('…') || text.includes('...')) {
         const marker = text.includes('…') ? '…' : '...';
         const [prefixRaw, suffixRaw] = text.split(marker);
@@ -472,17 +481,28 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     );
     // Count-based fallback: if we cannot match names individually (ChatGPT may strip
     // the filename out of attribute-readable text into a deeply nested span), but we
-    // do see at least as many distinct chip-shaped nodes as attachments we uploaded,
-    // and a sibling "Remove" affordance exists per chip, trust the upload.
-    const removeAffordanceCount = chipNodes.filter((node) => {
-      const aria = (node.getAttribute?.('aria-label') ?? '').toLowerCase();
-      if (aria.includes('remove')) return true;
-      const removeSibling = node.querySelector?.(
+    // do see at least as many distinct "Remove" affordances as attachments we
+    // uploaded, trust the upload without double-counting nested chip/remove nodes.
+    const removeAffordances = [];
+    const removeSeen = new Set();
+    for (const root of attachmentRoots) {
+      for (const node of Array.from(root.querySelectorAll(
         '[aria-label*="Remove" i], [aria-label*="remove" i], button[aria-label*="Remove" i], button[aria-label*="remove" i]',
-      );
-      return Boolean(removeSibling);
-    }).length;
-    const countReady = chipNodes.length >= expected.length && removeAffordanceCount >= expected.length;
+      ))) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.closest('textarea,[contenteditable="true"]')) continue;
+        const aria = (node.getAttribute?.('aria-label') ?? '').toLowerCase();
+        const fileSpecific = aria.includes('remove file') || aria.includes('remove attachment');
+        const attachmentOwner = node.closest(
+          '[data-testid*="chip"], [data-testid*="attachment"], [data-testid*="upload"], [data-testid*="file"]',
+        );
+        if (!fileSpecific && !attachmentOwner) continue;
+        if (removeSeen.has(node)) continue;
+        removeSeen.add(node);
+        removeAffordances.push(node);
+      }
+    }
+    const countReady = removeAffordances.length >= expected.length;
 
     return chipsReady || inputsReady || countReady;
   })()`;

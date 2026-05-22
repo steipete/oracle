@@ -145,12 +145,12 @@ describe("prompt composer attachment expressions", () => {
     // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching on the
     // expected basename stem keeps the send check aligned with the upload check.
     expect(expression).toContain("item.stem");
-    expect(expression).toContain("text.includes(item.stem)");
+    expect(expression).toContain("text.includes(item.stem + '(')");
     // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
     // see at least as many chip-shaped nodes (each with a Remove affordance) as we
     // uploaded.
     expect(expression).toContain("countReady");
-    expect(expression).toContain("removeAffordanceCount");
+    expect(expression).toContain("removeAffordances");
   });
 
   test("attachment ready check stays scoped to the active composer", () => {
@@ -251,6 +251,58 @@ describe("prompt composer attachment expressions", () => {
     ]);
 
     expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check does not let one duplicate-renamed chip satisfy same-stem files", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README(1).md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README(1).md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md", "README.txt"], document)).toBe(false);
+  });
+
+  test("attachment ready count fallback counts remove affordances inside one wrapper", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-list" }, [
+          new FakeElement("div", { "data-testid": "attachment-chip" }, [
+            new FakeElement("button", { "aria-label": "Remove file 1" }),
+          ]),
+          new FakeElement("div", { "data-testid": "attachment-chip" }, [
+            new FakeElement("button", { "aria-label": "Remove file 2" }),
+          ]),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback accepts generic remove controls under chips", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("button", { "aria-label": "Remove" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback ignores unrelated remove controls", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("button", { "aria-label": "Remove item" }),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(false);
   });
 
   test("attachment ready check tolerates ellipsized chip names", () => {
