@@ -357,6 +357,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       .map((selector) => document.querySelector(selector))
       .find(Boolean);
     const composer =
+      sendButton?.closest?.('[data-testid*="composer"]:not(button)') ||
       sendButton?.closest?.('form') ||
       document.querySelector('[data-testid*="composer"]:not(button)') ||
       document.querySelector('form') ||

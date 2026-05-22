@@ -198,6 +198,26 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
   });
 
+  test("attachment ready check uses send button composer wrapper before its form", () => {
+    const fileName = "oracle-diagnostic-unique-20260521.txt";
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], fileName),
+          new FakeElement("button", { "aria-label": `Remove file 1: ${fileName}` }),
+        ]),
+        new FakeElement("form", {}, [
+          new FakeElement("button", {
+            "aria-label": "Send prompt",
+            "data-testid": "send-button",
+          }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
+  });
+
   test("attachment ready check still rejects prompt-only filename matches", () => {
     const fileName = "oracle-diagnostic-unique-20260521.txt";
     const document = new FakeDocument([
