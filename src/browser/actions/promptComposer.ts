@@ -401,9 +401,13 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
         if (prefixCandidates.length === 0 || suffixCandidates.length === 0) return false;
         const targets = [item.name, item.stem && item.stem.length >= 4 ? item.stem : ''].filter(Boolean);
         return targets.some((target) => {
-          return (
-            prefixCandidates.some((part) => target.startsWith(part)) &&
-            suffixCandidates.some((part) => target.endsWith(part))
+          return prefixCandidates.some((prefixPart) =>
+            suffixCandidates.some((suffixPart) => {
+              const strongEnough =
+                suffixPart.length >= 2 &&
+                (prefixPart.length >= 3 || (prefixPart.length >= 2 && suffixPart.length >= 4));
+              return strongEnough && target.startsWith(prefixPart) && target.endsWith(suffixPart);
+            }),
           );
         });
       }

@@ -443,6 +443,32 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["scrapegoat.md"], document)).toBe(false);
   });
 
+  test("attachment ready check rejects ambiguous short ellipsized prefixes", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "a…md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: a…md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["anything.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check accepts short ellipsized prefixes with strong suffixes", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "qa…v1.md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: qa…v1.md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["qa-quarterly-report-v1.md"], document)).toBe(true);
+  });
+
   test("attachment ready count fallback allows prefix-only ellipsized labels", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
