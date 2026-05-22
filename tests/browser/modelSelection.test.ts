@@ -408,14 +408,23 @@ describe("browser model selection matchers", () => {
     // Bare 5.5 picker testid must NOT leak in — that would cause the Instant
     // request to match the default "Thinking 5.5" row.
     expect(testIdTokens).not.toContain("model-switcher-gpt-5-5");
-    expect(testIdTokens).not.toContain("gpt-5-5");
-    expect(testIdTokens).not.toContain("gpt55");
+    expect(testIdTokens).toContain("gpt-5-5");
+    expect(testIdTokens).toContain("gpt55");
   });
 
   it("hard-rejects non-Instant candidates when targeting Instant", () => {
     const expression = buildModelSelectionExpressionForTest("GPT-5.5 Instant");
     expect(expression).toContain("const candidateHasInstant =");
     expect(expression).toContain("if (wantsInstant && !candidateHasInstant) return 0;");
+  });
+
+  it("selects the observed bare GPT-5.5 row when its label is Instant", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("GPT-5.5 Instant", {
+        label: "Instant",
+        testId: "model-switcher-gpt-5-5",
+      }),
+    ).resolves.toEqual({ status: "switched", label: "Instant" });
   });
 
   it("closes the menu after a successful selection path", () => {
@@ -668,9 +677,9 @@ describe("browser model selection matchers", () => {
       allowBlank: false,
     });
     expect(buildComposerSignalMatchersForTest("GPT-5.2 Instant")).toEqual({
-      includesAny: [],
+      includesAny: ["instant"],
       excludesAny: ["thinking", "pro"],
-      allowBlank: true,
+      allowBlank: false,
     });
   });
 

@@ -314,6 +314,9 @@ function buildModelSelectionExpression(
       ) {
         return true;
       }
+      if (wantsInstant && desiredVersion === '5-5' && normalizedLabel === 'instant') {
+        return true;
+      }
       if (
         wantsPro &&
         hasProComposerPill() &&
@@ -755,7 +758,7 @@ function buildComposerSignalMatchers(targetModel: string): ComposerSignalMatcher
     return { includesAny: ["thinking"], excludesAny: ["pro"], allowBlank: false };
   }
   if (normalized.includes("instant")) {
-    return { includesAny: [], excludesAny: ["thinking", "pro"], allowBlank: true };
+    return { includesAny: ["instant"], excludesAny: ["thinking", "pro"], allowBlank: false };
   }
   return { includesAny: [], excludesAny: ["thinking", "pro"], allowBlank: true };
 }
@@ -814,11 +817,9 @@ function buildModelMatchersLiteral(targetModel: string): {
     if (!base.includes("pro") && !base.includes("thinking") && !base.includes("instant")) {
       testIdTokens.add("model-switcher-gpt-5-5");
     }
-    if (!base.includes("instant")) {
-      testIdTokens.add("gpt-5-5");
-      testIdTokens.add("gpt5-5");
-      testIdTokens.add("gpt55");
-    }
+    testIdTokens.add("gpt-5-5");
+    testIdTokens.add("gpt5-5");
+    testIdTokens.add("gpt55");
   }
   // Numeric variations (5.4 ↔ 54 ↔ gpt-5-4)
   if (base.includes("5.4") || base.includes("5-4") || base.includes("54")) {
