@@ -146,7 +146,11 @@ const evaluateMenuModelSelectionExpression = async (
         modelButton.textContent = item.label;
       }),
   );
-  const menu = new FakeElement(options.map((item) => item.label).join(" "), { role: "menu" }, modelOptions);
+  const menu = new FakeElement(
+    options.map((item) => item.label).join(" "),
+    { role: "menu" },
+    modelOptions,
+  );
   const menus = [...extraMenus, menu];
   const documentStub = {
     querySelector: (selector: string) => {
@@ -576,11 +580,9 @@ describe("browser model selection matchers", () => {
     };
 
     await expect(
-      evaluateMenuModelSelectionExpression(
-        "Thinking 5.5",
-        { label: "Thinking Heavy" },
-        [markedPickerMenu],
-      ),
+      evaluateMenuModelSelectionExpression("Thinking 5.5", { label: "Thinking Heavy" }, [
+        markedPickerMenu,
+      ]),
     ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
   });
 
