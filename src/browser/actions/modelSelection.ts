@@ -578,10 +578,27 @@ function buildModelSelectionExpression(
 
     const hasModelSwitcherItem = (node) =>
       Boolean(node?.querySelector?.('[data-testid^="model-switcher-"]'));
+    const hasModelLikeMenuText = (node) => {
+      const text = normalizeText(node?.textContent ?? '');
+      return (
+        text.includes('instant') ||
+        text.includes('thinking') ||
+        labelHasProWord(text) ||
+        text.includes('5 5') ||
+        text.includes('5 4') ||
+        text.includes('5 2') ||
+        text.includes('gpt 5') ||
+        text.includes('gpt5')
+      );
+    };
     const queryPickerMenus = () => {
       const menus = Array.from(document.querySelectorAll(${menuContainerLiteral}));
       const pickerMenus = menus.filter(hasModelSwitcherItem);
-      return pickerMenus.length > 0 ? pickerMenus : menus;
+      if (pickerMenus.length === 0) return menus;
+      const textFallbackMenus = menus.filter(
+        (menu) => !pickerMenus.includes(menu) && hasModelLikeMenuText(menu),
+      );
+      return pickerMenus.concat(textFallbackMenus);
     };
 
     const findBestOption = () => {

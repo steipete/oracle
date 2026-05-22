@@ -146,7 +146,7 @@ const evaluateMenuModelSelectionExpression = async (
         modelButton.textContent = item.label;
       }),
   );
-  const menu = new FakeElement("", { role: "menu" }, modelOptions);
+  const menu = new FakeElement(options.map((item) => item.label).join(" "), { role: "menu" }, modelOptions);
   const menus = [...extraMenus, menu];
   const documentStub = {
     querySelector: (selector: string) => {
@@ -249,7 +249,7 @@ const createNonPickerMenuForTest = (labels: string[]): unknown => {
   }
 
   return new FakeElement(
-    "",
+    labels.join(" "),
     { "data-radix-collection-root": "" },
     labels.map((label) => new FakeElement(label)),
   );
@@ -527,7 +527,8 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("Thinking 5.5");
     expect(expression).toContain("const queryPickerMenus = () =>");
     expect(expression).toContain("'[data-testid^=\"model-switcher-\"]'");
-    expect(expression).toContain("return pickerMenus.length > 0 ? pickerMenus : menus;");
+    expect(expression).toContain("const textFallbackMenus = menus.filter(");
+    expect(expression).toContain("return pickerMenus.concat(textFallbackMenus);");
     expect(expression).toContain("const menus = queryPickerMenus();");
     expect(expression).toContain("const menuOpen = queryPickerMenus().length > 0;");
   });
@@ -552,6 +553,23 @@ describe("browser model selection matchers", () => {
   it("falls back to text-only model picker rows when testids are absent", async () => {
     await expect(
       evaluateMenuModelSelectionExpression("Thinking 5.5", { label: "Thinking Heavy" }),
+    ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
+  });
+
+  it("keeps model-looking text fallback roots when a marked picker root is present", async () => {
+    const markedPickerMenu = {
+      textContent: "Instant",
+      querySelector: (selector: string) =>
+        selector.includes("model-switcher-") ? { textContent: "Instant" } : null,
+      querySelectorAll: () => [],
+    };
+
+    await expect(
+      evaluateMenuModelSelectionExpression(
+        "Thinking 5.5",
+        { label: "Thinking Heavy" },
+        [markedPickerMenu],
+      ),
     ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
   });
 
