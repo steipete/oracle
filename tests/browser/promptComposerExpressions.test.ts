@@ -122,10 +122,8 @@ function evaluateAttachmentReadyExpression(
 describe("prompt composer attachment expressions", () => {
   test("attachment ready check does not match prompt text", () => {
     const expression = buildAttachmentReadyExpressionForTest(["oracle-attach-verify.txt"]);
-    expect(expression).toContain("sendButton?.closest?.('form')");
-    expect(expression).toContain(
-      "document.querySelector('[data-testid*=\"composer\"]:not(button)')",
-    );
+    expect(expression).toContain("closestComposerRoot(sendButton)");
+    expect(expression).toContain("firstComposerRoot()");
     expect(expression).not.toContain("document.querySelector('[data-testid*=\"composer\"]') ||");
     expect(expression).toContain("attachmentRoots");
     expect(expression).toContain('input[type="file"]');
@@ -207,6 +205,26 @@ describe("prompt composer attachment expressions", () => {
           new FakeElement("button", { "aria-label": `Remove file 1: ${fileName}` }),
         ]),
         new FakeElement("form", {}, [
+          new FakeElement("button", {
+            "aria-label": "Send prompt",
+            "data-testid": "send-button",
+          }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
+  });
+
+  test("attachment ready check skips footer action wrappers around send button", () => {
+    const fileName = "oracle-diagnostic-unique-20260521.txt";
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], fileName),
+          new FakeElement("button", { "aria-label": `Remove file 1: ${fileName}` }),
+        ]),
+        new FakeElement("div", { "data-testid": "composer-footer-actions" }, [
           new FakeElement("button", {
             "aria-label": "Send prompt",
             "data-testid": "send-button",

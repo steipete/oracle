@@ -356,10 +356,32 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     const sendButton = sendSelectors
       .map((selector) => document.querySelector(selector))
       .find(Boolean);
+    const isUsableComposerRoot = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      if (String(node.tagName || '').toLowerCase() === 'button') return false;
+      const testId = String(node.getAttribute?.('data-testid') || '').toLowerCase();
+      if (!testId.includes('composer')) return false;
+      return !(
+        testId.includes('footer') ||
+        testId.includes('action') ||
+        testId.includes('plus') ||
+        testId.includes('send')
+      );
+    };
+    const closestComposerRoot = (node) => {
+      let current = node instanceof HTMLElement ? node : null;
+      while (current) {
+        if (isUsableComposerRoot(current)) return current;
+        current = current.parentElement;
+      }
+      return null;
+    };
+    const firstComposerRoot = () =>
+      Array.from(document.querySelectorAll('[data-testid*="composer"]')).find(isUsableComposerRoot) || null;
     const composer =
-      sendButton?.closest?.('[data-testid*="composer"]:not(button)') ||
+      closestComposerRoot(sendButton) ||
       sendButton?.closest?.('form') ||
-      document.querySelector('[data-testid*="composer"]:not(button)') ||
+      firstComposerRoot() ||
       document.querySelector('form') ||
       document.body ||
       document;
