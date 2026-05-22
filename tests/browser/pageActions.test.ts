@@ -214,6 +214,7 @@ describe("ensureLoggedIn", () => {
       fetchStatus?: number;
       fetchStatuses?: number[];
       fetchBody?: string;
+      fetchBodies?: string[];
       pathname?: string;
       composerVisible?: boolean;
       appSignal?: "profile" | "history" | "model" | null;
@@ -224,6 +225,7 @@ describe("ensureLoggedIn", () => {
       fetchStatus = 200,
       fetchStatuses,
       fetchBody = "",
+      fetchBodies,
       pathname = "/",
       composerVisible = false,
       appSignal = null,
@@ -282,11 +284,13 @@ describe("ensureLoggedIn", () => {
       getComputedStyle: vi.fn(() => ({ display: "block", visibility: "visible" })),
     };
     const statuses = [...(fetchStatuses ?? [fetchStatus])];
+    const bodies = [...(fetchBodies ?? [fetchBody])];
     const fetch = vi.fn().mockImplementation(() => {
       const status = statuses.length > 1 ? statuses.shift() : statuses[0];
+      const body = bodies.length > 1 ? bodies.shift() : bodies[0];
       return Promise.resolve({
         status,
-        clone: () => ({ text: vi.fn().mockResolvedValue(fetchBody) }),
+        clone: () => ({ text: vi.fn().mockResolvedValue(body) }),
       });
     });
     const location = { href: `https://chatgpt.com${pathname}`, pathname };
@@ -463,6 +467,23 @@ describe("ensureLoggedIn", () => {
       ok: true,
       status: 403,
       cfBlocked: true,
+      appAuthenticated: true,
+    });
+  });
+
+  test("does not keep stale Cloudflare state after a later unauthorized response", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatuses: [403, 401],
+        fetchBodies: ["<html><body>cf-mitigated challenge from Cloudflare</body></html>", ""],
+        composerVisible: true,
+        appSignal: "profile",
+        probeTimeoutMs: 500,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      cfBlocked: false,
       appAuthenticated: true,
     });
   });

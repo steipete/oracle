@@ -601,7 +601,7 @@ function buildLoginProbeExpression(timeoutMs: number): string {
       appAuthenticated = hasAppAuthSignal();
       backend = await readBackendDetail();
       status = backend.status;
-      cfBlocked = cfBlocked || backend.cfBlocked;
+      cfBlocked = backend.cfBlocked;
       error = backend.error;
     }
 
