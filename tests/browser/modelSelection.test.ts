@@ -77,7 +77,8 @@ const evaluateImmediateModelSelectionExpression = (
 
 const evaluateMenuModelSelectionExpression = async (
   targetModel: string,
-  option: { label: string; testId: string },
+  option: { label: string; testId?: string } | Array<{ label: string; testId?: string }>,
+  extraMenus: unknown[] = [],
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -99,7 +100,14 @@ const evaluateMenuModelSelectionExpression = async (
       return this.attributes[name] ?? null;
     }
 
-    querySelector(_selector: string): FakeElement | null {
+    querySelector(selector: string): FakeElement | null {
+      if (selector.includes("model-switcher-")) {
+        return (
+          this.children.find((child) =>
+            child.getAttribute("data-testid")?.startsWith("model-switcher-"),
+          ) ?? null
+        );
+      }
       return null;
     }
 
@@ -131,10 +139,15 @@ const evaluateMenuModelSelectionExpression = async (
   const modelButton = new FakeElement("ChatGPT", {
     "data-testid": "model-switcher-dropdown-button",
   });
-  const modelOption = new FakeElement(option.label, { "data-testid": option.testId }, [], () => {
-    modelButton.textContent = option.label;
-  });
-  const menu = new FakeElement("", { role: "menu" }, [modelOption]);
+  const options = Array.isArray(option) ? option : [option];
+  const modelOptions = options.map(
+    (item) =>
+      new FakeElement(item.label, item.testId ? { "data-testid": item.testId } : {}, [], () => {
+        modelButton.textContent = item.label;
+      }),
+  );
+  const menu = new FakeElement(options.map((item) => item.label).join(" "), { role: "menu" }, modelOptions);
+  const menus = [...extraMenus, menu];
   const documentStub = {
     querySelector: (selector: string) => {
       if (selector.includes("model-switcher-dropdown-button")) {
@@ -147,7 +160,7 @@ const evaluateMenuModelSelectionExpression = async (
     },
     querySelectorAll: (selector: string) => {
       if (selector.includes('role="menu"') || selector.includes("data-radix")) {
-        return [menu];
+        return menus;
       }
       return [];
     },
@@ -192,6 +205,128 @@ const evaluateMenuModelSelectionExpression = async (
       FakeMouseEvent,
       FakeElement,
     ),
+  );
+};
+
+const createNonPickerMenuForTest = (labels: string[]): unknown => {
+  class FakeEventTarget {
+    dispatchEvent(_event: unknown): boolean {
+      return true;
+    }
+  }
+
+  class FakeElement extends FakeEventTarget {
+    constructor(
+      public textContent: string,
+      private readonly attributes: Readonly<Record<string, string>> = {},
+      private readonly children: readonly FakeElement[] = [],
+    ) {
+      super();
+    }
+
+    getAttribute(name: string): string | null {
+      return this.attributes[name] ?? null;
+    }
+
+    querySelector(selector: string): FakeElement | null {
+      if (selector.includes("model-switcher-")) {
+        return (
+          this.children.find((child) =>
+            child.getAttribute("data-testid")?.startsWith("model-switcher-"),
+          ) ?? null
+        );
+      }
+      return null;
+    }
+
+    querySelectorAll(_selector: string): FakeElement[] {
+      return [...this.children];
+    }
+
+    closest(_selector: string): FakeElement | null {
+      return null;
+    }
+  }
+
+  return new FakeElement(
+    labels.join(" "),
+    { "data-radix-collection-root": "" },
+    labels.map((label) => new FakeElement(label)),
+  );
+};
+
+const evaluateComposerPillFallbackExpression = (
+  targetModel: string,
+  pillLabel: string,
+): unknown => {
+  class FakeElement {
+    constructor(public textContent: string) {}
+
+    getAttribute(_name: string): string | null {
+      return null;
+    }
+
+    matches(selector: string): boolean {
+      return selector === "button.__composer-pill" || selector.includes("__composer-pill");
+    }
+
+    getBoundingClientRect(): { width: number; height: number } {
+      return { width: 64, height: 32 };
+    }
+  }
+
+  const pill = new FakeElement(pillLabel);
+  const expression = buildModelSelectionExpressionForTest(targetModel);
+  const documentStub = {
+    querySelector: (selector: string) => {
+      if (selector.includes("model-switcher-dropdown-button")) {
+        return null;
+      }
+      return null;
+    },
+    querySelectorAll: (selector: string) => {
+      if (selector.includes("button.__composer-pill")) {
+        return [pill];
+      }
+      return [];
+    },
+    title: "",
+    body: { innerText: "" },
+  };
+  const performanceStub = { now: () => 0 };
+  const windowStub = {
+    location: { href: "https://chatgpt.com/" },
+    getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+  };
+  const EventTargetStub = class {};
+  const MouseEventStub = class {};
+  const evaluate = new Function(
+    "document",
+    "performance",
+    "setTimeout",
+    "window",
+    "EventTarget",
+    "MouseEvent",
+    "HTMLElement",
+    `return ${expression};`,
+  ) as (
+    document: unknown,
+    performance: unknown,
+    setTimeout: unknown,
+    window: unknown,
+    EventTarget: unknown,
+    MouseEvent: unknown,
+    HTMLElement: unknown,
+  ) => unknown;
+
+  return evaluate(
+    documentStub,
+    performanceStub,
+    () => 0,
+    windowStub,
+    EventTargetStub,
+    MouseEventStub,
+    FakeElement,
   );
 };
 
@@ -341,6 +476,46 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("if (wantsPro && !candidateHasPro) return 0;");
   });
 
+  it("hard-rejects non-Thinking candidates when targeting Thinking", () => {
+    const expression = buildModelSelectionExpressionForTest("Thinking 5.5");
+    expect(expression).toContain("if (wantsThinking && !candidateHasThinking) return 0;");
+    expect(expression).not.toContain("candidateGpt55VisibleAlias ||\n        labelHasProWord");
+  });
+
+  it("selects Thinking instead of the generic Instant row for GPT-5.5", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("Thinking 5.5", [
+        { label: "Instant", testId: "model-switcher-gpt-5-5" },
+        { label: "Thinking Heavy", testId: "model-switcher-gpt-5-5-thinking" },
+      ]),
+    ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
+  });
+
+  it("recognizes effort-only labels as selected Thinking when no Pro pill is present", () => {
+    const result = evaluateImmediateModelSelectionExpression("Thinking 5.5", "Heavy", "Thinking");
+    expect(result).toEqual({ status: "already-selected", label: "Thinking" });
+  });
+
+  it("requires a current GPT-5.5 model signal before accepting effort-only labels", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.2-thinking");
+    expect(expression).toContain("desiredVersion === '5-5' &&");
+    expect(expression).toContain("isTargetGpt55VisibleAlias(readComposerModelSignal())");
+  });
+
+  it("accepts exact version row ids for Thinking models without Thinking in the label", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("Thinking 5.4", {
+        label: "GPT-5.4",
+        testId: "model-switcher-gpt-5-4",
+      }),
+    ).resolves.toEqual({ status: "switched", label: "GPT-5.4" });
+  });
+
+  it("finds the current model pill when ChatGPT omits aria-haspopup", () => {
+    const result = evaluateComposerPillFallbackExpression("Thinking 5.5", "Thinking Heavy");
+    expect(result).toEqual({ status: "already-selected", label: "Thinking Heavy" });
+  });
+
   it("does not treat per-row thinking effort controls as model options", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain("const isThinkingEffortControl = (node) =>");
@@ -348,13 +523,63 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("if (isThinkingEffortControl(option))");
   });
 
+  it("scopes model option scans to actual model picker menus", () => {
+    const expression = buildModelSelectionExpressionForTest("Thinking 5.5");
+    expect(expression).toContain("const queryPickerMenus = () =>");
+    expect(expression).toContain("'[data-testid^=\"model-switcher-\"]'");
+    expect(expression).toContain("const textFallbackMenus = menus.filter(");
+    expect(expression).toContain("return pickerMenus.concat(textFallbackMenus);");
+    expect(expression).toContain("const menus = queryPickerMenus();");
+    expect(expression).toContain("const menuOpen = queryPickerMenus().length > 0;");
+  });
+
+  it("ignores sidebar Radix collections when selecting model rows", async () => {
+    const sidebarMenu = createNonPickerMenuForTest([
+      "Search chats",
+      "Recents",
+      "Projects",
+      "New project",
+    ]);
+
+    await expect(
+      evaluateMenuModelSelectionExpression(
+        "Thinking 5.5",
+        { label: "Thinking Heavy", testId: "model-switcher-gpt-5-5-thinking" },
+        [sidebarMenu],
+      ),
+    ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
+  });
+
+  it("falls back to text-only model picker rows when testids are absent", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("Thinking 5.5", { label: "Thinking Heavy" }),
+    ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
+  });
+
+  it("keeps model-looking text fallback roots when a marked picker root is present", async () => {
+    const markedPickerMenu = {
+      textContent: "Instant",
+      querySelector: (selector: string) =>
+        selector.includes("model-switcher-") ? { textContent: "Instant" } : null,
+      querySelectorAll: () => [],
+    };
+
+    await expect(
+      evaluateMenuModelSelectionExpression(
+        "Thinking 5.5",
+        { label: "Thinking Heavy" },
+        [markedPickerMenu],
+      ),
+    ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
+  });
+
   it("does not accept a changed but wrong model selection as success", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain("resolve('target')");
     expect(expression).toContain("resolve('changed')");
     expect(expression).toContain("if (selectionSettled === 'target')");
-    expect(expression).not.toContain(
-      "optionIsSelected(match.node) || activeSelectionMatchesTarget()",
+    expect(expression).toContain(
+      "if (optionIsSelected(match.node) || activeSelectionMatchesTarget())",
     );
   });
 
@@ -444,12 +669,15 @@ describe("browser model selection matchers", () => {
     );
     expect(expression).toContain("const previousComposerSignal = readComposerModelSignal();");
     expect(expression).toContain("const previousButtonLabel = normalizeText(getButtonLabel());");
-    expect(expression).toContain(".trailing svg");
+    expect(expression).toContain("ariaChecked === 'true'");
+    expect(expression).not.toContain(".trailing svg");
   });
 
   it("finds the rewritten ChatGPT composer pill model button", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain('data-testid="model-switcher-dropdown-button"');
     expect(expression).toContain("button.__composer-pill[aria-haspopup=");
+    expect(expression).toContain("const findModelButton = () =>");
+    expect(expression).toContain("button.__composer-pill')).find(looksLikeModelPill)");
   });
 });
