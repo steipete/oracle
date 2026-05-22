@@ -266,6 +266,32 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["README.md", "README.txt"], document)).toBe(false);
   });
 
+  test("attachment ready check does not match extension prefixes in duplicate-renamed chips", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README(1).mdx"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README(1).mdx" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check does not match extension prefixes in visible chip names", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README.mdx"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README.mdx" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(false);
+  });
+
   test("attachment ready count fallback counts remove affordances inside one wrapper", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
@@ -288,6 +314,53 @@ describe("prompt composer attachment expressions", () => {
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement("div", { "data-testid": "attachment-chip" }, [
           new FakeElement("button", { "aria-label": "Remove" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback allows mixed visible and hidden chip labels", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "one.txt"),
+          new FakeElement("button", { "aria-label": "Remove file 1: one.txt" }),
+        ]),
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("button", { "aria-label": "Remove file 2" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback ignores prompt text extensions", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement(
+          "div",
+          { id: "prompt-textarea", contenteditable: "true", role: "textbox" },
+          [],
+          "Please compare this with notes.md",
+        ),
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("button", { "aria-label": "Remove file 1" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback ignores decimal size text", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "1.2 MB"),
+          new FakeElement("button", { "aria-label": "Remove file 1" }),
         ]),
       ]),
     ]);

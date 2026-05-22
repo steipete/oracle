@@ -347,16 +347,43 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     const expected = ${namesLiteral};
     const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
     const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    const hasNameBoundary = (text, name) => {
+      if (!name) return false;
+      let from = 0;
+      while (from < text.length) {
+        const index = text.indexOf(name, from);
+        if (index === -1) return false;
+        const previous = text[index - 1] || '';
+        const next = text[index + name.length] || '';
+        const previousOk = !previous || !/[a-z0-9]/.test(previous);
+        const nextOk = !next || !/[a-z0-9]/.test(next);
+        if (previousOk && nextOk) return true;
+        from = index + name.length;
+      }
+      return false;
+    };
+    const hasExtensionBoundary = (text, extension) => {
+      if (!extension) return false;
+      let from = 0;
+      while (from < text.length) {
+        const index = text.indexOf(extension, from);
+        if (index === -1) return false;
+        const next = text[index + extension.length] || '';
+        if (!next || !/[a-z0-9]/.test(next)) return true;
+        from = index + extension.length;
+      }
+      return false;
+    };
     const matchesExpected = (value, item) => {
       const text = normalize(value);
       if (!text) return false;
-      if (text.includes(item.name)) return true;
+      if (hasNameBoundary(text, item.name)) return true;
       if (
         item.stem &&
         item.stem.length >= 4 &&
         item.extension &&
         text.includes(item.stem + '(') &&
-        text.includes(item.extension)
+        hasExtensionBoundary(text, item.extension)
       ) {
         return true;
       }
@@ -422,7 +449,7 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     // Walk node + ancestors (up to grandparent) + descendants to gather every textual hint.
     // ChatGPT's current chip DOM nests the filename inside truncated child spans, so checking
     // only the node's own textContent/aria/title misses the match.
-    const collectLabelHaystack = (node) => {
+    const collectOwnLabelHaystack = (node) => {
       if (!node) return '';
       const pieces = [];
       const pushAttrs = (el) => {
@@ -439,15 +466,21 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       };
       pushAttrs(node);
       pushText(node);
-      const parent = node.parentElement;
-      pushAttrs(parent);
-      pushText(parent);
-      const grandparent = parent?.parentElement;
-      pushAttrs(grandparent);
-      pushText(grandparent);
       return pieces.join(' ').toLowerCase();
     };
-    const match = (node, item) => matchesExpected(collectLabelHaystack(node), item);
+    const collectLabelHaystack = (node) => {
+      if (!node) return '';
+      const pieces = [collectOwnLabelHaystack(node)];
+      const push = (el) => {
+        const text = collectOwnLabelHaystack(el);
+        if (text) pieces.push(text);
+      };
+      const parent = node.parentElement;
+      push(parent);
+      const grandparent = parent?.parentElement;
+      push(grandparent);
+      return pieces.join(' ').toLowerCase();
+    };
     const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
     const collectChipNodes = () => {
       const seen = new Set();
@@ -466,10 +499,26 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       return collected;
     };
     const chipNodes = collectChipNodes();
-
-    const chipsReady = expected.every((item) =>
-      chipNodes.some((node) => match(node, item)),
+    const chipLabels = chipNodes.map((node) => collectLabelHaystack(node));
+    const chipOwnLabels = chipNodes.map((node) => collectOwnLabelHaystack(node));
+    const chipOwnLabelsWithExtensions = chipOwnLabels.filter((label) =>
+      /\\.[a-z][a-z0-9]{0,9}(?:\\b|$)/i.test(label),
     );
+    const visibleExtensionLabelsMatchExpected = chipOwnLabelsWithExtensions.every((label) =>
+      expected.some((item) => matchesExpected(label, item)),
+    );
+
+    const chipsReady = (() => {
+      const used = new Set();
+      return expected.every((item) => {
+        const index = chipLabels.findIndex((label, candidateIndex) =>
+          !used.has(candidateIndex) && matchesExpected(label, item),
+        );
+        if (index === -1) return false;
+        used.add(index);
+        return true;
+      });
+    })();
     const inputsReady = expected.every((item) =>
       attachmentRoots.some((root) =>
         Array.from(root.querySelectorAll('input[type="file"]')).some((el) =>
@@ -502,7 +551,8 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
         removeAffordances.push(node);
       }
     }
-    const countReady = removeAffordances.length >= expected.length;
+    const countReady =
+      visibleExtensionLabelsMatchExpected && removeAffordances.length >= expected.length;
 
     return chipsReady || inputsReady || countReady;
   })()`;
