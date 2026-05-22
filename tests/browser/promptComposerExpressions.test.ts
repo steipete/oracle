@@ -404,6 +404,58 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
   });
 
+  test("attachment ready check tolerates ellipsized chip names with spaced prefixes", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "my paper…v3.md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: my paper…v3.md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["my paper_plan_v3.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check rejects ambiguous ellipsis placeholders", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "...md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: ...md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check rejects unrelated ellipsized chip names", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "ape…md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: ape…md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["scrapegoat.md"], document)).toBe(false);
+  });
+
+  test("attachment ready count fallback allows prefix-only ellipsized labels", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "paper1…"),
+          new FakeElement("button", { "aria-label": "Remove file 1" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
+  });
+
   test("attachment ready check still rejects prompt-only filename matches", () => {
     const fileName = "oracle-diagnostic-unique-20260521.txt";
     const document = new FakeDocument([

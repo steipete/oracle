@@ -394,13 +394,17 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
         const suffix = normalize(suffixRaw);
         const prefixParts = prefix.split(' ').filter(Boolean);
         const suffixParts = suffix.split(' ').filter(Boolean);
-        const prefixes = [prefix, prefixParts[prefixParts.length - 1] || ''];
-        const suffixes = [suffix, suffixParts[0] || ''];
+        const prefixCandidates = prefixParts.map((_, index) => prefixParts.slice(index).join(' '));
+        const suffixCandidates = suffixParts.map((_, index) =>
+          suffixParts.slice(0, suffixParts.length - index).join(' '),
+        );
+        if (prefixCandidates.length === 0 || suffixCandidates.length === 0) return false;
         const targets = [item.name, item.stem && item.stem.length >= 4 ? item.stem : ''].filter(Boolean);
         return targets.some((target) => {
-          const matchesPrefix = prefixes.some((part) => !part || target.includes(part));
-          const matchesSuffix = suffixes.some((part) => !part || target.includes(part));
-          return matchesPrefix && matchesSuffix;
+          return (
+            prefixCandidates.some((part) => target.startsWith(part)) &&
+            suffixCandidates.some((part) => target.endsWith(part))
+          );
         });
       }
       return false;
@@ -507,10 +511,16 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
     const chipNodes = collectChipNodes();
     const chipLabels = chipNodes.map((node) => collectLabelHaystack(node));
     const chipOwnLabels = chipNodes.map((node) => collectOwnLabelHaystack(node));
-    const chipOwnLabelsWithExtensions = chipOwnLabels.filter((label) =>
-      /\\.[a-z][a-z0-9]{0,9}(?:\\b|$)/i.test(label),
+    const hasEllipsisSuffix = (label) => {
+      const marker = label.includes('…') ? '…' : label.includes('...') ? '...' : '';
+      if (!marker) return false;
+      return normalize(label.split(marker)[1] || '').length > 0;
+    };
+    const chipOwnLabelsWithVisibleNames = chipOwnLabels.filter((label) =>
+      /\\.[a-z][a-z0-9]{0,9}(?:\\b|$)/i.test(label) ||
+      hasEllipsisSuffix(label),
     );
-    const visibleExtensionLabelsMatchExpected = chipOwnLabelsWithExtensions.every((label) =>
+    const visibleExtensionLabelsMatchExpected = chipOwnLabelsWithVisibleNames.every((label) =>
       expected.some((item) => matchesExpected(label, item)),
     );
 
