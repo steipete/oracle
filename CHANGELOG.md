@@ -9,6 +9,7 @@
 ### Fixed
 
 - Browser: resolve attachment readiness from the active ChatGPT composer so uploaded files do not false-fail with `attachment-send-not-ready` when the Send button is already clickable. Thanks @enieuwy!
+- Browser: scope ChatGPT model picker scans to the real picker menu while preserving text-only fallback rows, so sidebar/search Radix menus do not block model selection. Thanks @orbitingflea!
 - Browser: tolerate duplicate-renamed or ellipsized ChatGPT attachment chip names during pre-send readiness checks. Thanks @pdurlej!
 
 ## 0.12.1 — 2026-05-17
