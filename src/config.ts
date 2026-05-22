@@ -293,11 +293,30 @@ function sanitizeProjectConfig(config: UserConfig): UserConfig {
     }
 
     const chatgptUrl = browser.chatgptUrl ?? browser.url;
-    if (chatgptUrl !== undefined) {
+    if (
+      chatgptUrl === null ||
+      (chatgptUrl !== undefined && isTrustedProjectChatgptUrl(chatgptUrl))
+    ) {
       sanitized.browser.chatgptUrl = chatgptUrl;
       sanitized.browser.url = chatgptUrl;
     }
   }
 
   return sanitized;
+}
+
+function isTrustedProjectChatgptUrl(rawUrl: string): boolean {
+  if (!rawUrl) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:") {
+      return false;
+    }
+    return parsed.hostname === "chatgpt.com" || parsed.hostname === "chat.openai.com";
+  } catch {
+    return false;
+  }
 }

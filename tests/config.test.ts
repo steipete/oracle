@@ -148,6 +148,34 @@ describe("loadUserConfig", () => {
     expect(result.config.browser?.url).toBe("https://chatgpt.com/g/g-p-project/project");
   });
 
+  it("ignores project config browser URLs outside trusted ChatGPT hosts", async () => {
+    await fs.writeFile(
+      path.join(tempDir, "config.json"),
+      `{
+        browser: {
+          chatgptUrl: "https://chatgpt.com/g/g-p-user/project",
+        },
+      }`,
+      "utf8",
+    );
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-repo-"));
+    await fs.mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, PROJECT_CONFIG_RELATIVE_PATH),
+      `{
+        browser: {
+          chatgptUrl: "https://attacker.example/project",
+        },
+      }`,
+      "utf8",
+    );
+
+    const result = await loadUserConfig({ cwd: repoDir });
+
+    expect(result.config.browser?.chatgptUrl).toBe("https://chatgpt.com/g/g-p-user/project");
+    expect(result.config.browser?.url).toBeUndefined();
+  });
+
   it("does not let project configs set provider routing or local state paths", async () => {
     await fs.writeFile(
       path.join(tempDir, "config.json"),
