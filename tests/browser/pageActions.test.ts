@@ -212,18 +212,22 @@ describe("ensureLoggedIn", () => {
     labels: string[],
     options: {
       fetchStatus?: number;
+      fetchStatuses?: number[];
       fetchBody?: string;
       pathname?: string;
       composerVisible?: boolean;
       appSignal?: "profile" | "history" | "model" | null;
+      probeTimeoutMs?: number;
     } = {},
   ) {
     const {
       fetchStatus = 200,
+      fetchStatuses,
       fetchBody = "",
       pathname = "/",
       composerVisible = false,
       appSignal = null,
+      probeTimeoutMs = 0,
     } = options;
     class FakeHTMLElement {
       constructor(
@@ -277,12 +281,16 @@ describe("ensureLoggedIn", () => {
     const window = {
       getComputedStyle: vi.fn(() => ({ display: "block", visibility: "visible" })),
     };
-    const fetch = vi.fn().mockResolvedValue({
-      status: fetchStatus,
-      clone: () => ({ text: vi.fn().mockResolvedValue(fetchBody) }),
+    const statuses = [...(fetchStatuses ?? [fetchStatus])];
+    const fetch = vi.fn().mockImplementation(() => {
+      const status = statuses.length > 1 ? statuses.shift() : statuses[0];
+      return Promise.resolve({
+        status,
+        clone: () => ({ text: vi.fn().mockResolvedValue(fetchBody) }),
+      });
     });
     const location = { href: `https://chatgpt.com${pathname}`, pathname };
-    const expression = buildLoginProbeExpressionForTest(0);
+    const expression = buildLoginProbeExpressionForTest(probeTimeoutMs);
     const evaluate = new Function(
       "document",
       "window",
@@ -355,6 +363,21 @@ describe("ensureLoggedIn", () => {
     ).resolves.toMatchObject({
       ok: false,
       status: 401,
+      appAuthenticated: true,
+    });
+  });
+
+  test("retries transient unauthorized backend responses before failing", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatuses: [401, 200],
+        composerVisible: true,
+        appSignal: "profile",
+        probeTimeoutMs: 500,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 200,
       appAuthenticated: true,
     });
   });

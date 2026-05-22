@@ -592,17 +592,17 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     let error = backend.error;
     let domLoginCta = hasLoginCta();
     let appAuthenticated = hasAppAuthSignal();
+    const isRetryableStatus = () =>
+      status === 0 || status === 401 || status === 403 || status === 503 || status === 429;
     const settleDeadline = Date.now() + Math.min(${timeoutMs}, 2500);
-    while (!domLoginCta && !appAuthenticated && Date.now() < settleDeadline) {
+    while (!domLoginCta && status !== 200 && isRetryableStatus() && Date.now() < settleDeadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       domLoginCta = hasLoginCta();
       appAuthenticated = hasAppAuthSignal();
-      if (status === 0 || status === 401 || status === 403 || status === 503 || status === 429) {
-        backend = await readBackendDetail();
-        status = backend.status;
-        cfBlocked = cfBlocked || backend.cfBlocked;
-        error = backend.error;
-      }
+      backend = await readBackendDetail();
+      status = backend.status;
+      cfBlocked = cfBlocked || backend.cfBlocked;
+      error = backend.error;
     }
 
     const loginSignals = domLoginCta || onAuthPage;
