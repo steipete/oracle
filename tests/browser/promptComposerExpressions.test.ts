@@ -142,11 +142,15 @@ describe("prompt composer attachment expressions", () => {
     // Walks into ancestor and descendant text so filenames buried in nested spans are still found.
     expect(expression).toContain("collectLabelHaystack");
     expect(expression).toContain("parentElement");
+    // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching on the
+    // expected basename stem keeps the send check aligned with the upload check.
+    expect(expression).toContain("item.stem");
+    expect(expression).toContain("text.includes(item.stem + '(')");
     // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
     // see at least as many chip-shaped nodes (each with a Remove affordance) as we
     // uploaded.
     expect(expression).toContain("countReady");
-    expect(expression).toContain("removeAffordanceCount");
+    expect(expression).toContain("removeAffordances");
   });
 
   test("attachment ready check stays scoped to the active composer", () => {
@@ -234,6 +238,248 @@ describe("prompt composer attachment expressions", () => {
     ]);
 
     expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
+  });
+
+  test("attachment ready check tolerates duplicate-renamed chips", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README(1).md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README(1).md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check does not let one duplicate-renamed chip satisfy same-stem files", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README(1).md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README(1).md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md", "README.txt"], document)).toBe(false);
+  });
+
+  test("attachment ready check does not match extension prefixes in duplicate-renamed chips", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README(1).mdx"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README(1).mdx" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check does not match extension prefixes in visible chip names", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "README.mdx"),
+          new FakeElement("button", { "aria-label": "Remove file 1: README.mdx" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(false);
+  });
+
+  test("attachment ready count fallback counts remove affordances inside one wrapper", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-list" }, [
+          new FakeElement("div", { "data-testid": "attachment-chip" }, [
+            new FakeElement("button", { "aria-label": "Remove file 1" }),
+          ]),
+          new FakeElement("div", { "data-testid": "attachment-chip" }, [
+            new FakeElement("button", { "aria-label": "Remove file 2" }),
+          ]),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback accepts generic remove controls under chips", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("button", { "aria-label": "Remove" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback allows mixed visible and hidden chip labels", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "one.txt"),
+          new FakeElement("button", { "aria-label": "Remove file 1: one.txt" }),
+        ]),
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("button", { "aria-label": "Remove file 2" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback ignores prompt text extensions", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement(
+          "div",
+          { id: "prompt-textarea", contenteditable: "true", role: "textbox" },
+          [],
+          "Please compare this with notes.md",
+        ),
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("button", { "aria-label": "Remove file 1" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback ignores decimal size text", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "1.2 MB"),
+          new FakeElement("button", { "aria-label": "Remove file 1" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback ignores unrelated remove controls", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("button", { "aria-label": "Remove item" }),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(false);
+  });
+
+  test("attachment ready check tolerates ellipsized chip names", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "paper1…v3"),
+          new FakeElement("button", { "aria-label": "Remove file 1: paper1…v3" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check tolerates ellipsized chip names with extensions", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "paper1…v3.md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: paper1…v3.md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check tolerates ellipsized chip names with spaced prefixes", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "my paper…v3.md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: my paper…v3.md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["my paper_plan_v3.md"], document)).toBe(true);
+  });
+
+  test("attachment ready check rejects ambiguous ellipsis placeholders", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "...md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: ...md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check rejects unrelated ellipsized chip names", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "ape…md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: ape…md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["scrapegoat.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check rejects ambiguous short ellipsized prefixes", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "a…md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: a…md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["anything.md"], document)).toBe(false);
+  });
+
+  test("attachment ready check accepts short ellipsized prefixes with strong suffixes", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "qa…v1.md"),
+          new FakeElement("button", { "aria-label": "Remove file 1: qa…v1.md" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["qa-quarterly-report-v1.md"], document)).toBe(true);
+  });
+
+  test("attachment ready count fallback allows prefix-only ellipsized labels", () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], "paper1…"),
+          new FakeElement("button", { "aria-label": "Remove file 1" }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
   });
 
   test("attachment ready check still rejects prompt-only filename matches", () => {
