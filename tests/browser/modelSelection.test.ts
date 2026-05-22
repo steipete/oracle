@@ -408,6 +408,14 @@ describe("browser model selection matchers", () => {
     // Bare 5.5 picker testid must NOT leak in — that would cause the Instant
     // request to match the default "Thinking 5.5" row.
     expect(testIdTokens).not.toContain("model-switcher-gpt-5-5");
+    expect(testIdTokens).not.toContain("gpt-5-5");
+    expect(testIdTokens).not.toContain("gpt55");
+  });
+
+  it("hard-rejects non-Instant candidates when targeting Instant", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.5 Instant");
+    expect(expression).toContain("const candidateHasInstant =");
+    expect(expression).toContain("if (wantsInstant && !candidateHasInstant) return 0;");
   });
 
   it("closes the menu after a successful selection path", () => {

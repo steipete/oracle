@@ -506,9 +506,12 @@ function buildModelSelectionExpression(
         labelHasProWord(normalizedText) ||
         normalizedText.includes('proresearch') ||
         normalizedTestId.includes('pro');
+      const candidateHasInstant =
+        normalizedText.includes('instant') || normalizedTestId.includes('instant');
       if (wantsPro && candidateHasThinking) return 0;
       if (wantsPro && candidateHasLegacyProVersion) return 0;
       if (wantsPro && !candidateHasPro) return 0;
+      if (wantsInstant && !candidateHasInstant) return 0;
       if (wantsThinking && candidateHasPro) return 0;
       if (wantsThinking && !candidateHasThinking) return 0;
       if (desiredVersion === '5-5' && normalizedText && !candidateGpt55VisibleAlias) {
@@ -811,9 +814,11 @@ function buildModelMatchersLiteral(targetModel: string): {
     if (!base.includes("pro") && !base.includes("thinking") && !base.includes("instant")) {
       testIdTokens.add("model-switcher-gpt-5-5");
     }
-    testIdTokens.add("gpt-5-5");
-    testIdTokens.add("gpt5-5");
-    testIdTokens.add("gpt55");
+    if (!base.includes("instant")) {
+      testIdTokens.add("gpt-5-5");
+      testIdTokens.add("gpt5-5");
+      testIdTokens.add("gpt55");
+    }
   }
   // Numeric variations (5.4 ↔ 54 ↔ gpt-5-4)
   if (base.includes("5.4") || base.includes("5-4") || base.includes("54")) {
