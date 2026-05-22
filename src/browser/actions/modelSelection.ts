@@ -566,8 +566,11 @@ function buildModelSelectionExpression(
 
     const hasModelSwitcherItem = (node) =>
       Boolean(node?.querySelector?.('[data-testid^="model-switcher-"]'));
-    const queryPickerMenus = () =>
-      Array.from(document.querySelectorAll(${menuContainerLiteral})).filter(hasModelSwitcherItem);
+    const queryPickerMenus = () => {
+      const menus = Array.from(document.querySelectorAll(${menuContainerLiteral}));
+      const pickerMenus = menus.filter(hasModelSwitcherItem);
+      return pickerMenus.length > 0 ? pickerMenus : menus;
+    };
 
     const findBestOption = () => {
       // Walk through every menu item and keep whichever earns the highest score.

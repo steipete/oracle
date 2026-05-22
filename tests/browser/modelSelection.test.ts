@@ -77,7 +77,7 @@ const evaluateImmediateModelSelectionExpression = (
 
 const evaluateMenuModelSelectionExpression = async (
   targetModel: string,
-  option: { label: string; testId: string } | Array<{ label: string; testId: string }>,
+  option: { label: string; testId?: string } | Array<{ label: string; testId?: string }>,
   extraMenus: unknown[] = [],
 ): Promise<unknown> => {
   class FakeEventTarget {
@@ -142,7 +142,7 @@ const evaluateMenuModelSelectionExpression = async (
   const options = Array.isArray(option) ? option : [option];
   const modelOptions = options.map(
     (item) =>
-      new FakeElement(item.label, { "data-testid": item.testId }, [], () => {
+      new FakeElement(item.label, item.testId ? { "data-testid": item.testId } : {}, [], () => {
         modelButton.textContent = item.label;
       }),
   );
@@ -517,6 +517,7 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("Thinking 5.5");
     expect(expression).toContain("const queryPickerMenus = () =>");
     expect(expression).toContain("'[data-testid^=\"model-switcher-\"]'");
+    expect(expression).toContain("return pickerMenus.length > 0 ? pickerMenus : menus;");
     expect(expression).toContain("const menus = queryPickerMenus();");
     expect(expression).toContain("const menuOpen = queryPickerMenus().length > 0;");
   });
@@ -535,6 +536,12 @@ describe("browser model selection matchers", () => {
         { label: "Thinking Heavy", testId: "model-switcher-gpt-5-5-thinking" },
         [sidebarMenu],
       ),
+    ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
+  });
+
+  it("falls back to text-only model picker rows when testids are absent", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("Thinking 5.5", { label: "Thinking Heavy" }),
     ).resolves.toEqual({ status: "switched", label: "Thinking Heavy" });
   });
 
