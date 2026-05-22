@@ -183,6 +183,21 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
   });
 
+  test("attachment ready check prefers composer roots over unrelated forms", () => {
+    const fileName = "oracle-diagnostic-unique-20260521.txt";
+    const document = new FakeDocument([
+      new FakeElement("form", {}, [], "Search chats"),
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], fileName),
+          new FakeElement("button", { "aria-label": `Remove file 1: ${fileName}` }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression([fileName], document)).toBe(true);
+  });
+
   test("attachment ready check still rejects prompt-only filename matches", () => {
     const fileName = "oracle-diagnostic-unique-20260521.txt";
     const document = new FakeDocument([

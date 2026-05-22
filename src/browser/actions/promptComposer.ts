@@ -358,8 +358,8 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       .find(Boolean);
     const composer =
       sendButton?.closest?.('form') ||
-      document.querySelector('form') ||
       document.querySelector('[data-testid*="composer"]:not(button)') ||
+      document.querySelector('form') ||
       document.body ||
       document;
     // Walk node + ancestors (up to grandparent) + descendants to gather every textual hint.
