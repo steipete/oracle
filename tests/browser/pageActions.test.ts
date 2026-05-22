@@ -333,15 +333,29 @@ describe("ensureLoggedIn", () => {
   test("accepts a blocked backend probe when authenticated app DOM is visible", async () => {
     await expect(
       runLoginProbeForLabels([], {
-        fetchStatus: 401,
+        fetchStatus: 429,
         composerVisible: true,
         appSignal: "profile",
       }),
     ).resolves.toMatchObject({
       ok: true,
-      status: 401,
+      status: 429,
       appAuthenticated: true,
       domLoginCta: false,
+    });
+  });
+
+  test("does not accept plain unauthorized backend responses with stale app DOM", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 401,
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      appAuthenticated: true,
     });
   });
 

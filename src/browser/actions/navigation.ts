@@ -606,14 +606,12 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     }
 
     const loginSignals = domLoginCta || onAuthPage;
-    // Accept the SPA-level signal whenever the API path is unreachable (CF challenge, 401
-    // Unauthorized from a backend that requires a SPA-only bearer/CSRF, 5xx, throttling,
-    // network shaping) but the DOM shows an authenticated logged-in shell. 401 is
-    // explicitly included because /backend-api/me increasingly returns it for fetch-from-page
-    // calls that lack the SPA's Authorization header even when the user is signed in.
+    // Accept the SPA-level signal only when the API path is blocked or unavailable
+    // (CF challenge, throttling, transient 5xx, network shaping) but the DOM shows
+    // an authenticated logged-in shell. Plain 401/403 remain authoritative because
+    // they can mean the ChatGPT session really expired.
     const apiBlocked =
       cfBlocked ||
-      status === 401 ||
       status === 429 ||
       status === 503 ||
       status === 0;
