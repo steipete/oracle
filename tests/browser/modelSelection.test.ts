@@ -496,6 +496,11 @@ describe("browser model selection matchers", () => {
     expect(result).toEqual({ status: "already-selected", label: "Heavy" });
   });
 
+  it("limits effort-only selected Thinking labels to current GPT-5.5 targets", () => {
+    const expression = buildModelSelectionExpressionForTest("gpt-5.2-thinking");
+    expect(expression).toContain("desiredVersion === '5-5' &&");
+  });
+
   it("finds the current model pill when ChatGPT omits aria-haspopup", () => {
     const result = evaluateComposerPillFallbackExpression("Thinking 5.5", "Heavy");
     expect(result).toEqual({ status: "already-selected", label: "Heavy" });

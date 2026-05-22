@@ -305,6 +305,7 @@ function buildModelSelectionExpression(
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
         wantsThinking &&
+        desiredVersion === '5-5' &&
         !hasProComposerPill() &&
         (normalizedLabel === 'extended' ||
           normalizedLabel === 'standard' ||
