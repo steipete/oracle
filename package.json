@@ -87,12 +87,12 @@
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.6.0",
-    "@typescript/native-preview": "7.0.0-dev.20260516.1",
-    "@vitest/coverage-v8": "4.1.6",
-    "devtools-protocol": "0.0.1629771",
+    "@typescript/native-preview": "7.0.0-dev.20260523.1",
+    "@vitest/coverage-v8": "4.1.7",
+    "devtools-protocol": "0.0.1634055",
     "es-toolkit": "^1.46.1",
     "esbuild": "^0.28.0",
-    "oxfmt": "0.50.0",
+    "oxfmt": "0.51.0",
     "oxlint": "^1.62.0",
     "puppeteer-core": "^25.0.2",
     "tsx": "^4.21.0",
@@ -113,7 +113,7 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1629771",
+      "devtools-protocol": "0.0.1634055",
       "vite": "7.3.2"
     },
     "onlyBuiltDependencies": [
