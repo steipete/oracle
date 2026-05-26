@@ -1,5 +1,27 @@
 import type { BrowserRuntimeMetadata } from "../sessionStore.js";
 
+/**
+ * True when the URL points at a specific ChatGPT conversation (`/c/<id>`) on
+ * chatgpt.com or chat.openai.com. Rejects home, project shell, and external
+ * URLs — anything else would be unsafe to auto-reopen in a persistent
+ * signed-in browser profile.
+ */
+export function isRecoverableChatGptConversationUrl(candidate: string | null | undefined): boolean {
+  const trimmed = candidate?.trim();
+  if (!trimmed) {
+    return false;
+  }
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") {
+      return false;
+    }
+    return /(?:^|\/)c\/[^/]+/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 export function hasRecoverableChatGptConversation(
   runtime: BrowserRuntimeMetadata | null | undefined,
 ): boolean {
@@ -9,17 +31,5 @@ export function hasRecoverableChatGptConversation(
   if (runtime.conversationId?.trim()) {
     return true;
   }
-  const tabUrl = runtime.tabUrl?.trim();
-  if (!tabUrl) {
-    return false;
-  }
-  try {
-    const url = new URL(tabUrl);
-    if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") {
-      return false;
-    }
-    return /(?:^|\/)c\/[^/]+/.test(url.pathname);
-  } catch {
-    return false;
-  }
+  return isRecoverableChatGptConversationUrl(runtime.tabUrl);
 }

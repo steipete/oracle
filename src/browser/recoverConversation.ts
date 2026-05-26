@@ -2,6 +2,7 @@ import { launch, type LaunchedChrome } from "chrome-launcher";
 import type { SessionMetadata } from "../sessionStore.js";
 import type { BrowserLogger } from "./types.js";
 import { defaultManualLoginProfileDir } from "./manualLoginProfile.js";
+import { isRecoverableChatGptConversationUrl } from "./reattachability.js";
 
 const DEFAULT_HYDRATION_DELAY_MS = 3_000;
 
@@ -12,13 +13,23 @@ export interface RecoveredConversation {
   chrome: LaunchedChrome;
 }
 
-function resolveRecoveryUrl(meta: SessionMetadata): string | null {
-  const runtime = meta?.browser?.runtime ?? {};
+/**
+ * Picks the URL to navigate the recovered Chrome tab to.
+ *
+ * Preference order matches `resolveSessionTabRef`: `harvest.url` (post-harvest,
+ * always a ChatGPT conversation URL when present) wins over `runtime.tabUrl`
+ * (the URL the original run last navigated to, which can be stale).
+ *
+ * Both candidates are gated by `isRecoverableChatGptConversationUrl` so a stale
+ * home / project shell URL or an unrelated external URL stored in metadata
+ * cannot navigate the persistent signed-in profile to the wrong page.
+ */
+export function resolveRecoveryUrl(meta: SessionMetadata): string | null {
   const harvest = meta?.browser?.harvest ?? {};
-  const candidates = [runtime.tabUrl, harvest.url];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.startsWith("http")) {
-      return candidate;
+  const runtime = meta?.browser?.runtime ?? {};
+  for (const candidate of [harvest.url, runtime.tabUrl]) {
+    if (isRecoverableChatGptConversationUrl(candidate)) {
+      return candidate as string;
     }
   }
   return null;
@@ -50,7 +61,8 @@ export async function recoverConversationTab(
   const url = resolveRecoveryUrl(meta);
   if (!url) {
     throw new Error(
-      "Cannot recover conversation: no saved tab URL in session metadata (browser.runtime.tabUrl).",
+      "Cannot recover conversation: session metadata has no recoverable ChatGPT conversation URL " +
+        "(expected browser.harvest.url or browser.runtime.tabUrl to be a chatgpt.com/c/<id> URL).",
     );
   }
   const userDataDir = resolveProfileDir(meta);

@@ -241,40 +241,40 @@ export async function harvestSessionBrowserOutput(
   const ref = options.browserTabRef ?? resolveSessionTabRef(meta);
   const recoverIfMissing = options.recoverIfMissing !== false;
 
-  let harvested: ChatGptTabSummary;
   let recoveredChrome: { kill: () => void } | null = null;
   try {
-    harvested = await harvestChatGptTab({
-      host: initialEndpoint.host,
-      port: initialEndpoint.port,
-      ref,
-      stallWindowMs: options.stallWindowMs,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const isMissingTabError =
-      message.includes("No ChatGPT tab matched") ||
-      message.includes("ECONNREFUSED") ||
-      message.includes("Could not connect");
-    if (!isMissingTabError || !recoverIfMissing) {
-      throw error;
+    let harvested: ChatGptTabSummary;
+    try {
+      harvested = await harvestChatGptTab({
+        host: initialEndpoint.host,
+        port: initialEndpoint.port,
+        ref,
+        stallWindowMs: options.stallWindowMs,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isMissingTabError =
+        message.includes("No ChatGPT tab matched") ||
+        message.includes("ECONNREFUSED") ||
+        message.includes("Could not connect");
+      if (!isMissingTabError || !recoverIfMissing) {
+        throw error;
+      }
+      console.log(
+        chalk.yellow(
+          `No live ChatGPT tab matched session "${sessionId}". Attempting recovery by reopening the saved conversation URL.`,
+        ),
+      );
+      const recovered = await recoverConversationTab(meta, (line) => console.log(line));
+      recoveredChrome = recovered.chrome;
+      harvested = await harvestChatGptTab({
+        host: recovered.host,
+        port: recovered.port,
+        ref: recovered.url,
+        stallWindowMs: options.stallWindowMs,
+      });
     }
-    console.log(
-      chalk.yellow(
-        `No live ChatGPT tab matched session "${sessionId}". Attempting recovery by reopening the saved conversation URL.`,
-      ),
-    );
-    const recovered = await recoverConversationTab(meta, (line) => console.log(line));
-    recoveredChrome = recovered.chrome;
-    harvested = await harvestChatGptTab({
-      host: recovered.host,
-      port: recovered.port,
-      ref: recovered.url,
-      stallWindowMs: options.stallWindowMs,
-    });
-  }
 
-  try {
     await persistHarvest(sessionId, meta, harvested);
     printHarvestSummary(sessionId, harvested);
     const output = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText ?? "";
@@ -311,38 +311,38 @@ export async function liveTailSessionBrowserOutput(
   let browserTabRef = options.browserTabRef ?? resolveSessionTabRef(meta);
   const recoverIfMissing = options.recoverIfMissing !== false;
   let recoveredChrome: { kill: () => void } | null = null;
-
-  // Probe once to see if the live tab is still alive; recover if not.
-  try {
-    await harvestChatGptTab({
-      host: endpoint.host,
-      port: endpoint.port,
-      ref: browserTabRef,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const isMissingTabError =
-      message.includes("No ChatGPT tab matched") ||
-      message.includes("ECONNREFUSED") ||
-      message.includes("Could not connect");
-    if (!isMissingTabError || !recoverIfMissing) {
-      throw error;
-    }
-    console.log(
-      chalk.yellow(
-        `No live ChatGPT tab matched session "${sessionId}". Attempting recovery by reopening the saved conversation URL.`,
-      ),
-    );
-    const recovered = await recoverConversationTab(meta, (line) => console.log(line));
-    recoveredChrome = recovered.chrome;
-    endpoint = { host: recovered.host, port: recovered.port };
-    browserTabRef = recovered.url;
-  }
   const stallThresholdMs = options.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS;
   let lastHash: string | null = null;
   let unchangedSince = Date.now();
 
   try {
+    // Probe once to see if the live tab is still alive; recover if not.
+    try {
+      await harvestChatGptTab({
+        host: endpoint.host,
+        port: endpoint.port,
+        ref: browserTabRef,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isMissingTabError =
+        message.includes("No ChatGPT tab matched") ||
+        message.includes("ECONNREFUSED") ||
+        message.includes("Could not connect");
+      if (!isMissingTabError || !recoverIfMissing) {
+        throw error;
+      }
+      console.log(
+        chalk.yellow(
+          `No live ChatGPT tab matched session "${sessionId}". Attempting recovery by reopening the saved conversation URL.`,
+        ),
+      );
+      const recovered = await recoverConversationTab(meta, (line) => console.log(line));
+      recoveredChrome = recovered.chrome;
+      endpoint = { host: recovered.host, port: recovered.port };
+      browserTabRef = recovered.url;
+    }
+
     while (true) {
       const harvested = await harvestChatGptTab({
         host: endpoint.host,
