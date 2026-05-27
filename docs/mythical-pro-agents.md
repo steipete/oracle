@@ -85,16 +85,16 @@ The captured report lands at `~/.oracle/sessions/<id>/artifacts/deep-research-re
 
 Pro / Thinking models in browser mode accept a `--browser-thinking-time` knob:
 
-| Level      | What it maps to in ChatGPT |
-| ---------- | -------------------------- |
-| `light`    | Quick                      |
-| `standard` | Default                    |
-| `extended` | Extended thinking          |
-| `heavy`    | Pro Extended               |
+| Level      | What it maps to in ChatGPT       |
+| ---------- | -------------------------------- |
+| `light`    | Quick                            |
+| `standard` | Default                          |
+| `extended` | Pro Extended / Thinking Extended |
+| `heavy`    | Heavy thinking                   |
 
 ```bash
 oracle --engine browser --model gpt-5.5-pro \
-  --browser-thinking-time heavy \
+  --browser-thinking-time extended \
   -p "Refactor this hot path" --file "src/render/**"
 ```
 

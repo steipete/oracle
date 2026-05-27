@@ -169,6 +169,7 @@ describe("summarizeModelRunsForConsult", () => {
         file: ["README.md"],
         browserAttachments: "always",
         browserBundleFiles: true,
+        browserBundleFormat: "zip",
         browserFollowUps: ["challenge", "final"],
       },
       browserConfig: {
@@ -193,12 +194,18 @@ describe("summarizeModelRunsForConsult", () => {
         thinkingTime: "extended",
         attachments: "always",
         bundleFiles: true,
+        bundleFormat: "zip",
         profileDir: "/tmp/oracle-profile",
       },
     });
     expect(resolved.guidance.join("\n")).toContain("signed-in ChatGPT profile");
+    expect(resolved.guidance.join("\n")).toContain("private Chrome profile");
+    expect(resolved.guidance.join("\n")).toContain("--browser-keep-browser");
     expect(formatConsultDryRunResolved(resolved).join("\n")).toContain(
       "browser thinking time: extended",
+    );
+    expect(formatConsultDryRunResolved(resolved).join("\n")).toContain(
+      "browser bundle format: zip",
     );
   });
 
@@ -239,7 +246,7 @@ describe("summarizeModelRunsForConsult", () => {
         resolvedEngine: "browser",
         model: "gpt-5.5-pro",
         browser: expect.objectContaining({
-          desiredModel: "GPT-5.5 Pro",
+          desiredModel: "Pro",
           thinkingTime: "extended",
           modelStrategy: "select",
         }),

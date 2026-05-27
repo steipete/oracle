@@ -36,6 +36,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.headless).toBe(false);
     expect(resolved.manualLogin).toBe(isWindows);
     expect(resolved.profileLockTimeoutMs).toBe(300_000);
+    expect(resolved.attachmentTimeoutMs).toBe(45_000);
     expect(resolved.maxConcurrentTabs).toBe(3);
     expect(resolved.researchMode).toBe("off");
     expect(resolved.archiveConversations).toBe("auto");
@@ -46,6 +47,7 @@ describe("resolveBrowserConfig", () => {
       url: "https://chatgpt.com/g/g-p-foo/project",
       timeoutMs: 123,
       inputTimeoutMs: 456,
+      attachmentTimeoutMs: 789,
       cookieSync: false,
       headless: true,
       desiredModel: "Custom",
@@ -60,6 +62,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.url).toBe("https://chatgpt.com/g/g-p-foo/project");
     expect(resolved.timeoutMs).toBe(123);
     expect(resolved.inputTimeoutMs).toBe(456);
+    expect(resolved.attachmentTimeoutMs).toBe(789);
     expect(resolved.cookieSync).toBe(false);
     expect(resolved.headless).toBe(true);
     expect(resolved.desiredModel).toBe("Custom");

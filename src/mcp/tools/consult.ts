@@ -77,6 +77,12 @@ const consultInputShape = {
     .boolean()
     .optional()
     .describe("Browser-only: bundle many files into a single upload (helps with upload limits)."),
+  browserBundleFormat: z
+    .enum(["text", "zip"])
+    .optional()
+    .describe(
+      'Browser-only: bundle upload format when browserBundleFiles is true or auto-bundling is needed. Defaults to "text"; "zip" preserves individual file names in one uploaded archive.',
+    ),
   browserThinkingTime: z
     .enum(["light", "standard", "extended", "heavy"])
     .optional()
@@ -167,6 +173,7 @@ const consultDryRunResolvedShape = z.object({
       researchMode: z.string().nullable().optional(),
       attachments: z.string().optional(),
       bundleFiles: z.boolean().optional(),
+      bundleFormat: z.enum(["text", "zip"]).optional(),
       keepBrowser: z.boolean().optional(),
       manualLogin: z.boolean().optional(),
       profileDir: z.string().nullable().optional(),
@@ -297,6 +304,18 @@ export function buildConsultDryRunResolved({
     guidance.push(
       "Browser engine uses the signed-in ChatGPT profile; run dryRun:true before live use.",
     );
+    if (browserConfig?.manualLogin) {
+      const profile = browserConfig.manualLoginProfileDir ?? "~/.oracle/browser-profile";
+      guidance.push(
+        `Manual-login browser mode uses Oracle's private Chrome profile at ${profile}, separate from your normal Chrome profile.`,
+      );
+      guidance.push(
+        `First-time setup: run oracle --engine browser --browser-manual-login --browser-keep-browser --browser-manual-login-profile-dir ${JSON.stringify(profile)} -p "HI", sign into ChatGPT in that window, then retry the consult.`,
+      );
+      guidance.push(
+        "If this profile is not signed in, non-setup MCP/browser runs fail fast instead of waiting for the full browser timeout.",
+      );
+    }
   }
   const desiredModel = browserConfig?.desiredModel ?? null;
   const thinkingTime = browserConfig?.thinkingTime ?? null;
@@ -331,6 +350,7 @@ export function buildConsultDryRunResolved({
             researchMode: browserConfig?.researchMode ?? null,
             attachments: runOptions.browserAttachments,
             bundleFiles: runOptions.browserBundleFiles,
+            bundleFormat: runOptions.browserBundleFormat,
             keepBrowser: browserConfig?.keepBrowser,
             manualLogin: browserConfig?.manualLogin,
             profileDir: browserConfig?.manualLoginProfileDir ?? null,
@@ -358,6 +378,7 @@ export function formatConsultDryRunResolved(details: ConsultDryRunResolved): str
     lines.push(`  browser research mode: ${details.browser.researchMode ?? "off"}`);
     lines.push(`  browser attachments: ${details.browser.attachments ?? "auto"}`);
     lines.push(`  browser bundle files: ${details.browser.bundleFiles ? "yes" : "no"}`);
+    lines.push(`  browser bundle format: ${details.browser.bundleFormat ?? "text"}`);
     lines.push(`  browser keep browser: ${details.browser.keepBrowser ? "yes" : "no"}`);
     lines.push(`  browser manual login: ${details.browser.manualLogin ? "yes" : "no"}`);
     if (details.browser.profileDir) {
@@ -380,7 +401,7 @@ export function registerConsultTool(server: McpServer): void {
     {
       title: "Run an oracle session",
       description:
-        'Run an Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. Browser GPT-5.5 Pro consults can take many minutes; use `dryRun:true` first when configuring an agent and inspect `sessions`/`oracle status` before retrying. For browser-based image/file uploads, set `browserAttachments:"always"`. Browser consults can include `browserFollowUps` for a multi-turn ChatGPT review in one conversation. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
+        'Run an Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. Browser GPT-5.5 Pro consults can take many minutes; use `dryRun:true` first when configuring an agent and inspect `sessions`/`oracle status` before retrying. Browser manual-login uses a private Oracle Chrome profile separate from the user\'s normal Chrome; dry-run output includes first-time setup guidance when that path is active. For browser-based image/file uploads, set `browserAttachments:"always"`. Browser consults can include `browserFollowUps` for a multi-turn ChatGPT review in one conversation. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
       // Cast to any to satisfy SDK typings across differing Zod versions.
       inputSchema: consultInputShape,
       outputSchema: consultOutputShape,
@@ -406,6 +427,7 @@ export function registerConsultTool(server: McpServer): void {
         browserModelLabel,
         browserAttachments,
         browserBundleFiles,
+        browserBundleFormat,
         browserThinkingTime,
         browserModelStrategy,
         browserResearchMode,
@@ -425,6 +447,7 @@ export function registerConsultTool(server: McpServer): void {
         search,
         browserAttachments,
         browserBundleFiles,
+        browserBundleFormat,
         browserFollowUps,
         userConfig,
         env: process.env,

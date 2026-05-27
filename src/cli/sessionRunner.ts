@@ -46,6 +46,7 @@ import { sanitizeOscProgress } from "./oscUtils.js";
 import { readFiles } from "../oracle/files.js";
 import { cwd as getCwd } from "node:process";
 import { resumeBrowserSession } from "../browser/reattach.js";
+import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
 import { estimateTokenCount } from "../browser/utils.js";
 import type { BrowserLogger } from "../browser/types.js";
 import { formatElapsed } from "../oracle/format.js";
@@ -140,6 +141,8 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: result.runtime,
           archive: result.archive,
+          modelSelection: result.modelSelection,
+          warnings: result.warnings,
         },
         artifacts: mergeArtifacts(sessionMeta.artifacts, result.artifacts),
         response: undefined,
@@ -505,6 +508,46 @@ export async function performSessionRun({
     if (connectionLost && mode === "browser") {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
+      const recoverableRuntime = runtime ?? sessionMeta.browser?.runtime;
+      if (
+        !hasRecoverableChatGptConversation(recoverableRuntime) &&
+        recoverableRuntime?.promptSubmitted !== true
+      ) {
+        log(
+          dim(
+            "Chrome disconnected before a ChatGPT conversation was created; marking session error.",
+          ),
+        );
+        if (modelForStatus) {
+          await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+            status: "error",
+            completedAt: new Date().toISOString(),
+            response: { status: "error", incompleteReason: "chrome-disconnected" },
+            error: {
+              category: userError.category,
+              message: userError.message,
+              details: userError.details,
+            },
+          });
+        }
+        await sessionStore.updateSession(sessionMeta.id, {
+          status: "error",
+          completedAt: new Date().toISOString(),
+          errorMessage: message,
+          mode,
+          browser: {
+            config: browserConfig,
+            runtime: recoverableRuntime,
+          },
+          response: { status: "error", incompleteReason: "chrome-disconnected" },
+          error: {
+            category: userError.category,
+            message: userError.message,
+            details: userError.details,
+          },
+        });
+        throw error;
+      }
       log(dim("Chrome disconnected before completion; keeping session running for reattach."));
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {

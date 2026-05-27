@@ -13,6 +13,7 @@ import { sessionStore, wait } from "../sessionStore.js";
 import { formatTokenCount, formatTokenValue } from "../oracle/runUtils.js";
 import type { BrowserLogger } from "../browser/types.js";
 import { resumeBrowserSession } from "../browser/reattach.js";
+import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
 import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
@@ -262,10 +263,19 @@ export async function attachSession(
     );
   const completedDeepResearchPlaceholder =
     metadata.status === "completed" && deepResearchPlaceholderCapture;
+  const hasRecoverableConversation = hasRecoverableChatGptConversation(runtime);
+  const hasLiveChromeFallback = Boolean(
+    (metadata.status === "running" || hasIncompleteCapture || completedDeepResearchPlaceholder) &&
+    (runtime?.chromePort || runtime?.chromeBrowserWSEndpoint || runtime?.chromeProfileRoot),
+  );
   const canReattach =
     (statusAllowsReattach || completedDeepResearchPlaceholder) &&
     metadata.mode === "browser" &&
     hasFallbackSessionInfo &&
+    (hasRecoverableConversation ||
+      runtime?.promptSubmitted ||
+      hasLiveChromeFallback ||
+      completedDeepResearchPlaceholder) &&
     (hasChromeDisconnect ||
       hasIncompleteCapture ||
       completedDeepResearchPlaceholder ||
@@ -326,6 +336,8 @@ export async function attachSession(
         browser: {
           config: metadata.browser?.config,
           runtime,
+          modelSelection: metadata.browser?.modelSelection,
+          warnings: metadata.browser?.warnings,
         },
         artifacts,
         response: { status: "completed" },
@@ -387,6 +399,13 @@ export async function attachSession(
       }
     } else if (metadata.model) {
       console.log(`Model: ${metadata.model}`);
+    }
+    const browserEvidence = formatBrowserEvidence(metadata);
+    if (browserEvidence) {
+      console.log("Browser evidence:");
+      for (const line of browserEvidence) {
+        console.log(dim(`- ${line}`));
+      }
     }
     if (metadata.artifacts && metadata.artifacts.length > 0) {
       console.log("Artifacts:");
@@ -623,6 +642,28 @@ export function formatUserErrorMetadata(metadata?: SessionUserErrorMetadata): st
     parts.push(`details=${JSON.stringify(metadata.details)}`);
   }
   return parts.length > 0 ? parts.join(" | ") : null;
+}
+
+export function formatBrowserEvidence(metadata: SessionMetadata): string[] | null {
+  const browser = metadata.browser;
+  if (!browser?.modelSelection && (!browser?.warnings || browser.warnings.length === 0)) {
+    return null;
+  }
+  const lines: string[] = [];
+  const evidence = browser.modelSelection;
+  if (evidence) {
+    const requested = evidence.requestedModel ?? "(none)";
+    const resolved = evidence.resolvedLabel ?? "(unavailable)";
+    const strategy = evidence.strategy ?? "(default)";
+    const verified = evidence.verified ? "yes" : "no";
+    lines.push(
+      `model requested=${requested}; resolved=${resolved}; status=${evidence.status}; strategy=${strategy}; verified=${verified}`,
+    );
+  }
+  for (const warning of browser.warnings ?? []) {
+    lines.push(`warning ${warning.code}: ${warning.message}`);
+  }
+  return lines.length > 0 ? lines : null;
 }
 
 export function buildReattachLine(metadata: SessionMetadata): string | null {

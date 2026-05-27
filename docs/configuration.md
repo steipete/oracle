@@ -30,6 +30,7 @@ Oracle reads an optional per-user config from `~/.oracle/config.json`. The file 
     debugPort: null, // fixed DevTools port (env: ORACLE_BROWSER_PORT / ORACLE_BROWSER_DEBUG_PORT)
     timeoutMs: 1200000,
     inputTimeoutMs: 30000,
+    attachmentTimeoutMs: 90000, // wait for file upload/readiness before clicking Send (default: 45s)
     cookieSyncWaitMs: 0, // wait (ms) before retrying cookie sync when Chrome cookies are empty/locked
     assistantRecheckDelayMs: 0, // wait this long after timeout, then retry capture (0 = disabled)
     assistantRecheckTimeoutMs: 120000, // time budget for the recheck attempt (default: 2m)

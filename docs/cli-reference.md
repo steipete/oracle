@@ -82,28 +82,29 @@ See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrout
 
 ## Browser mode
 
-| Flag                                                         | Purpose                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `--chatgpt-url <url>`                                        | Target a ChatGPT workspace / project folder.                 |
-| `--browser-model-strategy <select\|current\|ignore>`         | Control ChatGPT model picker.                                |
-| `--browser-manual-login`                                     | Use persistent profile + manual login (no Keychain).         |
-| `--browser-attach-running`                                   | Attach to your already-running Chrome via DevTools.          |
-| `--browser-tab <ref>`                                        | Reuse an existing tab (`current`, id, URL, title substring). |
-| `--browser-thinking-time <light\|standard\|extended\|heavy>` | Pro / Thinking model intensity.                              |
-| `--browser-research deep`                                    | Activate Deep Research mode.                                 |
-| `--browser-follow-up <prompt>`                               | Multi-turn in the same ChatGPT conversation.                 |
-| `--browser-port <port>`                                      | Pin Chrome DevTools port.                                    |
-| `--browser-inline-cookies[(-file)] <…>`                      | Supply cookies inline (no Keychain / Chrome).                |
-| `--browser-timeout`, `--browser-input-timeout`               | Overall / input timeouts (h/m/s/ms).                         |
-| `--browser-recheck-delay`, `--browser-recheck-timeout`       | Delayed retry after a timeout.                               |
-| `--browser-auto-reattach-delay/-interval/-timeout`           | Poll the existing tab when ChatGPT redirects mid-load.       |
-| `--browser-reuse-wait`                                       | Wait for shared Chrome profile before launching.             |
-| `--browser-profile-lock-timeout`                             | Wait for the manual-login profile lock.                      |
-| `--browser-max-concurrent-tabs`                              | Soft limit for shared-profile parallel runs (default 3).     |
-| `--browser-keep-browser`                                     | Keep the browser open after the run.                         |
-| `--browser-headless`, `--browser-hide-window`                | Visibility controls.                                         |
-| `--browser-attachments <auto\|never\|always>`                | Attach files inline vs upload.                               |
-| `--browser-chrome-path`, `--browser-cookie-path`             | Override Chrome / cookie store discovery (Linux / Windows).  |
+| Flag                                                                           | Purpose                                                      |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `--chatgpt-url <url>`                                                          | Target a ChatGPT workspace / project folder.                 |
+| `--browser-model-strategy <select\|current\|ignore>`                           | Control ChatGPT model picker.                                |
+| `--browser-manual-login`                                                       | Use persistent profile + manual login (no Keychain).         |
+| `--browser-attach-running`                                                     | Attach to your already-running Chrome via DevTools.          |
+| `--browser-tab <ref>`                                                          | Reuse an existing tab (`current`, id, URL, title substring). |
+| `--browser-thinking-time <light\|standard\|extended\|heavy>`                   | Pro / Thinking model intensity.                              |
+| `--browser-research deep`                                                      | Activate Deep Research mode.                                 |
+| `--browser-follow-up <prompt>`                                                 | Multi-turn in the same ChatGPT conversation.                 |
+| `--browser-port <port>`                                                        | Pin Chrome DevTools port.                                    |
+| `--browser-inline-cookies[(-file)] <…>`                                        | Supply cookies inline (no Keychain / Chrome).                |
+| `--browser-timeout`, `--browser-input-timeout`, `--browser-attachment-timeout` | Overall / input / attachment readiness timeouts (h/m/s/ms).  |
+| `--browser-recheck-delay`, `--browser-recheck-timeout`                         | Delayed retry after a timeout.                               |
+| `--browser-auto-reattach-delay/-interval/-timeout`                             | Poll the existing tab when ChatGPT redirects mid-load.       |
+| `--browser-reuse-wait`                                                         | Wait for shared Chrome profile before launching.             |
+| `--browser-profile-lock-timeout`                                               | Wait for the manual-login profile lock.                      |
+| `--browser-max-concurrent-tabs`                                                | Soft limit for shared-profile parallel runs (default 3).     |
+| `--browser-keep-browser`                                                       | Keep the browser open after the run.                         |
+| `--browser-headless`, `--browser-hide-window`                                  | Visibility controls.                                         |
+| `--browser-attachments <auto\|never\|always>`                                  | Attach files inline vs upload.                               |
+| `--browser-bundle-files`, `--browser-bundle-format <text\|zip>`                | Bundle browser uploads as text or ZIP.                       |
+| `--browser-chrome-path`, `--browser-cookie-path`                               | Override Chrome / cookie store discovery (Linux / Windows).  |
 
 See [Browser Mode](browser-mode.md) for usage.
 
@@ -133,17 +134,18 @@ See [Browser Mode](browser-mode.md) for usage.
 
 ## Environment variables
 
-| Var                           | Effect                                                  |
-| ----------------------------- | ------------------------------------------------------- |
-| `OPENAI_API_KEY`              | Enables OpenAI API mode.                                |
-| `AZURE_OPENAI_API_KEY` etc.   | Enables Azure mode (paired with endpoint / deployment). |
-| `GEMINI_API_KEY`              | Enables Gemini API mode.                                |
-| `ANTHROPIC_API_KEY`           | Enables Claude API mode.                                |
-| `OPENROUTER_API_KEY`          | Enables OpenRouter ids.                                 |
-| `ORACLE_HOME_DIR`             | Override `~/.oracle/` root.                             |
-| `ORACLE_MAX_FILE_SIZE_BYTES`  | Per-file size cap (default 1 MB).                       |
-| `ORACLE_BROWSER_COOKIES_JSON` | Inline ChatGPT cookies (JSON / base64).                 |
-| `ORACLE_BROWSER_COOKIES_FILE` | Path to cookies JSON.                                   |
+| Var                                 | Effect                                                  |
+| ----------------------------------- | ------------------------------------------------------- |
+| `OPENAI_API_KEY`                    | Enables OpenAI API mode.                                |
+| `AZURE_OPENAI_API_KEY` etc.         | Enables Azure mode (paired with endpoint / deployment). |
+| `GEMINI_API_KEY`                    | Enables Gemini API mode.                                |
+| `ANTHROPIC_API_KEY`                 | Enables Claude API mode.                                |
+| `OPENROUTER_API_KEY`                | Enables OpenRouter ids.                                 |
+| `ORACLE_HOME_DIR`                   | Override `~/.oracle/` root.                             |
+| `ORACLE_MAX_FILE_SIZE_BYTES`        | Per-file size cap (default 1 MB).                       |
+| `ORACLE_BROWSER_COOKIES_JSON`       | Inline ChatGPT cookies (JSON / base64).                 |
+| `ORACLE_BROWSER_COOKIES_FILE`       | Path to cookies JSON.                                   |
+| `ORACLE_BROWSER_ATTACHMENT_TIMEOUT` | Attachment upload/readiness timeout for browser mode.   |
 
 ## See also
 

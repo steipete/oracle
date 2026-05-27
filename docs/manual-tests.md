@@ -209,6 +209,10 @@ Run these four smoke tests whenever we touch browser automation:
    `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "List two reasons Markdown is handy"`
    Confirm the answer arrives (and only once) even if it takes ~2–3 minutes.
 
+2b. **GPT-5.5 Instant smoke**
+`pnpm run oracle -- --engine browser --model gpt-5.5-instant --prompt "Give me two short markdown bullet points about tables"`
+Expect a near-instant response (no Thinking spinner) and confirm the composer pill shows the "Instant" row, not "Thinking 5.5" or "Pro". Run after any change to the 5.5 picker tokens.
+
 3. **GPT-5.5 + attachment**
    Prepare `/tmp/browser-md.txt` with a short note, then run
    `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "Summarize the key idea from the attached note" --file /tmp/browser-md.txt`

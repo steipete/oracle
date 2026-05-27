@@ -206,7 +206,7 @@ export async function ensureLoggedIn(
   const probe = normalizeLoginProbe(outcome.result?.value);
   if (probe.ok) {
     logger(
-      `Login check passed (status=${probe.status}, domLoginCta=${Boolean(probe.domLoginCta)})`,
+      `Login check passed (status=${probe.status}, domLoginCta=${Boolean(probe.domLoginCta)}, appAuthenticated=${Boolean(probe.appAuthenticated)})`,
     );
     return;
   }
@@ -229,14 +229,14 @@ export async function ensureLoggedIn(
     logger(
       `Login retry after Welcome back failed (status=${retryProbe.status}, domLoginCta=${Boolean(
         retryProbe.domLoginCta,
-      )})`,
+      )}, appAuthenticated=${Boolean(retryProbe.appAuthenticated)})`,
     );
   }
 
   logger(
     `Login probe failed (status=${probe.status}, domLoginCta=${Boolean(probe.domLoginCta)}, onAuthPage=${Boolean(
       probe.onAuthPage,
-    )}, url=${probe.pageUrl ?? "n/a"}, error=${probe.error ?? "none"})`,
+    )}, appAuthenticated=${Boolean(probe.appAuthenticated)}, cfBlocked=${Boolean(probe.cfBlocked)}, url=${probe.pageUrl ?? "n/a"}, error=${probe.error ?? "none"})`,
   );
 
   const domLabel = probe.domLoginCta ? " Login button detected on page." : "";
@@ -457,6 +457,8 @@ type LoginProbeResult = {
   pageUrl?: string | null;
   domLoginCta?: boolean;
   onAuthPage?: boolean;
+  appAuthenticated?: boolean;
+  cfBlocked?: boolean;
 };
 
 function buildLoginProbeExpression(timeoutMs: number): string {
@@ -519,51 +521,111 @@ function buildLoginProbeExpression(timeoutMs: number): string {
       return false;
     };
 
-    const readBackendStatus = async () => {
+    // Learned 2026-05-16: ChatGPT's /backend-api/* endpoints now sit behind Cloudflare bot
+    // mitigation. Programmatic fetch from the page can return 403 with cf-mitigated:challenge
+    // even when the user is logged in via cookies and the SPA renders normally. Detect that
+    // case via the response body shape (Cloudflare interstitial HTML) and fall back to a
+    // DOM-based logged-in signal instead of looping waitForLogin until the 20-min timeout.
+    const isCloudflareBody = (body) => {
+      if (typeof body !== 'string' || body.length === 0) return false;
+      const head = body.slice(0, 2000).toLowerCase();
+      return (
+        head.includes('cf-mitigated') ||
+        head.includes('cloudflare') ||
+        (head.includes('<style global>') && head.includes('scale-appear'))
+      );
+    };
+    const readBackendDetail = async () => {
       try {
-        if (typeof fetch === 'function') {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), ${timeoutMs});
-          try {
-            // Credentials included so we see a 200 only when cookies are valid.
-            const response = await fetch('/backend-api/me', {
-              cache: 'no-store',
-              credentials: 'include',
-              signal: controller.signal,
-            });
-            return { status: response.status || 0, error: null };
-          } finally {
-            clearTimeout(timeout);
+        if (typeof fetch !== 'function') return { status: 0, cfBlocked: false, error: null };
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), ${timeoutMs});
+        try {
+          const response = await fetch('/backend-api/me', {
+            cache: 'no-store',
+            credentials: 'include',
+            signal: controller.signal,
+          });
+          let cfBlocked = false;
+          if (response.status === 403 || response.status === 503 || response.status === 429) {
+            try {
+              const text = await response.clone().text();
+              cfBlocked = isCloudflareBody(text);
+            } catch {}
           }
+          return { status: response.status || 0, cfBlocked, error: null };
+        } finally {
+          clearTimeout(timeout);
         }
       } catch (err) {
-        return { status: 0, error: err ? String(err) : 'unknown' };
+        return { status: 0, cfBlocked: false, error: err ? String(err) : 'unknown' };
       }
-      return { status: 0, error: null };
     };
 
-    let { status, error } = await readBackendStatus();
+    const hasAppAuthSignal = () => {
+      // Composer must be present and visible — the auth/login page never renders one.
+      if (typeof document.querySelector !== 'function') return false;
+      const composerSelectors = [
+        '#prompt-textarea',
+        '.ProseMirror',
+        'textarea[data-id="prompt-textarea"]',
+        'textarea[name="prompt-textarea"]',
+        '[contenteditable="true"][role="textbox"]',
+      ];
+      const composer = composerSelectors.map((s) => document.querySelector(s)).find(Boolean);
+      if (!composer) return false;
+      const rect = composer.getBoundingClientRect && composer.getBoundingClientRect();
+      const style = window.getComputedStyle(composer);
+      if (!rect || rect.width <= 0 || rect.height <= 0 || style.display === 'none' || style.visibility === 'hidden') {
+        return false;
+      }
+      // Logged-in users should have an account affordance or prior chat history. Generic
+      // composer/model pills also appear in guest sessions, so they are not auth proof.
+      const profileButton = document.querySelector('[data-testid="accounts-profile-button"]');
+      const historyItem = document.querySelector('[data-testid^="history-item-"]');
+      return Boolean(profileButton || historyItem);
+    };
+
+    let backend = await readBackendDetail();
+    let status = backend.status;
+    let cfBlocked = backend.cfBlocked;
+    let error = backend.error;
     let domLoginCta = hasLoginCta();
+    let appAuthenticated = hasAppAuthSignal();
+    const isRetryableStatus = () =>
+      status === 0 || status === 401 || status === 403 || status === 503 || status === 429;
     const settleDeadline = Date.now() + Math.min(${timeoutMs}, 2500);
-    while (!domLoginCta && Date.now() < settleDeadline) {
+    while (!domLoginCta && status !== 200 && isRetryableStatus() && Date.now() < settleDeadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       domLoginCta = hasLoginCta();
-      if (status === 0 || status === 401 || status === 403) {
-        const next = await readBackendStatus();
-        status = next.status;
-        error = next.error;
-      }
+      appAuthenticated = hasAppAuthSignal();
+      backend = await readBackendDetail();
+      status = backend.status;
+      cfBlocked = backend.cfBlocked;
+      error = backend.error;
     }
 
     const loginSignals = domLoginCta || onAuthPage;
+    // Accept the SPA-level signal only when the API path is blocked or unavailable
+    // (CF challenge, throttling, transient 5xx, network shaping) but the DOM shows
+    // an authenticated logged-in shell. Plain 401/403 remain authoritative because
+    // they can mean the ChatGPT session really expired.
+    const apiBlocked =
+      cfBlocked ||
+      status === 429 ||
+      status === 503 ||
+      status === 0;
+    const ok = !loginSignals && (status === 200 || (apiBlocked && appAuthenticated));
     return {
-      ok: !loginSignals && status === 200,
+      ok,
       status,
       redirected: false,
       url: pageUrl,
       pageUrl,
       domLoginCta,
       onAuthPage,
+      appAuthenticated,
+      cfBlocked,
       error,
     };
   })()`;
@@ -591,6 +653,8 @@ function normalizeLoginProbe(raw: unknown): LoginProbeResult {
     pageUrl: typeof value.pageUrl === "string" ? value.pageUrl : null,
     domLoginCta: Boolean(value.domLoginCta),
     onAuthPage: Boolean(value.onAuthPage),
+    appAuthenticated: Boolean(value.appAuthenticated),
+    cfBlocked: Boolean(value.cfBlocked),
   };
 }
 

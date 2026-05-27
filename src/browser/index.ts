@@ -51,6 +51,7 @@ import {
 } from "./actions/deepResearch.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
+import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
 import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
 import { BrowserAutomationError } from "../oracle/errors.js";
@@ -88,6 +89,13 @@ import {
   archiveChatGptConversation,
   resolveBrowserArchiveDecision,
 } from "./actions/archiveConversation.js";
+import {
+  assertManualLoginProfileReadyForRun,
+  defaultManualLoginProfileDir,
+  formatManualLoginSetupCommand,
+  isManualLoginProfileInitialized,
+  resolveManualLoginWaitMs,
+} from "./manualLoginProfile.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "./controlPlan.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
@@ -514,6 +522,21 @@ function shouldCloseOwnedRunTargetAfterRun(options: {
   return options.runStatus === "complete" && options.ownsTarget && !options.keepBrowser;
 }
 
+function buildSkippedModelSelectionEvidence(
+  desiredModel: string | null | undefined,
+  strategy: BrowserModelSelectionEvidence["strategy"],
+): BrowserModelSelectionEvidence {
+  return {
+    requestedModel: desiredModel ?? null,
+    resolvedLabel: null,
+    strategy,
+    status: "skipped",
+    verified: false,
+    source: "config",
+    capturedAt: new Date().toISOString(),
+  };
+}
+
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
   const promptText = options.prompt?.trim();
   if (!promptText) {
@@ -544,6 +567,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const runtimeHintCb = options.runtimeHintCb;
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
+  let promptSubmitted = false;
   let tabLease: BrowserTabLease | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
@@ -557,6 +581,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
       conversationId,
+      promptSubmitted,
       userDataDir,
       controllerPid: process.pid,
     };
@@ -572,6 +597,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       const message = error instanceof Error ? error.message : String(error);
       logger(`Failed to persist runtime hint: ${message}`);
     }
+  };
+  const markPromptSubmitted = async (): Promise<void> => {
+    if (promptSubmitted) {
+      return;
+    }
+    promptSubmitted = true;
+    await emitRuntimeHint();
   };
   if (config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") {
     logger(
@@ -620,14 +652,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const manualLogin = Boolean(config.manualLogin);
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
-    : path.join(os.homedir(), ".oracle", "browser-profile");
+    : defaultManualLoginProfileDir();
   const userDataDir = manualLogin
     ? manualProfileDir
     : await mkdtemp(path.join(await resolveUserDataBaseDir(), "oracle-browser-"));
+  const effectiveKeepBrowser = Boolean(config.keepBrowser);
   if (manualLogin) {
     // Learned: manual login reuses a persistent profile so cookies/SSO survive.
     await mkdir(userDataDir, { recursive: true });
     logger(`Manual login mode enabled; reusing persistent profile at ${userDataDir}`);
+    await assertManualLoginProfileReadyForRun({
+      userDataDir,
+      keepBrowser: effectiveKeepBrowser,
+    });
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
@@ -641,7 +678,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     });
   }
 
-  const effectiveKeepBrowser = Boolean(config.keepBrowser);
   let acquiredChrome: { chrome: BrowserChrome; reusedChrome: LaunchedChrome | null };
   try {
     acquiredChrome = manualLogin
@@ -698,6 +734,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let answerMarkdown = "";
   let answerHtml = "";
   let runStatus: "attempted" | "complete" = "attempted";
+  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let connectionClosedUnexpectedly = false;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
@@ -854,6 +891,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           appliedCookies,
           manualLogin,
           timeoutMs: config.timeoutMs,
+          profileDir: userDataDir,
+          keepBrowser: effectiveKeepBrowser,
         }),
       );
 
@@ -950,7 +989,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     await captureRuntimeSnapshot();
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
     if (config.desiredModel && modelStrategy !== "ignore") {
-      await raceWithDisconnect(
+      modelSelectionEvidence = await raceWithDisconnect(
         withRetries(
           () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
           {
@@ -978,14 +1017,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
       );
     } else if (modelStrategy === "ignore") {
+      modelSelectionEvidence = buildSkippedModelSelectionEvidence(
+        config.desiredModel,
+        modelStrategy,
+      );
       logger("Model picker: skipped (strategy=ignore)");
     }
     const deepResearch = config.researchMode === "deep";
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
+      const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
       await raceWithDisconnect(
-        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
+        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger, thinkingTargetModel), {
           retries: 2,
           delayMs: 300,
           onRetry: (attempt, error) => {
@@ -1068,7 +1112,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         const perFileTimeout = 20_000;
         const waitBudget =
           Math.max(baseTimeout, 45_000) + (submissionAttachments.length - 1) * perFileTimeout;
-        await waitForAttachmentCompletion(Runtime, waitBudget, attachmentNames, logger);
+        const attachmentWaitBudget = Math.max(config.attachmentTimeoutMs ?? 0, waitBudget);
+        await waitForAttachmentCompletion(Runtime, attachmentWaitBudget, attachmentNames, logger);
         logger("All attachments uploaded");
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
@@ -1079,8 +1124,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         logger,
         timeoutMs: config.timeoutMs,
         inputTimeoutMs: config.inputTimeoutMs ?? undefined,
+        attachmentTimeoutMs: config.attachmentTimeoutMs ?? undefined,
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames,
+        onPromptSubmitted: markPromptSubmitted,
       };
       await runProviderSubmissionFlow(chatgptDomProvider, {
         prompt,
@@ -1089,6 +1136,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         log: logger,
         state: providerState,
       });
+      await markPromptSubmitted();
       const providerBaselineTurns = providerState.baselineTurns;
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
@@ -1205,6 +1253,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         answerHtml: researchResult.html,
         artifacts: savedArtifacts,
         archive,
+        modelSelection: modelSelectionEvidence,
         tookMs: durationMs,
         answerTokens: tokens,
         answerChars: researchResult.text.length,
@@ -1215,6 +1264,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+        promptSubmitted,
         controllerPid: process.pid,
       };
     }
@@ -1309,6 +1359,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               chromeTargetId: lastTargetId,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             },
           },
@@ -1397,6 +1448,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               chromeTargetId: lastTargetId,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             };
             throw new BrowserAutomationError(
@@ -1673,6 +1725,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       generatedImages: imageArtifacts.generatedImages,
       savedImages: imageArtifacts.savedImages,
       archive,
+      modelSelection: modelSelectionEvidence,
       tookMs: durationMs,
       answerTokens,
       answerChars,
@@ -1683,6 +1736,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       chromeTargetId: lastTargetId,
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+      promptSubmitted,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -1699,6 +1753,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         userDataDir,
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
+        promptSubmitted,
         controllerPid: process.pid,
       };
       const reuseProfileHint =
@@ -1746,6 +1801,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           userDataDir,
           chromeTargetId: lastTargetId,
           tabUrl: lastUrl,
+          promptSubmitted,
           controllerPid: process.pid,
         },
       },
@@ -1930,18 +1986,23 @@ async function waitForLogin({
   appliedCookies,
   manualLogin,
   timeoutMs,
+  profileDir,
+  keepBrowser,
 }: {
   runtime: ChromeClient["Runtime"];
   logger: BrowserLogger;
   appliedCookies: number;
   manualLogin: boolean;
   timeoutMs: number;
+  profileDir?: string;
+  keepBrowser?: boolean;
 }): Promise<void> {
   if (!manualLogin) {
     await ensureLoggedIn(runtime, logger, { appliedCookies });
     return;
   }
-  const deadline = Date.now() + Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
+  const waitMs = resolveManualLoginWaitMs(timeoutMs, Boolean(keepBrowser));
+  const deadline = Date.now() + waitMs;
   let lastNotice = 0;
   while (Date.now() < deadline) {
     try {
@@ -1964,8 +2025,11 @@ async function waitForLogin({
       await delay(1000);
     }
   }
+  const setupCommand = formatManualLoginSetupCommand(profileDir ?? defaultManualLoginProfileDir());
   throw new Error(
-    "Manual login mode timed out waiting for ChatGPT session; please sign in and retry.",
+    "Manual login mode timed out waiting for ChatGPT session. " +
+      `Browser mode is using Oracle's private Chrome profile at ${profileDir ?? "(default profile)"}, not your normal Chrome profile. ` +
+      `Run first-time setup, sign in there, then retry: ${setupCommand}`,
   );
 }
 
@@ -2191,6 +2255,7 @@ async function runRemoteBrowserMode(
   let remoteTargetId: string | null = null;
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
+  let promptSubmitted = false;
   let attachedExistingTab = false;
   let ownsTarget = true;
   const runtimeHintCb = options.runtimeHintCb;
@@ -2205,6 +2270,7 @@ async function runRemoteBrowserMode(
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+        promptSubmitted,
         controllerPid: process.pid,
       });
       await tabLease?.update({
@@ -2218,12 +2284,20 @@ async function runRemoteBrowserMode(
       logger(`Failed to persist runtime hint: ${message}`);
     }
   };
+  const markPromptSubmitted = async (): Promise<void> => {
+    if (promptSubmitted) {
+      return;
+    }
+    promptSubmitted = true;
+    await emitRuntimeHint();
+  };
   const startedAt = Date.now();
   let answerText = "";
   let answerMarkdown = "";
   let answerHtml = "";
   let connectionClosedUnexpectedly = false;
   let runStatus: "attempted" | "complete" = "attempted";
+  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
   let connection: Awaited<ReturnType<typeof connectToRemoteChrome>> | null = null;
@@ -2319,7 +2393,7 @@ async function runRemoteBrowserMode(
 
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
     if (config.desiredModel && modelStrategy !== "ignore") {
-      await withRetries(
+      modelSelectionEvidence = await withRetries(
         () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
         {
           retries: 2,
@@ -2338,23 +2412,31 @@ async function runRemoteBrowserMode(
         `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
       );
     } else if (modelStrategy === "ignore") {
+      modelSelectionEvidence = buildSkippedModelSelectionEvidence(
+        config.desiredModel,
+        modelStrategy,
+      );
       logger("Model picker: skipped (strategy=ignore)");
     }
     const deepResearch = config.researchMode === "deep";
     // Handle thinking time selection if specified. Deep Research owns its own effort flow.
     const thinkingTime = config.thinkingTime;
     if (thinkingTime && !deepResearch) {
-      await withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger), {
-        retries: 2,
-        delayMs: 300,
-        onRetry: (attempt, error) => {
-          if (options.verbose) {
-            logger(
-              `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-            );
-          }
+      const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
+      await withRetries(
+        () => ensureThinkingTime(Runtime, thinkingTime, logger, thinkingTargetModel),
+        {
+          retries: 2,
+          delayMs: 300,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
         },
-      });
+      );
     }
     if (deepResearch) {
       await withRetries(() => activateDeepResearch(Runtime, Input, logger), {
@@ -2397,7 +2479,8 @@ async function runRemoteBrowserMode(
         const perFileTimeout = 15_000;
         const waitBudget =
           Math.max(baseTimeout, 30_000) + (submissionAttachments.length - 1) * perFileTimeout;
-        await waitForAttachmentCompletion(Runtime, waitBudget, attachmentNames, logger);
+        const attachmentWaitBudget = Math.max(config.attachmentTimeoutMs ?? 0, waitBudget);
+        await waitForAttachmentCompletion(Runtime, attachmentWaitBudget, attachmentNames, logger);
         logger("All attachments uploaded");
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
@@ -2407,8 +2490,10 @@ async function runRemoteBrowserMode(
         logger,
         timeoutMs: config.timeoutMs,
         inputTimeoutMs: config.inputTimeoutMs ?? undefined,
+        attachmentTimeoutMs: config.attachmentTimeoutMs ?? undefined,
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames,
+        onPromptSubmitted: markPromptSubmitted,
       };
       await runProviderSubmissionFlow(chatgptDomProvider, {
         prompt,
@@ -2417,6 +2502,7 @@ async function runRemoteBrowserMode(
         log: logger,
         state: providerState,
       });
+      await markPromptSubmitted();
       const providerBaselineTurns = providerState.baselineTurns;
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
@@ -2497,6 +2583,7 @@ async function runRemoteBrowserMode(
         answerHtml: researchResult.html,
         artifacts: savedArtifacts,
         archive,
+        modelSelection: modelSelectionEvidence,
         tookMs: durationMs,
         answerTokens: tokens,
         answerChars: researchResult.text.length,
@@ -2505,6 +2592,7 @@ async function runRemoteBrowserMode(
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+        promptSubmitted,
         controllerPid: process.pid,
       };
     }
@@ -2598,6 +2686,7 @@ async function runRemoteBrowserMode(
               chromeTargetId: remoteTargetId ?? undefined,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             },
           },
@@ -2694,6 +2783,7 @@ async function runRemoteBrowserMode(
               chromeTargetId: remoteTargetId ?? undefined,
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+              promptSubmitted,
               controllerPid: process.pid,
             };
             throw new BrowserAutomationError(
@@ -2934,8 +3024,10 @@ async function runRemoteBrowserMode(
       chromeTargetId: remoteTargetId ?? undefined,
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+      promptSubmitted,
       artifacts: savedArtifacts,
       archive,
+      modelSelection: modelSelectionEvidence,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -2960,6 +3052,7 @@ async function runRemoteBrowserMode(
         chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
+        promptSubmitted,
         controllerPid: process.pid,
       },
     });
@@ -3000,10 +3093,14 @@ export { resolveBrowserConfig, DEFAULT_BROWSER_CONFIG } from "./config.js";
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  assertManualLoginProfileReadyForRun,
   closeRemoteConnectionAfterRun,
   detachKeptChromeProcess,
+  formatManualLoginSetupCommand,
+  isManualLoginProfileInitialized,
   isImageOnlyUiChromeText,
   listIgnoredRemoteChromeFlags,
+  resolveManualLoginWaitMs,
   shouldCloseOwnedRunTargetAfterRun,
 };
 export { syncCookies } from "./cookies.js";

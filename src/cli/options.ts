@@ -515,6 +515,12 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if ((normalized.includes("5.5") || normalized.includes("5_5")) && normalized.includes("pro")) {
     return "gpt-5.5-pro";
   }
+  if (
+    (normalized.includes("5.5") || normalized.includes("5_5")) &&
+    (normalized.includes("instant") || normalized.includes("fast"))
+  ) {
+    return "gpt-5.5-instant";
+  }
   if (normalized.includes("5.5") || normalized.includes("5_5")) {
     return "gpt-5.5";
   }

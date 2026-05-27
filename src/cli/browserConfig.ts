@@ -16,6 +16,7 @@ import { getOracleHomeDir } from "../oracleHome.js";
 
 const DEFAULT_BROWSER_TIMEOUT_MS = 1_200_000;
 const DEFAULT_BROWSER_INPUT_TIMEOUT_MS = 60_000;
+const DEFAULT_BROWSER_ATTACHMENT_TIMEOUT_MS = 45_000;
 const DEFAULT_BROWSER_RECHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_BROWSER_AUTO_REATTACH_TIMEOUT_MS = 120_000;
 const DEFAULT_CHROME_PROFILE = "Default";
@@ -24,14 +25,15 @@ const DEFAULT_CHROME_PROFILE = "Default";
 // The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
-  ["gpt-5.5-pro", "GPT-5.5 Pro"],
+  ["gpt-5.5-pro", "Pro"],
+  ["gpt-5.5-instant", "GPT-5.5 Instant"],
   ["gpt-5.5", "Thinking 5.5"],
-  ["gpt-5.4-pro", "GPT-5.4 Pro"],
+  ["gpt-5.4-pro", "Pro"],
   ["gpt-5.2-thinking", "GPT-5.2 Thinking"],
   ["gpt-5.2-instant", "GPT-5.2 Instant"],
-  ["gpt-5.2-pro", "GPT-5.5 Pro"],
-  ["gpt-5.1-pro", "GPT-5.5 Pro"],
-  ["gpt-5-pro", "GPT-5.5 Pro"],
+  ["gpt-5.2-pro", "Pro"],
+  ["gpt-5.1-pro", "Pro"],
+  ["gpt-5-pro", "Pro"],
   // Base models last (least specific)
   ["gpt-5.4", "Thinking 5.4"],
   ["gpt-5.2", "GPT-5.2"], // Selects "Auto" in ChatGPT UI
@@ -50,6 +52,7 @@ export interface BrowserFlagOptions {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
+  browserAttachmentTimeout?: string;
   browserRecheckDelay?: string;
   browserRecheckTimeout?: string;
   browserReuseWait?: string;
@@ -90,15 +93,20 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
 
   if (
     normalized === "gpt-5.5-pro" ||
+    normalized === "gpt-5.5-instant" ||
     normalized === "gpt-5.5" ||
-    normalized === "gpt-5.4-pro" ||
     normalized === "gpt-5.4"
   ) {
     return normalized;
   }
 
   // Pro variants: resolve to the latest Pro model in ChatGPT.
-  if (normalized === "gpt-5-pro" || normalized === "gpt-5.1-pro" || normalized === "gpt-5.2-pro") {
+  if (
+    normalized === "gpt-5-pro" ||
+    normalized === "gpt-5.1-pro" ||
+    normalized === "gpt-5.2-pro" ||
+    normalized === "gpt-5.4-pro"
+  ) {
     return "gpt-5.5-pro";
   }
 
@@ -170,6 +178,9 @@ export async function buildBrowserConfig(
       : undefined,
     inputTimeoutMs: options.browserInputTimeout
       ? parseDuration(options.browserInputTimeout, DEFAULT_BROWSER_INPUT_TIMEOUT_MS)
+      : undefined,
+    attachmentTimeoutMs: options.browserAttachmentTimeout
+      ? parseDuration(options.browserAttachmentTimeout, DEFAULT_BROWSER_ATTACHMENT_TIMEOUT_MS)
       : undefined,
     assistantRecheckDelayMs: options.browserRecheckDelay
       ? parseDuration(options.browserRecheckDelay, 0)

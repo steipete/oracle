@@ -17,6 +17,7 @@ export interface BrowserDefaultsOptions {
   browserAttachRunning?: boolean;
   browserTimeout?: string | number;
   browserInputTimeout?: string | number;
+  browserAttachmentTimeout?: string | number;
   browserRecheckDelay?: string | number;
   browserRecheckTimeout?: string | number;
   browserReuseWait?: string | number;
@@ -93,6 +94,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset("browserInputTimeout") && typeof browser.inputTimeoutMs === "number") {
     options.browserInputTimeout = String(browser.inputTimeoutMs);
+  }
+  if (isUnset("browserAttachmentTimeout") && typeof browser.attachmentTimeoutMs === "number") {
+    options.browserAttachmentTimeout = String(browser.attachmentTimeoutMs);
   }
   if (isUnset("browserRecheckDelay") && typeof browser.assistantRecheckDelayMs === "number") {
     options.browserRecheckDelay = String(browser.assistantRecheckDelayMs);

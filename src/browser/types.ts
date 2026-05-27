@@ -1,6 +1,10 @@
 import type CDP from "chrome-remote-interface";
 import type Protocol from "devtools-protocol";
-import type { BrowserRuntimeMetadata } from "../sessionStore.js";
+import type {
+  BrowserModelSelectionEvidence,
+  BrowserRunWarning,
+  BrowserRuntimeMetadata,
+} from "../sessionStore.js";
 import type { SessionArtifact } from "../sessionStore.js";
 import type { ThinkingTimeLevel } from "../oracle/types.js";
 
@@ -50,6 +54,8 @@ export interface BrowserAutomationConfig {
   timeoutMs?: number;
   debugPort?: number | null;
   inputTimeoutMs?: number;
+  /** Time budget for attachment upload/readiness before clicking send. */
+  attachmentTimeoutMs?: number;
   /** Delay before rechecking the conversation after an assistant timeout. */
   assistantRecheckDelayMs?: number;
   /** Time budget for the delayed recheck attempt. */
@@ -133,6 +139,8 @@ export interface BrowserRunResult {
   generatedImages?: BrowserGeneratedImage[];
   savedImages?: SavedBrowserImage[];
   archive?: BrowserArchiveResult;
+  modelSelection?: BrowserModelSelectionEvidence;
+  warnings?: BrowserRunWarning[];
   tookMs: number;
   answerTokens: number;
   answerChars: number;
@@ -146,6 +154,7 @@ export interface BrowserRunResult {
   chromeTargetId?: string;
   tabUrl?: string;
   conversationId?: string;
+  promptSubmitted?: boolean;
   controllerPid?: number;
 }
 

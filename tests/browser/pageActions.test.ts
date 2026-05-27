@@ -29,7 +29,13 @@ describe("ensureModelSelection", () => {
         result: { value: { status: "already-selected", label: "GPT-5.2 Pro" } },
       }),
     } as unknown as ChromeClient["Runtime"];
-    await expect(ensureModelSelection(runtime, "GPT-5.2 Pro", logger)).resolves.toBeUndefined();
+    await expect(ensureModelSelection(runtime, "GPT-5.2 Pro", logger)).resolves.toMatchObject({
+      requestedModel: "GPT-5.2 Pro",
+      resolvedLabel: "GPT-5.2 Pro",
+      status: "already-selected",
+      strategy: "select",
+      verified: true,
+    });
     expect(logger).toHaveBeenCalledWith("Model picker: GPT-5.2 Pro");
   });
 
@@ -202,25 +208,93 @@ describe("ensureNotBlocked", () => {
 });
 
 describe("ensureLoggedIn", () => {
-  async function runLoginProbeForLabels(labels: string[], fetchStatus = 200) {
+  async function runLoginProbeForLabels(
+    labels: string[],
+    options: {
+      fetchStatus?: number;
+      fetchStatuses?: number[];
+      fetchBody?: string;
+      fetchBodies?: string[];
+      pathname?: string;
+      composerVisible?: boolean;
+      appSignal?: "profile" | "history" | "model" | null;
+      probeTimeoutMs?: number;
+    } = {},
+  ) {
+    const {
+      fetchStatus = 200,
+      fetchStatuses,
+      fetchBody = "",
+      fetchBodies,
+      pathname = "/",
+      composerVisible = false,
+      appSignal = null,
+      probeTimeoutMs = 0,
+    } = options;
     class FakeHTMLElement {
-      constructor(public textContent: string) {}
+      constructor(
+        public textContent: string,
+        private readonly visible = true,
+      ) {}
 
       getAttribute() {
         return "";
       }
 
       getBoundingClientRect() {
-        return { width: 120, height: 32 };
+        return { width: this.visible ? 120 : 0, height: this.visible ? 32 : 0 };
       }
     }
 
     const nodes = labels.map((label) => new FakeHTMLElement(label));
-    const document = { querySelectorAll: vi.fn(() => nodes) };
-    const window = { getComputedStyle: vi.fn(() => ({ display: "block", visibility: "visible" })) };
-    const fetch = vi.fn().mockResolvedValue({ status: fetchStatus });
-    const location = { href: "https://chatgpt.com/", pathname: "/" };
-    const expression = buildLoginProbeExpressionForTest(0);
+    const composer = composerVisible ? new FakeHTMLElement("") : null;
+    const loggedInSignal = appSignal ? new FakeHTMLElement("") : null;
+    const document = {
+      querySelectorAll: vi.fn(() => nodes),
+      querySelector: vi.fn((selector: string) => {
+        if (
+          composer &&
+          [
+            "#prompt-textarea",
+            ".ProseMirror",
+            'textarea[data-id="prompt-textarea"]',
+            'textarea[name="prompt-textarea"]',
+            '[contenteditable="true"][role="textbox"]',
+          ].includes(selector)
+        ) {
+          return composer;
+        }
+        if (appSignal === "profile" && selector === '[data-testid="accounts-profile-button"]') {
+          return loggedInSignal;
+        }
+        if (appSignal === "history" && selector === '[data-testid^="history-item-"]') {
+          return loggedInSignal;
+        }
+        if (
+          appSignal === "model" &&
+          selector ===
+            '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"], button.__composer-pill'
+        ) {
+          return loggedInSignal;
+        }
+        return null;
+      }),
+    };
+    const window = {
+      getComputedStyle: vi.fn(() => ({ display: "block", visibility: "visible" })),
+    };
+    const statuses = [...(fetchStatuses ?? [fetchStatus])];
+    const bodies = [...(fetchBodies ?? [fetchBody])];
+    const fetch = vi.fn().mockImplementation(() => {
+      const status = statuses.length > 1 ? statuses.shift() : statuses[0];
+      const body = bodies.length > 1 ? bodies.shift() : bodies[0];
+      return Promise.resolve({
+        status,
+        clone: () => ({ text: vi.fn().mockResolvedValue(body) }),
+      });
+    });
+    const location = { href: `https://chatgpt.com${pathname}`, pathname };
+    const expression = buildLoginProbeExpressionForTest(probeTimeoutMs);
     const evaluate = new Function(
       "document",
       "window",
@@ -265,6 +339,152 @@ describe("ensureLoggedIn", () => {
     await expect(runLoginProbeForLabels(["Continue with Google"])).resolves.toMatchObject({
       ok: false,
       domLoginCta: true,
+    });
+  });
+
+  test("accepts a blocked backend probe when authenticated app DOM is visible", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 429,
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 429,
+      appAuthenticated: true,
+      domLoginCta: false,
+    });
+  });
+
+  test("does not accept plain unauthorized backend responses with stale app DOM", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 401,
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      appAuthenticated: true,
+    });
+  });
+
+  test("retries transient unauthorized backend responses before failing", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatuses: [401, 200],
+        composerVisible: true,
+        appSignal: "profile",
+        probeTimeoutMs: 500,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 200,
+      appAuthenticated: true,
+    });
+  });
+
+  test("does not accept blocked backend probe with only a model pill", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 401,
+        composerVisible: true,
+        appSignal: "model",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      appAuthenticated: false,
+    });
+  });
+
+  test("does not accept blocked backend probe with only a composer", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 401,
+        composerVisible: true,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      appAuthenticated: false,
+    });
+  });
+
+  test("does not accept plain forbidden backend responses without Cloudflare markers", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 403,
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 403,
+      cfBlocked: false,
+      appAuthenticated: true,
+    });
+  });
+
+  test("keeps auth pages and visible login CTAs authoritative", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 401,
+        pathname: "/auth/login",
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      onAuthPage: true,
+      appAuthenticated: true,
+    });
+
+    await expect(
+      runLoginProbeForLabels(["Log in"], {
+        fetchStatus: 401,
+        composerVisible: true,
+        appSignal: "history",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      domLoginCta: true,
+      appAuthenticated: true,
+    });
+  });
+
+  test("detects Cloudflare-blocked backend probes and falls back to app DOM", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatus: 403,
+        fetchBody: "<html><body>cf-mitigated challenge from Cloudflare</body></html>",
+        composerVisible: true,
+        appSignal: "profile",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 403,
+      cfBlocked: true,
+      appAuthenticated: true,
+    });
+  });
+
+  test("does not keep stale Cloudflare state after a later unauthorized response", async () => {
+    await expect(
+      runLoginProbeForLabels([], {
+        fetchStatuses: [403, 401],
+        fetchBodies: ["<html><body>cf-mitigated challenge from Cloudflare</body></html>", ""],
+        composerVisible: true,
+        appSignal: "profile",
+        probeTimeoutMs: 500,
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 401,
+      cfBlocked: false,
+      appAuthenticated: true,
     });
   });
 

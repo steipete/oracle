@@ -15,6 +15,7 @@ import type {
   TransportFailureReason,
   ApiProviderMode,
   AzureOptions,
+  BrowserBundleFormat,
   ModelName,
   PartialMode,
   ThinkingTimeLevel,
@@ -42,6 +43,8 @@ export interface BrowserSessionConfig {
   timeoutMs?: number;
   debugPort?: number | null;
   inputTimeoutMs?: number;
+  /** Time budget for attachment upload/readiness before clicking send. */
+  attachmentTimeoutMs?: number;
   /** Delay before rechecking the conversation after an assistant timeout. */
   assistantRecheckDelayMs?: number;
   /** Time budget for the delayed recheck attempt. */
@@ -93,6 +96,8 @@ export interface BrowserRuntimeMetadata {
   chromeTargetId?: string;
   tabUrl?: string;
   conversationId?: string;
+  /** True after Oracle has submitted the prompt to ChatGPT. */
+  promptSubmitted?: boolean;
   /** PID of the controller process that launched this browser run. Helps detect orphaned sessions. */
   controllerPid?: number;
 }
@@ -113,11 +118,37 @@ export interface BrowserHarvestMetadata {
   lastAssistantSnippet?: string;
 }
 
+export type BrowserModelSelectionEvidenceStatus =
+  | "already-selected"
+  | "switched"
+  | "switched-best-effort"
+  | "skipped"
+  | "unavailable";
+
+export interface BrowserModelSelectionEvidence {
+  requestedModel?: string | null;
+  resolvedLabel?: string | null;
+  strategy?: BrowserModelStrategy;
+  status: BrowserModelSelectionEvidenceStatus;
+  verified: boolean;
+  source: "chatgpt-model-picker" | "config";
+  capturedAt: string;
+}
+
+export interface BrowserRunWarning {
+  code: string;
+  severity: "warning";
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export interface BrowserMetadata {
   config?: BrowserSessionConfig;
   runtime?: BrowserRuntimeMetadata;
   harvest?: BrowserHarvestMetadata;
   archive?: BrowserArchiveResult;
+  modelSelection?: BrowserModelSelectionEvidence;
+  warnings?: BrowserRunWarning[];
 }
 
 export interface SessionArtifact {
@@ -183,6 +214,7 @@ export interface StoredRunOptions {
   browserAttachments?: "auto" | "never" | "always";
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
+  browserBundleFormat?: BrowserBundleFormat;
   background?: boolean;
   search?: boolean;
   provider?: ApiProviderMode;
@@ -571,6 +603,7 @@ export async function initializeSession(
       browserAttachments: options.browserAttachments,
       browserInlineFiles: options.browserInlineFiles,
       browserBundleFiles: options.browserBundleFiles,
+      browserBundleFormat: options.browserBundleFormat,
       background: options.background,
       search: options.search,
       provider: options.provider,

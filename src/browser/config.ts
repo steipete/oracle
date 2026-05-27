@@ -37,6 +37,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   timeoutMs: 1_200_000,
   debugPort: null,
   inputTimeoutMs: 60_000,
+  attachmentTimeoutMs: 45_000,
   assistantRecheckDelayMs: 0,
   assistantRecheckTimeoutMs: 120_000,
   reuseChromeWaitMs: 10_000,
@@ -107,6 +108,7 @@ export function resolveBrowserConfig(
     timeoutMs: config?.timeoutMs ?? defaultTimeoutMs,
     debugPort: config?.debugPort ?? debugPortEnv ?? DEFAULT_BROWSER_CONFIG.debugPort,
     inputTimeoutMs: config?.inputTimeoutMs ?? DEFAULT_BROWSER_CONFIG.inputTimeoutMs,
+    attachmentTimeoutMs: config?.attachmentTimeoutMs ?? DEFAULT_BROWSER_CONFIG.attachmentTimeoutMs,
     assistantRecheckDelayMs:
       config?.assistantRecheckDelayMs ?? DEFAULT_BROWSER_CONFIG.assistantRecheckDelayMs,
     assistantRecheckTimeoutMs:

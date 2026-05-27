@@ -28,6 +28,8 @@ export async function submitPrompt(
     attachmentNames?: string[];
     baselineTurns?: number | null;
     inputTimeoutMs?: number | null;
+    attachmentTimeoutMs?: number | null;
+    onPromptSubmitted?: () => Promise<void> | void;
   },
   prompt: string,
   logger: BrowserLogger,
@@ -201,7 +203,12 @@ export async function submitPrompt(
     );
   }
 
-  const clicked = await attemptSendButton(runtime, logger, deps?.attachmentNames);
+  const clicked = await attemptSendButton(
+    runtime,
+    logger,
+    deps?.attachmentNames,
+    deps?.attachmentTimeoutMs,
+  );
   if (!clicked) {
     await input.dispatchKeyEvent({
       type: "keyDown",
@@ -217,6 +224,7 @@ export async function submitPrompt(
   } else {
     logger("Clicked send button");
   }
+  await deps.onPromptSubmitted?.();
 
   const commitTimeoutMs = Math.max(60_000, deps.inputTimeoutMs ?? 0);
   // Learned: the send button can succeed but the turn doesn't appear immediately; verify commit via turns/stop button.
@@ -332,26 +340,85 @@ async function waitForDomReady(
 }
 
 function buildAttachmentReadyExpression(attachmentNames: string[]): string {
-  const namesLiteral = JSON.stringify(attachmentNames.map((name) => name.toLowerCase()));
+  const attachmentExpectations = attachmentNames.map((name) => {
+    const normalized = name.toLowerCase().replace(/\s+/g, " ").trim();
+    return {
+      name: normalized,
+      stem: normalized.replace(/\.[a-z0-9]{1,10}$/i, ""),
+      extension: normalized.match(/(\.[a-z0-9]{1,10})$/i)?.[1] ?? "",
+    };
+  });
+  const namesLiteral = JSON.stringify(attachmentExpectations);
   return `(() => {
-    const names = ${namesLiteral};
-    const composer =
-      document.querySelector('[data-testid*="composer"]') ||
-      document.querySelector('form') ||
-      document.body ||
-      document;
-    const labelText = (node) =>
-      [
-        node?.textContent,
-        node?.getAttribute?.('aria-label'),
-        node?.getAttribute?.('title'),
-        node?.getAttribute?.('data-testid'),
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-    const match = (node, name) => labelText(node).includes(name);
-
+    const expected = ${namesLiteral};
+    const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
+    const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    const hasNameBoundary = (text, name) => {
+      if (!name) return false;
+      let from = 0;
+      while (from < text.length) {
+        const index = text.indexOf(name, from);
+        if (index === -1) return false;
+        const previous = text[index - 1] || '';
+        const next = text[index + name.length] || '';
+        const previousOk = !previous || !/[a-z0-9]/.test(previous);
+        const nextOk = !next || !/[a-z0-9]/.test(next);
+        if (previousOk && nextOk) return true;
+        from = index + name.length;
+      }
+      return false;
+    };
+    const hasExtensionBoundary = (text, extension) => {
+      if (!extension) return false;
+      let from = 0;
+      while (from < text.length) {
+        const index = text.indexOf(extension, from);
+        if (index === -1) return false;
+        const next = text[index + extension.length] || '';
+        if (!next || !/[a-z0-9]/.test(next)) return true;
+        from = index + extension.length;
+      }
+      return false;
+    };
+    const matchesExpected = (value, item) => {
+      const text = normalize(value);
+      if (!text) return false;
+      if (hasNameBoundary(text, item.name)) return true;
+      if (
+        item.stem &&
+        item.stem.length >= 4 &&
+        item.extension &&
+        text.includes(item.stem + '(') &&
+        hasExtensionBoundary(text, item.extension)
+      ) {
+        return true;
+      }
+      if (text.includes('…') || text.includes('...')) {
+        const marker = text.includes('…') ? '…' : '...';
+        const [prefixRaw, suffixRaw] = text.split(marker);
+        const prefix = normalize(prefixRaw);
+        const suffix = normalize(suffixRaw);
+        const prefixParts = prefix.split(' ').filter(Boolean);
+        const suffixParts = suffix.split(' ').filter(Boolean);
+        const prefixCandidates = prefixParts.map((_, index) => prefixParts.slice(index).join(' '));
+        const suffixCandidates = suffixParts.map((_, index) =>
+          suffixParts.slice(0, suffixParts.length - index).join(' '),
+        );
+        if (prefixCandidates.length === 0 || suffixCandidates.length === 0) return false;
+        const targets = [item.name, item.stem && item.stem.length >= 4 ? item.stem : ''].filter(Boolean);
+        return targets.some((target) => {
+          return prefixCandidates.some((prefixPart) =>
+            suffixCandidates.some((suffixPart) => {
+              const strongEnough =
+                suffixPart.length >= 2 &&
+                (prefixPart.length >= 3 || (prefixPart.length >= 2 && suffixPart.length >= 4));
+              return strongEnough && target.startsWith(prefixPart) && target.endsWith(suffixPart);
+            }),
+          );
+        });
+      }
+      return false;
+    };
     // Restrict to attachment affordances; never scan generic div/span nodes (prompt text can contain the file name).
     const attachmentSelectors = [
       '[data-testid*="chip"]',
@@ -362,25 +429,158 @@ function buildAttachmentReadyExpression(attachmentNames: string[]): string {
       'button[aria-label*="Remove file"]',
       '[aria-label*="remove file"]',
       'button[aria-label*="remove file"]',
+      '[aria-label*="Remove attachment"]',
+      'button[aria-label*="Remove attachment"]',
+      '[aria-label*="remove attachment"]',
+      'button[aria-label*="remove attachment"]',
     ];
-    const attachmentRoots = Array.from(new Set([composer, document])).filter(Boolean);
-
-    const chipsReady = names.every((name) =>
-      attachmentRoots.some((root) =>
-        Array.from(root.querySelectorAll(attachmentSelectors.join(','))).some((node) => match(node, name)),
-      ),
+    const sendButton = sendSelectors
+      .map((selector) => document.querySelector(selector))
+      .find(Boolean);
+    const isUsableComposerRoot = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      if (String(node.tagName || '').toLowerCase() === 'button') return false;
+      const testId = String(node.getAttribute?.('data-testid') || '').toLowerCase();
+      if (!testId.includes('composer')) return false;
+      return !(
+        testId.includes('footer') ||
+        testId.includes('action') ||
+        testId.includes('plus') ||
+        testId.includes('send')
+      );
+    };
+    const closestComposerRoot = (node) => {
+      let current = node instanceof HTMLElement ? node : null;
+      while (current) {
+        if (isUsableComposerRoot(current)) return current;
+        current = current.parentElement;
+      }
+      return null;
+    };
+    const firstComposerRoot = () =>
+      Array.from(document.querySelectorAll('[data-testid*="composer"]')).find(isUsableComposerRoot) || null;
+    const composer =
+      closestComposerRoot(sendButton) ||
+      sendButton?.closest?.('form') ||
+      firstComposerRoot() ||
+      document.querySelector('form') ||
+      document.body ||
+      document;
+    // Walk node + ancestors (up to grandparent) + descendants to gather every textual hint.
+    // ChatGPT's current chip DOM nests the filename inside truncated child spans, so checking
+    // only the node's own textContent/aria/title misses the match.
+    const collectOwnLabelHaystack = (node) => {
+      if (!node) return '';
+      const pieces = [];
+      const pushAttrs = (el) => {
+        if (!el || typeof el.getAttribute !== 'function') return;
+        for (const attr of ['aria-label', 'title', 'data-testid', 'data-tooltip', 'data-tooltip-content']) {
+          const v = el.getAttribute(attr);
+          if (v) pieces.push(v);
+        }
+      };
+      const pushText = (el) => {
+        if (!el) return;
+        const text = (el.innerText ?? el.textContent ?? '').trim();
+        if (text) pieces.push(text);
+      };
+      pushAttrs(node);
+      pushText(node);
+      return pieces.join(' ').toLowerCase();
+    };
+    const collectLabelHaystack = (node) => {
+      if (!node) return '';
+      const pieces = [collectOwnLabelHaystack(node)];
+      const push = (el) => {
+        const text = collectOwnLabelHaystack(el);
+        if (text) pieces.push(text);
+      };
+      const parent = node.parentElement;
+      push(parent);
+      const grandparent = parent?.parentElement;
+      push(grandparent);
+      return pieces.join(' ').toLowerCase();
+    };
+    const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
+    const collectChipNodes = () => {
+      const seen = new Set();
+      const collected = [];
+      for (const root of attachmentRoots) {
+        for (const node of Array.from(root.querySelectorAll(attachmentSelectors.join(',')))) {
+          if (!(node instanceof HTMLElement)) continue;
+          // Skip elements clearly inside the editable input (composer textarea may contain
+          // filename text in the user's prompt — avoid mistaking that for a chip).
+          if (node.closest('textarea,[contenteditable="true"]')) continue;
+          if (seen.has(node)) continue;
+          seen.add(node);
+          collected.push(node);
+        }
+      }
+      return collected;
+    };
+    const chipNodes = collectChipNodes();
+    const chipLabels = chipNodes.map((node) => collectLabelHaystack(node));
+    const chipOwnLabels = chipNodes.map((node) => collectOwnLabelHaystack(node));
+    const hasEllipsisSuffix = (label) => {
+      const marker = label.includes('…') ? '…' : label.includes('...') ? '...' : '';
+      if (!marker) return false;
+      return normalize(label.split(marker)[1] || '').length > 0;
+    };
+    const chipOwnLabelsWithVisibleNames = chipOwnLabels.filter((label) =>
+      /\\.[a-z][a-z0-9]{0,9}(?:\\b|$)/i.test(label) ||
+      hasEllipsisSuffix(label),
     );
-    const inputsReady = names.every((name) =>
+    const visibleExtensionLabelsMatchExpected = chipOwnLabelsWithVisibleNames.every((label) =>
+      expected.some((item) => matchesExpected(label, item)),
+    );
+
+    const chipsReady = (() => {
+      const used = new Set();
+      return expected.every((item) => {
+        const index = chipLabels.findIndex((label, candidateIndex) =>
+          !used.has(candidateIndex) && matchesExpected(label, item),
+        );
+        if (index === -1) return false;
+        used.add(index);
+        return true;
+      });
+    })();
+    const inputsReady = expected.every((item) =>
       attachmentRoots.some((root) =>
         Array.from(root.querySelectorAll('input[type="file"]')).some((el) =>
           Array.from((el instanceof HTMLInputElement ? el.files : []) || []).some((file) =>
-            file?.name?.toLowerCase?.().includes(name),
+            matchesExpected(file?.name, item),
           ),
         ),
       ),
     );
+    // Count-based fallback: if we cannot match names individually (ChatGPT may strip
+    // the filename out of attribute-readable text into a deeply nested span), but we
+    // do see at least as many distinct "Remove" affordances as attachments we
+    // uploaded, trust the upload without double-counting nested chip/remove nodes.
+    const removeAffordances = [];
+    const removeSeen = new Set();
+    for (const root of attachmentRoots) {
+      for (const node of Array.from(root.querySelectorAll(
+        '[aria-label*="Remove" i], [aria-label*="remove" i], button[aria-label*="Remove" i], button[aria-label*="remove" i]',
+      ))) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.closest('textarea,[contenteditable="true"]')) continue;
+        const aria = (node.getAttribute?.('aria-label') ?? '').toLowerCase();
+        const fileSpecific = aria.includes('remove file') || aria.includes('remove attachment');
+        const attachmentOwner = node.closest(
+          '[data-testid*="chip"], [data-testid*="attachment"], [data-testid*="upload"], [data-testid*="file"]',
+        );
+        if (!fileSpecific && !attachmentOwner) continue;
+        if (removeSeen.has(node)) continue;
+        removeSeen.add(node);
+        removeAffordances.push(node);
+      }
+    }
+    const countReady =
+      visibleExtensionLabelsMatchExpected && removeAffordances.length >= expected.length;
 
-    return chipsReady || inputsReady;
+    return chipsReady || inputsReady || countReady;
   })()`;
 }
 
@@ -392,7 +592,9 @@ async function attemptSendButton(
   Runtime: ChromeClient["Runtime"],
   _logger?: BrowserLogger,
   attachmentNames?: string[],
+  attachmentTimeoutMs?: number | null,
 ): Promise<boolean> {
+  const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
   const script = `(() => {
     ${buildClickDispatcher()}
     const selectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
@@ -426,9 +628,12 @@ async function attemptSendButton(
     return 'clicked';
   })()`;
 
-  const deadline = Date.now() + 20_000;
+  // Give attachment-bearing submissions more headroom. ChatGPT's chip render can
+  // settle slowly for multi-file uploads, but plain text sends should keep the
+  // shorter historical deadline.
+  const timeoutMs = sendButtonTimeoutMs(attachmentNames, attachmentTimeoutMs);
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
     if (needAttachment) {
       const ready = await Runtime.evaluate({
         expression: buildAttachmentReadyExpression(attachmentNames),
@@ -450,15 +655,30 @@ async function attemptSendButton(
   }
   if (Array.isArray(attachmentNames) && attachmentNames.length > 0) {
     throw new BrowserAutomationError(
-      "Attachments never reached a clickable send button before timeout.",
+      `Attachments never reached a clickable send button after ${Math.ceil(
+        timeoutMs / 1000,
+      )}s; tune --browser-attachment-timeout.`,
       {
         stage: "submit-prompt",
         code: "attachment-send-not-ready",
         attachmentNames,
+        timeoutMs,
       },
     );
   }
   return false;
+}
+
+function sendButtonTimeoutMs(
+  attachmentNames?: string[],
+  attachmentTimeoutMs?: number | null,
+): number {
+  if (!Array.isArray(attachmentNames) || attachmentNames.length === 0) {
+    return 20_000;
+  }
+  return typeof attachmentTimeoutMs === "number" && Number.isFinite(attachmentTimeoutMs)
+    ? Math.max(1_000, attachmentTimeoutMs)
+    : 45_000;
 }
 
 async function verifyPromptCommitted(
@@ -629,5 +849,6 @@ async function verifyPromptCommitted(
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
   attemptSendButton,
+  sendButtonTimeoutMs,
   verifyPromptCommitted,
 };

@@ -142,6 +142,7 @@ interface CliOptions extends OptionValues {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
+  browserAttachmentTimeout?: string;
   browserProfileLockTimeout?: string;
   browserMaxConcurrentTabs?: string;
   browserCookieWait?: string;
@@ -163,6 +164,7 @@ interface CliOptions extends OptionValues {
   browserAttachments?: string;
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
+  browserBundleFormat?: "text" | "zip";
   remoteChrome?: string;
   browserPort?: number;
   browserDebugPort?: number;
@@ -426,6 +428,11 @@ program
     "Files/directories or glob patterns to attach (prefix with !pattern to exclude). Oversized files are rejected automatically (default cap: 1 MB; configurable via ORACLE_MAX_FILE_SIZE_BYTES or config.maxFileSizeBytes).",
     collectPaths,
     [],
+  )
+  .option(
+    "--max-file-size-bytes <bytes>",
+    "Reject files larger than this many bytes.",
+    parseIntOption,
   )
   .addOption(
     new Option("--include <paths...>", "Alias for --file.")
@@ -700,6 +707,12 @@ program
   )
   .addOption(
     new Option(
+      "--browser-attachment-timeout <ms|s|m>",
+      "Maximum time to wait for attachment upload/readiness before clicking send (default 45s).",
+    ).hideHelp(),
+  )
+  .addOption(
+    new Option(
       "--browser-recheck-delay <ms|s|m|h>",
       "After an assistant timeout, wait this long then revisit the conversation to retry capture.",
     ).hideHelp(),
@@ -786,6 +799,12 @@ program
     new Option(
       "--browser-manual-login",
       "Skip cookie copy; reuse a persistent automation profile and wait for manual ChatGPT login.",
+    ).hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--browser-manual-login-profile-dir <path>",
+      "Persistent Chrome profile directory for manual-login browser runs.",
     ).hideHelp(),
   )
   .addOption(new Option("--browser-headless", "Launch Chrome in headless mode.").hideHelp())
@@ -882,6 +901,14 @@ program
       "--browser-bundle-files",
       "Bundle all attachments into a single archive before uploading.",
     ).default(false),
+  )
+  .addOption(
+    new Option(
+      "--browser-bundle-format <format>",
+      "Bundle format for browser uploads when files are bundled: text (default) or zip.",
+    )
+      .choices(["text", "zip"])
+      .default("text"),
   )
   .addOption(
     new Option(
@@ -1420,6 +1447,7 @@ function buildRunOptions(
       "auto",
     browserInlineFiles: overrides.browserInlineFiles ?? options.browserInlineFiles ?? false,
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
+    browserBundleFormat: overrides.browserBundleFormat ?? options.browserBundleFormat ?? "text",
     generateImage: overrides.generateImage ?? options.generateImage,
     outputPath: overrides.outputPath ?? options.output,
     browserFollowUps: overrides.browserFollowUps ?? options.browserFollowUp ?? [],
@@ -1756,6 +1784,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserAttachments: stored.browserAttachments,
     browserInlineFiles: stored.browserInlineFiles,
     browserBundleFiles: stored.browserBundleFiles,
+    browserBundleFormat: stored.browserBundleFormat,
     browserFollowUps: stored.browserFollowUps,
     background: stored.background,
     renderPlain: stored.renderPlain,
@@ -2076,7 +2105,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   );
   const { models: _rawModels, ...optionsWithoutModels } = options;
   const resolvedOptions: ResolvedCliOptions = { ...optionsWithoutModels, model: resolvedModel };
-  resolvedOptions.maxFileSizeBytes = resolveConfiguredMaxFileSizeBytes(userConfig, process.env);
+  resolvedOptions.maxFileSizeBytes =
+    options.maxFileSizeBytes ?? resolveConfiguredMaxFileSizeBytes(userConfig, process.env);
   if (normalizedMultiModels.length > 0) {
     resolvedOptions.models = normalizedMultiModels;
   }
@@ -2175,6 +2205,14 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     program.getOptionValueSource?.(key as string) ?? undefined;
   const { applyBrowserDefaultsFromConfig } = await import("../src/cli/browserDefaults.js");
   applyBrowserDefaultsFromConfig(options, userConfig, getSource);
+  const attachmentTimeoutEnv = process.env.ORACLE_BROWSER_ATTACHMENT_TIMEOUT?.trim();
+  if (
+    attachmentTimeoutEnv &&
+    (getSource("browserAttachmentTimeout") === undefined ||
+      getSource("browserAttachmentTimeout") === "default")
+  ) {
+    options.browserAttachmentTimeout = attachmentTimeoutEnv;
+  }
 
   const sessionMode: SessionMode = engine === "browser" ? "browser" : "api";
   const browserConfig = await (async (): Promise<BrowserSessionConfig | undefined> => {
