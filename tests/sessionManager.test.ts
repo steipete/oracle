@@ -256,6 +256,23 @@ describe("session lifecycle", () => {
     expect(logText).toContain("Second chunk");
   });
 
+  test("createSessionLogWriter recreates missing per-model log directory", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Model log history", model: "gpt-5.2-pro" },
+      "/tmp/cwd",
+    );
+    await rm(path.join(sessionModule.getSessionsDir(), meta.id, "models"), {
+      recursive: true,
+      force: true,
+    });
+    const writer = sessionModule.createSessionLogWriter(meta.id, "gemini-3-pro");
+    writer.logLine("Gemini line");
+    writer.stream.end();
+    await new Promise<void>((resolve) => writer.stream.once("close", () => resolve()));
+    const logText = await sessionModule.readModelLog(meta.id, "gemini-3-pro");
+    expect(logText).toContain("Gemini line");
+  });
+
   test("readSessionLog falls back to empty string when no log exists", async () => {
     expect(await sessionModule.readSessionLog("missing")).toBe("");
   });
@@ -334,12 +351,14 @@ describe("session lifecycle", () => {
     expect(zombie?.errorMessage).toMatch(/zombie/i);
     const persisted = await sessionModule.readSessionMetadata(meta.id);
     expect(persisted?.status).toBe("error");
+    const storedRaw = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(storedRaw.status).toBe("error");
+    expect(storedRaw.errorMessage).toMatch(/zombie/i);
   });
 
   test("keeps running browser sessions when Chrome runtime is reachable", async () => {
-    const server = createServer();
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const port = (server.address() as AddressInfo).port;
     const meta = await sessionModule.initializeSession(
       { prompt: "Browser live", model: "gpt-5.2-pro", mode: "browser" },
       "/tmp/cwd",
@@ -350,13 +369,10 @@ describe("session lifecycle", () => {
       browser: {
         runtime: {
           chromePid: process.pid,
-          chromePort: port,
-          chromeHost: "127.0.0.1",
         },
       },
     });
     const refreshed = await sessionModule.readSessionMetadata(meta.id);
-    await new Promise<void>((resolve) => server.close(() => resolve()));
     expect(refreshed?.status).toBe("running");
   });
 
@@ -379,6 +395,16 @@ describe("session lifecycle", () => {
     const refreshed = await sessionModule.readSessionMetadata(meta.id);
     expect(refreshed?.status).toBe("error");
     expect(refreshed?.errorMessage).toMatch(/chrome/i);
+    const rawBeforeList = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(rawBeforeList.status).toBe("running");
+    await sessionModule.listSessionsMetadata();
+    const rawAfterList = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(rawAfterList.status).toBe("error");
+    expect(rawAfterList.errorMessage).toMatch(/chrome/i);
   });
 });
 
