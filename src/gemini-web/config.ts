@@ -48,6 +48,7 @@ export const DEFAULT_GEMINI_BROWSER_CONFIG: ResolvedBrowserConfig = {
   timeoutMs: 1_200_000,
   debugPort: null,
   inputTimeoutMs: 60_000,
+  attachmentTimeoutMs: 45_000,
   assistantRecheckDelayMs: 0,
   assistantRecheckTimeoutMs: 120_000,
   reuseChromeWaitMs: 10_000,

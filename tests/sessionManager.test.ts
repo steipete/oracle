@@ -1,7 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { mkdir, mkdtemp, rm, readFile, stat, writeFile } from "node:fs/promises";
-import { createServer } from "node:net";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";

@@ -2,7 +2,6 @@
 import "dotenv/config";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { once } from "node:events";
 import { readFile as readPromptFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
@@ -98,7 +97,6 @@ interface CliOptions extends OptionValues {
   prompt?: string;
   message?: string;
   promptFile?: string;
-  provider?: string;
   file?: string[];
   maxFileSizeBytes?: number;
   include?: string[];
