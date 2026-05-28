@@ -410,6 +410,10 @@ function resolveChatGptTabFromSummaries(
   if (exactUrl) {
     return exactUrl;
   }
+  const exactConversationId = summaries.find((tab) => tab.conversationId === trimmedRef);
+  if (exactConversationId) {
+    return exactConversationId;
+  }
   const lower = trimmedRef.toLowerCase();
   const titleMatches = summaries.filter((tab) => tab.title.toLowerCase().includes(lower));
   if (titleMatches.length === 1) {

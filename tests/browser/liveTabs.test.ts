@@ -69,10 +69,20 @@ describe("liveTabs helpers", () => {
     expect(formatBrowserTabState(makeTab({ state: "stalled" }))).toBe("stalled");
   });
 
-  test("resolves current/id/url/title refs against live tabs", () => {
+  test("resolves current/id/url/conversation/title refs against live tabs", () => {
     const tabs = [
-      makeTab({ targetId: "target-1", title: "Review A", url: "https://chatgpt.com/c/a" }),
-      makeTab({ targetId: "target-2", title: "Review B", url: "https://chatgpt.com/c/b" }),
+      makeTab({
+        targetId: "target-1",
+        title: "Review A",
+        url: "https://chatgpt.com/c/a",
+        conversationId: "a",
+      }),
+      makeTab({
+        targetId: "target-2",
+        title: "Review B",
+        url: "https://chatgpt.com/c/b",
+        conversationId: "b",
+      }),
     ];
     expect(resolveChatGptTabFromSummariesForTest(tabs, "current").targetId).toBe("target-1");
     expect(resolveChatGptTabFromSummariesForTest(tabs, "target-2").url).toBe(
@@ -81,6 +91,7 @@ describe("liveTabs helpers", () => {
     expect(resolveChatGptTabFromSummariesForTest(tabs, "https://chatgpt.com/c/a").targetId).toBe(
       "target-1",
     );
+    expect(resolveChatGptTabFromSummariesForTest(tabs, "b").targetId).toBe("target-2");
     expect(resolveChatGptTabFromSummariesForTest(tabs, "Review B").targetId).toBe("target-2");
   });
 
