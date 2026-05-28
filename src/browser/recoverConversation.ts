@@ -48,7 +48,8 @@ export function resolveRecoveryProfileDir(meta: SessionMetadata): string {
       "Cannot recover conversation: session was not run with a manual-login browser profile.",
     );
   }
-  const profileDir = config.manualLoginProfileDir;
+  const runtime = meta?.browser?.runtime;
+  const profileDir = runtime?.userDataDir ?? config.manualLoginProfileDir;
   if (typeof profileDir !== "string" || profileDir.trim().length === 0) {
     throw new Error(
       "Cannot recover conversation: session metadata has no manual-login profile directory.",

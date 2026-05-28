@@ -99,6 +99,23 @@ describe("resolveRecoveryProfileDir", () => {
     ).toBe("/tmp/oracle-profile");
   });
 
+  test("prefers the recorded runtime profile dir for default manual-login sessions", () => {
+    expect(
+      resolveRecoveryProfileDir(
+        metaWith(
+          {
+            tabUrl: "https://chatgpt.com/c/abc",
+            userDataDir: "/tmp/runtime-profile",
+          },
+          undefined,
+          {
+            manualLogin: true,
+          },
+        ),
+      ),
+    ).toBe("/tmp/runtime-profile");
+  });
+
   test("rejects sessions that did not use manual-login mode", () => {
     expect(() =>
       resolveRecoveryProfileDir(
