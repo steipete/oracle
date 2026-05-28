@@ -104,9 +104,9 @@ describe("recoverConversationTab flow", () => {
     expect(harvestChatGptTab).toHaveBeenLastCalledWith({
       host: "127.0.0.1",
       port: 53999,
-      ref: "saved-conversation",
+      ref: "target-2",
     });
-    expect(recovered.ref).toBe("saved-conversation");
+    expect(recovered.ref).toBe("target-2");
     expect(recovered.chrome).toBe(chrome);
   });
 

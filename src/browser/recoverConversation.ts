@@ -4,7 +4,7 @@ import type { BrowserLogger } from "./types.js";
 import { resolveBrowserConfig } from "./config.js";
 import { acquireManualLoginChromeForRun, isImageOnlyUiChromeText } from "./index.js";
 import { isRecoverableChatGptConversationUrl } from "./reattachability.js";
-import { extractConversationIdFromUrl, harvestChatGptTab, openChatGptTarget } from "./liveTabs.js";
+import { harvestChatGptTab, openChatGptTarget } from "./liveTabs.js";
 
 const DEFAULT_READY_TIMEOUT_MS = 30_000;
 const READY_POLL_MS = 1_000;
@@ -46,13 +46,14 @@ export function resolveRecoveryUrl(meta: SessionMetadata): string | null {
 
 export function resolveRecoveryProfileDir(meta: SessionMetadata): string {
   const config = meta?.browser?.config;
-  if (config?.manualLogin !== true) {
+  const resolved = resolveBrowserConfig(config);
+  if (!resolved.manualLogin) {
     throw new Error(
       "Cannot recover conversation: session was not run with a manual-login browser profile.",
     );
   }
   const runtime = meta?.browser?.runtime;
-  const profileDir = runtime?.userDataDir ?? config?.manualLoginProfileDir;
+  const profileDir = runtime?.userDataDir ?? resolved.manualLoginProfileDir;
   if (typeof profileDir !== "string" || profileDir.trim().length === 0) {
     throw new Error(
       "Cannot recover conversation: session metadata has no recorded manual-login profile directory.",
@@ -123,9 +124,6 @@ export async function recoverConversationTab(
   }
   const readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
   const waitForReady = options.waitForReady !== false;
-  const conversationId = extractConversationIdFromUrl(url);
-  const recoveryRef = conversationId ?? url;
-
   if (options.existingEndpoint) {
     try {
       logger(
@@ -151,7 +149,7 @@ export async function recoverConversationTab(
   );
 
   const { chrome } = await acquireManualLoginChromeForRun(userDataDir, config, logger, meta.id, {});
-  await openChatGptTarget({
+  const targetId = await openChatGptTarget({
     host: chrome.host ?? "127.0.0.1",
     port: chrome.port,
     url,
@@ -161,7 +159,7 @@ export async function recoverConversationTab(
 
   if (waitForReady) {
     try {
-      await waitForRecoveredConversationReady({ host, port }, recoveryRef, readyTimeoutMs);
+      await waitForRecoveredConversationReady({ host, port }, targetId, readyTimeoutMs);
     } catch (error) {
       try {
         chrome.kill();
@@ -174,5 +172,5 @@ export async function recoverConversationTab(
 
   logger(`[browser] Recovery: Chrome listening on ${host}:${port}; tab loaded.`);
 
-  return { host, port, url, ref: recoveryRef, chrome };
+  return { host, port, url, ref: targetId, chrome };
 }

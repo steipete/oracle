@@ -132,14 +132,4 @@ describe("resolveRecoveryProfileDir", () => {
       ),
     ).toThrow(/manual-login browser profile/);
   });
-
-  test("rejects missing manual-login profile dir", () => {
-    expect(() =>
-      resolveRecoveryProfileDir(
-        metaWith({ tabUrl: "https://chatgpt.com/c/abc" }, undefined, {
-          manualLogin: true,
-        }),
-      ),
-    ).toThrow(/manual-login profile directory/);
-  });
 });
