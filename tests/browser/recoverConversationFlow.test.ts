@@ -91,4 +91,29 @@ describe("recoverConversationTab flow", () => {
     });
     expect(recovered.chrome).toBe(chrome);
   });
+
+  test("kills launched Chrome when recovered content never becomes ready", async () => {
+    const openChatGptTarget = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    });
+    const harvestChatGptTab = vi.fn();
+    const chrome = { port: 53999, kill: vi.fn(), process: { unref: vi.fn() } };
+    const launch = vi.fn(async () => chrome);
+
+    vi.doMock("../../src/browser/liveTabs.js", () => ({
+      openChatGptTarget,
+      harvestChatGptTab,
+    }));
+    vi.doMock("chrome-launcher", () => ({ launch }));
+
+    const { recoverConversationTab } = await import("../../src/browser/recoverConversation.js");
+    await expect(
+      recoverConversationTab(meta, logger, {
+        existingEndpoint: { host: "127.0.0.1", port: 9222 },
+        readyTimeoutMs: 0,
+      }),
+    ).rejects.toThrow(/did not become ready/);
+
+    expect(chrome.kill).toHaveBeenCalledTimes(1);
+  });
 });

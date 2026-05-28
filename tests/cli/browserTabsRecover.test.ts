@@ -14,6 +14,8 @@ const baseMeta = {
       manualLoginProfileDir: "/tmp/recover-profile",
     },
     runtime: {
+      chromeHost: "127.0.0.1",
+      chromePort: 9223,
       tabUrl: "https://chatgpt.com/c/saved-conversation",
       conversationId: "saved-conversation",
     },
@@ -83,7 +85,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
     expect(harvestChatGptTab).toHaveBeenCalledTimes(2);
     expect(recoverConversationTab).toHaveBeenCalledTimes(1);
     expect(recoverConversationTab).toHaveBeenCalledWith(baseMeta, expect.any(Function), {
-      existingEndpoint: { host: "127.0.0.1", port: 9222 },
+      existingEndpoint: { host: "127.0.0.1", port: 9223 },
     });
     // After recovery, harvest is retried against the recovered endpoint/url.
     expect(harvestChatGptTab).toHaveBeenLastCalledWith(

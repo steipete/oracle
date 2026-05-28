@@ -261,7 +261,8 @@ export async function harvestSessionBrowserOutput(
   if (!meta) {
     throw new Error(`No session found with ID ${sessionId}.`);
   }
-  const initialEndpoint = sessionBrowserEndpoint(meta) ?? {
+  const recordedEndpoint = sessionBrowserEndpoint(meta);
+  const initialEndpoint = recordedEndpoint ?? {
     host: DEFAULT_REMOTE_CHROME_HOST,
     port: DEFAULT_REMOTE_CHROME_PORT,
   };
@@ -289,7 +290,7 @@ export async function harvestSessionBrowserOutput(
         ),
       );
       const recovered = await recoverConversationTab(meta, (line) => console.log(line), {
-        existingEndpoint: initialEndpoint,
+        existingEndpoint: recordedEndpoint ?? undefined,
       });
       recoveredChrome = recovered.chrome;
       harvested = await harvestChatGptTab({
@@ -323,7 +324,8 @@ export async function liveTailSessionBrowserOutput(
   if (!meta) {
     throw new Error(`No session found with ID ${sessionId}.`);
   }
-  let endpoint = sessionBrowserEndpoint(meta) ?? {
+  const recordedEndpoint = sessionBrowserEndpoint(meta);
+  let endpoint = recordedEndpoint ?? {
     host: DEFAULT_REMOTE_CHROME_HOST,
     port: DEFAULT_REMOTE_CHROME_PORT,
   };
@@ -353,7 +355,7 @@ export async function liveTailSessionBrowserOutput(
         ),
       );
       const recovered = await recoverConversationTab(meta, (line) => console.log(line), {
-        existingEndpoint: endpoint,
+        existingEndpoint: recordedEndpoint ?? undefined,
       });
       recoveredChrome = recovered.chrome;
       endpoint = { host: recovered.host, port: recovered.port };

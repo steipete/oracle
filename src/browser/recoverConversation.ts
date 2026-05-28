@@ -43,16 +43,16 @@ export function resolveRecoveryUrl(meta: SessionMetadata): string | null {
 
 export function resolveRecoveryProfileDir(meta: SessionMetadata): string {
   const config = meta?.browser?.config;
-  if (config?.manualLogin !== true) {
+  if (config?.manualLogin === false) {
     throw new Error(
       "Cannot recover conversation: session was not run with a manual-login browser profile.",
     );
   }
   const runtime = meta?.browser?.runtime;
-  const profileDir = runtime?.userDataDir ?? config.manualLoginProfileDir;
+  const profileDir = runtime?.userDataDir ?? config?.manualLoginProfileDir;
   if (typeof profileDir !== "string" || profileDir.trim().length === 0) {
     throw new Error(
-      "Cannot recover conversation: session metadata has no manual-login profile directory.",
+      "Cannot recover conversation: session metadata has no recorded manual-login profile directory.",
     );
   }
   return profileDir;
@@ -143,7 +143,16 @@ export async function recoverConversationTab(
   const host = "127.0.0.1";
   const port = chrome.port;
 
-  await waitForRecoveredConversationReady({ host, port }, url, readyTimeoutMs);
+  try {
+    await waitForRecoveredConversationReady({ host, port }, url, readyTimeoutMs);
+  } catch (error) {
+    try {
+      chrome.kill();
+    } catch {
+      // best-effort cleanup
+    }
+    throw error;
+  }
 
   logger(`[browser] Recovery: Chrome listening on ${host}:${port}; tab loaded.`);
 

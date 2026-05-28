@@ -116,12 +116,34 @@ describe("resolveRecoveryProfileDir", () => {
     ).toBe("/tmp/runtime-profile");
   });
 
+  test("allows a recorded runtime profile when manual-login was implicit", () => {
+    expect(
+      resolveRecoveryProfileDir(
+        metaWith(
+          {
+            tabUrl: "https://chatgpt.com/c/abc",
+            userDataDir: "/tmp/windows-default-profile",
+          },
+          undefined,
+          {},
+        ),
+      ),
+    ).toBe("/tmp/windows-default-profile");
+  });
+
   test("rejects sessions that did not use manual-login mode", () => {
     expect(() =>
       resolveRecoveryProfileDir(
-        metaWith({ tabUrl: "https://chatgpt.com/c/abc" }, undefined, {
-          manualLogin: false,
-        }),
+        metaWith(
+          {
+            tabUrl: "https://chatgpt.com/c/abc",
+            userDataDir: "/tmp/temp-profile",
+          },
+          undefined,
+          {
+            manualLogin: false,
+          },
+        ),
       ),
     ).toThrow(/manual-login browser profile/);
   });
