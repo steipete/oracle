@@ -21,6 +21,8 @@ export const consultInputSchema = z
     browserFollowUps: z.array(z.string()).optional(),
     browserKeepBrowser: z.boolean().optional(),
     dryRun: z.boolean().optional(),
+    run_in_background: z.never().optional(),
+    runInBackground: z.never().optional(),
     search: z.boolean().optional(),
     slug: z.string().optional(),
   })
@@ -37,3 +39,15 @@ export const sessionsInputSchema = z.object({
 });
 
 export type SessionsInput = z.infer<typeof sessionsInputSchema>;
+
+export const followUpInputSchema = z
+  .object({
+    parentSessionId: z.string().min(1, "Parent session id is required."),
+    prompt: z.string().min(1, "Prompt is required."),
+    slug: z.string().optional(),
+    wait: z.boolean().optional(),
+    files: z.array(z.string()).optional(),
+  })
+  .strict();
+
+export type FollowUpInput = z.infer<typeof followUpInputSchema>;

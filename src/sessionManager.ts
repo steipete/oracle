@@ -183,6 +183,10 @@ export interface StoredRunOptions {
   followupSessionId?: string;
   /** Optional model selector used with --followup-model for multi-model parent sessions. */
   followupModel?: string;
+  /** Browser session this run continues as a child follow-up. */
+  parentSessionId?: string;
+  /** Alias for parentSessionId used by follow-up APIs. */
+  followUpOfSessionId?: string;
   maxInput?: number;
   system?: string;
   maxOutput?: number;
@@ -225,6 +229,8 @@ export interface SessionMetadata {
   id: string;
   createdAt: string;
   status: string;
+  parentSessionId?: string;
+  followUpOfSessionId?: string;
   promptPreview?: string;
   model?: string;
   models?: SessionModelRun[];
@@ -516,6 +522,8 @@ export async function initializeSession(
     })),
     cwd,
     mode,
+    parentSessionId: options.parentSessionId,
+    followUpOfSessionId: options.followUpOfSessionId,
     browser: browserConfig ? { config: browserConfig } : undefined,
     notifications,
     options: {
@@ -527,6 +535,8 @@ export async function initializeSession(
       previousResponseId: options.previousResponseId,
       followupSessionId: options.followupSessionId,
       followupModel: options.followupModel,
+      parentSessionId: options.parentSessionId,
+      followUpOfSessionId: options.followUpOfSessionId,
       effectiveModelId: options.effectiveModelId,
       maxInput: options.maxInput,
       system: options.system,

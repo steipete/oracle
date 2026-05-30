@@ -110,6 +110,19 @@ Recommended defaults:
 - Runs may detach or take a long time (browser/API + GPT‑5.5 Pro often does). If the CLI times out: don’t re-run; reattach.
   - List: `oracle status --hours 72`
   - Attach: `oracle session <id> --render`
+- To ask a follow-up in the same saved ChatGPT conversation, create a child
+  session instead of mutating the old one:
+  - `oracle follow-up <id> --prompt "..." --slug "<3-5 words>"`
+  - Add `--wait` to observe the child session; otherwise reattach with
+    `oracle session <child-id> --render`.
+  - Follow-up v1 is prompt-only. Start a fresh consult if you need new files.
+- MCP/browser timeouts can leave `meta.json` stale at `status:"running"` even
+  when the ChatGPT tab already has a complete answer. Use `oracle-await <id>`
+  (or `oracle session <id> --render`) to render every poll cycle; render is the
+  check and the recovery path.
+- If a run reports `status:"error"` after saving `artifacts/transcript.md`
+  (for example Node/undici `setTypeOfService EINVAL` during wrapper cleanup),
+  read the saved transcript instead of rerunning.
 - Use `--slug "<3-5 words>"` to keep session IDs readable.
 - Duplicate prompt guard exists; use `--force` only when you truly want a fresh run.
 - CLI guardrails: root runs without a prompt exit nonzero; `--dry-run` conflicts with `--render` / `--render-markdown`; Ctrl-C exits foreground API runs with code 130 while browser cleanup/reattach still runs.

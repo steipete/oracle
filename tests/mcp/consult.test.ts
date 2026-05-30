@@ -1,5 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import os from "node:os";
+import path from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
 import type { SessionModelRun } from "../../src/sessionStore.js";
+import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 import { applyConsultPreset } from "../../src/mcp/consultPresets.ts";
 import {
   buildConsultBrowserConfig,
@@ -8,6 +12,11 @@ import {
   registerConsultTool,
   summarizeModelRunsForConsult,
 } from "../../src/mcp/tools/consult.ts";
+
+afterEach(() => {
+  setOracleHomeDirOverrideForTest(null);
+  vi.unstubAllEnvs();
+});
 
 describe("summarizeModelRunsForConsult", () => {
   test("applies the ChatGPT Pro Heavy consult preset as overridable defaults", () => {
@@ -282,5 +291,61 @@ describe("summarizeModelRunsForConsult", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("run_in_background");
+  });
+
+  test("starts browser MCP consults in detached session workers", async () => {
+    const tmpHome = await mkdtemp(path.join(os.tmpdir(), "oracle-mcp-consult-"));
+    setOracleHomeDirOverrideForTest(tmpHome);
+    vi.stubEnv("CHROME_PATH", "/bin/true");
+
+    const handlers: Array<(input: unknown) => Promise<unknown>> = [];
+    const launchDetachedSessionRunner = vi.fn(async () => true);
+    const launchDetachedSessionFinalizer = vi.fn(async () => true);
+    registerConsultTool(
+      {
+        registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
+          handlers.push(fn);
+        },
+        server: {
+          sendLoggingMessage: async () => undefined,
+        },
+      } as unknown as Parameters<typeof registerConsultTool>[0],
+      {
+        launchDetachedSessionRunner,
+        launchDetachedSessionFinalizer,
+        cliEntrypoint: "/tmp/oracle-cli.js",
+        browserWaitMs: 1,
+        browserPollMs: 1,
+      },
+    );
+    const handler = handlers[0];
+    if (!handler) throw new Error("handler not registered");
+
+    try {
+      const result = (await handler({
+        engine: "browser",
+        model: "gpt-5.5-pro",
+        prompt: "review this",
+        files: [],
+        slug: "mcp-detached-test",
+      })) as {
+        content: Array<{ type: "text"; text: string }>;
+        structuredContent: { sessionId: string; status: string };
+      };
+
+      expect(launchDetachedSessionRunner).toHaveBeenCalledWith("mcp-detached-test", {
+        cliEntrypoint: "/tmp/oracle-cli.js",
+      });
+      expect(launchDetachedSessionFinalizer).toHaveBeenCalledWith("mcp-detached-test", {
+        cliEntrypoint: "/tmp/oracle-cli.js",
+      });
+      expect(result.structuredContent).toMatchObject({
+        sessionId: "mcp-detached-test",
+        status: "pending",
+      });
+      expect(result.content[0]?.text).toContain("Detached browser worker is still running");
+    } finally {
+      await rm(tmpHome, { recursive: true, force: true });
+    }
   });
 });

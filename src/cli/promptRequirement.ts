@@ -2,6 +2,7 @@ interface PromptCheckOptions {
   prompt?: string;
   session?: string;
   execSession?: string;
+  finalizeSession?: string;
   status?: boolean;
   debugHelp?: boolean;
   route?: boolean;
@@ -22,10 +23,12 @@ export function shouldRequirePrompt(rawArgs: string[], options: PromptCheckOptio
   const bypassPrompt = Boolean(
     options.session ||
     options.execSession ||
+    options.finalizeSession ||
     options.status ||
     options.debugHelp ||
     options.route ||
     options.preflight ||
+    firstArg === "follow-up" ||
     firstArg === "status" ||
     firstArg === "session",
   );

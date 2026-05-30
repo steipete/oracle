@@ -12,6 +12,11 @@ describe("shouldRequirePrompt", () => {
     expect(requires).toBe(false);
   });
 
+  test("allows follow-up subcommand to resolve its own prompt", () => {
+    const requires = shouldRequirePrompt(["follow-up", "abc123"], {});
+    expect(requires).toBe(false);
+  });
+
   test("requires prompt for default run", () => {
     const requires = shouldRequirePrompt(["--model", "gpt-5.1"], {});
     expect(requires).toBe(true);
@@ -24,6 +29,13 @@ describe("shouldRequirePrompt", () => {
 
   test("allows root --session flag without prompt", () => {
     const requires = shouldRequirePrompt(["--session", "abc123"], { session: "abc123" });
+    expect(requires).toBe(false);
+  });
+
+  test("allows hidden finalizer command without prompt", () => {
+    const requires = shouldRequirePrompt(["--finalize-session", "abc123"], {
+      finalizeSession: "abc123",
+    });
     expect(requires).toBe(false);
   });
 });

@@ -1,13 +1,84 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { getCliVersion } from "../../version.js";
 import { LoggingMessageNotificationParamsSchema } from "@modelcontextprotocol/sdk/types.js";
 import { ensureBrowserAvailable, mapConsultToRunOptions } from "../utils.js";
-import type { BrowserSessionConfig, SessionModelRun } from "../../sessionStore.js";
-import { sessionStore } from "../../sessionStore.js";
+import type { BrowserSessionConfig, SessionMetadata, SessionModelRun } from "../../sessionStore.js";
+import { sessionStore, wait } from "../../sessionStore.js";
 import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js";
 import { createRemoteBrowserExecutor } from "../../remote/client.js";
 import type { BrowserSessionRunnerDeps } from "../../browser/sessionRunner.js";
+import {
+  launchDetachedSessionFinalizer,
+  launchDetachedSessionRunner,
+} from "../../cli/detachedSession.js";
+import { buildSessionLifecycle } from "../../cli/sessionLifecycle.js";
+import { formatElapsed } from "../../oracle/format.js";
+
+interface ConsultToolDeps {
+  launchDetachedSessionRunner?: typeof launchDetachedSessionRunner;
+  launchDetachedSessionFinalizer?: typeof launchDetachedSessionFinalizer;
+  cliEntrypoint?: string;
+  browserWaitMs?: number;
+  browserPollMs?: number;
+  now?: () => number;
+}
+
+const DEFAULT_MCP_BROWSER_WAIT_MS = 105_000;
+const DEFAULT_MCP_BROWSER_POLL_MS = 2_000;
+
+function resolveMcpCliEntrypoint(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../bin/oracle-cli.js");
+}
+
+function resolvePositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function waitForDetachedBrowserSession({
+  sessionId,
+  waitMs,
+  pollMs,
+  log,
+  now = Date.now,
+}: {
+  sessionId: string;
+  waitMs: number;
+  pollMs: number;
+  log: (line?: string) => void;
+  now?: () => number;
+}): Promise<SessionMetadata | null> {
+  const deadline = now() + waitMs;
+  let lastStatus = "";
+  let lastProgressLogAt = 0;
+  while (now() < deadline) {
+    await wait(Math.min(pollMs, Math.max(0, deadline - now())));
+    const metadata = await sessionStore.readSession(sessionId);
+    if (!metadata) {
+      return null;
+    }
+    if (metadata.status !== lastStatus) {
+      lastStatus = metadata.status;
+      log(`[mcp] Detached browser session status: ${metadata.status}`);
+    } else if (now() - lastProgressLogAt >= 30_000) {
+      lastProgressLogAt = now();
+      log(`[mcp] Detached browser session still ${metadata.status}; worker continues.`);
+    }
+    if (
+      metadata.status === "completed" ||
+      metadata.status === "partial" ||
+      metadata.status === "error"
+    ) {
+      return metadata;
+    }
+  }
+  return sessionStore.readSession(sessionId);
+}
 
 async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<string | null> {
   try {
@@ -118,6 +189,18 @@ const consultInputShape = {
     .optional()
     .describe(
       "Preview the resolved Oracle run without creating a session or touching the browser.",
+    ),
+  run_in_background: z
+    .boolean()
+    .optional()
+    .describe(
+      "Unsupported compatibility trap: do not pass this field. Browser MCP consults detach automatically when they need to outlive the client timeout.",
+    ),
+  runInBackground: z
+    .boolean()
+    .optional()
+    .describe(
+      "Unsupported compatibility trap: do not pass this field. Browser MCP consults detach automatically when they need to outlive the client timeout.",
     ),
   search: z
     .boolean()
@@ -395,7 +478,7 @@ export function formatConsultDryRunResolved(details: ConsultDryRunResolved): str
   return lines;
 }
 
-export function registerConsultTool(server: McpServer): void {
+export function registerConsultTool(server: McpServer, deps: ConsultToolDeps = {}): void {
   server.registerTool(
     "consult",
     {
@@ -577,19 +660,60 @@ export function registerConsultTool(server: McpServer): void {
       };
 
       try {
-        await performSessionRun({
-          sessionMeta,
-          runOptions,
-          mode: resolvedEngine,
-          browserConfig,
-          cwd,
-          log,
-          write,
-          version: getCliVersion(),
-          notifications,
-          muteStdout: true,
-          browserDeps,
-        });
+        if (resolvedEngine === "browser" && !browserDeps) {
+          const cliEntrypoint = deps.cliEntrypoint ?? resolveMcpCliEntrypoint();
+          const launchRunner = deps.launchDetachedSessionRunner ?? launchDetachedSessionRunner;
+          const launchFinalizer =
+            deps.launchDetachedSessionFinalizer ?? launchDetachedSessionFinalizer;
+          await sessionStore.updateSession(sessionMeta.id, {
+            lifecycle: buildSessionLifecycle({
+              engine: resolvedEngine,
+              detached: true,
+              reattachCommand: `oracle session ${sessionMeta.id}`,
+            }),
+          });
+          log(
+            `[mcp] Starting detached browser worker for ${sessionMeta.id}; client timeouts will not stop the run.`,
+          );
+          await launchRunner(sessionMeta.id, { cliEntrypoint });
+          await launchFinalizer(sessionMeta.id, { cliEntrypoint }).catch((error) => {
+            log(
+              `[mcp] Detached finalizer failed to start: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          });
+          const waitMs =
+            deps.browserWaitMs ??
+            resolvePositiveIntegerEnv("ORACLE_MCP_BROWSER_WAIT_MS", DEFAULT_MCP_BROWSER_WAIT_MS);
+          const pollMs =
+            deps.browserPollMs ??
+            resolvePositiveIntegerEnv("ORACLE_MCP_BROWSER_POLL_MS", DEFAULT_MCP_BROWSER_POLL_MS);
+          log(
+            `[mcp] Waiting up to ${formatElapsed(waitMs)} for inline completion before returning session status.`,
+          );
+          await waitForDetachedBrowserSession({
+            sessionId: sessionMeta.id,
+            waitMs,
+            pollMs,
+            log,
+            now: deps.now,
+          });
+        } else {
+          await performSessionRun({
+            sessionMeta,
+            runOptions,
+            mode: resolvedEngine,
+            browserConfig,
+            cwd,
+            log,
+            write,
+            version: getCliVersion(),
+            notifications,
+            muteStdout: true,
+            browserDeps,
+          });
+        }
       } catch (error) {
         log(`Run failed: ${error instanceof Error ? error.message : String(error)}`);
         return {
@@ -604,7 +728,15 @@ export function registerConsultTool(server: McpServer): void {
 
       try {
         const finalMeta = (await sessionStore.readSession(sessionMeta.id)) ?? sessionMeta;
-        const summary = `Session ${sessionMeta.id} (${finalMeta.status})`;
+        const running = finalMeta.status === "pending" || finalMeta.status === "running";
+        const summary = running
+          ? [
+              `Session ${sessionMeta.id} (${finalMeta.status})`,
+              "Detached browser worker is still running; inspect with `oracle session " +
+                `${sessionMeta.id} --render` +
+                "` or use `oracle-await` after MCP client timeout.",
+            ].join("\n")
+          : `Session ${sessionMeta.id} (${finalMeta.status})`;
         const logTail = await readSessionLogTail(sessionMeta.id, 4000);
         const modelsSummary = summarizeModelRunsForConsult(finalMeta.models);
         return {

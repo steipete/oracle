@@ -131,6 +131,29 @@ describe("oracle CLI integration", () => {
   );
 
   test(
+    "parses follow-up command options and rejects unsupported files",
+    async () => {
+      const result = await execCli(
+        [
+          "follow-up",
+          "parent-session",
+          "--prompt",
+          "next turn",
+          "--slug",
+          "child follow up",
+          "--file",
+          "a.ts",
+        ],
+        { timeout: INTEGRATION_TIMEOUT },
+      );
+
+      expect(result.code).toBe(1);
+      expect(`${result.stdout}\n${result.stderr}`).toContain("prompt-only in v1");
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "SIGINT exits promptly",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-sigint-"));

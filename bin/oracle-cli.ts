@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import "dotenv/config";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
@@ -80,6 +79,7 @@ import {
   createPerfTrace,
   isTraceValueFlag,
 } from "../src/cli/perfTrace.js";
+import { launchDetachedSessionRunner } from "../src/cli/detachedSession.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -106,6 +106,7 @@ interface CliOptions extends OptionValues {
   apiKey?: string;
   session?: string;
   execSession?: string;
+  finalizeSession?: string;
   followup?: string;
   followupModel?: string;
   notify?: boolean;
@@ -203,6 +204,39 @@ interface RestartCommandOptions {
   wait?: boolean;
   remoteHost?: string;
   remoteToken?: string;
+}
+
+interface FollowUpCommandOptions {
+  prompt?: string;
+  slug?: string;
+  wait?: boolean;
+  recover?: boolean;
+  file?: string[];
+}
+
+function collectFollowUpCommandOptions(...values: unknown[]): FollowUpCommandOptions {
+  const options: FollowUpCommandOptions = {};
+  for (const value of values) {
+    if (!value || typeof value !== "object") continue;
+    const candidate =
+      typeof (value as Command).opts === "function"
+        ? (value as Command).opts<FollowUpCommandOptions>()
+        : (value as FollowUpCommandOptions);
+    for (const [key, candidateValue] of Object.entries(candidate)) {
+      if (candidateValue === undefined) continue;
+      if (
+        key === "file" &&
+        Array.isArray(candidateValue) &&
+        candidateValue.length === 0 &&
+        options.file &&
+        options.file.length > 0
+      ) {
+        continue;
+      }
+      (options as Record<string, unknown>)[key] = candidateValue;
+    }
+  }
+  return options;
 }
 
 const VERSION = getCliVersion();
@@ -535,6 +569,7 @@ program
     ).default(undefined),
   )
   .addOption(new Option("--exec-session <id>").hideHelp())
+  .addOption(new Option("--finalize-session <id>").hideHelp())
   .addOption(new Option("--session <id>").hideHelp())
   .addOption(
     new Option("--status", "Show stored sessions (alias for `oracle status`).")
@@ -1284,6 +1319,36 @@ program
     await restartSession(sessionId, restartOptions);
   });
 
+program
+  .command("follow-up <parentSessionId> [prompt]")
+  .description("Continue a stored browser session as a new child session.")
+  .option("-p, --prompt <text>", "Follow-up prompt to send to the saved ChatGPT conversation.")
+  .option("-s, --slug <words>", "Custom child session slug (3-5 words).")
+  .addOption(new Option("--wait").default(undefined))
+  .addOption(new Option("--no-wait").default(undefined).hideHelp())
+  .option(
+    "-f, --file <paths...>",
+    "Unsupported for follow-up v1; start a new consult to attach files.",
+    collectPaths,
+    [],
+  )
+  .option(
+    "--no-recover",
+    "Do not relaunch Chrome to reopen the saved conversation URL; require a live matching tab.",
+  )
+  .action(
+    async (
+      parentSessionId: string,
+      promptArg: string | undefined,
+      optionsOrCommand: FollowUpCommandOptions | Command,
+      cmd?: Command,
+    ) => {
+      const options = collectFollowUpCommandOptions(program, cmd, optionsOrCommand, promptArg);
+      const positionalPrompt = typeof promptArg === "string" ? promptArg : undefined;
+      await runFollowUpCommand(parentSessionId, positionalPrompt, options);
+    },
+  );
+
 function buildRunOptions(
   options: ResolvedCliOptions,
   overrides: Partial<RunOracleOptions> = {},
@@ -2009,6 +2074,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     return;
   }
 
+  if (options.finalizeSession) {
+    await finalizeSession(options.finalizeSession);
+    return;
+  }
+
   if (renderMarkdown || copyMarkdown) {
     if (!options.prompt) {
       throw new Error("Prompt is required when using --render-markdown or --copy-markdown.");
@@ -2432,24 +2502,73 @@ async function runInteractiveSession(
 }
 
 async function launchDetachedSession(sessionId: string): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    try {
-      const args = ["--", CLI_ENTRYPOINT, "--exec-session", sessionId];
-      const env = buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId);
-      const child = spawn(process.execPath, args, {
-        detached: true,
-        stdio: "ignore",
-        env,
-      });
-      child.once("error", reject);
-      child.once("spawn", () => {
-        child.unref();
-        resolve(true);
-      });
-    } catch (error) {
-      reject(error);
-    }
+  const env = buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId);
+  return launchDetachedSessionRunner(sessionId, {
+    cliEntrypoint: CLI_ENTRYPOINT,
+    env,
   });
+}
+
+async function runFollowUpCommand(
+  parentSessionId: string,
+  promptArg: string | undefined,
+  options: FollowUpCommandOptions,
+): Promise<void> {
+  const prompt = (await resolveDashPrompt(options.prompt ?? promptArg ?? "")) ?? "";
+  if (!prompt.trim()) {
+    console.error(
+      chalk.red("Prompt is required for follow-up. Use positional [prompt] or --prompt."),
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (options.file && options.file.length > 0) {
+    console.error(
+      chalk.red(
+        "Browser follow-up is prompt-only in v1. Start a new `oracle consult` run to attach files.",
+      ),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const { startBrowserFollowUpSession, waitForFollowUpSession } =
+    await import("../src/cli/browserFollowUp.js");
+  const result = await startBrowserFollowUpSession(parentSessionId, {
+    prompt,
+    slug: options.slug,
+    wait: options.wait,
+    recover: options.recover !== false,
+    files: options.file,
+    cliEntrypoint: CLI_ENTRYPOINT,
+    env: process.env,
+    log: console.log,
+  });
+
+  console.log(chalk.blue(`Follow-up session: ${result.session.id}`));
+  console.log(chalk.dim(`Parent session: ${result.parentSessionId}`));
+  console.log(chalk.dim(`Conversation: ${result.parentConversationUrl}`));
+  if (!result.finalizerStarted) {
+    console.log(chalk.yellow("Detached finalizer did not start; use oracle-await if needed."));
+  }
+
+  const shouldWait = result.session.options?.waitPreference === true;
+  if (!shouldWait) {
+    for (const line of formatSessionLifecycleBlock(result.session)) {
+      console.log(line);
+    }
+    console.log(chalk.blue(`Reattach via: ${result.reattachCommand}`));
+    return;
+  }
+
+  const finalMeta = await waitForFollowUpSession(result.session.id, { log: console.log });
+  if (!finalMeta) {
+    console.log(chalk.red(`Follow-up session ${result.session.id} disappeared.`));
+    process.exitCode = 1;
+    return;
+  }
+  const { attachSession } = await import("../src/cli/sessionDisplay.js");
+  await attachSession(result.session.id, { renderMarkdown: true, suppressMetadata: true });
 }
 
 async function restartSession(sessionId: string, options: RestartCommandOptions): Promise<void> {
@@ -2679,6 +2798,18 @@ async function executeSession(sessionId: string) {
     });
   } catch {
     // Errors are already logged to the session log; keep quiet to mirror stored-session behavior.
+  } finally {
+    stream.end();
+  }
+}
+
+async function finalizeSession(sessionId: string) {
+  const { logLine, stream } = sessionStore.createLogWriter(sessionId);
+  try {
+    const { finalizeBrowserSessionUntilComplete } = await import("../src/cli/sessionFinalizer.js");
+    await finalizeBrowserSessionUntilComplete(sessionId, {
+      log: logLine,
+    });
   } finally {
     stream.end();
   }

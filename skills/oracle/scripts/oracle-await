@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# oracle-await — wait for a long Oracle browser session and recover stale "running" sessions.
+#
+# Browser GPT-5.5 Pro consults can outlive MCP client request timeouts. When
+# that happens, the ChatGPT tab may finish while session metadata still says
+# "running". Rendering is both a check and a recovery path: it reattaches to the
+# stored browser tab, captures artifacts/transcript.md, and finalizes metadata.
+#
+# Usage:
+#   oracle-await <slug-or-id> [first_wait_s] [interval_s] [max_s]
+# Defaults:
+#   first_wait=300s, interval=180s, max=1320s
+#
+# Exit codes:
+#   0 READY; transcript captured and printed
+#   2 timed out/still running
+#   3 session reported an error without a captured transcript
+#   4 unknown session or missing wrapper
+
+set -uo pipefail
+
+ID="${1:?usage: oracle-await <slug-or-id> [first_wait_s interval_s max_s]}"
+FIRST="${2:-300}"
+INTERVAL="${3:-180}"
+MAX="${4:-1320}"
+
+HOME_DIR="${ORACLE_HOME_DIR:-$HOME/.oracle}"
+SDIR="$HOME_DIR/sessions/$ID"
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "$SELF_DIR/oracle-local" ]; then
+  WRAP="$SELF_DIR/oracle-local"
+else
+  WRAP="${ORACLE:-oracle}"
+fi
+TRANSCRIPT="$SDIR/artifacts/transcript.md"
+
+[ -d "$SDIR" ] || { echo "oracle-await: unknown session '$ID' (no $SDIR)"; exit 4; }
+command -v "$WRAP" >/dev/null 2>&1 || [ -x "$WRAP" ] || {
+  echo "oracle-await: missing oracle wrapper ($WRAP)"
+  exit 4
+}
+
+meta_status() {
+  python3 -c "import json;print(json.load(open('$SDIR/meta.json')).get('status') or '?')" 2>/dev/null || echo "?"
+}
+
+tsize() {
+  wc -c < "$TRANSCRIPT" 2>/dev/null | tr -d ' ' || echo 0
+}
+
+START=$(date +%s)
+elapsed() { echo $(( $(date +%s) - START )); }
+
+echo "oracle-await: $ID - first ${FIRST}s, then every ${INTERVAL}s, cap ${MAX}s"
+
+attempt() {
+  "$WRAP" session "$ID" --render >/dev/null 2>&1 || true
+  local st sz
+  st="$(meta_status)"
+  sz="$(tsize)"
+  echo "  [$(elapsed)s] status=$st transcript=${sz}B"
+  if [ "${sz:-0}" -gt 20 ] && { [ "$st" = "completed" ] || [ "$st" = "error" ]; }; then
+    return 0
+  fi
+  [ "$st" = "error" ] && return 3
+  return 1
+}
+
+sleep "$FIRST"
+
+while :; do
+  attempt
+  rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "READY $TRANSCRIPT"
+    echo "----- answer -----"
+    sed -n '/^## Answer/,$p' "$TRANSCRIPT" 2>/dev/null || cat "$TRANSCRIPT"
+    exit 0
+  fi
+  if [ "$rc" -eq 3 ]; then
+    echo "ERROR session '$ID' reported an error without a captured transcript; inspect: $WRAP session $ID --render"
+    exit 3
+  fi
+  if [ "$(elapsed)" -ge "$MAX" ]; then
+    echo "TIMEOUT after $(elapsed)s (status=$(meta_status)); re-run oracle-await or render manually."
+    exit 2
+  fi
+  sleep "$INTERVAL"
+done
