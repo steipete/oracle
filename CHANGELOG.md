@@ -20,6 +20,15 @@
 
 - CLI/API/Browser: render generated prompt, inline, and text-bundle context with stable line numbers so model answers can cite source as `path:line` or `path:line-line`, while preserving indexed `buildPrompt(...)` headings, raw browser uploads, ZIP entries, `createFileSections().sectionText`, and the default `formatFileSection(...)` output. Callers can request numbered output directly with `formatFileSection(..., { lineNumbers: true })`. Thanks @tristanmanchester!
 
+### Fixed
+
+- Browser: GPT-5.5 Pro Extended consults no longer fail closed with `Thinking time: chip not found for pro (requested Extended); refusing to submit without confirmed Pro Extended` against current ChatGPT. The composer moved thinking effort into a unified "Intelligence" picker (`[data-testid="composer-intelligence-picker-content"]`) whose `role="menuitemradio"` rows are the new tiers (Instant / Medium / High / Extra High / Pro Extended); the old per-model trailing effort buttons (`[data-model-picker-thinking-effort-action]`) and `model-switcher-*` rows are gone, so the previous detection found nothing and (since the path fails closed) aborted before submitting — even with the existing `withRetries`, since the markup never matched. Oracle now confirms Pro Extended from the picker's checked radio (real proof, not the composer-pill label, preserving the fail-closed contract). The Pro Extended target drives this picker; other tiers fall back to the legacy paths.
+
+### Added
+
+- Browser: on a thinking-time detection failure, Oracle now logs a focused model-picker diagnostic (the model button, any `model-switcher`/effort rows, and the open menu's items with their testids, roles, `aria-checked`, and rects) to the session log — unconditionally on the fatal Pro Extended path, not only under `--verbose` — so future ChatGPT UI drift is debuggable from the saved session instead of requiring a repro.
+- Browser: add `ORACLE_BROWSER_PRO_EFFORT_RELAXED` (truthy = `1`/`true`/`yes`/`on`) as an opt-in escape hatch. When set, an unconfirmed Pro Extended effort downgrades from a hard error to a warning and the run continues at ChatGPT's current effort (the Pro model already defaults to Pro Extended), so a future picker change can't hard-block consults. The strict fail-closed behavior remains the default.
+
 ## 0.13.0 — 2026-05-22
 
 ### Added

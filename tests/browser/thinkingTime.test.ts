@@ -214,7 +214,7 @@ describe("browser thinking-time selection expression", () => {
         FakeMouseEvent,
         FakeElement,
       ),
-    ).resolves.toEqual({ status: "menu-not-found" });
+    ).resolves.toMatchObject({ status: "menu-not-found" });
     expect(proClicks).toBeGreaterThan(0);
     expect(thinkingClicks).toBe(0);
   });
@@ -273,5 +273,148 @@ describe("browser thinking-time selection expression", () => {
     ).resolves.toBeUndefined();
 
     expect(logs.at(-1)).toContain("continuing with ChatGPT default");
+  });
+
+  it("drives ChatGPT's new Intelligence effort picker for Pro Extended", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    expect(expression).toContain("composer-intelligence-picker-content");
+    expect(expression).toContain("matchesProExtended");
+    expect(expression).toContain("INTELLIGENCE_WAIT_MS");
+  });
+
+  it("captures a model-picker diagnostic on failure outcomes", () => {
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    expect(expression).toContain("collectPickerDiagnostic");
+    expect(expression).toContain("describeMenu");
+    expect(expression).toContain("diagnostic: collectPickerDiagnostic()");
+  });
+
+  it("confirms Pro Extended from the Intelligence menu's checked radio", async () => {
+    class FakeEventTarget {
+      dispatchEvent(_event: unknown): boolean {
+        return true;
+      }
+    }
+    class FakeElement extends FakeEventTarget {
+      constructor(
+        public textContent: string,
+        private readonly attributes: Readonly<Record<string, string>> = {},
+        private readonly children: FakeElement[] = [],
+      ) {
+        super();
+      }
+      getAttribute(name: string): string | null {
+        return this.attributes[name] ?? null;
+      }
+      querySelector(_selector: string): FakeElement | null {
+        return null;
+      }
+      querySelectorAll(_selector: string): FakeElement[] {
+        return this.children;
+      }
+      closest(_selector: string): FakeElement | null {
+        return null;
+      }
+      matches(_selector: string): boolean {
+        return false;
+      }
+      getBoundingClientRect(): { width: number; height: number } {
+        return { width: 144, height: 36 };
+      }
+    }
+    class FakeMouseEvent {
+      constructor(
+        public readonly type: string,
+        public readonly init?: unknown,
+      ) {}
+    }
+
+    const proExtendedRadio = new FakeElement("Pro Extended", {
+      role: "menuitemradio",
+      "aria-checked": "true",
+    });
+    const intelligenceMenu = new FakeElement(
+      "InstantMediumHighExtra HighPro Extended",
+      { "data-testid": "composer-intelligence-picker-content", role: "menu" },
+      [proExtendedRadio],
+    );
+    const modelButton = new FakeElement("Pro Extended", {
+      "aria-expanded": "true",
+      "aria-haspopup": "menu",
+    });
+    const documentStub = {
+      body: new FakeElement(""),
+      querySelector: (selector: string) => {
+        if (selector.includes("composer-intelligence-picker-content")) return intelligenceMenu;
+        if (selector.includes("model-switcher-dropdown-button") || selector.includes("__composer-pill")) {
+          return modelButton;
+        }
+        return null;
+      },
+      querySelectorAll: (_selector: string) => [],
+      dispatchEvent: () => true,
+    };
+    let now = 0;
+    const performanceStub = { now: () => (now += 100) };
+    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    const evaluate = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${expression};`,
+    ) as (
+      document: unknown,
+      performance: unknown,
+      setTimeout: unknown,
+      window: unknown,
+      EventTarget: unknown,
+      PointerEvent: unknown,
+      MouseEvent: unknown,
+      HTMLElement: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      evaluate(
+        documentStub,
+        performanceStub,
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "already-selected", label: "Pro Extended" });
+  });
+
+  it("downgrades the strict Pro Extended throw when ORACLE_BROWSER_PRO_EFFORT_RELAXED is set", async () => {
+    const runtime = {
+      evaluate: async () => ({ result: { value: { status: "chip-not-found" } } }),
+    };
+    const logs: string[] = [];
+    const previous = process.env.ORACLE_BROWSER_PRO_EFFORT_RELAXED;
+    process.env.ORACLE_BROWSER_PRO_EFFORT_RELAXED = "1";
+    try {
+      await expect(
+        ensureThinkingTime(
+          runtime as never,
+          "extended",
+          ((message: string) => logs.push(message)) as never,
+          "gpt-5.5-pro",
+        ),
+      ).resolves.toBeUndefined();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.ORACLE_BROWSER_PRO_EFFORT_RELAXED;
+      } else {
+        process.env.ORACLE_BROWSER_PRO_EFFORT_RELAXED = previous;
+      }
+    }
+    expect(logs.some((line) => line.includes("ORACLE_BROWSER_PRO_EFFORT_RELAXED"))).toBe(true);
   });
 });

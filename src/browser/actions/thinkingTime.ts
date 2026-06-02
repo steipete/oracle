@@ -8,13 +8,60 @@ import {
 import { logDomFailure } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
 
+// Snapshot of the model-picker / thinking-effort subtree, captured at the moment
+// detection fails so a chip-not-found can be diagnosed without re-running with
+// --verbose. Loosely typed: the shape is whatever the injected probe returns.
+type ThinkingTimePickerDiagnostic = Record<string, unknown>;
+
 type ThinkingTimeOutcome =
   | { status: "already-selected"; label?: string | null }
   | { status: "switched"; label?: string | null }
-  | { status: "chip-not-found" }
-  | { status: "menu-not-found" }
-  | { status: "option-not-found" }
-  | { status: "model-kind-not-found"; modelKind?: string | null };
+  | { status: "chip-not-found"; diagnostic?: ThinkingTimePickerDiagnostic }
+  | { status: "menu-not-found"; diagnostic?: ThinkingTimePickerDiagnostic }
+  | { status: "option-not-found"; diagnostic?: ThinkingTimePickerDiagnostic }
+  | {
+      status: "model-kind-not-found";
+      modelKind?: string | null;
+      diagnostic?: ThinkingTimePickerDiagnostic;
+    };
+
+/**
+ * Opt-in escape hatch: when `ORACLE_BROWSER_PRO_EFFORT_RELAXED` is truthy, an
+ * unconfirmed Pro Extended effort no longer aborts the run. ChatGPT's Pro model
+ * already defaults to Pro Extended, so continuing is safe; this exists so a
+ * future ChatGPT UI change can't hard-block consults the way the strict default
+ * does. Strict fail-closed remains the default.
+ */
+function isProEffortRelaxed(): boolean {
+  const raw = (process.env.ORACLE_BROWSER_PRO_EFFORT_RELAXED ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+/**
+ * Surfaces the model-picker snapshot captured alongside a failed detection.
+ *
+ * Logged unconditionally (not gated on `logger.verbose`) so the *fatal*
+ * Pro-Extended path is always debuggable from the persisted session log — the
+ * generic `logDomFailure` snapshot only covers conversation turns, not the
+ * model-switcher subtree where this failure actually lives.
+ */
+function logPickerDiagnostic(
+  result: ThinkingTimeOutcome | undefined,
+  logger: BrowserLogger,
+): void {
+  const diagnostic =
+    result && "diagnostic" in result
+      ? (result.diagnostic as ThinkingTimePickerDiagnostic | undefined)
+      : undefined;
+  if (!diagnostic) {
+    return;
+  }
+  const line = `[thinking-time] model-picker diagnostic: ${JSON.stringify(diagnostic)}`;
+  logger(line);
+  if (logger.sessionLog && logger.sessionLog !== logger) {
+    logger.sessionLog(line);
+  }
+}
 
 /**
  * Selects a specific thinking time level in ChatGPT's composer.
@@ -35,7 +82,14 @@ export async function ensureThinkingTime(
   const result = await evaluateThinkingTimeSelection(Runtime, level, desiredModel);
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
   const targetModelKind = inferThinkingTargetModelKind(desiredModel);
-  const strictProEffort = targetModelKind === "pro" && level === "extended";
+  // Pro Extended normally fails closed (throws) when the effort can't be
+  // confirmed. Operators can opt into "best-effort" via
+  // ORACLE_BROWSER_PRO_EFFORT_RELAXED, which downgrades the throw to a warning
+  // and submits at ChatGPT's current effort (the Pro model already defaults to
+  // Pro Extended). The strict default is preserved.
+  const wantsStrictProEffort = targetModelKind === "pro" && level === "extended";
+  const proEffortRelaxed = wantsStrictProEffort && isProEffortRelaxed();
+  const strictProEffort = wantsStrictProEffort && !proEffortRelaxed;
 
   switch (result?.status) {
     case "already-selected":
@@ -49,6 +103,7 @@ export async function ensureThinkingTime(
     case "option-not-found":
     case "model-kind-not-found": {
       await logDomFailure(Runtime, logger, `thinking-${result.status}`);
+      logPickerDiagnostic(result, logger);
       const kindHint =
         result.status === "model-kind-not-found" && result.modelKind
           ? ` for ${result.modelKind}`
@@ -59,18 +114,25 @@ export async function ensureThinkingTime(
       if (strictProEffort) {
         throw new Error(`${message}; refusing to submit without confirmed Pro Extended.`);
       }
-      logger(`${message}; continuing with ChatGPT default.`);
+      logger(
+        proEffortRelaxed
+          ? `${message}; ORACLE_BROWSER_PRO_EFFORT_RELAXED is set — continuing with ChatGPT's current effort.`
+          : `${message}; continuing with ChatGPT default.`,
+      );
       return;
     }
     default: {
       await logDomFailure(Runtime, logger, "thinking-time-unknown");
+      logPickerDiagnostic(result, logger);
       if (strictProEffort) {
         throw new Error(
           `Thinking time: unknown outcome selecting ${capitalizedLevel}; refusing to submit without confirmed Pro Extended.`,
         );
       }
       logger(
-        `Thinking time: unknown outcome selecting ${capitalizedLevel}; continuing with ChatGPT default.`,
+        proEffortRelaxed
+          ? `Thinking time: unknown outcome selecting ${capitalizedLevel}; ORACLE_BROWSER_PRO_EFFORT_RELAXED is set — continuing with ChatGPT's current effort.`
+          : `Thinking time: unknown outcome selecting ${capitalizedLevel}; continuing with ChatGPT default.`,
       );
       return;
     }
@@ -168,6 +230,10 @@ function buildThinkingTimeExpression(
     const INITIAL_WAIT_MS = 150;
     const STEP_WAIT_MS = 200;
     const MAX_WAIT_MS = 8000;
+    // The "Intelligence" menu renders right after opening the composer pill, so
+    // a short probe is enough; if it's absent this is an older UI and we fall
+    // back to the legacy paths without paying the full MAX_WAIT_MS.
+    const INTELLIGENCE_WAIT_MS = 2500;
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // Keep CJK characters so we can match Chinese labels against LEVEL_TOKENS.
@@ -270,6 +336,65 @@ function buildThinkingTimeExpression(
     const findModelButton = () => document.querySelector(MODEL_BUTTON_SELECTOR);
     const findTrailingButtons = () => Array.from(document.querySelectorAll(TRAILING_SELECTOR));
     const KIND_NOT_FOUND = { kindNotFound: true };
+
+    // Snapshot the model-picker subtree at the moment detection fails. Returned
+    // on every failure status so the host can log it without re-running verbose.
+    const describeNode = (el) => {
+      if (!el || typeof el.getAttribute !== 'function') return null;
+      let rect = null;
+      try {
+        const r = el.getBoundingClientRect?.();
+        if (r) rect = { w: Math.round(r.width), h: Math.round(r.height), visible: r.width > 0 && r.height > 0 };
+      } catch {}
+      return {
+        tag: el.tagName || null,
+        testid: el.getAttribute('data-testid'),
+        role: el.getAttribute('role'),
+        ariaLabel: el.getAttribute('aria-label'),
+        ariaExpanded: el.getAttribute('aria-expanded'),
+        ariaChecked: el.getAttribute('aria-checked'),
+        ariaHaspopup: el.getAttribute('aria-haspopup'),
+        text: (el.textContent || '').trim().slice(0, 80),
+        rect,
+      };
+    };
+    const describeMenu = (menu) => {
+      if (!menu || typeof menu.querySelectorAll !== 'function') return null;
+      const items = Array.from(
+        menu.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="option"], button, [data-testid]'),
+      )
+        .slice(0, 30)
+        .map(describeNode);
+      return {
+        role: menu.getAttribute?.('role') ?? null,
+        testid: menu.getAttribute?.('data-testid') ?? null,
+        itemCount: items.length,
+        items,
+        text: (menu.textContent || '').trim().slice(0, 400),
+      };
+    };
+    const collectPickerDiagnostic = () => {
+      try {
+        const trailings = findTrailingButtons();
+        const switchers = Array.from(document.querySelectorAll('[data-testid*="model-switcher"]'));
+        const menus = Array.from(document.querySelectorAll(MENU_CONTAINER_SELECTOR + ', [role="group"]'));
+        const modelBtn = findModelButton();
+        return {
+          targetModelKind: TARGET_MODEL_KIND,
+          targetLevel: TARGET_LEVEL,
+          modelButton: describeNode(modelBtn),
+          modelButtonExpanded: modelBtn && modelBtn.getAttribute ? modelBtn.getAttribute('aria-expanded') : null,
+          trailingCount: trailings.length,
+          trailings: trailings.slice(0, 12).map(describeNode),
+          modelSwitcherCount: switchers.length,
+          modelSwitcher: switchers.slice(0, 24).map(describeNode),
+          menuCount: menus.length,
+          menus: menus.slice(0, 4).map(describeMenu),
+        };
+      } catch (err) {
+        return { error: String(err && err.message ? err.message : err) };
+      }
+    };
     const findEffortRow = (node) => {
       let current = node instanceof HTMLElement ? node.parentElement : null;
       while (current && current !== document.body) {
@@ -360,12 +485,63 @@ function buildThinkingTimeExpression(
 
     const modelBtn = findModelButton();
     if (!modelBtn) {
-      return { status: 'chip-not-found' };
+      return { status: 'chip-not-found', diagnostic: collectPickerDiagnostic() };
     }
     // Open model menu (idempotent — leaves it open if already open).
     if (modelBtn.getAttribute('aria-expanded') !== 'true') {
       dispatchClickSequence(modelBtn);
       await sleep(INITIAL_WAIT_MS);
+    }
+
+    // ---------- NEWEST UI: unified "Intelligence" effort picker ----------
+    // ChatGPT replaced the per-model trailing effort buttons with a single
+    // "Intelligence" menu ([data-testid="composer-intelligence-picker-content"]),
+    // whose role="menuitemradio" rows are the effort tiers. For the Pro model the
+    // combined "Pro Extended" row carries aria-checked when active, and Pro
+    // sub-options live behind
+    // [data-testid="composer-intelligence-pro-thinking-effort-trigger"]. We
+    // confirm Pro Extended by the radio's checked state (real proof), never by
+    // the composer-pill label. The new non-pro tiers (Instant/Medium/High/Extra
+    // High) don't map cleanly onto light/standard/extended/heavy, so we only
+    // drive this picker for the strict Pro Extended target and let other levels
+    // fall through to the legacy paths below.
+    const INTELLIGENCE_MENU_SELECTOR = '[data-testid="composer-intelligence-picker-content"]';
+    if (TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'extended') {
+      const matchesProExtended = (node) => {
+        const text = normalize(
+          (node?.textContent ?? '') + ' ' + (node?.getAttribute?.('aria-label') ?? ''),
+        );
+        return text.includes('pro') && text.includes('extended');
+      };
+      const findProExtendedOption = () => {
+        const menu = document.querySelector(INTELLIGENCE_MENU_SELECTOR);
+        if (!menu) return null;
+        for (const item of menu.querySelectorAll(
+          '[role="menuitemradio"], [role="menuitem"], [role="option"]',
+        )) {
+          if (matchesProExtended(item)) return item;
+        }
+        return null;
+      };
+      let proExtended = null;
+      const intelligenceDeadline = performance.now() + INTELLIGENCE_WAIT_MS;
+      while (performance.now() < intelligenceDeadline) {
+        proExtended = findProExtendedOption();
+        if (proExtended) break;
+        await sleep(100);
+      }
+      if (proExtended) {
+        const already = optionIsSelected(proExtended);
+        const label = proExtended.textContent?.trim?.() || null;
+        if (!already) {
+          dispatchClickSequence(proExtended);
+          await sleep(STEP_WAIT_MS);
+        }
+        closeOpenMenus();
+        return { status: already ? 'already-selected' : 'switched', label };
+      }
+      // Intelligence menu absent (older UI) or its Pro Extended row is missing:
+      // fall through to the legacy trailing-button path below.
     }
 
     let trailing = null;
@@ -376,12 +552,14 @@ function buildThinkingTimeExpression(
       await sleep(100);
     }
     if (!trailing) {
+      const diagnostic = collectPickerDiagnostic();
       closeOpenMenus();
-      return { status: 'chip-not-found' };
+      return { status: 'chip-not-found', diagnostic };
     }
     if (trailing.kindNotFound) {
+      const diagnostic = collectPickerDiagnostic();
       closeOpenMenus();
-      return { status: 'model-kind-not-found', modelKind: TARGET_MODEL_KIND };
+      return { status: 'model-kind-not-found', modelKind: TARGET_MODEL_KIND, diagnostic };
     }
 
     dispatchClickSequence(trailing);
@@ -417,14 +595,16 @@ function buildThinkingTimeExpression(
       await sleep(100);
     }
     if (!effortMenu) {
+      const diagnostic = collectPickerDiagnostic();
       closeOpenMenus();
-      return { status: 'menu-not-found' };
+      return { status: 'menu-not-found', diagnostic };
     }
 
     const targetOption = findOptionInMenu(effortMenu);
     if (!targetOption) {
+      const diagnostic = collectPickerDiagnostic();
       closeOpenMenus();
-      return { status: 'option-not-found' };
+      return { status: 'option-not-found', diagnostic };
     }
 
     const already = optionIsSelected(targetOption);
