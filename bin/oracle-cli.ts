@@ -79,7 +79,10 @@ import {
   createPerfTrace,
   isTraceValueFlag,
 } from "../src/cli/perfTrace.js";
-import { launchDetachedSessionRunner } from "../src/cli/detachedSession.js";
+import {
+  launchDetachedSessionFinalizer,
+  launchDetachedSessionRunner,
+} from "../src/cli/detachedSession.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -2381,15 +2384,16 @@ async function runRootCommand(options: CliOptions): Promise<void> {
         waitPreference,
         disableDetachEnv,
       });
-  const detached = !detachAllowed
-    ? false
+  const detachedLaunch = !detachAllowed
+    ? { runnerStarted: false, finalizerStarted: false }
     : await launchDetachedSession(sessionMeta.id).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
           chalk.yellow(`Unable to detach session runner (${message}). Running inline...`),
         );
-        return false;
+        return { runnerStarted: false, finalizerStarted: false };
       });
+  const detached = detachedLaunch.runnerStarted;
   const lifecycle = buildSessionLifecycle({
     engine,
     detached,
@@ -2397,6 +2401,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   });
   await sessionStore.updateSession(sessionMeta.id, { lifecycle });
   const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
+  if (detached && !detachedLaunch.finalizerStarted) {
+    console.log(
+      chalk.yellow("Detached finalizer did not start; use `oracle session --render` if needed."),
+    );
+  }
 
   if (!waitPreference) {
     if (!detached) {
@@ -2501,12 +2510,29 @@ async function runInteractiveSession(
   }
 }
 
-async function launchDetachedSession(sessionId: string): Promise<boolean> {
+interface DetachedLaunchResult {
+  runnerStarted: boolean;
+  finalizerStarted: boolean;
+}
+
+async function launchDetachedSession(sessionId: string): Promise<DetachedLaunchResult> {
   const env = buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId);
-  return launchDetachedSessionRunner(sessionId, {
+  const launchOptions = {
     cliEntrypoint: CLI_ENTRYPOINT,
     env,
-  });
+  };
+  const runnerStarted = await launchDetachedSessionRunner(sessionId, launchOptions);
+  const finalizerStarted = await launchDetachedSessionFinalizer(sessionId, launchOptions).catch(
+    (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(chalk.yellow(`Unable to detach session finalizer (${message}).`));
+      return false;
+    },
+  );
+  return {
+    runnerStarted,
+    finalizerStarted,
+  };
 }
 
 async function runFollowUpCommand(
@@ -2712,15 +2738,16 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
         waitPreference,
         disableDetachEnv,
       });
-  const detached = !detachAllowed
-    ? false
+  const detachedLaunch = !detachAllowed
+    ? { runnerStarted: false, finalizerStarted: false }
     : await launchDetachedSession(sessionMeta.id).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
           chalk.yellow(`Unable to detach session runner (${message}). Running inline...`),
         );
-        return false;
+        return { runnerStarted: false, finalizerStarted: false };
       });
+  const detached = detachedLaunch.runnerStarted;
   const lifecycle = buildSessionLifecycle({
     engine,
     detached,
@@ -2728,6 +2755,11 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   });
   await sessionStore.updateSession(sessionMeta.id, { lifecycle });
   const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
+  if (detached && !detachedLaunch.finalizerStarted) {
+    console.log(
+      chalk.yellow("Detached finalizer did not start; use `oracle session --render` if needed."),
+    );
+  }
 
   if (!waitPreference) {
     if (!detached) {
