@@ -358,6 +358,7 @@ export async function ensurePromptReady(
 
 export interface ResumedConversationHydrationDeps {
   ensurePromptReady?: typeof ensurePromptReady;
+  requirePriorTurns?: boolean;
 }
 
 /**
@@ -400,6 +401,15 @@ export async function waitForResumedConversationHydration(
   }
   await delay(1_000);
   await ensureReady(Runtime, timeoutMs, logger);
+  if ((deps.requirePriorTurns ?? false) && priorTurns <= 0) {
+    throw new BrowserAutomationError(
+      "Saved ChatGPT conversation did not load prior turns; refusing to submit follow-up as a fresh chat.",
+      {
+        stage: "resume-conversation",
+        priorTurns,
+      },
+    );
+  }
   logger(`[browser] Resumed conversation hydrated (${priorTurns} prior turns); composer settled.`);
   return priorTurns;
 }

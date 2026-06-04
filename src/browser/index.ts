@@ -881,7 +881,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
       if (isResumingConversation) {
         await raceWithDisconnect(
-          waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger),
+          waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger, {
+            requirePriorTurns: true,
+          }),
         );
       }
     } else {
@@ -904,7 +906,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
 
       const targetUrl = config.resumeConversationUrl ?? config.url;
-      if (targetUrl !== baseUrl) {
+      if (isResumingConversation) {
+        await raceWithDisconnect(navigateToChatGPT(Page, Runtime, targetUrl, logger));
+        await raceWithDisconnect(ensureNotBlocked(Runtime, config.headless, logger));
+        await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+      } else if (targetUrl !== baseUrl) {
         await raceWithDisconnect(
           navigateToPromptReadyWithFallback(Page, Runtime, {
             url: targetUrl,
@@ -919,7 +925,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
       if (isResumingConversation) {
         await raceWithDisconnect(
-          waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger),
+          waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger, {
+            requirePriorTurns: true,
+          }),
         );
       }
     }
@@ -2388,14 +2396,18 @@ async function runRemoteBrowserMode(
       await ensureLoggedIn(Runtime, logger, { remoteSession: true });
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       if (config.resumeConversationUrl) {
-        await waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger);
+        await waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger, {
+          requirePriorTurns: true,
+        });
       }
     } else {
       await ensureNotBlocked(Runtime, config.headless, logger);
       await ensureLoggedIn(Runtime, logger, { remoteSession: true });
       await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
       if (config.resumeConversationUrl) {
-        await waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger);
+        await waitForResumedConversationHydration(Runtime, config.inputTimeoutMs, logger, {
+          requirePriorTurns: true,
+        });
       }
     }
     logger(

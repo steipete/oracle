@@ -187,6 +187,34 @@ describe("waitForResumedConversationHydration", () => {
       vi.useRealTimers();
     }
   });
+
+  test("rejects resumed conversations with zero prior turns when required", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({ result: { value: 0 } }),
+      } as unknown as ChromeClient["Runtime"];
+      const ensurePromptReadyMock = vi.fn().mockResolvedValue(undefined);
+
+      const promise = waitForResumedConversationHydration(runtime, 1_000, logger, {
+        ensurePromptReady: ensurePromptReadyMock,
+        requirePriorTurns: true,
+      });
+      const assertion = expect(promise).rejects.toMatchObject({
+        message: expect.stringMatching(/did not load prior turns/i),
+        details: {
+          stage: "resume-conversation",
+          priorTurns: 0,
+        },
+      });
+      await vi.runAllTimersAsync();
+
+      await assertion;
+      expect(ensurePromptReadyMock).toHaveBeenCalledWith(runtime, 1_000, logger);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("ensureNotBlocked", () => {

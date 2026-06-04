@@ -21,13 +21,13 @@ async function withOracleHome<T>(fn: (tmpHome: string) => Promise<T>): Promise<T
   }
 }
 
-async function createBrowserParent() {
+async function createBrowserParent(waitPreference = false) {
   const parent = await sessionStore.createSession(
     {
       prompt: "parent prompt",
       model: "gpt-5.5-pro",
       mode: "browser",
-      waitPreference: false,
+      waitPreference,
       browserConfig: {
         manualLogin: true,
         manualLoginProfileDir: "/tmp/oracle-profile",
@@ -124,6 +124,35 @@ describe("browser follow-up sessions", () => {
         browserTabRef: "https://chatgpt.com/c/abc123",
         resumeConversationUrl: "https://chatgpt.com/c/abc123",
       });
+    });
+  });
+
+  test("does not inherit parent wait preference unless wait is explicit", async () => {
+    await withOracleHome(async () => {
+      const parent = await createBrowserParent(true);
+      const launchDetachedSessionRunner = vi.fn(async () => true);
+      const launchDetachedSessionFinalizer = vi.fn(async () => true);
+
+      const detachedResult = await startBrowserFollowUpSession(
+        parent.id,
+        {
+          prompt: "detached child",
+          cliEntrypoint: "/tmp/oracle-cli.js",
+        },
+        { launchDetachedSessionRunner, launchDetachedSessionFinalizer },
+      );
+      expect(detachedResult.session.options.waitPreference).toBe(false);
+
+      const waitingResult = await startBrowserFollowUpSession(
+        parent.id,
+        {
+          prompt: "waiting child",
+          wait: true,
+          cliEntrypoint: "/tmp/oracle-cli.js",
+        },
+        { launchDetachedSessionRunner, launchDetachedSessionFinalizer },
+      );
+      expect(waitingResult.session.options.waitPreference).toBe(true);
     });
   });
 

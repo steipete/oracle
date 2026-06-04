@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { shouldDetachSession } from "../../src/cli/detach.js";
+import { shouldDetachSession, shouldLaunchDetachedSessionFinalizer } from "../../src/cli/detach.js";
 
 describe("shouldDetachSession", () => {
   test("disables detach when env disables it", () => {
@@ -56,5 +56,10 @@ describe("shouldDetachSession", () => {
       disableDetachEnv: false,
     });
     expect(pro52).toBe(true);
+  });
+
+  test("only launches detached session finalizers for browser sessions", () => {
+    expect(shouldLaunchDetachedSessionFinalizer({ engine: "browser" })).toBe(true);
+    expect(shouldLaunchDetachedSessionFinalizer({ engine: "api" })).toBe(false);
   });
 });

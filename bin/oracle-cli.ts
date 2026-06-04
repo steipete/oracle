@@ -46,7 +46,7 @@ import {
 } from "../src/cli/options.js";
 import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
-import { shouldDetachSession } from "../src/cli/detach.js";
+import { shouldDetachSession, shouldLaunchDetachedSessionFinalizer } from "../src/cli/detach.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
@@ -2386,7 +2386,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       });
   const detachedLaunch = !detachAllowed
     ? { runnerStarted: false, finalizerStarted: false }
-    : await launchDetachedSession(sessionMeta.id).catch((error) => {
+    : await launchDetachedSession(sessionMeta.id, { engine }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
           chalk.yellow(`Unable to detach session runner (${message}). Running inline...`),
@@ -2401,7 +2401,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   });
   await sessionStore.updateSession(sessionMeta.id, { lifecycle });
   const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
-  if (detached && !detachedLaunch.finalizerStarted) {
+  if (
+    detached &&
+    shouldLaunchDetachedSessionFinalizer({ engine }) &&
+    !detachedLaunch.finalizerStarted
+  ) {
     console.log(
       chalk.yellow("Detached finalizer did not start; use `oracle session --render` if needed."),
     );
@@ -2515,20 +2519,23 @@ interface DetachedLaunchResult {
   finalizerStarted: boolean;
 }
 
-async function launchDetachedSession(sessionId: string): Promise<DetachedLaunchResult> {
+async function launchDetachedSession(
+  sessionId: string,
+  { engine }: { engine: EngineMode },
+): Promise<DetachedLaunchResult> {
   const env = buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId);
   const launchOptions = {
     cliEntrypoint: CLI_ENTRYPOINT,
     env,
   };
   const runnerStarted = await launchDetachedSessionRunner(sessionId, launchOptions);
-  const finalizerStarted = await launchDetachedSessionFinalizer(sessionId, launchOptions).catch(
-    (error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      console.log(chalk.yellow(`Unable to detach session finalizer (${message}).`));
-      return false;
-    },
-  );
+  const finalizerStarted = shouldLaunchDetachedSessionFinalizer({ engine })
+    ? await launchDetachedSessionFinalizer(sessionId, launchOptions).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.log(chalk.yellow(`Unable to detach session finalizer (${message}).`));
+        return false;
+      })
+    : false;
   return {
     runnerStarted,
     finalizerStarted,
@@ -2740,7 +2747,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
       });
   const detachedLaunch = !detachAllowed
     ? { runnerStarted: false, finalizerStarted: false }
-    : await launchDetachedSession(sessionMeta.id).catch((error) => {
+    : await launchDetachedSession(sessionMeta.id, { engine }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
           chalk.yellow(`Unable to detach session runner (${message}). Running inline...`),
@@ -2755,7 +2762,11 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   });
   await sessionStore.updateSession(sessionMeta.id, { lifecycle });
   const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
-  if (detached && !detachedLaunch.finalizerStarted) {
+  if (
+    detached &&
+    shouldLaunchDetachedSessionFinalizer({ engine }) &&
+    !detachedLaunch.finalizerStarted
+  ) {
     console.log(
       chalk.yellow("Detached finalizer did not start; use `oracle session --render` if needed."),
     );

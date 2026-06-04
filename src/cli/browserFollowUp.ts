@@ -134,7 +134,7 @@ export async function startBrowserFollowUpSession(
   );
   const recover = options.recover !== false;
   const childBrowserConfig = cloneBrowserConfigForFollowUp(browserConfig, conversationUrl, recover);
-  const waitPreference = options.wait ?? parent.options?.waitPreference ?? false;
+  const waitPreference = options.wait === true;
   const model = parent.options?.model ?? parent.model ?? DEFAULT_MODEL;
   const cwd = parent.cwd ?? process.cwd();
   const child = await store.createSession(

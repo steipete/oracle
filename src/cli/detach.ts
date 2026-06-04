@@ -21,3 +21,7 @@ export function shouldDetachSession({
   if (isProModel(model) && engine === "api") return true;
   return false;
 }
+
+export function shouldLaunchDetachedSessionFinalizer({ engine }: { engine: EngineMode }): boolean {
+  return engine === "browser";
+}
