@@ -63,6 +63,8 @@ function cloneBrowserConfigForFollowUp(
 ): BrowserSessionConfig {
   const base: BrowserSessionConfig = {
     ...parentConfig,
+    browserTabRef: null,
+    resumeConversationUrl: null,
     researchMode: "off",
     archiveConversations: "never",
   };
@@ -72,13 +74,14 @@ function cloneBrowserConfigForFollowUp(
       attachRunning: parentConfig.remoteChrome ? parentConfig.attachRunning : true,
       url: parentConfig.url ?? parentConfig.chatgptUrl ?? CHATGPT_URL,
       browserTabRef: conversationUrl,
+      resumeConversationUrl: conversationUrl,
     };
   }
   return {
     ...base,
-    url: conversationUrl,
+    url: parentConfig.chatgptUrl ?? CHATGPT_URL,
     chatgptUrl: parentConfig.chatgptUrl ?? CHATGPT_URL,
-    browserTabRef: null,
+    resumeConversationUrl: conversationUrl,
   };
 }
 

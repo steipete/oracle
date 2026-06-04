@@ -79,7 +79,8 @@ describe("browser follow-up sessions", () => {
       expect(result.session.options.prompt).toBe("challenge the recommendation");
       expect(result.session.options.waitPreference).toBe(false);
       expect(result.session.browser?.config).toMatchObject({
-        url: "https://chatgpt.com/c/abc123",
+        url: "https://chatgpt.com/",
+        resumeConversationUrl: "https://chatgpt.com/c/abc123",
         browserTabRef: null,
         researchMode: "off",
         archiveConversations: "never",
@@ -121,6 +122,7 @@ describe("browser follow-up sessions", () => {
         attachRunning: true,
         url: "https://chatgpt.com/",
         browserTabRef: "https://chatgpt.com/c/abc123",
+        resumeConversationUrl: "https://chatgpt.com/c/abc123",
       });
     });
   });

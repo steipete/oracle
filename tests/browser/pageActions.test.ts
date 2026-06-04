@@ -7,6 +7,7 @@ import {
   navigateToChatGPT,
   navigateToPromptReadyWithFallback,
   ensurePromptReady,
+  waitForResumedConversationHydration,
   ensureNotBlocked,
   ensureLoggedIn,
 } from "../../src/browser/pageActions.js";
@@ -153,6 +154,38 @@ describe("ensurePromptReady", () => {
       evaluate: vi.fn().mockResolvedValue({ result: { value: false } }),
     } as unknown as ChromeClient["Runtime"];
     await expect(ensurePromptReady(runtime, 0, logger)).rejects.toThrow(/textarea did not appear/i);
+  });
+});
+
+describe("waitForResumedConversationHydration", () => {
+  test("waits until prior turns stop growing and rechecks the composer", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi
+          .fn()
+          .mockResolvedValueOnce({ result: { value: 1 } })
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({ result: { value: 2 } }),
+      } as unknown as ChromeClient["Runtime"];
+      const ensurePromptReadyMock = vi.fn().mockResolvedValue(undefined);
+
+      const promise = waitForResumedConversationHydration(runtime, 5_000, logger, {
+        ensurePromptReady: ensurePromptReadyMock,
+      });
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toBe(2);
+      expect(runtime.evaluate).toHaveBeenCalledTimes(5);
+      expect(ensurePromptReadyMock).toHaveBeenCalledWith(runtime, 5_000, logger);
+      expect(logger).toHaveBeenCalledWith(
+        "[browser] Resumed conversation hydrated (2 prior turns); composer settled.",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

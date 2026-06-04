@@ -49,6 +49,8 @@ export interface BrowserAutomationConfig {
   chromeCookiePath?: string | null;
   attachRunning?: boolean;
   browserTabRef?: string | null;
+  /** Existing ChatGPT conversation URL to continue without starting a new thread. */
+  resumeConversationUrl?: string | null;
   url?: string;
   chatgptUrl?: string | null;
   timeoutMs?: number;

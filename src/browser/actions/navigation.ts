@@ -1,5 +1,10 @@
 import type { ChromeClient, BrowserLogger } from "../types.js";
-import { CLOUDFLARE_SCRIPT_SELECTOR, CLOUDFLARE_TITLE, INPUT_SELECTORS } from "../constants.js";
+import {
+  CLOUDFLARE_SCRIPT_SELECTOR,
+  CLOUDFLARE_TITLE,
+  CONVERSATION_TURN_SELECTOR,
+  INPUT_SELECTORS,
+} from "../constants.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
@@ -349,6 +354,54 @@ export async function ensurePromptReady(
     await logDomFailure(Runtime, logger, "prompt-textarea");
     throw new Error("Prompt textarea did not appear before timeout");
   }
+}
+
+export interface ResumedConversationHydrationDeps {
+  ensurePromptReady?: typeof ensurePromptReady;
+}
+
+/**
+ * Resumed ChatGPT conversations hydrate prior turns asynchronously and can reset
+ * the composer while doing so. Wait until history stops growing before typing.
+ */
+export async function waitForResumedConversationHydration(
+  Runtime: ChromeClient["Runtime"],
+  timeoutMs: number,
+  logger: BrowserLogger,
+  deps: ResumedConversationHydrationDeps = {},
+): Promise<number> {
+  const ensureReady = deps.ensurePromptReady ?? ensurePromptReady;
+  const hydrationDeadline = Date.now() + Math.min(timeoutMs || 30_000, 30_000);
+  let priorTurns = 0;
+  let stableChecks = 0;
+  while (Date.now() < hydrationDeadline) {
+    let turns = 0;
+    try {
+      const { result } = await Runtime.evaluate({
+        expression: `document.querySelectorAll(${JSON.stringify(
+          CONVERSATION_TURN_SELECTOR,
+        )}).length`,
+        returnByValue: true,
+      });
+      turns = typeof result?.value === "number" ? result.value : 0;
+    } catch {
+      // Keep polling until the conversation hydrates or the bounded deadline expires.
+    }
+    if (turns > 0 && turns === priorTurns) {
+      stableChecks += 1;
+      if (stableChecks >= 3) {
+        break;
+      }
+    } else {
+      stableChecks = 0;
+    }
+    priorTurns = turns;
+    await delay(250);
+  }
+  await delay(1_000);
+  await ensureReady(Runtime, timeoutMs, logger);
+  logger(`[browser] Resumed conversation hydrated (${priorTurns} prior turns); composer settled.`);
+  return priorTurns;
 }
 
 async function waitForDocumentReady(Runtime: ChromeClient["Runtime"], timeoutMs: number) {
