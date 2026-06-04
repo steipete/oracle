@@ -11,6 +11,8 @@ export interface BrowserSessionFinalizerOptions {
   maxWaitMs?: number;
   log?: (message: string) => void;
   now?: () => number;
+  waitFn?: (ms: number) => Promise<void>;
+  attachSessionFn?: typeof attachSession;
 }
 
 const DEFAULT_FIRST_WAIT_MS = 5 * 60_000;
@@ -99,6 +101,8 @@ export async function finalizeBrowserSessionUntilComplete(
   const maxWaitMs = Math.max(firstWaitMs, options.maxWaitMs ?? DEFAULT_MAX_WAIT_MS);
   const now = options.now ?? Date.now;
   const log = options.log ?? (() => {});
+  const waitFor = options.waitFn ?? wait;
+  const attach = options.attachSessionFn ?? attachSession;
   const startedAt = now();
   const deadline = startedAt + maxWaitMs;
 
@@ -125,7 +129,7 @@ export async function finalizeBrowserSessionUntilComplete(
 
   if (firstWaitMs > 0) {
     log(`[finalizer] Waiting ${formatElapsed(firstWaitMs)} before first recovery render.`);
-    await wait(firstWaitMs);
+    await waitFor(firstWaitMs);
   }
 
   let attempt = 0;
@@ -149,7 +153,7 @@ export async function finalizeBrowserSessionUntilComplete(
     }
 
     log(`[finalizer] Recovery render attempt ${attempt} for ${sessionId} (${before.status}).`);
-    await attachSession(sessionId, {
+    await attach(sessionId, {
       renderMarkdown: false,
       renderPrompt: false,
       suppressMetadata: true,
@@ -172,7 +176,7 @@ export async function finalizeBrowserSessionUntilComplete(
     if (remainingMs <= 0) {
       break;
     }
-    await wait(Math.min(intervalMs, remainingMs));
+    await waitFor(Math.min(intervalMs, remainingMs));
   }
 
   log(`[finalizer] Timed out after ${formatElapsed(maxWaitMs)} waiting for ${sessionId}.`);

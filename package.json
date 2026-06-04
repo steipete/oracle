@@ -51,6 +51,7 @@
     "test:packed-cli": "node scripts/packed-cli-smoke.mjs",
     "test:live": "ORACLE_LIVE_TEST=1 vitest run tests/live --exclude tests/live/openai-live.test.ts",
     "test:live:fast": "ORACLE_LIVE_TEST=1 ORACLE_LIVE_TEST_FAST=1 vitest run tests/live/browser-fast-live.test.ts",
+    "test:live:fast-long": "ORACLE_LIVE_TEST=1 ORACLE_LIVE_TEST_FAST=1 ORACLE_LIVE_TEST_LONG=1 vitest run tests/live/browser-fast-live.test.ts -t long-haul",
     "test:pro": "ORACLE_LIVE_TEST=1 vitest run tests/live/openai-live.test.ts",
     "test:coverage": "vitest run --coverage",
     "prepare": "pnpm run build",
