@@ -23,6 +23,7 @@ interface ConsultToolDeps {
   cliEntrypoint?: string;
   browserWaitMs?: number;
   browserPollMs?: number;
+  browserDetached?: boolean;
   now?: () => number;
 }
 
@@ -38,6 +39,14 @@ function resolvePositiveIntegerEnv(name: string, fallback: number): number {
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveBooleanEnv(name: string, fallback = false): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return fallback;
 }
 
 async function waitForDetachedBrowserSession({
@@ -184,6 +193,12 @@ const consultInputShape = {
     .boolean()
     .optional()
     .describe("Browser-only: keep Chrome running after completion (useful for debugging)."),
+  browserDetached: z
+    .boolean()
+    .optional()
+    .describe(
+      "Browser-only: run the local browser consult in a detached worker and return recoverable session status after a short wait. Defaults to false to preserve blocking consult behavior.",
+    ),
   dryRun: z
     .boolean()
     .optional()
@@ -194,13 +209,13 @@ const consultInputShape = {
     .boolean()
     .optional()
     .describe(
-      "Unsupported compatibility trap: do not pass this field. Browser MCP consults detach automatically when they need to outlive the client timeout.",
+      "Unsupported compatibility trap: do not pass this field. Use browserDetached:true for explicit detached browser consults.",
     ),
   runInBackground: z
     .boolean()
     .optional()
     .describe(
-      "Unsupported compatibility trap: do not pass this field. Browser MCP consults detach automatically when they need to outlive the client timeout.",
+      "Unsupported compatibility trap: do not pass this field. Use browserDetached:true for explicit detached browser consults.",
     ),
   search: z
     .boolean()
@@ -517,6 +532,7 @@ export function registerConsultTool(server: McpServer, deps: ConsultToolDeps = {
         browserArchive,
         browserFollowUps,
         browserKeepBrowser,
+        browserDetached,
         dryRun,
         slug,
       } = parsedInput;
@@ -660,7 +676,12 @@ export function registerConsultTool(server: McpServer, deps: ConsultToolDeps = {
       };
 
       try {
-        if (resolvedEngine === "browser" && !browserDeps) {
+        const detachedBrowser =
+          browserDetached ??
+          deps.browserDetached ??
+          resolveBooleanEnv("ORACLE_MCP_BROWSER_DETACHED", false);
+
+        if (resolvedEngine === "browser" && !browserDeps && detachedBrowser) {
           const cliEntrypoint = deps.cliEntrypoint ?? resolveMcpCliEntrypoint();
           const launchRunner = deps.launchDetachedSessionRunner ?? launchDetachedSessionRunner;
           const launchFinalizer =

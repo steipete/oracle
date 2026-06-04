@@ -12,10 +12,18 @@ import {
   registerConsultTool,
   summarizeModelRunsForConsult,
 } from "../../src/mcp/tools/consult.ts";
+import { performSessionRun } from "../../src/cli/sessionRunner.js";
+
+vi.mock("../../src/cli/sessionRunner.js", () => ({
+  performSessionRun: vi.fn(async ({ log }: { log: (line?: string) => void }) => {
+    log("[test] inline browser run");
+  }),
+}));
 
 afterEach(() => {
   setOracleHomeDirOverrideForTest(null);
   vi.unstubAllEnvs();
+  vi.mocked(performSessionRun).mockClear();
 });
 
 describe("summarizeModelRunsForConsult", () => {
@@ -293,7 +301,50 @@ describe("summarizeModelRunsForConsult", () => {
     expect(result.content[0]?.text).toContain("run_in_background");
   });
 
-  test("starts browser MCP consults in detached session workers", async () => {
+  test("keeps browser MCP consults blocking by default", async () => {
+    const tmpHome = await mkdtemp(path.join(os.tmpdir(), "oracle-mcp-consult-inline-"));
+    setOracleHomeDirOverrideForTest(tmpHome);
+    vi.stubEnv("CHROME_PATH", "/bin/true");
+
+    const handlers: Array<(input: unknown) => Promise<unknown>> = [];
+    const launchDetachedSessionRunner = vi.fn(async () => true);
+    const launchDetachedSessionFinalizer = vi.fn(async () => true);
+    registerConsultTool(
+      {
+        registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
+          handlers.push(fn);
+        },
+        server: {
+          sendLoggingMessage: async () => undefined,
+        },
+      } as unknown as Parameters<typeof registerConsultTool>[0],
+      {
+        launchDetachedSessionRunner,
+        launchDetachedSessionFinalizer,
+        cliEntrypoint: "/tmp/oracle-cli.js",
+      },
+    );
+    const handler = handlers[0];
+    if (!handler) throw new Error("handler not registered");
+
+    try {
+      await handler({
+        engine: "browser",
+        model: "gpt-5.5-pro",
+        prompt: "review this",
+        files: [],
+        slug: "mcp-inline-test",
+      });
+
+      expect(performSessionRun).toHaveBeenCalledOnce();
+      expect(launchDetachedSessionRunner).not.toHaveBeenCalled();
+      expect(launchDetachedSessionFinalizer).not.toHaveBeenCalled();
+    } finally {
+      await rm(tmpHome, { recursive: true, force: true });
+    }
+  });
+
+  test("starts explicit detached browser MCP consults in session workers", async () => {
     const tmpHome = await mkdtemp(path.join(os.tmpdir(), "oracle-mcp-consult-"));
     setOracleHomeDirOverrideForTest(tmpHome);
     vi.stubEnv("CHROME_PATH", "/bin/true");
@@ -328,6 +379,7 @@ describe("summarizeModelRunsForConsult", () => {
         prompt: "review this",
         files: [],
         slug: "mcp-detached-test",
+        browserDetached: true,
       })) as {
         content: Array<{ type: "text"; text: string }>;
         structuredContent: { sessionId: string; status: string };

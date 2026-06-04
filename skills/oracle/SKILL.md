@@ -120,6 +120,9 @@ Recommended defaults:
   when the ChatGPT tab already has a complete answer. Use `oracle-await <id>`
   (or `oracle session <id> --render`) to render every poll cycle; render is the
   check and the recovery path.
+- MCP `consult` browser runs block by default for compatibility. Use
+  `browserDetached:true` (or `ORACLE_MCP_BROWSER_DETACHED=1` on the MCP host)
+  only when the caller prefers recoverable early-return behavior.
 - If a run reports `status:"error"` after saving `artifacts/transcript.md`
   (for example Node/undici `setTypeOfService EINVAL` during wrapper cleanup),
   read the saved transcript instead of rerunning.

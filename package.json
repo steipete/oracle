@@ -15,10 +15,12 @@
   },
   "bin": {
     "oracle": "dist/bin/oracle-cli.js",
+    "oracle-await": "skills/oracle/scripts/oracle-await",
     "oracle-mcp": "dist/bin/oracle-mcp.js"
   },
   "files": [
     "dist/**/*",
+    "skills/oracle/scripts/oracle-await",
     "assets-oracle-icon.png",
     "vendor/oracle-notifier/OracleNotifier.swift",
     "vendor/oracle-notifier/OracleNotifier.app/**",

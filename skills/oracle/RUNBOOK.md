@@ -59,6 +59,11 @@ fresh files or attachments.
 
 ## MCP timeout triage
 
+MCP `consult` browser runs block by default for compatibility. If an agent needs
+recoverable early-return behavior for a long browser consult, pass
+`browserDetached:true` in the MCP `consult` input or set
+`ORACLE_MCP_BROWSER_DETACHED=1` for that MCP host.
+
 If an MCP browser consult times out after opening Chrome:
 
 1. Do not rerun immediately.
