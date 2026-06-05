@@ -70,7 +70,7 @@
     "dotenv": "^17.4.2",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^3.4.0",
-    "inquirer": "14.0.1",
+    "inquirer": "14.0.2",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.2.1",
@@ -87,12 +87,12 @@
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.6.0",
-    "@typescript/native-preview": "7.0.0-dev.20260527.2",
-    "@vitest/coverage-v8": "4.1.7",
-    "devtools-protocol": "0.0.1638241",
+    "@typescript/native-preview": "7.0.0-dev.20260605.1",
+    "@vitest/coverage-v8": "4.1.8",
+    "devtools-protocol": "0.0.1640722",
     "es-toolkit": "^1.46.1",
     "esbuild": "^0.28.0",
-    "oxfmt": "0.52.0",
+    "oxfmt": "0.53.0",
     "oxlint": "^1.62.0",
     "puppeteer-core": "^25.0.2",
     "tsx": "^4.21.0",
@@ -113,7 +113,7 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "devtools-protocol": "0.0.1638241",
+      "devtools-protocol": "0.0.1640722",
       "vite": "7.3.2"
     },
     "onlyBuiltDependencies": [
