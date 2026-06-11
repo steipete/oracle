@@ -1,4 +1,4 @@
-import { formatFileSection } from "../oracle/markdown.js";
+import { formatFileSections } from "../oracle/markdown.js";
 import type { BrowserAttachment } from "./types.js";
 import type { BrowserSessionConfig } from "../sessionManager.js";
 
@@ -25,11 +25,7 @@ export function buildAttachmentPlan(
   }: { inlineFiles: boolean; bundleRequested: boolean; maxAttachments?: number },
 ): AttachmentPlan {
   if (inlineFiles) {
-    const inlineLines: string[] = [];
-    sections.forEach((section) => {
-      inlineLines.push(formatFileSection(section.displayPath, section.content).trimEnd(), "");
-    });
-    const inlineBlock = inlineLines.join("\n").trim();
+    const inlineBlock = formatFileSections(sections);
     return {
       mode: "inline",
       inlineBlock,

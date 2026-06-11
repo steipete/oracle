@@ -488,15 +488,14 @@ function relativePath(targetPath: string, cwd: string): string {
   return relative || targetPath;
 }
 
+function formatLegacyFileSection(index: number, displayPath: string, content: string): string {
+  return [`### File ${index}: ${displayPath}`, "```", content.trimEnd(), "```"].join("\n");
+}
+
 export function createFileSections(files: FileContent[], cwd = process.cwd()): FileSection[] {
   return files.map((file, index) => {
     const relative = toPosix(path.relative(cwd, file.path) || file.path);
-    const sectionText = [
-      `### File ${index + 1}: ${relative}`,
-      "```",
-      file.content.trimEnd(),
-      "```",
-    ].join("\n");
+    const sectionText = formatLegacyFileSection(index + 1, relative, file.content);
     return {
       index: index + 1,
       absolutePath: file.path,

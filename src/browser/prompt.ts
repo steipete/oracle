@@ -7,7 +7,7 @@ import {
   createFileSections,
   MODEL_CONFIGS,
   TOKENIZER_OPTIONS,
-  formatFileSection,
+  formatFileSections,
 } from "../oracle.js";
 import { isKnownModel } from "../oracle/modelResolver.js";
 import { buildPromptMarkdown } from "../oracle/promptAssembly.js";
@@ -84,16 +84,12 @@ interface WrittenBrowserBundle {
 
 function formatSectionsForBundle(
   sections: Array<{ displayPath: string; content: string }>,
+  options: { lineNumbers?: boolean } = {},
 ): string {
-  const bundleLines: string[] = [];
-  sections.forEach((section) => {
-    bundleLines.push(formatFileSection(section.displayPath, section.content).trimEnd());
-    bundleLines.push("");
+  return formatFileSections(sections, {
+    lineNumbers: options.lineNumbers ?? true,
+    trailingNewline: true,
   });
-  return `${bundleLines
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trimEnd()}\n`;
 }
 
 async function writeBrowserBundle(
@@ -101,7 +97,9 @@ async function writeBrowserBundle(
   format: BrowserBundleFormat,
 ): Promise<WrittenBrowserBundle> {
   const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
-  const tokenEstimateText = formatSectionsForBundle(sections);
+  const tokenEstimateText = formatSectionsForBundle(sections, {
+    lineNumbers: format === "text",
+  });
   if (format === "zip") {
     const bundlePath = path.join(bundleDir, "attachments-bundle.zip");
     const buffer = createStoredZip(
@@ -240,11 +238,7 @@ export async function assembleBrowserPrompt(
   );
   const tokenEstimateIncludesInlineFiles = inlineFileCount > 0 && Boolean(selectedPlan.inlineBlock);
   if (!tokenEstimateIncludesInlineFiles && sections.length > 0) {
-    const attachmentText =
-      bundleText ??
-      sections
-        .map((section) => formatFileSection(section.displayPath, section.content).trimEnd())
-        .join("\n\n");
+    const attachmentText = bundleText ?? formatFileSections(sections, { lineNumbers: false });
     const attachmentTokens = tokenizer(
       [{ role: "user", content: attachmentText }],
       TOKENIZER_OPTIONS,

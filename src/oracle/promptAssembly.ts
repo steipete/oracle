@@ -1,4 +1,4 @@
-import { formatFileSection } from "./markdown.js";
+import { formatFileSections } from "./markdown.js";
 
 export interface PromptFileSection {
   displayPath: string;
@@ -16,9 +16,7 @@ export function buildPromptMarkdown(
   sections: PromptFileSection[],
 ): string {
   const lines = ["[SYSTEM]", systemPrompt, "", "[USER]", userPrompt, ""];
-  sections.forEach((section) => {
-    lines.push(formatFileSection(section.displayPath, section.content));
-  });
+  lines.push(formatFileSections(sections, { trailingNewline: true }));
   return lines
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")

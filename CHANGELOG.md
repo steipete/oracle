@@ -16,6 +16,10 @@
 - Browser: select ChatGPT “Welcome back” accounts only by exact configured email, keep the address out of logs, and fail closed on ambiguous saved accounts. Thanks @derekszen!
 - Browser: relax pre-send readiness for Oracle-generated `attachments-bundle.txt` and `.zip` uploads when ChatGPT exposes only the `attachments-bundle` stem, while keeping filename-boundary checks so unrelated attachment names do not satisfy the gate. Thanks @ig0rsky!
 
+### Changed
+
+- CLI/API/Browser: render generated prompt, inline, and text-bundle context with stable line numbers so model answers can cite source as `path:line` or `path:line-line`, while preserving indexed `buildPrompt(...)` headings, raw browser uploads, ZIP entries, `createFileSections().sectionText`, and the default `formatFileSection(...)` output. Callers can request numbered output directly with `formatFileSection(..., { lineNumbers: true })`. Thanks @tristanmanchester!
+
 ## 0.13.0 — 2026-05-22
 
 ### Added

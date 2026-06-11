@@ -239,7 +239,7 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
 
 export const DEFAULT_SYSTEM_PROMPT = [
   "You are Oracle, a focused one-shot problem solver.",
-  "Emphasize direct answers and cite any files referenced.",
+  "Emphasize direct answers and cite referenced files as path:line or path:line-line when line numbers are available.",
 ].join(" ");
 
 export const TOKENIZER_OPTIONS = { allowedSpecial: "all" } as const;

@@ -82,9 +82,14 @@ export interface FileContent {
 }
 
 export interface FileSection {
+  /** Legacy 1-based file number retained for callers that inspect createFileSections() output. */
   index: number;
   absolutePath: string;
   displayPath: string;
+  /**
+   * Legacy raw fenced section text using the historical `### File N:` heading.
+   * Generated model prompt context should render from displayPath/content instead.
+   */
   sectionText: string;
   content: string;
 }

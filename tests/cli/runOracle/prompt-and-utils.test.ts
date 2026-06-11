@@ -28,7 +28,8 @@ describe("buildPrompt", () => {
     try {
       const prompt = buildPrompt("Base", [{ path: filePath, content: "hello from file" }], dir);
       expect(prompt).toContain("### File 1: sample.txt");
-      expect(prompt).toContain("hello from file");
+      expect(prompt).toContain("Lines: 1-1");
+      expect(prompt).toContain("1 | hello from file");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -49,7 +50,8 @@ describe("renderPromptMarkdown", () => {
       expect(markdown).toContain("[SYSTEM]");
       expect(markdown).toContain("[USER]");
       expect(markdown).toContain("### File: sample.txt");
-      expect(markdown).toContain("rendered content");
+      expect(markdown).toContain("Lines: 1-1");
+      expect(markdown).toContain("1 | rendered content");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -332,6 +334,7 @@ describe("oracle utility helpers", () => {
     );
     expect(sections[0].displayPath).toBe("file.txt");
     expect(sections[0].sectionText).toContain("### File 1: file.txt");
+    expect(sections[0].sectionText).toContain("```\ncontents\n```");
   });
 
   test("buildRequestBody respects search toggles", () => {
@@ -400,7 +403,12 @@ describe("oracle utility helpers", () => {
       { path: "/tmp/a.txt", content: "aaa" },
       { path: "/tmp/b.txt", content: "bbbbbb" },
     ];
-    const tokenizer = (input: unknown) => String(input).length;
+    const tokenizerInputs: string[] = [];
+    const tokenizer = (input: unknown) => {
+      const text = String(input);
+      tokenizerInputs.push(text);
+      return text.length;
+    };
     const { stats, totalTokens } = getFileTokenStats(files, {
       cwd: "/tmp",
       tokenizer,
@@ -410,6 +418,8 @@ describe("oracle utility helpers", () => {
     expect(totalTokens).toBeGreaterThan(0);
     expect(stats[0].displayPath).toBe("b.txt");
     expect(stats[1].displayPath).toBe("a.txt");
+    expect(tokenizerInputs).toContain("### File 1: a.txt\nLines: 1-1\n```\n1 | aaa\n```");
+    expect(tokenizerInputs).toContain("### File 2: b.txt\nLines: 1-1\n```\n1 | bbbbbb\n```");
 
     const logs: string[] = [];
     printFileTokenStats(

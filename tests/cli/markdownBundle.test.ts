@@ -20,8 +20,9 @@ describe("buildMarkdownBundle", () => {
     expect(bundle.markdown).toMatch("[USER]");
     expect(bundle.markdown).toMatch("Do it");
     expect(bundle.markdown).toMatch("### File: a.txt");
+    expect(bundle.markdown).toMatch("Lines: 1-1");
     expect(bundle.markdown).toMatch("```");
-    expect(bundle.markdown).toMatch("hello world");
+    expect(bundle.markdown).toMatch("1 | hello world");
     expect(bundle.promptWithFiles).toContain("Do it");
     expect(bundle.promptWithFiles).toContain("hello world");
     expect(bundle.files).toHaveLength(1);
@@ -40,6 +41,7 @@ describe("buildMarkdownBundle", () => {
     );
 
     expect(bundle.markdown).toContain("keep me");
+    expect(bundle.markdown).toContain("1 | keep me");
     expect(bundle.markdown).not.toContain("skip me");
   });
 

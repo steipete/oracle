@@ -58,6 +58,7 @@ oracle --render --copy -p "Architecture review" --file "src/**/*.ts"
 ```
 
 The bundle is on your clipboard. Paste it into ChatGPT, Claude, Gemini, AI Studio, or wherever you want the answer.
+Generated text context includes stable `Lines:` ranges and `N |` prefixes for `path:line` citations. Direct browser file uploads and ZIP bundles keep the original file contents.
 
 ## 3. Preview before you spend
 
