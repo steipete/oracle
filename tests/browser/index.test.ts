@@ -361,6 +361,11 @@ describe("ChatGPT UI warning detection", () => {
     });
     expect(error.details).not.toHaveProperty("uiWarning");
   });
+
+  test("routes plain response observer timeouts through assistant timeout handling", () => {
+    expect(__test__.isAssistantResponseTimeoutError(new Error("Response timeout"))).toBe(true);
+    expect(__test__.isAssistantResponseTimeoutError(new Error("Navigation timeout"))).toBe(false);
+  });
 });
 
 describe("browser follow-ups", () => {

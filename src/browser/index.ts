@@ -3422,6 +3422,7 @@ export const __test__ = {
   createAssistantTimeoutError,
   detachKeptChromeProcess,
   formatManualLoginSetupCommand,
+  isAssistantResponseTimeoutError,
   isManualLoginProfileInitialized,
   isImageOnlyUiChromeText,
   listIgnoredRemoteChromeFlags,
@@ -3526,6 +3527,7 @@ function isAssistantResponseTimeoutError(error: unknown): boolean {
   const message = error.message.toLowerCase();
   if (!message) return false;
   return (
+    message === "response timeout" ||
     message.includes("assistant-response") ||
     message.includes("assistant response") ||
     message.includes("watchdog") ||
