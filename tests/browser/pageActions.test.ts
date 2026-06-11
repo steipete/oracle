@@ -11,7 +11,10 @@ import {
   ensureNotBlocked,
   ensureLoggedIn,
 } from "../../src/browser/pageActions.js";
-import { buildLoginProbeExpressionForTest } from "../../src/browser/actions/navigation.js";
+import {
+  buildLoginProbeExpressionForTest,
+  buildWelcomeBackAccountPickerExpressionForTest,
+} from "../../src/browser/actions/navigation.js";
 import * as attachments from "../../src/browser/actions/attachments.js";
 import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDataTransfer.js";
 import type { ChromeClient } from "../../src/browser/types.js";
@@ -21,6 +24,10 @@ const logger = vi.fn();
 
 beforeEach(() => {
   logger.mockClear();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe("ensureModelSelection", () => {
@@ -296,6 +303,32 @@ describe("ensureNotBlocked", () => {
 });
 
 describe("ensureLoggedIn", () => {
+  function runWelcomeBackPickerForLabels(labels: string[], preferredEmail: string | null = null) {
+    const clicked: string[] = [];
+    const nodes = labels.map((label) => ({
+      textContent: label,
+      getAttribute: vi.fn((name: string) => (name === "aria-label" ? label : "")),
+      click: vi.fn(() => clicked.push(label)),
+    }));
+    const document = { querySelectorAll: vi.fn(() => nodes) };
+    const setTimeout = vi.fn((callback: () => void) => {
+      callback();
+      return 0;
+    });
+    const expression = buildWelcomeBackAccountPickerExpressionForTest(preferredEmail);
+    const evaluate = new Function("document", "setTimeout", `return ${expression};`) as (
+      document: unknown,
+      setTimeout: unknown,
+    ) => {
+      clicked?: boolean;
+      selection?: "preferred" | "only-account";
+      reason?: string;
+      accountCount?: number;
+    };
+
+    return { result: evaluate(document, setTimeout), clicked };
+  }
+
   async function runLoginProbeForLabels(
     labels: string[],
     options: {
@@ -574,6 +607,78 @@ describe("ensureLoggedIn", () => {
       cfBlocked: false,
       appAuthenticated: true,
     });
+  });
+
+  test("selects the configured welcome-back account by exact email", () => {
+    const { result, clicked } = runWelcomeBackPickerForLabels(
+      ["Continue as steipete@example.test", "Continue as pete@example.test"],
+      "pete@example.test",
+    );
+
+    expect(result).toEqual({ clicked: true, selection: "preferred", accountCount: 2 });
+    expect(clicked).toEqual(["Continue as pete@example.test"]);
+  });
+
+  test("does not click a fallback welcome-back account when configured account is missing", () => {
+    const { result, clicked } = runWelcomeBackPickerForLabels(
+      ["old@example.test"],
+      "missing@example.test",
+    );
+
+    expect(result).toMatchObject({
+      clicked: false,
+      reason: "preferred-not-found",
+      accountCount: 1,
+    });
+    expect(clicked).toEqual([]);
+  });
+
+  test("normalizes the configured account without exposing it in errors or logs", async () => {
+    vi.stubEnv("ORACLE_CHATGPT_ACCOUNT_EMAIL", " PETE@EXAMPLE.TEST ");
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({
+          result: { value: { ok: false, status: 401, url: "/backend-api/me" } },
+        })
+        .mockImplementationOnce(async ({ expression }: { expression: string }) => {
+          expect(expression).toContain('const preferredEmail = "pete@example.test"');
+          return {
+            result: {
+              value: { clicked: false, reason: "preferred-not-found", accountCount: 2 },
+            },
+          };
+        }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const error = await ensureLoggedIn(runtime, logger, { appliedCookies: 2 }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("ORACLE_CHATGPT_ACCOUNT_EMAIL did not match");
+    expect((error as Error).message).not.toContain("pete@example.test");
+    expect(logger.mock.calls.flat().join(" ")).not.toContain("pete@example.test");
+  });
+
+  test("does not guess when several saved accounts exist without configuration", () => {
+    const { result, clicked } = runWelcomeBackPickerForLabels([
+      "one@example.test",
+      "two@example.test",
+    ]);
+
+    expect(result).toEqual({
+      clicked: false,
+      reason: "multiple-accounts",
+      accountCount: 2,
+    });
+    expect(clicked).toEqual([]);
+  });
+
+  test("selects the only saved account without configuration", () => {
+    const { result, clicked } = runWelcomeBackPickerForLabels(["only@example.test"]);
+
+    expect(result).toEqual({ clicked: true, selection: "only-account", accountCount: 1 });
+    expect(clicked).toEqual(["only@example.test"]);
   });
 
   test("throws with cookie guidance when cookies missing", async () => {

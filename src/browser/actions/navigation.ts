@@ -195,6 +195,12 @@ export async function ensureNotBlocked(
 }
 
 const LOGIN_CHECK_TIMEOUT_MS = 5_000;
+const CHATGPT_ACCOUNT_EMAIL_ENV = "ORACLE_CHATGPT_ACCOUNT_EMAIL";
+
+function preferredChatGptAccountEmail(): string | null {
+  const email = process.env[CHATGPT_ACCOUNT_EMAIL_ENV]?.trim().toLowerCase();
+  return email ? email : null;
+}
 
 export async function ensureLoggedIn(
   Runtime: ChromeClient["Runtime"],
@@ -216,8 +222,12 @@ export async function ensureLoggedIn(
     return;
   }
 
-  const accepted = await attemptWelcomeBackLogin(Runtime, logger);
-  if (accepted) {
+  const welcomeBack = await attemptWelcomeBackLogin(
+    Runtime,
+    logger,
+    preferredChatGptAccountEmail(),
+  );
+  if (welcomeBack.accepted) {
     // Learned: "Welcome back" account picker needs a click even when cookies are valid,
     // and the redirect can lag, so re-probe before failing hard.
     await delay(1500);
@@ -251,41 +261,26 @@ export async function ensureLoggedIn(
       ? "No ChatGPT cookies were applied; sign in to chatgpt.com in Chrome or pass inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON)."
       : "ChatGPT login appears missing; open chatgpt.com in Chrome to refresh the session or provide inline cookies (--browser-inline-cookies[(-file)] / ORACLE_BROWSER_COOKIES_JSON).";
 
-  throw new Error(`ChatGPT session not detected.${domLabel} ${cookieHint}`);
+  const accountHint = welcomeBack.hint ? ` ${welcomeBack.hint}` : "";
+  throw new Error(`ChatGPT session not detected.${domLabel}${accountHint} ${cookieHint}`);
+}
+
+interface WelcomeBackLoginAttempt {
+  accepted: boolean;
+  hint?: string;
 }
 
 async function attemptWelcomeBackLogin(
   Runtime: ChromeClient["Runtime"],
   logger: BrowserLogger,
-): Promise<boolean> {
+  preferredEmail: string | null = null,
+): Promise<WelcomeBackLoginAttempt> {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     let outcome;
     try {
       outcome = await Runtime.evaluate({
-        expression: `(() => {
-          // Learned: "Welcome back" shows as a modal with account chips; click the email chip.
-          const getLabel = (node) =>
-            (node?.textContent || node?.getAttribute?.('aria-label') || '').trim();
-          const isAccount = (label) =>
-            Boolean(label) &&
-            label.includes('@') &&
-            !/log in|sign up|create account|another account/i.test(label);
-          const candidates = Array.from(document.querySelectorAll('[role="button"],button,a'));
-          const account = candidates.find((node) => isAccount(getLabel(node))) || null;
-          if (!account) {
-            return { clicked: false, reason: 'not-found' };
-          }
-          const label = getLabel(account);
-          setTimeout(() => {
-            try {
-              account.click();
-            } catch {
-              // ignore; caller will re-probe login state
-            }
-          }, 0);
-          return { clicked: true, label };
-        })()`,
+        expression: buildWelcomeBackAccountPickerExpression(preferredEmail),
         awaitPromise: false,
         returnByValue: true,
       });
@@ -293,10 +288,10 @@ async function attemptWelcomeBackLogin(
       const message = error instanceof Error ? error.message : String(error);
       if (/navigated or closed|context was destroyed|target closed/i.test(message)) {
         logger("Welcome back account click triggered navigation.");
-        return true;
+        return { accepted: true };
       }
       logger(`Welcome back auto-select probe failed: ${message}`);
-      return false;
+      return { accepted: false };
     }
     if (outcome.exceptionDetails) {
       const details = outcome.exceptionDetails;
@@ -307,31 +302,107 @@ async function attemptWelcomeBackLogin(
         details.text ||
         "unknown error";
       logger(`Welcome back auto-select probe failed: ${description}`);
-      return false;
+      return { accepted: false };
     }
     const result = outcome.result?.value as
-      | { clicked?: boolean; reason?: string; label?: string }
+      | {
+          clicked?: boolean;
+          reason?: string;
+          selection?: "preferred" | "only-account";
+          accountCount?: number;
+        }
       | undefined;
     if (!result) {
       logger("Welcome back auto-select probe returned no result.");
-      return false;
+      return { accepted: false };
     }
     if (!("clicked" in result) && !("reason" in result)) {
       logger("Welcome back auto-select probe returned an unexpected result.");
-      return false;
+      return { accepted: false };
     }
     if (result.clicked) {
-      logger(`Welcome back modal detected; selected account ${result.label ?? "(unknown)"}`);
-      return true;
+      logger(
+        result.selection === "preferred"
+          ? "Welcome back modal detected; selected configured account."
+          : "Welcome back modal detected; selected only saved account.",
+      );
+      return { accepted: true };
+    }
+    if (result.reason === "preferred-not-found") {
+      logger(
+        `Welcome back modal present but ${CHATGPT_ACCOUNT_EMAIL_ENV} did not match any saved account (${result.accountCount ?? 0} account chips found).`,
+      );
+      return {
+        accepted: false,
+        hint: `${CHATGPT_ACCOUNT_EMAIL_ENV} did not match a saved account. Set it to the exact account email on the browser host or sign in manually.`,
+      };
+    }
+    if (result.reason === "multiple-accounts") {
+      logger(
+        `Welcome back modal present with multiple saved accounts; refusing to select one without ${CHATGPT_ACCOUNT_EMAIL_ENV}.`,
+      );
+      return {
+        accepted: false,
+        hint: `Multiple saved ChatGPT accounts were found. Set ${CHATGPT_ACCOUNT_EMAIL_ENV} to the exact account email on the browser host.`,
+      };
     }
     if (result.reason && result.reason !== "not-found") {
       logger(`Welcome back modal present but auto-select failed (${result.reason}).`);
-      return false;
+      return { accepted: false };
     }
     await delay(500);
   }
   logger("Welcome back modal not detected after login probe failure.");
-  return false;
+  return { accepted: false };
+}
+
+function buildWelcomeBackAccountPickerExpression(preferredEmail: string | null = null): string {
+  const normalizedPreferredEmail = preferredEmail?.trim().toLowerCase() || null;
+  return `(() => {
+    // Learned: "Welcome back" can list several saved accounts; substring matching can select the wrong identity.
+    const preferredEmail = ${JSON.stringify(normalizedPreferredEmail)};
+    const getLabel = (node) =>
+      [node?.textContent, node?.getAttribute?.('aria-label')]
+        .filter((value) => typeof value === 'string' && value.trim())
+        .join(' ')
+        .trim();
+    const extractEmails = (label) =>
+      String(label || '')
+        .toLowerCase()
+        .match(/[a-z0-9.!#$%&'*+/=?^_{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*/g) || [];
+    const isAccount = (label) => !/log in|sign up|create account|another account/i.test(label);
+    const candidates = Array.from(document.querySelectorAll('[role="button"],button,a'));
+    const accounts = candidates
+      .map((node) => {
+        const label = getLabel(node);
+        return { node, emails: isAccount(label) ? extractEmails(label) : [] };
+      })
+      .filter((entry) => entry.emails.length > 0);
+    if (!accounts.length) {
+      return { clicked: false, reason: 'not-found' };
+    }
+    const savedEmails = Array.from(new Set(accounts.flatMap((entry) => entry.emails)));
+    if (!preferredEmail && savedEmails.length !== 1) {
+      return { clicked: false, reason: 'multiple-accounts', accountCount: savedEmails.length };
+    }
+    const selectedEmail = preferredEmail || savedEmails[0];
+    const account = accounts.find((entry) => entry.emails.includes(selectedEmail));
+    if (!account) {
+      return { clicked: false, reason: 'preferred-not-found', accountCount: savedEmails.length };
+    }
+    setTimeout(() => {
+      try {
+        account.node.click();
+      } catch {
+        // ignore; caller will re-probe login state
+      }
+    }, 0);
+    return {
+      clicked: true,
+      selection: preferredEmail ? 'preferred' : 'only-account',
+      accountCount: savedEmails.length,
+    };
+  })()`;
 }
 
 export async function ensurePromptReady(
@@ -766,4 +837,10 @@ function normalizeLoginProbe(raw: unknown): LoginProbeResult {
 
 export function buildLoginProbeExpressionForTest(timeoutMs = LOGIN_CHECK_TIMEOUT_MS): string {
   return buildLoginProbeExpression(timeoutMs);
+}
+
+export function buildWelcomeBackAccountPickerExpressionForTest(
+  preferredEmail: string | null = null,
+): string {
+  return buildWelcomeBackAccountPickerExpression(preferredEmail);
 }

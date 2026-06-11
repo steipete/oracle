@@ -142,6 +142,7 @@ See [Browser Mode](browser-mode.md) for usage.
 | `ORACLE_BROWSER_COOKIES_JSON`       | Inline ChatGPT cookies (JSON / base64).                 |
 | `ORACLE_BROWSER_COOKIES_FILE`       | Path to cookies JSON.                                   |
 | `ORACLE_BROWSER_ATTACHMENT_TIMEOUT` | Attachment upload/readiness timeout for browser mode.   |
+| `ORACLE_CHATGPT_ACCOUNT_EMAIL`      | Exact saved account for the Welcome back picker.        |
 
 ## See also
 
