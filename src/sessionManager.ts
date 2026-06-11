@@ -77,6 +77,8 @@ export interface BrowserSessionConfig {
   researchMode?: BrowserResearchMode;
   /** Archive completed ChatGPT conversations after local artifacts are saved. */
   archiveConversations?: BrowserArchiveMode;
+  /** Browser-only: existing ChatGPT conversation URL to resume before submitting. */
+  resumeConversationUrl?: string | null;
 }
 
 export interface BrowserRuntimeMetadata {
@@ -146,7 +148,7 @@ export interface BrowserMetadata {
 }
 
 export interface SessionArtifact {
-  kind: "transcript" | "deep-research-report" | "image";
+  kind: "transcript" | "deep-research-report" | "image" | "file";
   path: string;
   label?: string;
   mimeType?: string;
@@ -179,7 +181,7 @@ export interface StoredRunOptions {
   models?: ModelName[];
   /** Responses API chaining (maps to `previous_response_id`). */
   previousResponseId?: string;
-  /** Optional session slug that provided the parent response when using `--followup <sessionId>`. */
+  /** Optional parent session slug when using `--followup <sessionId>`. */
   followupSessionId?: string;
   /** Optional model selector used with --followup-model for multi-model parent sessions. */
   followupModel?: string;
@@ -217,6 +219,7 @@ export interface StoredRunOptions {
   editImage?: string;
   outputPath?: string;
   browserFollowUps?: string[];
+  browserResumeConversationUrl?: string;
   aspectRatio?: string;
   geminiShowThoughts?: boolean;
 }
@@ -559,6 +562,7 @@ export async function initializeSession(
       editImage: options.editImage,
       outputPath: options.outputPath,
       browserFollowUps: options.browserFollowUps,
+      browserResumeConversationUrl: options.browserResumeConversationUrl,
       aspectRatio: options.aspectRatio,
       geminiShowThoughts: options.geminiShowThoughts,
     },

@@ -7,6 +7,7 @@ import {
   navigateToChatGPT,
   navigateToPromptReadyWithFallback,
   ensurePromptReady,
+  waitForResumedConversationHydration,
   ensureNotBlocked,
   ensureLoggedIn,
 } from "../../src/browser/pageActions.js";
@@ -153,6 +154,93 @@ describe("ensurePromptReady", () => {
       evaluate: vi.fn().mockResolvedValue({ result: { value: false } }),
     } as unknown as ChromeClient["Runtime"];
     await expect(ensurePromptReady(runtime, 0, logger)).rejects.toThrow(/textarea did not appear/i);
+  });
+});
+
+describe("waitForResumedConversationHydration", () => {
+  test("waits for stable prior turns and verifies the expected conversation", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi
+          .fn()
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({ result: { value: 2 } })
+          .mockResolvedValueOnce({
+            result: { value: "https://chatgpt.com/c/expected-thread" },
+          }),
+      } as unknown as ChromeClient["Runtime"];
+      const ensurePromptReadyMock = vi.fn().mockResolvedValue(undefined);
+
+      const promise = waitForResumedConversationHydration(runtime, 5_000, logger, {
+        ensurePromptReady: ensurePromptReadyMock,
+        requirePriorTurns: true,
+        expectedConversationUrl: "https://chatgpt.com/g/project/c/expected-thread",
+      });
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toBe(2);
+      expect(ensurePromptReadyMock).toHaveBeenCalledWith(runtime, 5_000, logger);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("fails closed when no prior turns hydrate", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({ result: { value: 0 } }),
+      } as unknown as ChromeClient["Runtime"];
+      const promise = waitForResumedConversationHydration(runtime, 1_000, logger, {
+        ensurePromptReady: vi.fn().mockResolvedValue(undefined),
+        requirePriorTurns: true,
+      });
+      const assertion = expect(promise).rejects.toMatchObject({
+        details: {
+          stage: "resume-conversation",
+          priorTurns: 0,
+          settled: false,
+        },
+      });
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("fails closed when navigation lands on a different conversation", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi
+          .fn()
+          .mockResolvedValueOnce({ result: { value: 1 } })
+          .mockResolvedValueOnce({ result: { value: 1 } })
+          .mockResolvedValueOnce({ result: { value: 1 } })
+          .mockResolvedValueOnce({ result: { value: 1 } })
+          .mockResolvedValueOnce({ result: { value: "https://chatgpt.com/c/other-thread" } }),
+      } as unknown as ChromeClient["Runtime"];
+      const promise = waitForResumedConversationHydration(runtime, 5_000, logger, {
+        ensurePromptReady: vi.fn().mockResolvedValue(undefined),
+        requirePriorTurns: true,
+        expectedConversationUrl: "https://chatgpt.com/c/expected-thread",
+      });
+      const assertion = expect(promise).rejects.toMatchObject({
+        details: {
+          stage: "resume-conversation",
+          expectedConversationId: "expected-thread",
+          actualConversationId: "other-thread",
+        },
+      });
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

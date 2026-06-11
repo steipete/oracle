@@ -74,6 +74,50 @@ describe("runBrowserSessionExecution", () => {
     expect(log).toHaveBeenCalled();
   });
 
+  test("passes browser resume conversation URL to executeBrowser", async () => {
+    const executeBrowser = vi.fn(async () => ({
+      answerText: "ok",
+      answerMarkdown: "ok",
+      tookMs: 1000,
+      answerTokens: 12,
+      answerChars: 20,
+    }));
+
+    await runBrowserSessionExecution(
+      {
+        runOptions: {
+          ...baseRunOptions,
+          browserResumeConversationUrl: "https://chatgpt.com/c/resume-me",
+        },
+        browserConfig: {},
+        cwd: "/repo",
+        log: vi.fn(),
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 42,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser,
+      },
+    );
+
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          resumeConversationUrl: "https://chatgpt.com/c/resume-me",
+        }),
+      }),
+    );
+  });
+
   test("logs and returns browser model selection evidence", async () => {
     const log = vi.fn();
     const result = await runBrowserSessionExecution(

@@ -772,6 +772,17 @@ interface StatusTreeRow {
   detachedParentLabel?: string;
 }
 
+function formatLineageParentLabel(
+  lineage: ReturnType<typeof resolveSessionLineage>,
+): string | undefined {
+  if (!lineage?.parentSessionId) {
+    return undefined;
+  }
+  return lineage.parentResponseId
+    ? `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)})`
+    : lineage.parentSessionId;
+}
+
 function buildStatusTreeRows(
   entries: SessionMetadata[],
   responseOwners: ReadonlyMap<string, string>,
@@ -822,7 +833,7 @@ function buildStatusTreeRows(
     const lineage = lineageById.get(entry.id);
     const hiddenParent =
       lineage?.parentSessionId && !entryById.has(lineage.parentSessionId)
-        ? `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)})`
+        ? formatLineageParentLabel(lineage)
         : undefined;
     const children = childMap.get(entry.id) ?? [];
     rows.push({ entry, displaySlug: entry.id, detachedParentLabel: hiddenParent });
@@ -851,15 +862,19 @@ async function buildSessionChainLine(metadata: SessionMetadata): Promise<string 
     return `root -> ${metadata.id}`;
   }
   if (lineageWithoutLookup.parentSessionId) {
-    return `${lineageWithoutLookup.parentSessionId} (${abbreviateResponseId(lineageWithoutLookup.parentResponseId)}) -> ${
-      metadata.id
-    }`;
+    return `${formatLineageParentLabel(lineageWithoutLookup)} -> ${metadata.id}`;
+  }
+  if (!lineageWithoutLookup.parentResponseId) {
+    return `root -> ${metadata.id}`;
   }
   const sessions = await sessionStore.listSessions().catch(() => []);
   const responseOwners = buildResponseOwnerIndex(sessions);
   const lineage = resolveSessionLineage(metadata, responseOwners) ?? lineageWithoutLookup;
   if (lineage.parentSessionId) {
-    return `${lineage.parentSessionId} (${abbreviateResponseId(lineage.parentResponseId)}) -> ${metadata.id}`;
+    return `${formatLineageParentLabel(lineage)} -> ${metadata.id}`;
+  }
+  if (!lineage.parentResponseId) {
+    return `root -> ${metadata.id}`;
   }
   return `${abbreviateResponseId(lineage.parentResponseId)} -> ${metadata.id}`;
 }
