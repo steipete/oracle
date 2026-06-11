@@ -1,5 +1,10 @@
 import type { ChromeClient, BrowserLogger } from "../types.js";
-import { CLOUDFLARE_SCRIPT_SELECTOR, CLOUDFLARE_TITLE, INPUT_SELECTORS } from "../constants.js";
+import {
+  CLOUDFLARE_SCRIPT_SELECTOR,
+  CLOUDFLARE_TITLE,
+  CONVERSATION_TURN_SELECTOR,
+  INPUT_SELECTORS,
+} from "../constants.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
@@ -377,6 +382,106 @@ export async function ensurePromptReady(
     await logDomFailure(Runtime, logger, "prompt-textarea");
     throw new Error("Prompt textarea did not appear before timeout");
   }
+}
+
+export interface ResumedConversationHydrationDeps {
+  ensurePromptReady?: typeof ensurePromptReady;
+  requirePriorTurns?: boolean;
+  expectedConversationUrl?: string;
+}
+
+function conversationIdFromUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).pathname.match(/(?:^|\/)c\/([^/]+)/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After navigating to a *resumed* ChatGPT conversation, its prior turns hydrate
+ * asynchronously and ChatGPT can reset the composer mid-hydration — wiping a
+ * freshly-typed prompt. A fresh chat has no history, so it never hits this race;
+ * a large resumed thread reliably does.
+ *
+ * Wait for the prior turns to render AND stop growing (a big thread keeps
+ * appending turns as it hydrates), let React settle, then re-confirm the
+ * composer is ready — before the caller types/submits. Shared by the local and
+ * remote browser execution paths so neither loses the submitted prompt.
+ *
+ * Returns the number of prior turns observed once hydration settled.
+ */
+export async function waitForResumedConversationHydration(
+  Runtime: ChromeClient["Runtime"],
+  timeoutMs: number,
+  logger: BrowserLogger,
+  deps: ResumedConversationHydrationDeps = {},
+): Promise<number> {
+  const ensureReady = deps.ensurePromptReady ?? ensurePromptReady;
+  const hydrationDeadline = Date.now() + Math.min(timeoutMs || 30_000, 30_000);
+  let priorTurns = 0;
+  let stableChecks = 0;
+  let settled = false;
+  while (Date.now() < hydrationDeadline) {
+    let turns = 0;
+    try {
+      const { result } = await Runtime.evaluate({
+        expression: `document.querySelectorAll(${JSON.stringify(
+          CONVERSATION_TURN_SELECTOR,
+        )}).length`,
+        returnByValue: true,
+      });
+      turns = typeof result?.value === "number" ? result.value : 0;
+    } catch {
+      // keep polling until the conversation hydrates
+    }
+    if (turns > 0 && turns === priorTurns) {
+      stableChecks += 1;
+      if (stableChecks >= 3) {
+        settled = true;
+        break;
+      }
+    } else {
+      stableChecks = 0;
+    }
+    priorTurns = turns;
+    await delay(250);
+  }
+  await delay(1_000); // final settle so React won't wipe the composer after we type
+  await ensureReady(Runtime, timeoutMs, logger);
+  if ((deps.requirePriorTurns ?? false) && (!settled || priorTurns <= 0)) {
+    throw new BrowserAutomationError(
+      "Saved ChatGPT conversation did not load stable prior turns; refusing to submit follow-up as a fresh chat.",
+      {
+        stage: "resume-conversation",
+        priorTurns,
+        settled,
+      },
+    );
+  }
+  if (deps.expectedConversationUrl) {
+    const { result } = await Runtime.evaluate({
+      expression: "location.href",
+      returnByValue: true,
+    });
+    const actualUrl = typeof result?.value === "string" ? result.value : undefined;
+    const expectedConversationId = conversationIdFromUrl(deps.expectedConversationUrl);
+    const actualConversationId = conversationIdFromUrl(actualUrl);
+    if (!expectedConversationId || actualConversationId !== expectedConversationId) {
+      throw new BrowserAutomationError(
+        "Saved ChatGPT conversation redirected to a different thread; refusing to submit follow-up.",
+        {
+          stage: "resume-conversation",
+          expectedConversationId,
+          actualConversationId,
+          actualUrl,
+        },
+      );
+    }
+  }
+  logger(`[browser] Resumed conversation hydrated (${priorTurns} prior turns); composer settled.`);
+  return priorTurns;
 }
 
 async function waitForDocumentReady(Runtime: ChromeClient["Runtime"], timeoutMs: number) {

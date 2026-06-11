@@ -7,6 +7,7 @@ import {
   resolveSessionArtifactsDir,
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
+  writeBinaryBrowserArtifact,
   __test__,
 } from "../../src/browser/artifacts.js";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
@@ -77,6 +78,33 @@ describe("browser session artifacts", () => {
     expect(saved).toContain("The patch now saves artifacts.");
     expect(saved).toContain("Conversation: https://chatgpt.com/c/abc");
     expect(saved).toContain("Deep Research report: /tmp/report.md");
+  });
+
+  test("writes binary file artifacts into the session artifacts directory", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-file-artifacts-"));
+    setOracleHomeDirOverrideForTest(tmpHome);
+
+    const artifact = await writeBinaryBrowserArtifact({
+      sessionId: "browser-files",
+      kind: "file",
+      filename: "Build Output.zip",
+      contents: Buffer.from([1, 2, 3]),
+      label: "Build output",
+      mimeType: "application/zip",
+      sourceUrl: "sandbox:/mnt/data/Build Output.zip",
+    });
+
+    expect(artifact).toMatchObject({
+      kind: "file",
+      label: "Build output",
+      mimeType: "application/zip",
+      sourceUrl: "sandbox:/mnt/data/Build Output.zip",
+      sizeBytes: 3,
+    });
+    expect(artifact?.path).toBe(
+      path.join(tmpHome, "sessions", "browser-files", "artifacts", "build-output.zip"),
+    );
+    await expect(fs.readFile(artifact!.path)).resolves.toEqual(Buffer.from([1, 2, 3]));
   });
 
   test("dedupes artifact lists by kind and path", () => {

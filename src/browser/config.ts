@@ -66,6 +66,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   manualLoginCookieSync: false,
   researchMode: "off",
   archiveConversations: "auto",
+  resumeConversationUrl: null,
 };
 
 export function resolveBrowserConfig(
@@ -149,6 +150,8 @@ export function resolveBrowserConfig(
     thinkingTime: config?.thinkingTime,
     researchMode,
     archiveConversations,
+    resumeConversationUrl:
+      config?.resumeConversationUrl ?? DEFAULT_BROWSER_CONFIG.resumeConversationUrl,
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
     manualLoginCookieSync:

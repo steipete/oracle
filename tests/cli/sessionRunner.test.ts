@@ -1218,6 +1218,7 @@ describe("performSessionRun", () => {
     const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
     expect(logLines).not.toContain("Next steps (browser fallback)");
     expect(logLines).not.toContain("--engine api");
+    expect(logLines).not.toContain("This run did not return cleanly");
   });
 
   test("keeps session running when browser connection is lost", async () => {
@@ -1260,6 +1261,7 @@ describe("performSessionRun", () => {
     expect(logLines).toContain(
       "Chrome disconnected before completion; keeping session running for reattach.",
     );
+    expect(logLines).toContain("oracle session sess-1 --render");
   });
 
   test("marks early browser disconnect as error before a conversation exists", async () => {
@@ -1307,6 +1309,7 @@ describe("performSessionRun", () => {
     expect(logLines).toContain(
       "Chrome disconnected before a ChatGPT conversation was created; marking session error.",
     );
+    expect(logLines).not.toContain("oracle session sess-1 --render");
   });
 
   test("marks browser capture incomplete when assistant response times out", async () => {
@@ -1365,6 +1368,7 @@ describe("performSessionRun", () => {
     expect(logLines).toContain(
       "Assistant response timed out; marking capture incomplete for reattach.",
     );
+    expect(logLines).toContain("oracle session sess-1 --render");
   });
 
   test("records runtime and guidance when cloudflare challenge is detected", async () => {
@@ -1418,6 +1422,7 @@ describe("performSessionRun", () => {
     expect(logLines).toContain(
       "Reuse this browser profile with: oracle --engine browser --browser-manual-login",
     );
+    expect(logLines).not.toContain("oracle session sess-1 --render");
   });
 
   test("auto-reattaches after assistant timeout when configured", async () => {
@@ -1513,7 +1518,12 @@ describe("performSessionRun", () => {
       });
       const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
       expect(logLines).toContain("Auto-reattach stopped");
-      expect(logLines).toContain("Reattach later with: oracle session");
+      expect(logLines).toContain(
+        "This run did not return cleanly, but it may still be alive. Reattach:",
+      );
+      expect(logLines).toContain("oracle session sess-1 --render");
+      expect(logLines).toContain("oracle session sess-1 --live");
+      expect(logLines).toContain("oracle session sess-1 --harvest");
     } finally {
       vi.useRealTimers();
     }

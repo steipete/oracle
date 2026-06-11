@@ -89,6 +89,35 @@ export async function writeTextBrowserArtifact(params: {
   };
 }
 
+export async function writeBinaryBrowserArtifact(params: {
+  sessionId?: string;
+  kind: SessionArtifact["kind"];
+  filename: string;
+  contents: Buffer;
+  label?: string;
+  mimeType?: string;
+  sourceUrl?: string;
+  logger?: BrowserLogger;
+}): Promise<SessionArtifact | null> {
+  if (!params.sessionId || params.contents.length === 0) {
+    return null;
+  }
+  const dir = resolveSessionArtifactsDir(params.sessionId);
+  await fs.mkdir(dir, { recursive: true });
+  const filename = sanitizePathSegment(params.filename, "artifact.bin");
+  const targetPath = await resolveUniquePath(path.join(dir, filename));
+  await fs.writeFile(targetPath, params.contents);
+  params.logger?.(`[browser] Saved ${params.kind} artifact to ${targetPath}`);
+  return {
+    kind: params.kind,
+    path: targetPath,
+    label: params.label,
+    mimeType: params.mimeType,
+    sizeBytes: params.contents.length,
+    sourceUrl: params.sourceUrl,
+  };
+}
+
 function isToolOnlyPlaceholder(text: string): boolean {
   const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
   return (

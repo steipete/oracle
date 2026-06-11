@@ -37,10 +37,10 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 
 ## Followup / lineage
 
-| Flag                            | Purpose                                       |
-| ------------------------------- | --------------------------------------------- |
-| `--followup <id\|slug\|resp_…>` | Continue an OpenAI/Azure Responses API run.   |
-| `--followup-model <model>`      | Pick lineage when the parent used `--models`. |
+| Flag                            | Purpose                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `--followup <id\|slug\|resp_…>` | Continue a saved ChatGPT browser or OpenAI/Azure Responses API session. |
+| `--followup-model <model>`      | Pick API lineage when the parent used `--models`.                       |
 
 ## Run control
 

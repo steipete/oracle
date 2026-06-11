@@ -1,9 +1,9 @@
 ---
 title: Followups & Lineage
-description: "Continue an OpenAI / Azure Responses API run with new files. Multi-model parents pick lineage via --followup-model."
+description: "Continue a saved ChatGPT browser conversation or an OpenAI / Azure Responses API run."
 ---
 
-`--followup` chains a new run onto an existing OpenAI or Azure Responses API session. The model keeps its prior reasoning context; you supply additional prompt + files. Lineage is tracked in `oracle status` so you can see the whole tree at a glance.
+`--followup` chains a new run onto an existing session. Oracle selects the continuation path from the parent: ChatGPT browser sessions reopen the exact saved conversation, while OpenAI and Azure Responses API sessions use the stored provider response id. You can supply an additional prompt + files, and `oracle status` shows the parent/child lineage.
 
 ## Why followup instead of starting fresh
 
@@ -25,11 +25,23 @@ oracle --followup arch-review \
   --file "src/auth/rate-limiter.ts"
 ```
 
-`--followup` accepts:
+For API sessions, `--followup` accepts:
 
 - A stored session id (`a1b2c3…`)
 - A session slug (`arch-review`)
 - An OpenAI / Azure response id (`resp_abc1234…`) — useful for chaining onto runs that didn't originate in Oracle.
+
+For a saved ChatGPT browser session, pass its session id or slug:
+
+```bash
+oracle --followup browser-architecture-review \
+  -p "Review this additional file in the same conversation." \
+  --file "src/auth/rate-limiter.ts"
+```
+
+Oracle creates a child session, reopens the parent's exact ChatGPT conversation, and submits the new prompt there. It inherits the parent's browser profile, browser configuration, and model, bypasses the model picker, disables Deep Research for the resumed turn, and leaves the conversation unarchived.
+
+Browser resume is fail-closed: Oracle refuses to submit if the saved URL is not a recoverable HTTPS ChatGPT conversation, the page has no stable prior turns, or the browser lands on a different conversation.
 
 ## Multi-model parents
 
@@ -45,21 +57,21 @@ Without `--followup-model`, Oracle errors with the available lineage.
 
 ## What's chainable
 
-| Provider                 | Followup support                                        |
-| ------------------------ | ------------------------------------------------------- |
-| OpenAI Responses API     | ✅ via `previous_response_id`                           |
-| Azure OpenAI (Responses) | ✅ via `previous_response_id`                           |
-| Anthropic                | ❌ no Oracle-side response id chaining yet              |
-| Gemini                   | ❌                                                      |
-| OpenRouter               | ❌                                                      |
-| Custom `--base-url`      | ❌ — unknown whether the upstream preserves the id      |
-| Browser mode (ChatGPT)   | partial — see [Browser multi-turn](#browser-multi-turn) |
+| Provider                 | Followup support                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| OpenAI Responses API     | ✅ via `previous_response_id`                                                      |
+| Azure OpenAI (Responses) | ✅ via `previous_response_id`                                                      |
+| ChatGPT browser mode     | ✅ saved sessions; see [Same-run browser multi-turn](#same-run-browser-multi-turn) |
+| Anthropic                | ❌ no Oracle-side response id chaining yet                                         |
+| Gemini                   | ❌                                                                                 |
+| OpenRouter               | ❌                                                                                 |
+| Custom `--base-url`      | ❌ — unknown whether the upstream preserves the id                                 |
 
 If you try to follow up on an unsupported provider, Oracle errors clearly instead of silently starting fresh.
 
-## Browser multi-turn
+## Same-run browser multi-turn
 
-In browser mode, `--browser-follow-up` adds extra prompts to the _same ChatGPT conversation_, which is the closest equivalent to a chained API followup:
+In browser mode, `--browser-follow-up` adds planned prompts to the _same ChatGPT conversation_ during one Oracle run:
 
 ```bash
 oracle --engine browser --model gpt-5.5-pro \
@@ -91,5 +103,6 @@ Children inherit the parent's slug prefix unless you pass `--slug` explicitly.
 ## Limitations
 
 - Followups don't move between providers. You can't follow up an OpenAI run with a Gemini one — open a new session and re-bundle.
+- Browser followup requires a recoverable HTTPS ChatGPT conversation URL and an authenticated browser profile. Gemini web sessions are not supported.
 - `previous_response_id` retention on OpenAI / Azure varies by tier. If a followup fails with "response not found," the parent has aged out — start fresh.
 - Custom `--base-url` proxies (LiteLLM, etc.) often strip the response id. Test once before relying on it.

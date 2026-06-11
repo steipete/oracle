@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,10 +9,28 @@ import {
   acquireManualLoginChromeForRunForTest,
   maybeReuseRunningChromeForTest,
 } from "../../src/browser/index.js";
+import { maybeReuseProjectSourcesChromeForTest } from "../../src/browser/projectSourcesRunner.js";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
 import type { LaunchedChrome } from "chrome-launcher";
 
 const noopLogger = () => {};
+const reusePaths = [
+  ["browser runs", maybeReuseRunningChromeForTest],
+  ["Project Sources", maybeReuseProjectSourcesChromeForTest],
+] as const;
+
+async function writeChromeLocks(dir: string): Promise<string[]> {
+  const lockFiles = [
+    path.join(dir, "lockfile"),
+    path.join(dir, "SingletonLock"),
+    path.join(dir, "SingletonSocket"),
+    path.join(dir, "SingletonCookie"),
+  ];
+  for (const lock of lockFiles) {
+    await fs.writeFile(lock, "x");
+  }
+  return lockFiles;
+}
 
 describe("maybeReuseRunningChrome", () => {
   afterEach(() => {
@@ -53,6 +74,89 @@ describe("maybeReuseRunningChrome", () => {
     expect(probe).not.toHaveBeenCalled();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
+
+  test.each(reusePaths)(
+    "cleans stale locks for %s when a recorded Chrome pid is dead and no DevTools target is reachable",
+    async (_label, maybeReuse) => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chrome-reuse-"));
+      try {
+        const lockFiles = await writeChromeLocks(tmpDir);
+        const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+        await once(child, "exit");
+        await fs.writeFile(path.join(tmpDir, "chrome.pid"), `${child.pid ?? 0}\n`, "utf8");
+
+        const logger = vi.fn();
+        const probe = vi.fn(async () => ({ ok: true as const }));
+        const reused = await maybeReuse(tmpDir, logger, {
+          waitForPortMs: 0,
+          probe,
+        });
+
+        expect(reused).toBeNull();
+        expect(probe).not.toHaveBeenCalled();
+        for (const lock of lockFiles) {
+          expect(existsSync(lock)).toBe(false);
+        }
+        expect(logger).toHaveBeenCalledWith(
+          expect.stringContaining("clearing stale profile state"),
+        );
+        expect(logger).toHaveBeenCalledWith("Cleaned up stale Chrome profile locks");
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.each(reusePaths)(
+    "preserves locks for %s when the recorded Chrome pid is still alive",
+    async (_label, maybeReuse) => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chrome-reuse-"));
+      try {
+        const lockFiles = await writeChromeLocks(tmpDir);
+        await fs.writeFile(path.join(tmpDir, "chrome.pid"), `${process.pid}\n`, "utf8");
+
+        const logger = vi.fn();
+        const reused = await maybeReuse(tmpDir, logger, {
+          waitForPortMs: 0,
+          probe: vi.fn(async () => ({ ok: true as const })),
+        });
+
+        expect(reused).toBeNull();
+        for (const lock of lockFiles) {
+          expect(existsSync(lock)).toBe(true);
+        }
+        expect(logger).toHaveBeenCalledWith(
+          expect.stringContaining("skipping profile lock cleanup"),
+        );
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.each(reusePaths)(
+    "preserves locks for %s when no Oracle Chrome pid was recorded",
+    async (_label, maybeReuse) => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chrome-reuse-"));
+      try {
+        const lockFiles = await writeChromeLocks(tmpDir);
+        const logger = vi.fn();
+
+        const reused = await maybeReuse(tmpDir, logger, {
+          waitForPortMs: 0,
+          probe: vi.fn(async () => ({ ok: true as const })),
+        });
+
+        expect(reused).toBeNull();
+        for (const lock of lockFiles) {
+          expect(existsSync(lock)).toBe(true);
+        }
+        expect(logger).not.toHaveBeenCalledWith("Cleaned up stale Chrome profile locks");
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("serializes manual-login Chrome launch so parallel runs reuse the first browser", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chrome-launch-lock-"));

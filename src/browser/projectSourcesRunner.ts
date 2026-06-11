@@ -457,7 +457,7 @@ async function acquireManualLoginChromeForProjectSources(
 async function maybeReuseProjectSourcesChrome(
   userDataDir: string,
   logger: BrowserLogger,
-  options: { waitForPortMs?: number } = {},
+  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
 ): Promise<LaunchedChrome | null> {
   const waitForPortMs = Math.max(0, options.waitForPortMs ?? 0);
   let port = await readDevToolsPort(userDataDir);
@@ -473,13 +473,24 @@ async function maybeReuseProjectSourcesChrome(
   if (!port) {
     const discovered = await findRunningChromeDebugTargetForProfile(userDataDir);
     if (!discovered) {
+      if (pid) {
+        logger(
+          `No reachable Chrome DevTools target found for ${userDataDir}; clearing stale profile state before launching new Chrome.`,
+        );
+        await cleanupStaleProfileState(userDataDir, logger, {
+          lockRemovalMode: "if_oracle_pid_dead",
+        });
+      }
       return null;
     }
-    const probe = await verifyDevToolsReachable({ port: discovered.port });
+    const probe = await (options.probe ?? verifyDevToolsReachable)({ port: discovered.port });
     if (!probe.ok) {
       logger(
         `Discovered Chrome for ${userDataDir} on port ${discovered.port} but it was unreachable (${probe.error}); launching new Chrome.`,
       );
+      await cleanupStaleProfileState(userDataDir, logger, {
+        lockRemovalMode: "if_oracle_pid_dead",
+      });
       return null;
     }
     await writeDevToolsActivePort(userDataDir, discovered.port);
@@ -491,7 +502,7 @@ async function maybeReuseProjectSourcesChrome(
     );
     return { port, pid, kill: async () => {}, process: undefined } as unknown as LaunchedChrome;
   }
-  const probe = await verifyDevToolsReachable({ port });
+  const probe = await (options.probe ?? verifyDevToolsReachable)({ port });
   if (!probe.ok) {
     logger(
       `Recorded Chrome DevTools port ${port} is stale (${probe.error}); launching new Chrome.`,
@@ -506,4 +517,12 @@ async function maybeReuseProjectSourcesChrome(
     kill: async () => {},
     process: undefined,
   } as unknown as LaunchedChrome;
+}
+
+export async function maybeReuseProjectSourcesChromeForTest(
+  userDataDir: string,
+  logger: BrowserLogger,
+  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
+): Promise<LaunchedChrome | null> {
+  return maybeReuseProjectSourcesChrome(userDataDir, logger, options);
 }

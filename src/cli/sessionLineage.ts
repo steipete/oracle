@@ -3,7 +3,7 @@ import type { SessionMetadata } from "../sessionStore.js";
 type ResponseRecord = { responseId?: unknown; id?: unknown };
 
 export interface SessionLineage {
-  parentResponseId: string;
+  parentResponseId?: string;
   parentSessionId?: string;
 }
 
@@ -56,17 +56,20 @@ export function resolveSessionLineage(
   responseOwners?: ReadonlyMap<string, string>,
 ): SessionLineage | null {
   const previous = meta.options?.previousResponseId?.trim();
-  if (!previous) {
+  let parentSessionId = meta.options?.followupSessionId?.trim();
+  if (!previous && !parentSessionId) {
     return null;
   }
-  let parentSessionId = meta.options?.followupSessionId?.trim();
-  if (!parentSessionId && responseOwners) {
+  if (!parentSessionId && previous && responseOwners) {
     parentSessionId = responseOwners.get(previous);
   }
   if (parentSessionId === meta.id) {
     parentSessionId = undefined;
   }
-  return { parentResponseId: previous, parentSessionId };
+  return {
+    parentResponseId: previous || undefined,
+    parentSessionId,
+  };
 }
 
 export function abbreviateResponseId(responseId: string, max = 18): string {

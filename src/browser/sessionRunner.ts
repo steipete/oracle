@@ -193,6 +193,9 @@ export async function runBrowserSessionExecution(
     log(chalk.dim("Chrome automation does not stream output; this may take a minute..."));
   }
   const persistRuntimeHint = deps.persistRuntimeHint ?? (() => {});
+  const executionBrowserConfig = runOptions.browserResumeConversationUrl
+    ? { ...browserConfig, resumeConversationUrl: runOptions.browserResumeConversationUrl }
+    : browserConfig;
   let browserResult: BrowserRunResult;
   try {
     browserResult = await executeBrowser({
@@ -204,7 +207,7 @@ export async function runBrowserSessionExecution(
             attachments: promptArtifacts.fallback.attachments,
           }
         : undefined,
-      config: browserConfig,
+      config: executionBrowserConfig,
       log: automationLogger,
       heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
       verbose: runOptions.verbose,

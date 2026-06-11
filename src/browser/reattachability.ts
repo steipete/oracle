@@ -13,6 +13,9 @@ export function isRecoverableChatGptConversationUrl(candidate: string | null | u
   }
   try {
     const url = new URL(trimmed);
+    if (url.protocol !== "https:" || url.port) {
+      return false;
+    }
     if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") {
       return false;
     }
