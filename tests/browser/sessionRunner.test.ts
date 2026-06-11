@@ -168,6 +168,46 @@ describe("runBrowserSessionExecution", () => {
     );
   });
 
+  test("prints model-picker diagnostics without verbose mode", async () => {
+    const log = vi.fn();
+
+    await runBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 42,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: vi.fn(async ({ log: browserLog }) => {
+          browserLog('[browser] Model picker diagnostic: {"targetLevel":"extended"}');
+          return {
+            answerText: "ok",
+            answerMarkdown: "ok",
+            tookMs: 1000,
+            answerTokens: 1,
+            answerChars: 2,
+          };
+        }),
+      },
+    );
+
+    expect(log).toHaveBeenCalledWith(
+      '[browser] Model picker diagnostic: {"targetLevel":"extended"}',
+    );
+  });
+
   test("warns when a large browser Pro run finishes suspiciously quickly", () => {
     const warnings = buildBrowserRunWarningsForTest({
       runOptions: { ...baseRunOptions, model: "gpt-5.5-pro" },

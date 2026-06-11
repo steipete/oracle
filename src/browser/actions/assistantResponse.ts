@@ -16,6 +16,29 @@ import {
 import { buildClickDispatcher } from "./domEvents.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
+const THINKING_STATUS_LABELS = [
+  "thinking",
+  "pro thinking",
+  "thinking longer for a better answer",
+  "reasoning",
+  "finalizing answer",
+  "finalizing",
+  "analyzing",
+  "researching",
+  "working on it",
+  "working",
+  "planning",
+  "searching the web",
+  "searching",
+  "reading",
+];
+
+function matchesThinkingStatusLabel(trimmed: string): boolean {
+  if (!trimmed) return false;
+  if (THINKING_STATUS_LABELS.includes(trimmed)) return true;
+  if (trimmed.startsWith("thought for ") && trimmed.length <= 40) return true;
+  return trimmed.startsWith("pro thinking") && trimmed.length <= 40;
+}
 
 function isAnswerNowPlaceholderText(normalized: string): boolean {
   const text = normalized.trim();
@@ -32,6 +55,29 @@ function isAnswerNowPlaceholderText(normalized: string): boolean {
   return (
     text.includes("answer now") && (text.includes("pro thinking") || text.includes("chatgpt said"))
   );
+}
+
+function buildActiveThinkingStatusPredicateJs(fnName: string): string {
+  const labelsLiteral = JSON.stringify(THINKING_STATUS_LABELS);
+  const stopSelectorLiteral = JSON.stringify(STOP_BUTTON_SELECTOR);
+  return `const ${fnName} = (snapshot) => {
+    const normalized = String(snapshot?.text ?? '').toLowerCase().replace(/\\s+/g, ' ').trim();
+    if (!normalized) return false;
+    const labels = ${labelsLiteral};
+    const matches =
+      labels.includes(normalized) ||
+      (normalized.startsWith('thought for ') && normalized.length <= 40) ||
+      (normalized.startsWith('pro thinking') && normalized.length <= 40);
+    return matches && Boolean(document.querySelector(${stopSelectorLiteral}));
+  };`;
+}
+
+export function matchesThinkingStatusLabelForTest(text: string): boolean {
+  return matchesThinkingStatusLabel(text.toLowerCase().replace(/\s+/g, " ").trim());
+}
+
+export function buildActiveThinkingStatusPredicateJsForTest(fnName: string): string {
+  return buildActiveThinkingStatusPredicateJs(fnName);
 }
 
 export async function waitForAssistantResponse(
@@ -635,12 +681,22 @@ function buildAssistantSnapshotExpression(
       }
       return normalized.includes('answer now') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'));
     };
-    if (extracted && extracted.text && !isPlaceholder(extracted)) {
+    ${buildActiveThinkingStatusPredicateJs("isActiveThinkingStatus")}
+    if (
+      extracted &&
+      extracted.text &&
+      !isPlaceholder(extracted) &&
+      !isActiveThinkingStatus(extracted)
+    ) {
       return extracted;
     }
     // Fallback for ChatGPT project view: answers can live outside conversation turns.
-    const fallback = ${buildMarkdownFallbackExtractor("MIN_TURN_INDEX")};
-    return fallback ?? extracted;
+    const extractFallback = ${buildMarkdownFallbackExtractor("MIN_TURN_INDEX")};
+    const fallback = extractFallback();
+    if (fallback && !isPlaceholder(fallback) && !isActiveThinkingStatus(fallback)) {
+      return fallback;
+    }
+    return null;
   })()`;
 }
 
@@ -687,6 +743,7 @@ function buildResponseObserverExpression(
       }
       return normalized.includes('answer now') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'));
     };
+    ${buildActiveThinkingStatusPredicateJs("isActiveThinkingStatus")}
 
     // Helper to detect assistant turns - must match buildAssistantExtractor logic for consistency.
     const isAssistantTurn = (node) => {
@@ -752,12 +809,20 @@ function buildResponseObserverExpression(
           try {
             const extractedRaw = extractFromTurns();
             const extractedCandidate =
-              extractedRaw && !isAnswerNowPlaceholder(extractedRaw) ? extractedRaw : null;
+              extractedRaw &&
+              !isAnswerNowPlaceholder(extractedRaw) &&
+              !isActiveThinkingStatus(extractedRaw)
+                ? extractedRaw
+                : null;
             let extracted = acceptSnapshot(extractedCandidate);
             if (!extracted) {
               const fallbackRaw = extractFromMarkdownFallback();
               const fallbackCandidate =
-                fallbackRaw && !isAnswerNowPlaceholder(fallbackRaw) ? fallbackRaw : null;
+                fallbackRaw &&
+                !isAnswerNowPlaceholder(fallbackRaw) &&
+                !isActiveThinkingStatus(fallbackRaw)
+                  ? fallbackRaw
+                  : null;
               extracted = acceptSnapshot(fallbackCandidate);
             }
             if (extracted) {
@@ -836,12 +901,20 @@ function buildResponseObserverExpression(
         await new Promise((resolve) => setTimeout(resolve, settleIntervalMs));
         const refreshedRaw = extractFromTurns();
         const refreshedCandidate =
-          refreshedRaw && !isAnswerNowPlaceholder(refreshedRaw) ? refreshedRaw : null;
+          refreshedRaw &&
+          !isAnswerNowPlaceholder(refreshedRaw) &&
+          !isActiveThinkingStatus(refreshedRaw)
+            ? refreshedRaw
+            : null;
         let refreshed = acceptSnapshot(refreshedCandidate);
         if (!refreshed) {
           const fallbackRaw = extractFromMarkdownFallback();
           const fallbackCandidate =
-            fallbackRaw && !isAnswerNowPlaceholder(fallbackRaw) ? fallbackRaw : null;
+            fallbackRaw &&
+            !isAnswerNowPlaceholder(fallbackRaw) &&
+            !isActiveThinkingStatus(fallbackRaw)
+              ? fallbackRaw
+              : null;
           refreshed = acceptSnapshot(fallbackCandidate);
         }
         const nextLength = refreshed?.text?.length ?? lastLength;
@@ -865,11 +938,21 @@ function buildResponseObserverExpression(
     };
 
     const extractedRaw = extractFromTurns();
-    const extractedCandidate = extractedRaw && !isAnswerNowPlaceholder(extractedRaw) ? extractedRaw : null;
+    const extractedCandidate =
+      extractedRaw &&
+      !isAnswerNowPlaceholder(extractedRaw) &&
+      !isActiveThinkingStatus(extractedRaw)
+        ? extractedRaw
+        : null;
     let extracted = acceptSnapshot(extractedCandidate);
     if (!extracted) {
       const fallbackRaw = extractFromMarkdownFallback();
-      const fallbackCandidate = fallbackRaw && !isAnswerNowPlaceholder(fallbackRaw) ? fallbackRaw : null;
+      const fallbackCandidate =
+        fallbackRaw &&
+        !isAnswerNowPlaceholder(fallbackRaw) &&
+        !isActiveThinkingStatus(fallbackRaw)
+          ? fallbackRaw
+          : null;
       extracted = acceptSnapshot(fallbackCandidate);
     }
     if (extracted) {

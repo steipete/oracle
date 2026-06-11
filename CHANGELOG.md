@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Browser: select and verify requested thinking effort from ChatGPT's standalone Pro/Thinking composer pills and earlier Intelligence/per-model picker layouts, keep Pro Extended fail-closed when the selected effort cannot be confirmed, and ignore status-only assistant turns such as `Pro thinking` only while generation is active; picker failures now emit a bounded, redacted diagnostic in normal session logs. Thanks @umutkeltek!
 - Browser: surface visible ChatGPT rate-limit, temporary-unavailable, and authentication/challenge warnings in assistant-timeout errors and session metadata instead of reporting only a generic timeout. Thanks @derekszen!
 - Browser: verify ChatGPT login through the cookie-authenticated `/api/auth/session` endpoint before falling back to the legacy `/backend-api/me` probe and strong app-shell signals, avoiding false “session not detected” failures when the legacy endpoint requires bearer auth. Fixes #241. Thanks @hexsprite and @orbitingflea!
 - Browser: select ChatGPT “Welcome back” accounts only by exact configured email, keep the address out of logs, and fail closed on ambiguous saved accounts. Thanks @derekszen!
