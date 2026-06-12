@@ -248,6 +248,54 @@ describe("saveChatGptGeneratedImages", () => {
       Buffer.from([1, 2, 3, 4]),
     );
   });
+
+  test("falls back to browser-context fetch when Node fetch cannot download the image", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chatgpt-images-"));
+    const network = {
+      getCookies: vi.fn().mockResolvedValue({
+        cookies: [{ name: "__Secure-next-auth.session-token", value: "abc" }],
+      }),
+    } as unknown as ChromeClient["Network"];
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            contentType: "image/png",
+            finalUrl: "https://chatgpt.com/backend-api/estuary/content?id=file_proxy",
+            b64: Buffer.from([9, 8, 7, 6]).toString("base64"),
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+
+    const result = await saveChatGptGeneratedImages({
+      Network: network,
+      Runtime: runtime,
+      images: [
+        {
+          url: "https://chatgpt.com/backend-api/estuary/content?id=file_proxy",
+          fileId: "file_proxy",
+        },
+      ],
+      outputPath: path.join(tmpDir, "generated.png"),
+    });
+
+    expect(result.saved).toBe(true);
+    expect(runtime.evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        awaitPromise: true,
+        returnByValue: true,
+      }),
+    );
+    await expect(fs.readFile(path.join(tmpDir, "generated.png"))).resolves.toEqual(
+      Buffer.from([9, 8, 7, 6]),
+    );
+  });
 });
 
 describe("resolveGeneratedImageWaitTimeoutMsForTest", () => {

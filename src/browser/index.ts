@@ -1005,9 +1005,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         );
       } else {
         const strictTabIsolation = Boolean(manualLogin && reusedChrome);
+        const devtoolsRetries = manualLogin ? 6 : 0;
         const connection = await connectWithNewTab(chrome.port, logger, config.url, chromeHost, {
           fallbackToDefault: !strictTabIsolation,
-          retries: strictTabIsolation ? 3 : 0,
+          retries: devtoolsRetries,
           retryDelayMs: 500,
         });
         client = connection.client;
