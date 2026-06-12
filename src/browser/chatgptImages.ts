@@ -16,6 +16,33 @@ import { saveAssistantDownloadButtonArtifacts } from "./chatgptFiles.js";
 
 const GENERATED_IMAGE_WAIT_MIN_MS = 15_000;
 const GENERATED_IMAGE_WAIT_MAX_MS = 15 * 60_000;
+const CHATGPT_GENERATED_IMAGE_BASE_URL = "https://chatgpt.com/";
+
+function isAllowedChatGptHost(hostname: string): boolean {
+  const value = hostname.toLowerCase();
+  return value === "chatgpt.com" || value === "chat.openai.com";
+}
+
+function normalizeGeneratedImageUrl(value?: string | null): string | undefined {
+  const raw = String(value ?? "").trim();
+  if (!raw) return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw, CHATGPT_GENERATED_IMAGE_BASE_URL);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" || url.port || !isAllowedChatGptHost(url.hostname)) {
+    return undefined;
+  }
+  if (url.pathname !== "/backend-api/estuary/content") {
+    return undefined;
+  }
+  if (!(url.searchParams.get("id") ?? "").startsWith("file_")) {
+    return undefined;
+  }
+  return url.href;
+}
 
 function extractFileId(url: string): string | undefined {
   try {
@@ -51,8 +78,12 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
     const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isGeneratedImage = (img) => {
-      const url = img?.src || '';
-      if (!url.includes('/backend-api/estuary/content?id=file_')) return false;
+      const url = new URL(img?.src || '', location.origin || 'https://chatgpt.com');
+      const host = url.hostname.toLowerCase();
+      if (url.protocol !== 'https:' || url.port) return false;
+      if (host !== 'chatgpt.com' && host !== 'chat.openai.com') return false;
+      if (url.pathname !== '/backend-api/estuary/content') return false;
+      if (!String(url.searchParams.get('id') || '').startsWith('file_')) return false;
       const alt = String(img.alt || '').toLowerCase();
       if (alt.includes('generated image')) return true;
       let node = img;
@@ -118,13 +149,16 @@ export async function readAssistantGeneratedImages(
   });
   const raw = Array.isArray(result?.value) ? result.value : [];
   const normalized = raw
-    .map((item) => ({
-      url: typeof item?.url === "string" ? item.url : "",
-      alt: typeof item?.alt === "string" ? item.alt : undefined,
-      width: typeof item?.width === "number" ? item.width : undefined,
-      height: typeof item?.height === "number" ? item.height : undefined,
-      fileId: typeof item?.url === "string" ? extractFileId(item.url) : undefined,
-    }))
+    .map((item) => {
+      const url = normalizeGeneratedImageUrl(typeof item?.url === "string" ? item.url : "");
+      return {
+        url: url ?? "",
+        alt: typeof item?.alt === "string" ? item.alt : undefined,
+        width: typeof item?.width === "number" ? item.width : undefined,
+        height: typeof item?.height === "number" ? item.height : undefined,
+        fileId: url ? extractFileId(url) : undefined,
+      };
+    })
     .filter((item) => item.url.length > 0);
   return dedupeImages(normalized);
 }
@@ -338,12 +372,16 @@ export async function saveChatGptGeneratedImages(params: {
   for (let index = 0; index < images.length; index += 1) {
     const image = images[index];
     try {
+      const imageUrl = normalizeGeneratedImageUrl(image.url);
+      if (!imageUrl) {
+        throw new Error("rejected non-ChatGPT generated image URL");
+      }
       let contentType: string | null = null;
-      let finalUrl = image.url;
+      let finalUrl = imageUrl;
       let buffer: Buffer;
 
       try {
-        const response = await fetch(image.url, {
+        const response = await fetch(imageUrl, {
           headers: {
             cookie: cookieHeader,
             "user-agent": "Mozilla/5.0",
@@ -363,9 +401,9 @@ export async function saveChatGptGeneratedImages(params: {
         const message =
           downloadError instanceof Error ? downloadError.message : String(downloadError);
         logger?.(
-          `[browser] ChatGPT generated image download failed via Node fetch; retrying in browser context (${image.fileId ?? image.url}: ${message}).`,
+          `[browser] ChatGPT generated image download failed via Node fetch; retrying in browser context (${image.fileId ?? imageUrl}: ${message}).`,
         );
-        const browserFetch = await fetchGeneratedImageInBrowserContext(Runtime, image.url);
+        const browserFetch = await fetchGeneratedImageInBrowserContext(Runtime, imageUrl);
         contentType = browserFetch.contentType;
         finalUrl = browserFetch.finalUrl;
         buffer = browserFetch.buffer;
@@ -380,8 +418,8 @@ export async function saveChatGptGeneratedImages(params: {
         label: index === 0 ? "Generated image" : `Generated image ${index + 1}`,
         mimeType: contentType ?? undefined,
         sizeBytes: buffer.length,
-        sourceUrl: image.url,
-        url: image.url,
+        sourceUrl: imageUrl,
+        url: imageUrl,
         finalUrl,
         alt: image.alt,
         width: image.width,

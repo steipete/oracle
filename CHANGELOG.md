@@ -2,6 +2,10 @@
 
 ## 0.14.1 — Unreleased
 
+### Fixed
+
+- Browser: retry manual-login DevTools tab creation on fresh Chrome launches, recover ChatGPT generated-image downloads through the authenticated browser context when Node-side fetch fails, and keep generated-image artifact waits fail-fast on visible ChatGPT warnings. Thanks @derekszen!
+
 ## 0.14.0 — 2026-06-12
 
 ### Added
