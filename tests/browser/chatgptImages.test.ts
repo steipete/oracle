@@ -376,6 +376,28 @@ describe("collectGeneratedImageArtifacts", () => {
     }
   });
 
+  test("fails fast when a blocking UI warning appears before image artifacts", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: [] } }),
+    } as unknown as ChromeClient["Runtime"];
+    const warningError = new Error(
+      "ChatGPT displayed a rate-limit warning while waiting for generated image artifacts.",
+    );
+    const checkBlockingUiWarning = vi.fn().mockRejectedValue(warningError);
+
+    await expect(
+      collectGeneratedImageArtifacts({
+        Runtime: runtime,
+        Network: {} as ChromeClient["Network"],
+        generateImagePath: path.join(os.tmpdir(), "generated.png"),
+        answerText: "Working on it.",
+        waitTimeoutMs: 15_000,
+        checkBlockingUiWarning,
+      }),
+    ).rejects.toBe(warningError);
+    expect(checkBlockingUiWarning).toHaveBeenCalledTimes(1);
+  });
+
   test("retries behavior button downloads after waiting for delayed image generation", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-12T00:00:00Z"));

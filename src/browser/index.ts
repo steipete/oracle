@@ -369,27 +369,23 @@ function formatChatGptUiWarningType(type: ChatGptUiWarningType): string {
   }
 }
 
-async function createAssistantTimeoutError(params: {
+async function createChatGptUiWarningError(params: {
   Runtime: ChromeClient["Runtime"];
   logger: BrowserLogger;
   runtime: unknown;
+  stage: string;
+  waitTarget: string;
   diagnostics?: unknown;
-  cause: unknown;
-}): Promise<BrowserAutomationError> {
+  cause?: unknown;
+}): Promise<BrowserAutomationError | null> {
   const [uiWarning] = await collectChatGptUiWarnings(params.Runtime);
-  if (!uiWarning) {
-    return new BrowserAutomationError(
-      "Assistant response timed out before completion; reattach later to capture the answer.",
-      { stage: "assistant-timeout", runtime: params.runtime, diagnostics: params.diagnostics },
-      params.cause,
-    );
-  }
+  if (!uiWarning) return null;
 
   params.logger(`[browser] ChatGPT UI warning detected (${uiWarning.type}): ${uiWarning.message}`);
   return new BrowserAutomationError(
-    `ChatGPT displayed a ${formatChatGptUiWarningType(uiWarning.type)} warning while waiting for the assistant: ${uiWarning.message}`,
+    `ChatGPT displayed a ${formatChatGptUiWarningType(uiWarning.type)} warning while waiting for ${params.waitTarget}: ${uiWarning.message}`,
     {
-      stage: "assistant-timeout",
+      stage: params.stage,
       code: "chatgpt-ui-warning",
       uiWarning,
       runtime: params.runtime,
@@ -397,6 +393,44 @@ async function createAssistantTimeoutError(params: {
     },
     params.cause,
   );
+}
+
+async function throwChatGptUiWarningIfPresent(params: {
+  Runtime: ChromeClient["Runtime"];
+  logger: BrowserLogger;
+  runtime: unknown;
+  stage: string;
+  waitTarget: string;
+  diagnostics?: unknown;
+}): Promise<void> {
+  const error = await createChatGptUiWarningError(params);
+  if (error) throw error;
+}
+
+async function createAssistantTimeoutError(params: {
+  Runtime: ChromeClient["Runtime"];
+  logger: BrowserLogger;
+  runtime: unknown;
+  diagnostics?: unknown;
+  cause: unknown;
+}): Promise<BrowserAutomationError> {
+  const warningError = await createChatGptUiWarningError({
+    Runtime: params.Runtime,
+    logger: params.logger,
+    runtime: params.runtime,
+    stage: "assistant-timeout",
+    waitTarget: "the assistant",
+    diagnostics: params.diagnostics,
+    cause: params.cause,
+  });
+  if (!warningError) {
+    return new BrowserAutomationError(
+      "Assistant response timed out before completion; reattach later to capture the answer.",
+      { stage: "assistant-timeout", runtime: params.runtime, diagnostics: params.diagnostics },
+      params.cause,
+    );
+  }
+  return warningError;
 }
 
 function listIgnoredRemoteChromeFlags(config: {
@@ -1983,6 +2017,24 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       outputPath: options.outputPath,
       answerText,
       waitTimeoutMs: options.config?.timeoutMs,
+      checkBlockingUiWarning: () =>
+        throwChatGptUiWarningIfPresent({
+          Runtime,
+          logger,
+          stage: "image-artifact-wait",
+          waitTarget: "generated image artifacts",
+          runtime: {
+            chromePid: chrome.pid,
+            chromePort: chrome.port,
+            chromeHost,
+            userDataDir,
+            chromeTargetId: lastTargetId,
+            tabUrl: lastUrl,
+            conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+            promptSubmitted,
+            controllerPid: process.pid,
+          },
+        }),
     });
     answerText = imageArtifacts.answerText || answerText;
     if (imageArtifacts.markdownSuffix) {
@@ -3325,6 +3377,24 @@ async function runRemoteBrowserMode(
       outputPath: options.outputPath,
       answerText,
       waitTimeoutMs: options.config?.timeoutMs,
+      checkBlockingUiWarning: () =>
+        throwChatGptUiWarningIfPresent({
+          Runtime,
+          logger,
+          stage: "image-artifact-wait",
+          waitTarget: "generated image artifacts",
+          runtime: {
+            chromePort: port,
+            chromeHost: host,
+            chromeBrowserWSEndpoint: browserWSEndpoint,
+            chromeProfileRoot,
+            chromeTargetId: remoteTargetId ?? undefined,
+            tabUrl: lastUrl,
+            conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+            promptSubmitted,
+            controllerPid: process.pid,
+          },
+        }),
     });
     answerText = imageArtifacts.answerText || answerText;
     if (imageArtifacts.markdownSuffix) {

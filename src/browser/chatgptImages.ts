@@ -498,6 +498,7 @@ export async function collectGeneratedImageArtifacts(params: {
   outputPath?: string;
   answerText: string;
   waitTimeoutMs?: number;
+  checkBlockingUiWarning?: () => Promise<void>;
 }): Promise<{
   generatedImages: BrowserGeneratedImage[];
   savedImages: SavedBrowserImage[];
@@ -513,6 +514,7 @@ export async function collectGeneratedImageArtifacts(params: {
   let latestAnswerText = params.answerText;
 
   if (explicitTargetPath && generatedImages.length === 0) {
+    await params.checkBlockingUiWarning?.();
     const targetPath = path.resolve(explicitTargetPath);
     const buttonImages = await saveGeneratedImageButtonArtifacts({
       Browser: params.Browser,
@@ -529,6 +531,7 @@ export async function collectGeneratedImageArtifacts(params: {
     const deadline = Date.now() + resolveGeneratedImageWaitTimeoutMs(params.waitTimeoutMs);
     while (Date.now() < deadline) {
       await delay(1500);
+      await params.checkBlockingUiWarning?.();
       generatedImages = await readAssistantGeneratedImagesWithFallback(
         params.Runtime,
         params.minTurnIndex ?? undefined,
@@ -547,6 +550,7 @@ export async function collectGeneratedImageArtifacts(params: {
       }
     }
     if (generatedImages.length === 0) {
+      await params.checkBlockingUiWarning?.();
       const delayedButtonImages = await saveGeneratedImageButtonArtifacts({
         Browser: params.Browser,
         Client: params.Client,
