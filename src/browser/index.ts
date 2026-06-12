@@ -563,7 +563,10 @@ function isImageOnlyUiChromeText(text: string): boolean {
     normalized.length === 0 ||
     normalized === "edit" ||
     normalized === "stopped thinking" ||
-    normalized === "stopped thinking edit"
+    normalized === "stopped thinking edit" ||
+    /^thought for \d+(?:\.\d+)?\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\s+edit$/.test(
+      normalized,
+    )
   );
 }
 
