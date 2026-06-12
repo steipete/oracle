@@ -132,6 +132,28 @@ describe("connectWithNewTab", () => {
     expect(cdpNewMock).toHaveBeenCalledTimes(1);
     expect(cdpMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222, target: "target-2" });
   });
+
+  test("retries transient DevTools connection failures before falling back", async () => {
+    vi.useFakeTimers();
+    cdpNewMock
+      .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:9222"))
+      .mockResolvedValueOnce({ id: "target-3" });
+    cdpMock.mockResolvedValue({});
+
+    const { connectWithNewTab } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+
+    const resultPromise = connectWithNewTab(9222, logger, undefined, undefined, {
+      retries: 1,
+      retryDelayMs: 10,
+    });
+    await vi.advanceTimersByTimeAsync(10);
+    const result = await resultPromise;
+
+    expect(result.targetId).toBe("target-3");
+    expect(cdpNewMock).toHaveBeenCalledTimes(2);
+    expect(cdpMock).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222, target: "target-3" });
+  });
 });
 
 describe("closeBlankChromeTabs", () => {

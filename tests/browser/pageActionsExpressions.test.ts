@@ -24,6 +24,7 @@ describe("browser automation expressions", () => {
     expect(expression).toContain("/backend-api/estuary/content?id=file_");
     expect(expression).toContain("Generated image.");
     expect(expression).toContain("stopped thinking edit");
+    expect(expression).toContain("thought for");
   });
 
   test("conversation debug expression references conversation selector", () => {

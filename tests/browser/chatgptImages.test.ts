@@ -105,10 +105,18 @@ describe("readAssistantGeneratedImages", () => {
       "document",
       "HTMLElement",
       "Node",
+      "location",
       `return ${expression};`,
-    )(document, FakeElement, {
-      DOCUMENT_POSITION_FOLLOWING: 4,
-    });
+    )(
+      document,
+      FakeElement,
+      {
+        DOCUMENT_POSITION_FOLLOWING: 4,
+      },
+      {
+        origin: "https://chatgpt.com",
+      },
+    );
   }
 
   test("dedupes duplicate image urls by file id and keeps the largest candidate", async () => {
@@ -144,6 +152,34 @@ describe("readAssistantGeneratedImages", () => {
     expect(images[0]?.fileId).toBe("file_a");
     expect(images[0]?.width).toBe(1024);
     expect(images[1]?.fileId).toBe("file_b");
+  });
+
+  test("ignores generated-image lookalikes from non-ChatGPT hosts", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: [
+            {
+              url: "https://example.com/backend-api/estuary/content?id=file_fake",
+              alt: "generated image",
+              width: 1024,
+              height: 1024,
+            },
+            {
+              url: "https://chatgpt.com/backend-api/estuary/content?id=file_real",
+              alt: "generated image",
+              width: 1024,
+              height: 1024,
+            },
+          ],
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const images = await readAssistantGeneratedImages(runtime);
+
+    expect(images).toHaveLength(1);
+    expect(images[0]?.fileId).toBe("file_real");
   });
 
   test("finds generated images rendered outside assistant turn wrappers", async () => {
@@ -248,6 +284,79 @@ describe("saveChatGptGeneratedImages", () => {
       Buffer.from([1, 2, 3, 4]),
     );
   });
+
+  test("falls back to browser-context fetch when Node fetch cannot download the image", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chatgpt-images-"));
+    const network = {
+      getCookies: vi.fn().mockResolvedValue({
+        cookies: [{ name: "__Secure-next-auth.session-token", value: "abc" }],
+      }),
+    } as unknown as ChromeClient["Network"];
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            contentType: "image/png",
+            finalUrl: "https://chatgpt.com/backend-api/estuary/content?id=file_proxy",
+            b64: Buffer.from([9, 8, 7, 6]).toString("base64"),
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    globalThis.fetch = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+
+    const result = await saveChatGptGeneratedImages({
+      Network: network,
+      Runtime: runtime,
+      images: [
+        {
+          url: "https://chatgpt.com/backend-api/estuary/content?id=file_proxy",
+          fileId: "file_proxy",
+        },
+      ],
+      outputPath: path.join(tmpDir, "generated.png"),
+    });
+
+    expect(result.saved).toBe(true);
+    expect(runtime.evaluate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        awaitPromise: true,
+        returnByValue: true,
+      }),
+    );
+    await expect(fs.readFile(path.join(tmpDir, "generated.png"))).resolves.toEqual(
+      Buffer.from([9, 8, 7, 6]),
+    );
+  });
+
+  test("rejects non-ChatGPT image URLs before attaching cookies", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chatgpt-images-"));
+    const network = {
+      getCookies: vi.fn().mockResolvedValue({
+        cookies: [{ name: "__Secure-next-auth.session-token", value: "abc" }],
+      }),
+    } as unknown as ChromeClient["Network"];
+    globalThis.fetch = vi.fn();
+
+    const result = await saveChatGptGeneratedImages({
+      Network: network,
+      images: [
+        {
+          url: "https://example.com/backend-api/estuary/content?id=file_fake",
+          fileId: "file_fake",
+        },
+      ],
+      outputPath: path.join(tmpDir, "generated.png"),
+    });
+
+    expect(result.saved).toBe(false);
+    expect(result.errors[0]).toContain("rejected non-ChatGPT generated image URL");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveGeneratedImageWaitTimeoutMsForTest", () => {
@@ -326,6 +435,28 @@ describe("collectGeneratedImageArtifacts", () => {
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  test("fails fast when a blocking UI warning appears before image artifacts", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: [] } }),
+    } as unknown as ChromeClient["Runtime"];
+    const warningError = new Error(
+      "ChatGPT displayed a rate-limit warning while waiting for generated image artifacts.",
+    );
+    const checkBlockingUiWarning = vi.fn().mockRejectedValue(warningError);
+
+    await expect(
+      collectGeneratedImageArtifacts({
+        Runtime: runtime,
+        Network: {} as ChromeClient["Network"],
+        generateImagePath: path.join(os.tmpdir(), "generated.png"),
+        answerText: "Working on it.",
+        waitTimeoutMs: 15_000,
+        checkBlockingUiWarning,
+      }),
+    ).rejects.toBe(warningError);
+    expect(checkBlockingUiWarning).toHaveBeenCalledTimes(1);
   });
 
   test("retries behavior button downloads after waiting for delayed image generation", async () => {
@@ -419,7 +550,7 @@ describe("collectGeneratedImageArtifacts", () => {
             },
           };
         }
-        if (expression.includes("/backend-api/estuary/content?id=file_")) {
+        if (expression.includes("/backend-api/estuary/content")) {
           return {
             result: {
               value: [
@@ -482,7 +613,7 @@ describe("collectGeneratedImageArtifacts", () => {
     setOracleHomeDirOverrideForTest(tmpHome);
     const runtime = {
       evaluate: vi.fn(async ({ expression }: { expression: string }) => {
-        if (expression.includes("/backend-api/estuary/content?id=file_")) {
+        if (expression.includes("/backend-api/estuary/content")) {
           return {
             result: {
               value: [
@@ -537,7 +668,7 @@ describe("collectGeneratedImageArtifacts", () => {
     setOracleHomeDirOverrideForTest(tmpHome);
     const runtime = {
       evaluate: vi.fn(async ({ expression }: { expression: string }) => {
-        if (expression.includes("/backend-api/estuary/content?id=file_")) {
+        if (expression.includes("/backend-api/estuary/content")) {
           return {
             result: {
               value: [
