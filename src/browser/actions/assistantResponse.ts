@@ -1037,7 +1037,8 @@ function buildAssistantExtractor(functionName: string): string {
         !normalizedText ||
         normalizedText === 'edit' ||
         normalizedText === 'stopped thinking' ||
-        normalizedText === 'stopped thinking edit';
+        normalizedText === 'stopped thinking edit' ||
+        /^thought for \\d+(?:\\.\\d+)?\\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\\s+edit$/.test(normalizedText);
       if (generatedImages.length > 0 && imageOnlyChrome) {
         const label = generatedImages.length === 1 ? 'Generated image.' : \`Generated \${generatedImages.length} images.\`;
         return { text: label, html: messageRoot?.innerHTML ?? html, messageId, turnId, turnIndex: index };
