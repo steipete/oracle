@@ -695,10 +695,10 @@ describe("browser thinking-time selection expression", () => {
         return null;
       }
       matches(selector: string): boolean {
-        return selector.includes("__composer-pill") &&
-          this.attributes.class?.includes("__composer-pill")
-          ? true
-          : false;
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
       focus(): void {}
       getBoundingClientRect(): { width: number; height: number } {
@@ -875,10 +875,10 @@ describe("browser thinking-time selection expression", () => {
         return null;
       }
       matches(selector: string): boolean {
-        return selector.includes("__composer-pill") &&
-          this.attributes.class?.includes("__composer-pill")
-          ? true
-          : false;
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
       focus(): void {}
       getBoundingClientRect(): { width: number; height: number } {
@@ -1050,10 +1050,10 @@ describe("browser thinking-time selection expression", () => {
         return null;
       }
       matches(selector: string): boolean {
-        return selector.includes("__composer-pill") &&
-          this.attributes.class?.includes("__composer-pill")
-          ? true
-          : false;
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
       getBoundingClientRect(): { width: number; height: number } {
         return { width: 144, height: 36 };
@@ -1179,10 +1179,10 @@ describe("browser thinking-time selection expression", () => {
         return null;
       }
       matches(selector: string): boolean {
-        return selector.includes("__composer-pill") &&
-          this.attributes.class?.includes("__composer-pill")
-          ? true
-          : false;
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
       getBoundingClientRect(): { width: number; height: number } {
         return { width: 144, height: 36 };
@@ -1317,10 +1317,10 @@ describe("browser thinking-time selection expression", () => {
         return null;
       }
       matches(selector: string): boolean {
-        return selector.includes("__composer-pill") &&
-          this.attributes.class?.includes("__composer-pill")
-          ? true
-          : false;
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
       getBoundingClientRect(): { width: number; height: number } {
         return { width: 144, height: 36 };
