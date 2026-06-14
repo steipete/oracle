@@ -446,6 +446,150 @@ describe("browser thinking-time selection expression", () => {
     expect(extended.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("selects Standard from the current standalone Pro composer pill", async () => {
+    class FakeEventTarget {
+      dispatchEvent(_event: unknown): boolean {
+        return true;
+      }
+    }
+    class FakeElement extends FakeEventTarget {
+      constructor(
+        public textContent: string,
+        private readonly attributes: Record<string, string> = {},
+        private readonly children: FakeElement[] = [],
+        private readonly onDispatch?: () => void,
+      ) {
+        super();
+      }
+      getAttribute(name: string): string | null {
+        return this.attributes[name] ?? null;
+      }
+      setAttribute(name: string, value: string): void {
+        this.attributes[name] = value;
+      }
+      querySelector(_selector: string): FakeElement | null {
+        return null;
+      }
+      querySelectorAll(selector: string): FakeElement[] {
+        return selector.includes("menuitem") || selector === "button" ? this.children : [];
+      }
+      closest(_selector: string): FakeElement | null {
+        return null;
+      }
+      matches(selector: string): boolean {
+        return selector === "button.__composer-pill" && this.attributes.class === "__composer-pill";
+      }
+      contains(_node: unknown): boolean {
+        return false;
+      }
+      getBoundingClientRect(): { width: number; height: number } {
+        return { width: 144, height: 36 };
+      }
+      override dispatchEvent(event: unknown): boolean {
+        this.onDispatch?.();
+        return super.dispatchEvent(event);
+      }
+    }
+    class FakeMouseEvent {
+      constructor(
+        public readonly type: string,
+        public readonly init?: unknown,
+      ) {}
+    }
+
+    const proPill = new FakeElement(
+      "Pro",
+      {
+        class: "__composer-pill",
+        "aria-controls": "pro-effort-menu",
+        "aria-expanded": "false",
+        "aria-haspopup": "menu",
+      },
+      [],
+      () => proPill.setAttribute("aria-expanded", "true"),
+    );
+    const standard = new FakeElement(
+      "Standard",
+      {
+        role: "menuitemradio",
+        "aria-checked": "false",
+        "data-state": "unchecked",
+      },
+      [],
+      () => {
+        standard.setAttribute("aria-checked", "true");
+        standard.setAttribute("data-state", "checked");
+        extended.setAttribute("aria-checked", "false");
+        extended.setAttribute("data-state", "unchecked");
+        proPill.setAttribute("aria-expanded", "false");
+      },
+    );
+    const extended = new FakeElement("Extended", {
+      role: "menuitemradio",
+      "aria-checked": "true",
+      "data-state": "checked",
+    });
+    const effortMenu = new FakeElement(
+      "Pro thinking effort Standard Extended",
+      { role: "menu", "data-state": "open" },
+      [standard, extended],
+    );
+    const documentStub = {
+      body: new FakeElement(""),
+      querySelector: (_selector: string) => null,
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("form button.__composer-pill")) return [proPill];
+        if (selector.includes("composer-footer-actions")) return [proPill];
+        if (selector.includes("__composer-pill-composite")) return [proPill];
+        if (selector.includes('[role="menu"]')) {
+          return proPill.getAttribute("aria-expanded") === "true" ? [effortMenu] : [];
+        }
+        return [];
+      },
+      getElementById: (id: string) =>
+        id === "pro-effort-menu" && proPill.getAttribute("aria-expanded") === "true"
+          ? effortMenu
+          : null,
+      dispatchEvent: () => true,
+    };
+    let now = 0;
+    const expression = buildThinkingTimeExpressionForTest("standard", "gpt-5.5-pro");
+    const evaluate = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${expression};`,
+    ) as (
+      document: unknown,
+      performance: unknown,
+      setTimeout: unknown,
+      window: unknown,
+      EventTarget: unknown,
+      PointerEvent: unknown,
+      MouseEvent: unknown,
+      HTMLElement: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      evaluate(
+        documentStub,
+        { now: () => (now += 100) },
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "switched", label: "Standard" });
+    expect(standard.getAttribute("aria-checked")).toBe("true");
+  });
+
   it("captures a model-picker diagnostic on failure outcomes", () => {
     const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
     expect(expression).toContain("collectPickerDiagnostic");

@@ -594,11 +594,6 @@ function buildThinkingTimeExpression(
           if (proEffortResult) {
             return proEffortResult;
           }
-          if (TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'standard') {
-            const result = failure('menu-not-found');
-            closeOpenMenus();
-            return result;
-          }
           return selectAndVerify(composerEffortPill, () => {
             const currentMenu = findVisibleEffortMenu(composerEffortPill);
             return currentMenu ? findOptionInMenu(currentMenu) : null;
