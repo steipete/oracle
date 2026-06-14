@@ -26,6 +26,12 @@ type ThinkingTimeOutcome =
       diagnostic?: ThinkingTimePickerDiagnostic;
     };
 
+const BROWSER_THINKING_LOG_PREFIX = "[browser] Thinking time:";
+
+function formatBrowserThinkingLog(message: string): string {
+  return `${BROWSER_THINKING_LOG_PREFIX} ${message.replace(/^Thinking time:\s*/, "")}`;
+}
+
 /**
  * Surfaces the model-picker snapshot captured alongside a failed detection.
  *
@@ -62,10 +68,10 @@ export async function ensureThinkingTime(
 
   switch (result?.status) {
     case "already-selected":
-      logger(`Thinking time: ${result.label ?? capitalizedLevel} (already selected)`);
+      logger(formatBrowserThinkingLog(`${result.label ?? capitalizedLevel} (already selected)`));
       return;
     case "switched":
-      logger(`Thinking time: ${result.label ?? capitalizedLevel}`);
+      logger(formatBrowserThinkingLog(result.label ?? capitalizedLevel));
       return;
     case "chip-not-found":
     case "menu-not-found":
@@ -84,7 +90,7 @@ export async function ensureThinkingTime(
       if (strictProEffort) {
         throw new Error(`${message}; refusing to submit without confirmed Pro Extended.`);
       }
-      logger(`${message}; continuing with ChatGPT default.`);
+      logger(formatBrowserThinkingLog(`${message}; continuing with ChatGPT default.`));
       return;
     }
     default: {
@@ -96,7 +102,9 @@ export async function ensureThinkingTime(
         );
       }
       logger(
-        `Thinking time: unknown outcome selecting ${capitalizedLevel}; continuing with ChatGPT default.`,
+        formatBrowserThinkingLog(
+          `unknown outcome selecting ${capitalizedLevel}; continuing with ChatGPT default.`,
+        ),
       );
       return;
     }
@@ -120,10 +128,10 @@ export async function ensureThinkingTimeIfAvailable(
 
     switch (result?.status) {
       case "already-selected":
-        logger(`Thinking time: ${result.label ?? capitalizedLevel} (already selected)`);
+        logger(formatBrowserThinkingLog(`${result.label ?? capitalizedLevel} (already selected)`));
         return true;
       case "switched":
-        logger(`Thinking time: ${result.label ?? capitalizedLevel}`);
+        logger(formatBrowserThinkingLog(result.label ?? capitalizedLevel));
         return true;
       case "chip-not-found":
       case "menu-not-found":
@@ -131,19 +139,23 @@ export async function ensureThinkingTimeIfAvailable(
       case "selection-unverified":
       case "model-kind-not-found":
         if (logger.verbose) {
-          logger(`Thinking time: ${result.status.replaceAll("-", " ")}; continuing with default.`);
+          logger(
+            formatBrowserThinkingLog(
+              `${result.status.replaceAll("-", " ")}; continuing with default.`,
+            ),
+          );
         }
         return false;
       default:
         if (logger.verbose) {
-          logger("Thinking time: unknown outcome; continuing with default.");
+          logger(formatBrowserThinkingLog("unknown outcome; continuing with default."));
         }
         return false;
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (logger.verbose) {
-      logger(`Thinking time selection failed (${message}); continuing with default.`);
+      logger(formatBrowserThinkingLog(`selection failed (${message}); continuing with default.`));
       await logDomFailure(Runtime, logger, "thinking-time");
     }
     return false;
@@ -185,10 +197,10 @@ function buildThinkingTimeExpression(
 
     // Bilingual matchers: English level token + observed Chinese variants.
     const LEVEL_TOKENS = {
-      light: ['light', '轻'],
-      standard: ['standard', '标准'],
+      light: ['light', 'instant', '轻'],
+      standard: ['standard', 'medium', '标准'],
       extended: ['extended', '扩展', '深度', '加强'],
-      heavy: ['heavy', '重度', '加重', '高'],
+      heavy: ['heavy', 'extra high', '重度', '加重', '高'],
     };
     const targetTokens = LEVEL_TOKENS[TARGET_LEVEL] || [TARGET_LEVEL];
 
@@ -235,9 +247,28 @@ function buildThinkingTimeExpression(
         );
       } catch {}
     };
+    const dispatchHoverSequence = (target) => {
+      if (!target || !(target instanceof EventTarget)) return false;
+      const types = ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove'];
+      for (const type of types) {
+        try {
+          const common = { bubbles: true, cancelable: true, view: window };
+          const event =
+            type.startsWith('pointer') && 'PointerEvent' in window
+              ? new PointerEvent(type, { ...common, pointerId: 1, pointerType: 'mouse' })
+              : new MouseEvent(type, common);
+          target.dispatchEvent(event);
+        } catch {}
+      }
+      try {
+        target.focus?.();
+      } catch {}
+      return true;
+    };
 
     const TRAILING_SELECTOR = '[data-model-picker-thinking-effort-action="true"]';
     const INTELLIGENCE_MENU_SELECTOR = '[data-testid="composer-intelligence-picker-content"]';
+    const PRO_EFFORT_TRIGGER_SELECTOR = '[data-testid="composer-intelligence-pro-thinking-effort-trigger"]';
 
     const findModelButton = () => document.querySelector(MODEL_BUTTON_SELECTOR);
     const findTrailingButtons = () => Array.from(document.querySelectorAll(TRAILING_SELECTOR));
@@ -332,6 +363,12 @@ function buildThinkingTimeExpression(
     });
     const findOptionInMenu = (menu) => {
       for (const item of menu.querySelectorAll(MENU_ITEM_SELECTOR)) {
+        const itemText = normalize(
+          (item.textContent ?? '') + ' ' + (item.getAttribute?.('aria-label') ?? ''),
+        );
+        if (TARGET_MODEL_KIND !== 'pro' && hasToken(itemText, 'pro')) {
+          continue;
+        }
         if (
           matchesLevel(item.textContent ?? '') ||
           matchesLevel(item.getAttribute?.('aria-label') ?? '')
@@ -351,13 +388,20 @@ function buildThinkingTimeExpression(
     };
     const isEffortMenu = (menu) => {
       if (!isVisible(menu)) return false;
+      if (menu.getAttribute?.('data-testid') === 'composer-intelligence-picker-content') return true;
       const label = menu.querySelector?.('.__menu-label, [class*="menu-label"]');
       const labelText = normalize(label?.textContent ?? '');
       return (
+        labelText.includes('intelligence') ||
         labelText.includes('thinking time') ||
         labelText.includes('thinking effort') ||
         countEffortLevels(menu) >= 2
       );
+    };
+    const isProEffortMenu = (menu) => {
+      if (!isVisible(menu)) return false;
+      const text = normalize(menu?.textContent ?? '');
+      return text.includes('pro standard') && text.includes('pro extended');
     };
     const controlledMenu = (trigger) => {
       const id = trigger?.getAttribute?.('aria-controls');
@@ -372,6 +416,49 @@ function buildThinkingTimeExpression(
         if (isEffortMenu(menu)) return menu;
       }
       return null;
+    };
+    const controlledProEffortMenu = (trigger) => {
+      const id = trigger?.getAttribute?.('aria-controls');
+      if (!id) return null;
+      const menu = document.getElementById?.(id);
+      return isProEffortMenu(menu) ? menu : null;
+    };
+    const findVisibleProEffortMenu = (trigger) => {
+      const controlled = controlledProEffortMenu(trigger);
+      if (controlled) return controlled;
+      for (const menu of document.querySelectorAll(MENU_CONTAINER_SELECTOR)) {
+        if (isProEffortMenu(menu)) return menu;
+      }
+      return null;
+    };
+    const matchesProEffortLevel = (node) => {
+      const text = normalize(
+        (node?.textContent ?? '') + ' ' + (node?.getAttribute?.('aria-label') ?? ''),
+      );
+      if (TARGET_LEVEL === 'standard') {
+        return text.includes('pro') && text.includes('standard');
+      }
+      if (TARGET_LEVEL === 'extended') {
+        return text.includes('pro') && text.includes('extended');
+      }
+      return false;
+    };
+    const findProEffortOptionInMenu = (menu) => {
+      for (const item of menu.querySelectorAll(MENU_ITEM_SELECTOR)) {
+        if (matchesProEffortLevel(item)) return item;
+      }
+      return null;
+    };
+    const currentProEffortPillMatchesTarget = () => {
+      if (TARGET_MODEL_KIND !== 'pro') return false;
+      const label = normalize(findModelButton()?.textContent ?? '');
+      if (TARGET_LEVEL === 'standard') {
+        return hasToken(label, 'pro') && !hasToken(label, 'extended');
+      }
+      if (TARGET_LEVEL === 'extended') {
+        return hasToken(label, 'pro') && hasToken(label, 'extended');
+      }
+      return false;
     };
     const selectAndVerify = async (trigger, findOption) => {
       const option = findOption();
@@ -389,6 +476,10 @@ function buildThinkingTimeExpression(
         closeOpenMenus();
         return { status: 'switched', label: refreshed.textContent?.trim?.() || label };
       }
+      if (currentProEffortPillMatchesTarget()) {
+        closeOpenMenus();
+        return { status: 'switched', label };
+      }
 
       if (!refreshed && trigger && trigger.getAttribute?.('aria-expanded') !== 'true') {
         dispatchClickSequence(trigger);
@@ -401,11 +492,40 @@ function buildThinkingTimeExpression(
           closeOpenMenus();
           return { status: 'switched', label: selected.textContent?.trim?.() || label };
         }
+        if (currentProEffortPillMatchesTarget()) {
+          closeOpenMenus();
+          return { status: 'switched', label };
+        }
         await sleep(100);
       }
       const result = failure('selection-unverified');
       closeOpenMenus();
       return result;
+    };
+    const selectProEffortFromSubmenu = async () => {
+      if (TARGET_MODEL_KIND !== 'pro' || (TARGET_LEVEL !== 'standard' && TARGET_LEVEL !== 'extended')) {
+        return null;
+      }
+      const trigger = document.querySelector(PRO_EFFORT_TRIGGER_SELECTOR);
+      if (!trigger) {
+        return null;
+      }
+      dispatchHoverSequence(trigger);
+      if (trigger.getAttribute?.('aria-expanded') !== 'true') {
+        dispatchClickSequence(trigger);
+      }
+      const deadline = performance.now() + MAX_WAIT_MS;
+      while (performance.now() < deadline) {
+        const menu = findVisibleProEffortMenu(trigger);
+        if (menu) {
+          return selectAndVerify(trigger, () => {
+            const currentMenu = findVisibleProEffortMenu(trigger);
+            return currentMenu ? findProEffortOptionInMenu(currentMenu) : null;
+          });
+        }
+        await sleep(100);
+      }
+      return null;
     };
 
     // Current ChatGPT exposes a standalone Pro or Thinking composer pill whose
@@ -456,6 +576,15 @@ function buildThinkingTimeExpression(
       while (performance.now() < deadline) {
         const menu = findVisibleEffortMenu(composerEffortPill);
         if (menu) {
+          const proEffortResult = await selectProEffortFromSubmenu();
+          if (proEffortResult) {
+            return proEffortResult;
+          }
+          if (TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'standard') {
+            const result = failure('menu-not-found');
+            closeOpenMenus();
+            return result;
+          }
           return selectAndVerify(composerEffortPill, () => {
             const currentMenu = findVisibleEffortMenu(composerEffortPill);
             return currentMenu ? findOptionInMenu(currentMenu) : null;
@@ -567,15 +696,9 @@ function buildThinkingTimeExpression(
     // ---------- COMPATIBILITY UI: unified "Intelligence" effort picker ----------
     // One observed ChatGPT layout replaced the per-model trailing buttons with a single
     // "Intelligence" menu ([data-testid="composer-intelligence-picker-content"]),
-    // whose role="menuitemradio" rows are the effort tiers. For the Pro model the
-    // combined "Pro Extended" row carries aria-checked when active, and Pro
-    // sub-options live behind
-    // [data-testid="composer-intelligence-pro-thinking-effort-trigger"]. We
-    // confirm Pro Extended by the radio's checked state (real proof), never by
-    // the composer-pill label. The new non-pro tiers (Instant/Medium/High/Extra
-    // High) don't map cleanly onto light/standard/extended/heavy, so we only
-    // drive this picker for the strict Pro Extended target and let other levels
-    // fall through to the legacy paths below.
+    // whose role="menuitemradio" rows are the effort tiers. We verify the checked
+    // radio instead of trusting the composer-pill label; non-Pro targets also
+    // explicitly skip Pro rows before matching effort labels.
     if (TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'extended') {
       const matchesProExtended = (node) => {
         const text = normalize(
