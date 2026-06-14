@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { BrowserSessionConfig } from "../sessionStore.js";
 import type { ModelName, ThinkingTimeLevel } from "../oracle/types.js";
+import { normalizeThinkingTimeLevel } from "../oracle/thinkingTime.js";
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "../browser/constants.js";
 import { normalizeChatgptUrl } from "../browser/utils.js";
 import { parseDuration } from "../duration.js";
@@ -226,7 +227,7 @@ export async function buildBrowserConfig(
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
     browserTabRef: options.browserTab ?? undefined,
-    thinkingTime: options.browserThinkingTime,
+    thinkingTime: normalizeThinkingTimeLevel(options.browserThinkingTime) ?? undefined,
     researchMode: options.browserResearch === "deep" ? "deep" : "off",
     archiveConversations: options.browserArchive,
   };

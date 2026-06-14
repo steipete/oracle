@@ -4,6 +4,8 @@ import path from "node:path";
 import fg from "fast-glob";
 import type { ModelName, PreviewMode } from "../oracle.js";
 import { DEFAULT_MODEL, MODEL_CONFIGS } from "../oracle/config.js";
+import { normalizeThinkingTimeLevel } from "../oracle/thinkingTime.js";
+import type { ThinkingTimeLevel } from "../oracle/types.js";
 
 export function collectPaths(
   value: string | string[] | undefined,
@@ -154,6 +156,16 @@ export function parseSearchOption(value: string): boolean {
     return false;
   }
   throw new InvalidArgumentError('Search mode must be "on" or "off".');
+}
+
+export function parseThinkingTimeOption(value: string): ThinkingTimeLevel {
+  const normalized = normalizeThinkingTimeLevel(value);
+  if (normalized) {
+    return normalized;
+  }
+  throw new InvalidArgumentError(
+    'Thinking time must be one of "light", "standard", "extended", "heavy", or a ChatGPT UI alias like "instant", "medium", "high", or "extra-high".',
+  );
 }
 
 export function normalizeModelOption(value: string | undefined): string {

@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import type { SessionModelRun } from "../../src/sessionStore.js";
 import { applyConsultPreset } from "../../src/mcp/consultPresets.ts";
+import { consultInputSchema } from "../../src/mcp/types.ts";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 import {
   buildConsultBrowserConfig,
@@ -53,6 +54,18 @@ describe("summarizeModelRunsForConsult", () => {
         models: ["gpt-5.1", "gpt-5.2"],
       }),
     ).toThrow(/cannot be combined with models/i);
+  });
+
+  test("normalizes browser thinking-time aliases for MCP callers", () => {
+    expect(
+      consultInputSchema.parse({
+        prompt: "review this plan",
+        files: [],
+        browserThinkingTime: "xhigh",
+      }),
+    ).toMatchObject({
+      browserThinkingTime: "heavy",
+    });
   });
 
   test("maps per-model metadata into consult summaries", () => {

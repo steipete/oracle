@@ -1,6 +1,7 @@
 import { CHATGPT_URL } from "../browser/constants.js";
 import { normalizeChatgptUrl } from "../browser/utils.js";
 import type { UserConfig } from "../config.js";
+import { normalizeThinkingTimeLevel } from "../oracle/thinkingTime.js";
 import type { ThinkingTimeLevel } from "../oracle/types.js";
 import type {
   BrowserArchiveMode,
@@ -145,7 +146,7 @@ export function applyBrowserDefaultsFromConfig(
     options.browserModelStrategy = browser.modelStrategy;
   }
   if (isUnset("browserThinkingTime") && browser.thinkingTime !== undefined) {
-    options.browserThinkingTime = browser.thinkingTime;
+    options.browserThinkingTime = normalizeThinkingTimeLevel(browser.thinkingTime) ?? undefined;
   }
   if (isUnset("browserResearch") && browser.researchMode !== undefined) {
     options.browserResearch = browser.researchMode;

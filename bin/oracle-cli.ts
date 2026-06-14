@@ -33,6 +33,7 @@ import {
   parseFloatOption,
   parseIntOption,
   parseSearchOption,
+  parseThinkingTimeOption,
   usesDefaultStatusFilters,
   resolvePreviewMode,
   normalizeModelOption,
@@ -771,9 +772,9 @@ program
   .addOption(
     new Option(
       "--browser-thinking-time <level>",
-      "Thinking time intensity for Thinking/Pro models: light, standard, extended, heavy.",
+      "Thinking time intensity for Thinking/Pro models: light, standard, extended, heavy, or ChatGPT UI aliases.",
     )
-      .choices(["light", "standard", "extended", "heavy"])
+      .argParser(parseThinkingTimeOption)
       .hideHelp(),
   )
   .addOption(

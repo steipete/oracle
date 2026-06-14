@@ -199,7 +199,7 @@ function buildThinkingTimeExpression(
     const LEVEL_TOKENS = {
       light: ['light', 'instant', '轻'],
       standard: ['standard', 'medium', '标准'],
-      extended: ['extended', '扩展', '深度', '加强'],
+      extended: ['extended', 'high', '扩展', '深度', '加强'],
       heavy: ['heavy', 'extra high', '重度', '加重', '高'],
     };
     const targetTokens = LEVEL_TOKENS[TARGET_LEVEL] || [TARGET_LEVEL];
@@ -219,11 +219,18 @@ function buildThinkingTimeExpression(
       .replace(/[^a-z0-9\\u4e00-\\u9fa5]+/g, ' ')
       .replace(/\\s+/g, ' ')
       .trim();
+    const hasToken = (text, token) => normalize(text).split(' ').includes(token);
     const matchesLevel = (text) => {
       const t = normalize(text);
-      return targetTokens.some((tok) => t.includes(String(tok).toLowerCase()));
+      if (!t) return false;
+      return targetTokens.some((tok) => {
+        const token = normalize(tok);
+        if (!token) return false;
+        if (token === 'high') return hasToken(t, 'high') && !hasToken(t, 'extra');
+        if (token === 'extra high') return hasToken(t, 'extra') && hasToken(t, 'high');
+        return t === token || hasToken(t, token) || t.includes(token);
+      });
     };
-    const hasToken = (text, token) => normalize(text).split(' ').includes(token);
     const optionIsSelected = (node) => {
       if (!(node instanceof HTMLElement)) return false;
       const ariaChecked = node.getAttribute('aria-checked');
@@ -460,6 +467,13 @@ function buildThinkingTimeExpression(
       }
       return false;
     };
+    const currentEffortPillMatchesTarget = () => {
+      if (currentProEffortPillMatchesTarget()) return true;
+      if (TARGET_MODEL_KIND === 'pro') return false;
+      const button = findModelButton();
+      const label = (button?.textContent ?? '') + ' ' + (button?.getAttribute?.('aria-label') ?? '');
+      return matchesLevel(label);
+    };
     const selectAndVerify = async (trigger, findOption) => {
       const option = findOption();
       if (!option) return failure('option-not-found');
@@ -476,7 +490,7 @@ function buildThinkingTimeExpression(
         closeOpenMenus();
         return { status: 'switched', label: refreshed.textContent?.trim?.() || label };
       }
-      if (currentProEffortPillMatchesTarget()) {
+      if (currentEffortPillMatchesTarget()) {
         closeOpenMenus();
         return { status: 'switched', label };
       }
@@ -492,7 +506,7 @@ function buildThinkingTimeExpression(
           closeOpenMenus();
           return { status: 'switched', label: selected.textContent?.trim?.() || label };
         }
-        if (currentProEffortPillMatchesTarget()) {
+        if (currentEffortPillMatchesTarget()) {
           closeOpenMenus();
           return { status: 'switched', label };
         }

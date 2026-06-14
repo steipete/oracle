@@ -38,6 +38,17 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("return selectAndVerify(trailing");
   });
 
+  it("maps ChatGPT's new Intelligence labels onto existing thinking levels", () => {
+    expect(buildThinkingTimeExpressionForTest("light")).toContain("light: ['light', 'instant'");
+    expect(buildThinkingTimeExpressionForTest("standard")).toContain(
+      "standard: ['standard', 'medium'",
+    );
+    expect(buildThinkingTimeExpressionForTest("extended")).toContain(
+      "extended: ['extended', 'high'",
+    );
+    expect(buildThinkingTimeExpressionForTest("heavy")).toContain("heavy: ['heavy', 'extra high'");
+  });
+
   it("accepts standard selected-state markers when verifying effort", () => {
     const expression = buildThinkingTimeExpressionForTest("extended");
     expect(expression).toContain("aria-selected");
@@ -1132,5 +1143,285 @@ describe("browser thinking-time selection expression", () => {
         FakeElement,
       ),
     ).resolves.toEqual({ status: "already-selected", label: "Extra High" });
+  });
+
+  it("selects High for Thinking extended without matching Extra High", async () => {
+    class FakeEventTarget {
+      dispatchEvent(_event: unknown): boolean {
+        return true;
+      }
+    }
+    class FakeElement extends FakeEventTarget {
+      constructor(
+        public textContent: string,
+        private readonly attributes: Record<string, string> = {},
+        private readonly children: FakeElement[] = [],
+        private readonly onDispatch?: () => void,
+      ) {
+        super();
+      }
+      getAttribute(name: string): string | null {
+        return this.attributes[name] ?? null;
+      }
+      setAttribute(name: string, value: string): void {
+        this.attributes[name] = value;
+      }
+      querySelector(selector: string): FakeElement | null {
+        if (selector.includes("menu-label")) {
+          return new FakeElement("Intelligence");
+        }
+        return null;
+      }
+      querySelectorAll(_selector: string): FakeElement[] {
+        return this.children;
+      }
+      closest(_selector: string): FakeElement | null {
+        return null;
+      }
+      matches(selector: string): boolean {
+        return selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill")
+          ? true
+          : false;
+      }
+      getBoundingClientRect(): { width: number; height: number } {
+        return { width: 144, height: 36 };
+      }
+      override dispatchEvent(event: unknown): boolean {
+        this.onDispatch?.();
+        return super.dispatchEvent(event);
+      }
+    }
+    class FakeMouseEvent {
+      constructor(
+        public readonly type: string,
+        public readonly init?: unknown,
+      ) {}
+    }
+
+    const highRadio = new FakeElement(
+      "High",
+      { role: "menuitemradio", "aria-checked": "false", "data-state": "unchecked" },
+      [],
+      () => {
+        highRadio.setAttribute("aria-checked", "true");
+        highRadio.setAttribute("data-state", "checked");
+      },
+    );
+    const intelligenceMenu = new FakeElement(
+      "IntelligenceInstantMediumExtra HighHighPro ExtendedGPT-5.5",
+      { "data-testid": "composer-intelligence-picker-content", role: "menu" },
+      [
+        new FakeElement("Instant", { role: "menuitemradio", "aria-checked": "false" }),
+        new FakeElement("Medium", { role: "menuitemradio", "aria-checked": "false" }),
+        new FakeElement("Extra High", { role: "menuitemradio", "aria-checked": "false" }),
+        highRadio,
+        new FakeElement("Pro Extended", { role: "menuitemradio", "aria-checked": "false" }),
+      ],
+    );
+    const modelButton = new FakeElement("Extra High", {
+      class: "__composer-pill",
+      "aria-expanded": "true",
+      "aria-haspopup": "menu",
+    });
+    const documentStub = {
+      body: new FakeElement(""),
+      querySelector: (selector: string) => {
+        if (selector.includes("composer-intelligence-picker-content")) return intelligenceMenu;
+        if (
+          selector.includes("model-switcher-dropdown-button") ||
+          selector.includes("__composer-pill")
+        ) {
+          return modelButton;
+        }
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+          return [intelligenceMenu];
+        }
+        return [];
+      },
+      dispatchEvent: () => true,
+    };
+    let now = 0;
+    const performanceStub = { now: () => (now += 100) };
+    const expression = buildThinkingTimeExpressionForTest("extended", "Thinking 5.5");
+    const evaluate = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${expression};`,
+    ) as (
+      document: unknown,
+      performance: unknown,
+      setTimeout: unknown,
+      window: unknown,
+      EventTarget: unknown,
+      PointerEvent: unknown,
+      MouseEvent: unknown,
+      HTMLElement: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      evaluate(
+        documentStub,
+        performanceStub,
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "switched", label: "High" });
+  });
+
+  it("verifies non-Pro Intelligence selection from the composer pill when the menu closes", async () => {
+    class FakeEventTarget {
+      dispatchEvent(_event: unknown): boolean {
+        return true;
+      }
+    }
+    class FakeElement extends FakeEventTarget {
+      constructor(
+        public textContent: string,
+        private readonly attributes: Record<string, string> = {},
+        private readonly children: FakeElement[] = [],
+        private readonly onDispatch?: () => void,
+      ) {
+        super();
+      }
+      getAttribute(name: string): string | null {
+        return this.attributes[name] ?? null;
+      }
+      setAttribute(name: string, value: string): void {
+        this.attributes[name] = value;
+      }
+      querySelector(selector: string): FakeElement | null {
+        if (selector.includes("menu-label")) {
+          return new FakeElement("Intelligence");
+        }
+        return null;
+      }
+      querySelectorAll(_selector: string): FakeElement[] {
+        return this.children;
+      }
+      closest(_selector: string): FakeElement | null {
+        return null;
+      }
+      matches(selector: string): boolean {
+        return selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill")
+          ? true
+          : false;
+      }
+      getBoundingClientRect(): { width: number; height: number } {
+        return { width: 144, height: 36 };
+      }
+      override dispatchEvent(event: unknown): boolean {
+        this.onDispatch?.();
+        return super.dispatchEvent(event);
+      }
+    }
+    class FakeMouseEvent {
+      constructor(
+        public readonly type: string,
+        public readonly init?: unknown,
+      ) {}
+    }
+
+    let intelligenceMenuOpen = true;
+    const modelButton = new FakeElement("Extra High", {
+      class: "__composer-pill",
+      "aria-expanded": "true",
+      "aria-haspopup": "menu",
+    });
+    const instantRadio = new FakeElement(
+      "Instant",
+      { role: "menuitemradio", "aria-checked": "false", "data-state": "unchecked" },
+      [],
+      () => {
+        modelButton.textContent = "Instant";
+        modelButton.setAttribute("aria-expanded", "false");
+        intelligenceMenuOpen = false;
+      },
+    );
+    const intelligenceMenu = new FakeElement(
+      "IntelligenceInstantMediumHighExtra HighPro ExtendedGPT-5.5",
+      { "data-testid": "composer-intelligence-picker-content", role: "menu" },
+      [
+        instantRadio,
+        new FakeElement("Medium", { role: "menuitemradio", "aria-checked": "false" }),
+        new FakeElement("High", { role: "menuitemradio", "aria-checked": "false" }),
+        new FakeElement("Extra High", { role: "menuitemradio", "aria-checked": "true" }),
+        new FakeElement("Pro Extended", { role: "menuitemradio", "aria-checked": "false" }),
+      ],
+    );
+    const documentStub = {
+      body: new FakeElement(""),
+      querySelector: (selector: string) => {
+        if (selector.includes("composer-intelligence-picker-content")) {
+          return intelligenceMenuOpen ? intelligenceMenu : null;
+        }
+        if (
+          selector.includes("model-switcher-dropdown-button") ||
+          selector.includes("__composer-pill")
+        ) {
+          return modelButton;
+        }
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+          return intelligenceMenuOpen ? [intelligenceMenu] : [];
+        }
+        return [];
+      },
+      dispatchEvent: () => true,
+    };
+    let now = 0;
+    const performanceStub = { now: () => (now += 100) };
+    const expression = buildThinkingTimeExpressionForTest("light", "Thinking 5.5");
+    const evaluate = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${expression};`,
+    ) as (
+      document: unknown,
+      performance: unknown,
+      setTimeout: unknown,
+      window: unknown,
+      EventTarget: unknown,
+      PointerEvent: unknown,
+      MouseEvent: unknown,
+      HTMLElement: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      evaluate(
+        documentStub,
+        performanceStub,
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "switched", label: "Instant" });
   });
 });

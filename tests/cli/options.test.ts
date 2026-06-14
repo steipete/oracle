@@ -6,6 +6,7 @@ import {
   parseFloatOption,
   parseIntOption,
   parseSearchOption,
+  parseThinkingTimeOption,
   resolvePreviewMode,
   resolveApiModel,
   inferModelFromLabel,
@@ -179,6 +180,29 @@ describe("parseSearchOption", () => {
 
   test("throws on invalid input", () => {
     expect(() => parseSearchOption("maybe")).toThrow(InvalidArgumentError);
+  });
+});
+
+describe("parseThinkingTimeOption", () => {
+  test.each([
+    ["light", "light"],
+    ["instant", "light"],
+    ["low", "light"],
+    ["standard", "standard"],
+    ["medium", "standard"],
+    ["extended", "extended"],
+    ["high", "extended"],
+    ["heavy", "heavy"],
+    ["extra-high", "heavy"],
+    ["extra high", "heavy"],
+    ["extrahigh", "heavy"],
+    ["xhigh", "heavy"],
+  ] as const)("normalizes %s to %s", (input, expected) => {
+    expect(parseThinkingTimeOption(input)).toBe(expected);
+  });
+
+  test("throws for unknown thinking-time aliases", () => {
+    expect(() => parseThinkingTimeOption("maximum")).toThrow(InvalidArgumentError);
   });
 });
 
