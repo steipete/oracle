@@ -212,6 +212,190 @@ const evaluateMenuModelSelectionExpression = async (
   );
 };
 
+const evaluateIntelligenceModelSelectionExpression = async (
+  targetModel: string,
+): Promise<unknown> => {
+  class FakeEventTarget {
+    dispatchEvent(_event: unknown): boolean {
+      return true;
+    }
+  }
+
+  class FakeMouseEvent {
+    readonly type: string;
+    readonly init?: unknown;
+
+    constructor(type: string, init?: unknown) {
+      this.type = type;
+      this.init = init;
+    }
+  }
+
+  let intelligenceMenuOpen = false;
+  let gpt55SubmenuOpen = false;
+
+  class FakeElement extends FakeEventTarget {
+    constructor(
+      public textContent: string,
+      private readonly attributes: Readonly<Record<string, string>> = {},
+      private readonly children: readonly FakeElement[] = [],
+      private readonly onDispatch?: (event: unknown) => void,
+    ) {
+      super();
+    }
+
+    getAttribute(name: string): string | null {
+      return this.attributes[name] ?? null;
+    }
+
+    querySelector(selector: string): FakeElement | null {
+      if (selector.includes("model-switcher-")) {
+        return (
+          this.children.find((child) =>
+            child.getAttribute("data-testid")?.startsWith("model-switcher-"),
+          ) ?? null
+        );
+      }
+      return null;
+    }
+
+    querySelectorAll(_selector: string): FakeElement[] {
+      return [...this.children];
+    }
+
+    closest(selector: string): FakeElement | null {
+      if (selector.includes("role")) return this;
+      return null;
+    }
+
+    matches(selector: string): boolean {
+      return selector.includes("__composer-pill") &&
+        this.attributes.class?.includes("__composer-pill")
+        ? true
+        : selector.includes("aria-haspopup") && this.attributes["aria-haspopup"] === "menu";
+    }
+
+    getBoundingClientRect(): { width: number; height: number } {
+      return { width: 120, height: 36 };
+    }
+
+    override dispatchEvent(event: unknown): boolean {
+      this.onDispatch?.(event);
+      return super.dispatchEvent(event);
+    }
+  }
+
+  const fiveFive = new FakeElement("5.5", {
+    role: "menuitemradio",
+    "aria-checked": "true",
+    "data-state": "checked",
+  });
+  const gpt55Submenu = new FakeElement("5.55.45.34.5o3", { role: "menu" }, [fiveFive]);
+  const gpt55Trigger = new FakeElement(
+    "GPT-5.5",
+    {
+      role: "menuitem",
+      "aria-haspopup": "menu",
+      "aria-expanded": "false",
+      "data-state": "closed",
+    },
+    [],
+    () => {
+      gpt55SubmenuOpen = true;
+    },
+  );
+  const intelligenceMenu = new FakeElement(
+    "IntelligenceInstantMediumHighExtra HighPro ExtendedGPT-5.5",
+    { role: "menu", "data-testid": "composer-intelligence-picker-content" },
+    [
+      new FakeElement("Instant", { role: "menuitemradio", "aria-checked": "false" }),
+      new FakeElement("Medium", { role: "menuitemradio", "aria-checked": "false" }),
+      new FakeElement("High", { role: "menuitemradio", "aria-checked": "false" }),
+      new FakeElement("Extra High", { role: "menuitemradio", "aria-checked": "true" }),
+      new FakeElement("Pro Extended", { role: "menuitemradio", "aria-checked": "false" }),
+      gpt55Trigger,
+    ],
+  );
+  const modelButton = new FakeElement(
+    "Extra High",
+    { class: "__composer-pill", "aria-haspopup": "menu", "aria-expanded": "false" },
+    [],
+    () => {
+      intelligenceMenuOpen = true;
+    },
+  );
+
+  const expression = buildModelSelectionExpressionForTest(targetModel);
+  const documentStub = {
+    querySelector: (selector: string) => {
+      if (selector.includes("__composer-pill")) {
+        return modelButton;
+      }
+      if (selector.includes("model-switcher-dropdown-button")) {
+        return null;
+      }
+      return null;
+    },
+    querySelectorAll: (selector: string) => {
+      if (selector.includes("button.__composer-pill")) {
+        return [modelButton];
+      }
+      if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+        return [
+          ...(intelligenceMenuOpen ? [intelligenceMenu] : []),
+          ...(gpt55SubmenuOpen ? [gpt55Submenu] : []),
+        ];
+      }
+      return [];
+    },
+    title: "",
+    body: { innerText: "" },
+    dispatchEvent: () => true,
+  };
+  let now = 0;
+  const performanceStub = { now: () => (now += 250) };
+  const windowStub = {
+    location: { href: "https://chatgpt.com/" },
+    getComputedStyle: () => ({ display: "block", visibility: "visible" }),
+  };
+  const immediateSetTimeout = (handler: TimerHandler): number => {
+    if (typeof handler === "function") {
+      handler();
+    }
+    return 0;
+  };
+  const evaluate = new Function(
+    "document",
+    "performance",
+    "setTimeout",
+    "window",
+    "EventTarget",
+    "MouseEvent",
+    "HTMLElement",
+    `return ${expression};`,
+  ) as (
+    document: unknown,
+    performance: unknown,
+    setTimeout: unknown,
+    window: unknown,
+    EventTarget: unknown,
+    MouseEvent: unknown,
+    HTMLElement: unknown,
+  ) => unknown;
+
+  return await Promise.resolve(
+    evaluate(
+      documentStub,
+      performanceStub,
+      immediateSetTimeout,
+      windowStub,
+      FakeEventTarget,
+      FakeMouseEvent,
+      FakeElement,
+    ),
+  );
+};
+
 const createNonPickerMenuForTest = (labels: string[]): unknown => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -262,6 +446,7 @@ const createNonPickerMenuForTest = (labels: string[]): unknown => {
 const evaluateComposerPillFallbackExpression = (
   targetModel: string,
   pillLabel: string,
+  strategy: "select" | "current" = "select",
 ): unknown => {
   class FakeElement {
     constructor(public textContent: string) {}
@@ -280,7 +465,7 @@ const evaluateComposerPillFallbackExpression = (
   }
 
   const pill = new FakeElement(pillLabel);
-  const expression = buildModelSelectionExpressionForTest(targetModel);
+  const expression = buildModelSelectionExpressionForTest(targetModel, strategy);
   const documentStub = {
     querySelector: (selector: string) => {
       if (selector.includes("model-switcher-dropdown-button")) {
@@ -598,6 +783,11 @@ describe("browser model selection matchers", () => {
     expect(result).toEqual({ status: "already-selected", label: "Thinking Heavy" });
   });
 
+  it("finds the new effort-only composer pill when ChatGPT omits aria-haspopup", () => {
+    const result = evaluateComposerPillFallbackExpression("Thinking 5.5", "Extra High", "current");
+    expect(result).toEqual({ status: "already-selected", label: "Extra High" });
+  });
+
   it("allows the explicit current strategy when ChatGPT hides the model picker", () => {
     const result = evaluateNoModelButtonExpression("Pro", "current");
     expect(result).toEqual({ status: "already-selected", label: null });
@@ -794,5 +984,12 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("button.__composer-pill[aria-haspopup=");
     expect(expression).toContain("const findModelButton = () =>");
     expect(expression).toContain("button.__composer-pill')).find(looksLikeModelPill)");
+  });
+
+  it("recognizes GPT-5.5 from the new Intelligence submenu while the button shows effort", async () => {
+    await expect(evaluateIntelligenceModelSelectionExpression("Thinking 5.5")).resolves.toEqual({
+      status: "already-selected",
+      label: "GPT-5.5",
+    });
   });
 });
