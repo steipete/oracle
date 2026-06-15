@@ -24,6 +24,17 @@ export const DEFAULT_CHATGPT_COOKIE_NAMES = [
   "_cfuvid",
   "CF_Authorization",
   "__cflb",
+  // ChatGPT binds sessions to a device identity; without these cookies the app
+  // renders a half-authenticated shell (valid session and composer, but visible
+  // login buttons) and /backend-api/* can return 401 for a valid session.
+  "oai-did",
+  "oai-sc",
+  "__Secure-oai-is",
+  "oai-allow-ne",
+  "oai-hlib",
+  "oai-client-auth-info",
+  "__Host-next-auth.csrf-token",
+  "__Secure-next-auth.callback-url",
 ];
 
 export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {

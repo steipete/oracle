@@ -259,6 +259,9 @@ export async function ensureLoggedIn(
       probe.appAuthenticated,
     )}, cfBlocked=${Boolean(probe.cfBlocked)}, url=${probe.pageUrl ?? "n/a"}, error=${probe.error ?? "none"})`,
   );
+  if (probe.domLoginCtaDetail) {
+    logger(`Login CTA matched: ${probe.domLoginCtaDetail}`);
+  }
 
   const domLabel = probe.domLoginCta ? " Login button detected on page." : "";
   const cookieHint = options.remoteSession
@@ -638,6 +641,7 @@ type LoginProbeResult = {
   error?: string | null;
   pageUrl?: string | null;
   domLoginCta?: boolean;
+  domLoginCtaDetail?: string | null;
   onAuthPage?: boolean;
   appAuthenticated?: boolean;
   backendStatus?: number | null;
@@ -700,10 +704,22 @@ function buildLoginProbeExpression(timeoutMs: number): string {
           node.getAttribute('title') ||
           '';
         if (textMatches(label)) {
-          return true;
+          // Learned 2026-06-11: ChatGPT renders a visible "Log in" button pinned to the
+          // sidebar nav's sticky bottom even for authenticated sessions. Sidebar-nav CTAs
+          // are not logout proof; genuine logged-out pages place login CTAs in the main
+          // content, and an expired session already fails the session-endpoint check.
+          if (typeof node.closest === 'function' && node.closest('nav')) {
+            continue;
+          }
+          const testId = node.getAttribute('data-testid') || '';
+          return (
+            String(node.tagName || 'element').toLowerCase() +
+            (testId ? '[data-testid=' + testId + ']' : '') +
+            ' text=' + JSON.stringify(label.slice(0, 60))
+          );
         }
       }
-      return false;
+      return null;
     };
 
     // Learned 2026-05-16: ChatGPT's /backend-api/* endpoints now sit behind Cloudflare bot
@@ -868,7 +884,8 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     };
 
     let auth = await readAuthDetail();
-    let domLoginCta = hasLoginCta();
+    let domLoginCtaDetail = hasLoginCta();
+    let domLoginCta = Boolean(domLoginCtaDetail);
     let appAuthenticated = hasAppAuthSignal();
     let classification = classifyAuth(auth, appAuthenticated);
     const settleDeadline = Date.now() + Math.min(${timeoutMs}, 2500);
@@ -879,7 +896,8 @@ function buildLoginProbeExpression(timeoutMs: number): string {
       Date.now() < settleDeadline
     ) {
       await new Promise((resolve) => setTimeout(resolve, 100));
-      domLoginCta = hasLoginCta();
+      domLoginCtaDetail = hasLoginCta();
+      domLoginCta = Boolean(domLoginCtaDetail);
       appAuthenticated = hasAppAuthSignal();
       auth = await readAuthDetail();
       classification = classifyAuth(auth, appAuthenticated);
@@ -889,7 +907,15 @@ function buildLoginProbeExpression(timeoutMs: number): string {
     const backendStatus = auth.backend ? auth.backend.status : null;
     const cfBlocked = auth.session.cfBlocked || Boolean(auth.backend?.cfBlocked);
     const error = auth.session.error || auth.backend?.error || null;
-    const ok = !loginSignals && classification.authenticated;
+    // /api/auth/session user presence is the primary authentication authority.
+    // ChatGPT can render visible login CTAs (e.g. data-testid="login-button")
+    // on fully authenticated, working pages, so a DOM CTA must not veto a
+    // resolved authenticated session backed by the authenticated app shell.
+    // CTAs remain authoritative for the weaker fallback classifications, and
+    // auth-page redirects always fail.
+    const sessionAuthoritative =
+      auth.session.authenticated && appAuthenticated && !onAuthPage;
+    const ok = sessionAuthoritative || (!loginSignals && classification.authenticated);
     return {
       ok,
       status: auth.session.status,
@@ -898,6 +924,7 @@ function buildLoginProbeExpression(timeoutMs: number): string {
       url: pageUrl,
       pageUrl,
       domLoginCta,
+      domLoginCtaDetail,
       onAuthPage,
       appAuthenticated,
       cfBlocked,
@@ -929,6 +956,7 @@ function normalizeLoginProbe(raw: unknown): LoginProbeResult {
     error: typeof value.error === "string" ? value.error : null,
     pageUrl: typeof value.pageUrl === "string" ? value.pageUrl : null,
     domLoginCta: Boolean(value.domLoginCta),
+    domLoginCtaDetail: typeof value.domLoginCtaDetail === "string" ? value.domLoginCtaDetail : null,
     onAuthPage: Boolean(value.onAuthPage),
     appAuthenticated: Boolean(value.appAuthenticated),
     backendStatus: typeof value.backendStatus === "number" ? value.backendStatus : null,

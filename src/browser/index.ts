@@ -3706,7 +3706,9 @@ async function validateChatGPTSession(
       return { valid: false, reason: "Redirected to auth page" };
     }
 
-    if (result.hasLoginCta) {
+    if (result.hasLoginCta && !result.hasTextarea) {
+      // ChatGPT renders visible login CTAs on authenticated, working pages;
+      // only treat one as a logout signal when the composer is gone too.
       return { valid: false, reason: "Login button detected on page" };
     }
 
@@ -3757,6 +3759,9 @@ function buildSessionValidationExpression(): string {
       };
       for (const node of candidates) {
         if (!(node instanceof HTMLElement)) continue;
+        // Sidebar-nav login CTAs appear even for authenticated sessions (see
+        // hasLoginCta in actions/navigation.ts); they are not logout proof.
+        if (typeof node.closest === 'function' && node.closest('nav')) continue;
         const label =
           node.textContent?.trim() ||
           node.getAttribute('aria-label') ||
@@ -3782,7 +3787,7 @@ function buildSessionValidationExpression(): string {
     })();
 
     return {
-      valid: !onAuthPage && !hasLoginCta && hasTextarea,
+      valid: !onAuthPage && hasTextarea,
       hasLoginCta,
       hasTextarea,
       onAuthPage,

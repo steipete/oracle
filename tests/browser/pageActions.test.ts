@@ -344,6 +344,7 @@ describe("ensureLoggedIn", () => {
       composerVisible?: boolean;
       appSignal?: "profile" | "history" | "model" | null;
       probeTimeoutMs?: number;
+      ctaInNav?: boolean;
     } = {},
   ) {
     const {
@@ -359,12 +360,18 @@ describe("ensureLoggedIn", () => {
       composerVisible = false,
       appSignal = null,
       probeTimeoutMs = 0,
+      ctaInNav = false,
     } = options;
     class FakeHTMLElement {
       constructor(
         public textContent: string,
         private readonly visible = true,
+        private readonly inNav = false,
       ) {}
+
+      closest(selector: string) {
+        return this.inNav && selector.includes("nav") ? this : null;
+      }
 
       getAttribute() {
         return "";
@@ -375,7 +382,7 @@ describe("ensureLoggedIn", () => {
       }
     }
 
-    const nodes = labels.map((label) => new FakeHTMLElement(label));
+    const nodes = labels.map((label) => new FakeHTMLElement(label, true, ctaInNav));
     const composer = composerVisible ? new FakeHTMLElement("") : null;
     const loggedInSignal = appSignal ? new FakeHTMLElement("") : null;
     const document = {
@@ -472,6 +479,21 @@ describe("ensureLoggedIn", () => {
       ok: true,
       domLoginCta: false,
       status: 200,
+    });
+  });
+
+  test("ignores sidebar-nav login CTAs for authenticated sessions", async () => {
+    // ChatGPT pins a visible "Log in" button to the sidebar nav's sticky bottom
+    // even when the session is authenticated; it must not veto the login check.
+    await expect(
+      runLoginProbeForLabels(["Log in"], {
+        ctaInNav: true,
+        composerVisible: true,
+        appSignal: "history",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      domLoginCta: false,
     });
   });
 
@@ -606,7 +628,7 @@ describe("ensureLoggedIn", () => {
     }
   });
 
-  test("keeps auth pages and visible login CTAs authoritative", async () => {
+  test("keeps auth pages authoritative even with an authenticated session", async () => {
     await expect(
       runLoginProbeForLabels([], {
         pathname: "/auth/login",
@@ -618,16 +640,36 @@ describe("ensureLoggedIn", () => {
       onAuthPage: true,
       appAuthenticated: true,
     });
+  });
 
+  test("lets a resolved authenticated session with the app shell override a visible login CTA", async () => {
+    // ChatGPT renders visible login CTAs (e.g. data-testid="login-button") on
+    // fully authenticated, working pages. The session endpoint is the primary
+    // authentication authority, so it wins when the app shell confirms it.
     await expect(
       runLoginProbeForLabels(["Log in"], {
         composerVisible: true,
         appSignal: "history",
       }),
     ).resolves.toMatchObject({
-      ok: false,
+      ok: true,
       domLoginCta: true,
       appAuthenticated: true,
+      sessionAuthenticated: true,
+    });
+  });
+
+  test("keeps a visible login CTA authoritative when the session is resolved empty", async () => {
+    await expect(
+      runLoginProbeForLabels(["Log in"], {
+        sessionBody: {},
+        composerVisible: true,
+        appSignal: "history",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      domLoginCta: true,
+      sessionAuthenticated: false,
     });
   });
 
