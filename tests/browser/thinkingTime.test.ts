@@ -121,8 +121,11 @@ describe("browser thinking-time selection expression", () => {
         return this.parent;
       }
 
-      matches(_selector: string): boolean {
-        return false;
+      matches(selector: string): boolean {
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
 
       getBoundingClientRect(): { width: number; height: number } {
@@ -148,6 +151,9 @@ describe("browser thinking-time selection expression", () => {
     const modelButton = new FakeElement("Extended", {
       "data-testid": "model-switcher-dropdown-button",
       "aria-expanded": "true",
+    });
+    const unrelatedComposerPill = new FakeElement("Canvas", {
+      class: "__composer-pill",
     });
     const thinkingRow = new FakeElement("", {
       "data-model-picker-thinking-effort-row": "true",
@@ -183,10 +189,12 @@ describe("browser thinking-time selection expression", () => {
       body: new FakeElement(""),
       querySelector: (selector: string) =>
         selector.includes("model-switcher-dropdown-button") ? modelButton : null,
-      querySelectorAll: (selector: string) =>
-        selector.includes("data-model-picker-thinking-effort-action")
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [unrelatedComposerPill];
+        return selector.includes("data-model-picker-thinking-effort-action")
           ? [thinkingTrailing, proTrailing]
-          : [],
+          : [];
+      },
       dispatchEvent: () => true,
     };
     const performanceStub = {
@@ -1229,7 +1237,7 @@ describe("browser thinking-time selection expression", () => {
     ).resolves.toEqual({ status: "switched", label: "Pro Extended" });
   });
 
-  it("confirms Extra High from the Intelligence menu for Thinking heavy", async () => {
+  it("confirms Extra High from an effort-only pill without aria-haspopup", async () => {
     class FakeEventTarget {
       dispatchEvent(_event: unknown): boolean {
         return true;
@@ -1293,22 +1301,21 @@ describe("browser thinking-time selection expression", () => {
     const modelButton = new FakeElement("Extra High", {
       class: "__composer-pill",
       "aria-expanded": "true",
-      "aria-haspopup": "menu",
     });
     const documentStub = {
       body: new FakeElement(""),
       querySelector: (selector: string) => {
         if (selector.includes("composer-intelligence-picker-content")) return intelligenceMenu;
-        if (
-          selector.includes("model-switcher-dropdown-button") ||
-          selector.includes("__composer-pill")
-        ) {
+        if (selector.includes("model-switcher-dropdown-button")) return null;
+        if (selector.includes("__composer-pill") && !selector.includes("aria-haspopup")) {
           return modelButton;
         }
         return null;
       },
       querySelectorAll: (selector: string) => {
-        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes("__composer-pill")) {
+          return selector.includes("aria-haspopup") ? [] : [modelButton];
+        }
         if (selector.includes('role="menu"') || selector.includes("data-radix")) {
           return [intelligenceMenu];
         }

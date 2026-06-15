@@ -233,6 +233,24 @@ function buildThinkingTimeExpression(
         return t === token || hasToken(t, token) || t.includes(token);
       });
     };
+    const matchesAnyEffortLevel = (text) => {
+      const normalizedText = normalize(text);
+      if (!normalizedText) return false;
+      for (const tokens of Object.values(LEVEL_TOKENS)) {
+        for (const rawToken of tokens) {
+          const token = normalize(rawToken);
+          if (!token) continue;
+          if (token.includes(' ')) {
+            if (token.split(' ').every((part) => hasToken(normalizedText, part))) return true;
+          } else if (/^[a-z0-9]+$/.test(token)) {
+            if (hasToken(normalizedText, token)) return true;
+          } else if (normalizedText.includes(token)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
     const optionIsSelected = (node) => {
       if (!(node instanceof HTMLElement)) return false;
       const ariaChecked = node.getAttribute('aria-checked');
@@ -586,18 +604,16 @@ function buildThinkingTimeExpression(
     // controlled menu contains the effort levels. Prefer this ownership boundary
     // before probing older model-picker layouts.
     const COMPOSER_EFFORT_PILL_SELECTORS = [
-      'form button.__composer-pill[aria-haspopup="menu"]',
-      '[data-testid="composer-footer-actions"] button[aria-haspopup="menu"]',
-      '.__composer-pill-composite button[aria-haspopup="menu"]',
+      'form button.__composer-pill',
+      '[data-testid="composer-footer-actions"] button.__composer-pill',
+      '.__composer-pill-composite button.__composer-pill',
     ];
     const findComposerEffortPill = () => {
-      const candidates = [];
       const seen = new Set();
       for (const selector of COMPOSER_EFFORT_PILL_SELECTORS) {
         for (const button of document.querySelectorAll(selector)) {
           if (seen.has(button) || !isVisible(button)) continue;
           seen.add(button);
-          if (button.getAttribute?.('aria-haspopup') !== 'menu') continue;
           if (button.getAttribute?.('data-testid') === 'model-switcher-dropdown-button') continue;
           const label = normalize(
             (button.getAttribute?.('aria-label') ?? '') + ' ' +
@@ -607,17 +623,14 @@ function buildThinkingTimeExpression(
           if (
             (TARGET_MODEL_KIND === 'pro' && hasToken(label, 'pro') && !hasToken(label, 'thinking')) ||
             (TARGET_MODEL_KIND === 'thinking' && hasToken(label, 'thinking') && !hasToken(label, 'pro')) ||
-            (!TARGET_MODEL_KIND && hasToken(label, 'thinking'))
+            (!TARGET_MODEL_KIND && hasToken(label, 'thinking')) ||
+            (button.matches?.('button.__composer-pill') && matchesAnyEffortLevel(label))
           ) {
             return button;
           }
-          candidates.push(button);
         }
       }
-      const composerPills = candidates.filter((button) =>
-        button.matches?.('button.__composer-pill'),
-      );
-      return composerPills.length === 1 ? composerPills[0] : null;
+      return null;
     };
 
     const composerEffortPill = findComposerEffortPill();
