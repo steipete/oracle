@@ -174,7 +174,7 @@ describe("summarizeModelRunsForConsult", () => {
           keepBrowser: true,
           manualLogin: true,
           manualLoginProfileDir: "/tmp/oracle-profile",
-          thinkingTime: "extended",
+          thinkingTime: "high" as never,
           researchMode: "deep",
           archiveConversations: "never",
         },

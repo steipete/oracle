@@ -34,6 +34,7 @@ import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
 import { mapModelToBrowserLabel, resolveBrowserModelLabel } from "../../cli/browserConfig.js";
 import type { BrowserModelStrategy } from "../../browser/types.js";
+import { normalizeThinkingTimeLevel } from "../../oracle/thinkingTime.js";
 
 // Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
 const consultInputShape = {
@@ -345,6 +346,7 @@ export function buildConsultBrowserConfig({
   const manualLogin = hasProfileDir
     ? true
     : (configuredBrowser.manualLogin ?? process.platform === "win32");
+  const configuredThinkingTime = normalizeThinkingTimeLevel(configuredBrowser.thinkingTime);
 
   return {
     ...configuredBrowser,
@@ -358,7 +360,7 @@ export function buildConsultBrowserConfig({
     manualLoginProfileDir: manualLogin
       ? ((envProfileDir || configuredBrowser.manualLoginProfileDir) ?? null)
       : null,
-    thinkingTime: browserThinkingTime ?? configuredBrowser.thinkingTime,
+    thinkingTime: browserThinkingTime ?? configuredThinkingTime ?? undefined,
     modelStrategy: browserModelStrategy ?? configuredBrowser.modelStrategy,
     researchMode: browserResearchMode ?? configuredBrowser.researchMode,
     archiveConversations: browserArchive ?? configuredBrowser.archiveConversations,
