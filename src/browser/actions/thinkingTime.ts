@@ -383,8 +383,7 @@ function buildThinkingTimeExpression(
         return { error: redactDiagnosticText(err && err.message ? err.message : err) };
       }
     };
-    const currentModelKind = () => {
-      const button = findModelButton();
+    const modelKindFromNode = (button) => {
       const label = normalize(
         (button?.textContent ?? '') + ' ' + (button?.getAttribute?.('aria-label') ?? ''),
       );
@@ -393,6 +392,7 @@ function buildThinkingTimeExpression(
       if (hasToken(label, 'instant')) return 'instant';
       return null;
     };
+    const currentModelKind = () => modelKindFromNode(findModelButton());
     const effectiveTargetModelKind = () => TARGET_MODEL_KIND || currentModelKind();
     const isIntelligenceEffortMenu = (menu) => {
       if (menu?.getAttribute?.('data-testid') === 'composer-intelligence-picker-content') {
@@ -407,9 +407,9 @@ function buildThinkingTimeExpression(
       ...extra,
       diagnostic: collectPickerDiagnostic(),
     });
-    const findOptionInMenu = (menu) => {
+    const findOptionInMenu = (menu, modelKindOverride = null) => {
       const items = Array.from(menu.querySelectorAll(MENU_ITEM_SELECTOR));
-      const modelKind = effectiveTargetModelKind();
+      const modelKind = modelKindOverride || effectiveTargetModelKind();
       if (modelKind === 'pro') {
         for (const item of items) {
           const itemText = normalize(
@@ -514,9 +514,12 @@ function buildThinkingTimeExpression(
       }
       return null;
     };
-    const currentProEffortPillMatchesTarget = () => {
-      if (TARGET_MODEL_KIND !== 'pro') return false;
-      const label = normalize(findModelButton()?.textContent ?? '');
+    const currentProEffortPillMatchesTarget = (trigger, modelKindOverride = null) => {
+      const button = trigger?.matches?.('button.__composer-pill') ? trigger : findModelButton();
+      if ((modelKindOverride || TARGET_MODEL_KIND || modelKindFromNode(button)) !== 'pro') {
+        return false;
+      }
+      const label = normalize(button?.textContent ?? '');
       if (TARGET_LEVEL === 'standard') {
         return hasToken(label, 'pro') && !hasToken(label, 'extended');
       }
@@ -525,16 +528,23 @@ function buildThinkingTimeExpression(
       }
       return false;
     };
-    const currentEffortPillMatchesTarget = () => {
-      if (currentProEffortPillMatchesTarget()) return true;
-      if (TARGET_MODEL_KIND === 'pro') return false;
-      const button = findModelButton();
+    const currentEffortPillMatchesTarget = (trigger, modelKindOverride = null) => {
+      if (currentProEffortPillMatchesTarget(trigger, modelKindOverride)) return true;
+      const button = trigger?.matches?.('button.__composer-pill') ? trigger : findModelButton();
+      if ((modelKindOverride || TARGET_MODEL_KIND || modelKindFromNode(button)) === 'pro') {
+        return false;
+      }
       const label = (button?.textContent ?? '') + ' ' + (button?.getAttribute?.('aria-label') ?? '');
       return matchesLevel(label);
     };
-    const selectAndVerify = async (trigger, findOption) => {
+    const selectAndVerify = async (trigger, findOption, modelKindOverride = null) => {
       const option = findOption();
-      if (!option) return failure('option-not-found');
+      const triggerModelKind =
+        modelKindOverride ||
+        TARGET_MODEL_KIND ||
+        modelKindFromNode(trigger) ||
+        effectiveTargetModelKind();
+      if (!option) return failure('option-not-found', { modelKind: triggerModelKind });
       const label = option.textContent?.trim?.() || null;
       if (optionIsSelected(option)) {
         closeOpenMenus();
@@ -548,7 +558,7 @@ function buildThinkingTimeExpression(
         closeOpenMenus();
         return { status: 'switched', label: refreshed.textContent?.trim?.() || label };
       }
-      if (currentEffortPillMatchesTarget()) {
+      if (currentEffortPillMatchesTarget(trigger, triggerModelKind)) {
         closeOpenMenus();
         return { status: 'switched', label };
       }
@@ -564,13 +574,13 @@ function buildThinkingTimeExpression(
           closeOpenMenus();
           return { status: 'switched', label: selected.textContent?.trim?.() || label };
         }
-        if (currentEffortPillMatchesTarget()) {
+        if (currentEffortPillMatchesTarget(trigger, triggerModelKind)) {
           closeOpenMenus();
           return { status: 'switched', label };
         }
         await sleep(100);
       }
-      const result = failure('selection-unverified');
+      const result = failure('selection-unverified', { modelKind: triggerModelKind });
       closeOpenMenus();
       return result;
     };
@@ -635,6 +645,7 @@ function buildThinkingTimeExpression(
 
     const composerEffortPill = findComposerEffortPill();
     if (composerEffortPill) {
+      const composerModelKind = TARGET_MODEL_KIND || modelKindFromNode(composerEffortPill);
       if (composerEffortPill.getAttribute?.('aria-expanded') !== 'true') {
         dispatchClickSequence(composerEffortPill);
         await sleep(INITIAL_WAIT_MS);
@@ -647,14 +658,20 @@ function buildThinkingTimeExpression(
           if (proEffortResult) {
             return proEffortResult;
           }
-          return selectAndVerify(composerEffortPill, () => {
-            const currentMenu = findVisibleEffortMenu(composerEffortPill);
-            return currentMenu ? findOptionInMenu(currentMenu) : null;
-          });
+          return selectAndVerify(
+            composerEffortPill,
+            () => {
+              const currentMenu = findVisibleEffortMenu(composerEffortPill);
+              return currentMenu ? findOptionInMenu(currentMenu, composerModelKind) : null;
+            },
+            composerModelKind,
+          );
         }
         await sleep(100);
       }
-      const result = failure('menu-not-found');
+      const result = failure('menu-not-found', {
+        modelKind: composerModelKind,
+      });
       closeOpenMenus();
       return result;
     }

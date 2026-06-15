@@ -778,22 +778,21 @@ describe("browser thinking-time selection expression", () => {
     const modelButton = new FakeElement("Pro Extended", {
       class: "__composer-pill",
       "aria-expanded": "true",
-      "aria-haspopup": "menu",
     });
     const documentStub = {
       body: new FakeElement(""),
       querySelector: (selector: string) => {
         if (selector.includes("composer-intelligence-picker-content")) return intelligenceMenu;
-        if (
-          selector.includes("model-switcher-dropdown-button") ||
-          selector.includes("__composer-pill")
-        ) {
+        if (selector.includes("model-switcher-dropdown-button")) return null;
+        if (selector.includes("__composer-pill") && !selector.includes("aria-haspopup")) {
           return modelButton;
         }
         return null;
       },
       querySelectorAll: (selector: string) => {
-        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes("__composer-pill")) {
+          return selector.includes("aria-haspopup") ? [] : [modelButton];
+        }
         if (selector.includes('role="menu"') || selector.includes("data-radix")) {
           return [intelligenceMenu];
         }
@@ -1438,22 +1437,21 @@ describe("browser thinking-time selection expression", () => {
     const modelButton = new FakeElement("Extra High", {
       class: "__composer-pill",
       "aria-expanded": "true",
-      "aria-haspopup": "menu",
     });
     const documentStub = {
       body: new FakeElement(""),
       querySelector: (selector: string) => {
         if (selector.includes("composer-intelligence-picker-content")) return intelligenceMenu;
-        if (
-          selector.includes("model-switcher-dropdown-button") ||
-          selector.includes("__composer-pill")
-        ) {
+        if (selector.includes("model-switcher-dropdown-button")) return null;
+        if (selector.includes("__composer-pill") && !selector.includes("aria-haspopup")) {
           return modelButton;
         }
         return null;
       },
       querySelectorAll: (selector: string) => {
-        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes("__composer-pill")) {
+          return selector.includes("aria-haspopup") ? [] : [modelButton];
+        }
         if (selector.includes('role="menu"') || selector.includes("data-radix")) {
           return [intelligenceMenu];
         }
@@ -1557,7 +1555,6 @@ describe("browser thinking-time selection expression", () => {
     const modelButton = new FakeElement("Extra High", {
       class: "__composer-pill",
       "aria-expanded": "true",
-      "aria-haspopup": "menu",
     });
     const instantRadio = new FakeElement(
       "Instant",
@@ -1586,16 +1583,16 @@ describe("browser thinking-time selection expression", () => {
         if (selector.includes("composer-intelligence-picker-content")) {
           return intelligenceMenuOpen ? intelligenceMenu : null;
         }
-        if (
-          selector.includes("model-switcher-dropdown-button") ||
-          selector.includes("__composer-pill")
-        ) {
+        if (selector.includes("model-switcher-dropdown-button")) return null;
+        if (selector.includes("__composer-pill") && !selector.includes("aria-haspopup")) {
           return modelButton;
         }
         return null;
       },
       querySelectorAll: (selector: string) => {
-        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes("__composer-pill")) {
+          return selector.includes("aria-haspopup") ? [] : [modelButton];
+        }
         if (selector.includes('role="menu"') || selector.includes("data-radix")) {
           return intelligenceMenuOpen ? [intelligenceMenu] : [];
         }
