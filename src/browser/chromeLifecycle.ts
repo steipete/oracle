@@ -22,6 +22,11 @@ export async function launchChrome(
   const debugPort = config.debugPort ?? parseDebugPortEnv();
   const chromeFlags = buildChromeFlags(config.headless ?? false, debugBindAddress);
   const usePatchedLauncher = Boolean(connectHost && connectHost !== "127.0.0.1");
+  // copy-profile reuses a copied signed-in profile whose cookies are
+  // Keychain-encrypted, so it must launch with the real Keychain (not mocked):
+  // strip the keychain-mocking flags from both chrome-launcher's defaults and
+  // Oracle's set, and ignore the defaults so they aren't re-added.
+  const usingCopiedProfile = Boolean(config.copyProfileSource);
   const launcher = usePatchedLauncher
     ? await launchWithCustomHost({
         chromeFlags,
@@ -32,10 +37,15 @@ export async function launchChrome(
       })
     : await launch({
         chromePath: config.chromePath ?? undefined,
-        chromeFlags,
+        chromeFlags: usingCopiedProfile
+          ? [...Launcher.defaultFlags(), ...chromeFlags].filter(
+              (flag) => flag !== "--use-mock-keychain" && flag !== "--password-store=basic",
+            )
+          : chromeFlags,
         userDataDir,
         handleSIGINT: false,
         port: debugPort ?? undefined,
+        ignoreDefaultFlags: usingCopiedProfile,
       });
   const pidLabel = typeof launcher.pid === "number" ? ` (pid ${launcher.pid})` : "";
   const hostLabel = connectHost ? ` on ${connectHost}` : "";

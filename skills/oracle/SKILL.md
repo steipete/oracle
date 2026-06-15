@@ -77,6 +77,7 @@ Recommended defaults:
 
 - Auto-pick: uses `api` when `OPENAI_API_KEY` is set, otherwise `browser`.
 - Browser engine supports GPT + Gemini only; use `--engine api` for Claude/Grok/Codex or multi-model runs.
+- `--copy-profile <chrome-user-data-dir>`: reuse your **already signed-in** Chrome session with no manual login — copies the profile to a throwaway dir, launches with the real Keychain so its cookies decrypt, runs, then deletes the copy. e.g. `oracle --engine browser --copy-profile "$HOME/Library/Application Support/Google/Chrome" -p "<task>"`. macOS/Linux; needs `rsync`.
 - **API runs require explicit user consent** before starting because they incur usage costs.
 - Browser attachments:
   - `--browser-attachments auto|never|always` (auto pastes inline up to ~60k chars then uploads).

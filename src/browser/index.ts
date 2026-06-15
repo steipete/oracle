@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import net from "node:net";
 import { resolveBrowserConfig } from "./config.js";
+import { copyChromeProfile } from "./profileCopy.js";
 import type {
   BrowserRunOptions,
   BrowserRunResult,
@@ -948,6 +949,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   }
 
   const manualLogin = Boolean(config.manualLogin);
+  // Manual-login and copy-profile both start from an already-signed-in profile,
+  // so neither clears nor syncs cookies.
+  const profileIsPreSigned = manualLogin || Boolean(config.copyProfileSource);
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
     : defaultManualLoginProfileDir();
@@ -963,6 +967,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       userDataDir,
       keepBrowser: effectiveKeepBrowser,
     });
+  } else if (config.copyProfileSource) {
+    await copyChromeProfile(config.copyProfileSource, userDataDir);
+    logger(
+      `Seeded temporary Chrome profile from ${config.copyProfileSource} (copy-profile mode; signed-in session reused without manual login)`,
+    );
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
@@ -1106,12 +1115,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     await Promise.all(domainEnablers);
     removeDialogHandler = installJavaScriptDialogAutoDismissal(Page, logger);
-    if (!manualLogin) {
+    if (!profileIsPreSigned) {
       await Network.clearBrowserCookies();
     }
 
     const manualLoginCookieSync = manualLogin && Boolean(config.manualLoginCookieSync);
-    const cookieSyncEnabled = config.cookieSync && (!manualLogin || manualLoginCookieSync);
+    const cookieSyncEnabled = config.cookieSync && (!profileIsPreSigned || manualLoginCookieSync);
     if (cookieSyncEnabled) {
       if (manualLoginCookieSync) {
         logger(

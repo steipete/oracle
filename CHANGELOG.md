@@ -2,6 +2,10 @@
 
 ## 0.14.2 — Unreleased
 
+### Added
+
+- Browser: `--copy-profile <dir>` copies a signed-in Chrome user-data directory to a throwaway profile and runs browser mode against it, reusing the live ChatGPT session with no manual sign-in and deleting the copy on completion. Skips the keychain-mocking launch flags so the copied profile's Keychain-encrypted cookies decrypt via the real Chrome "Safe Storage" key (macOS/Linux; requires `rsync`). Thanks @edwarddgao!
+
 ### Fixed
 
 - Browser: wait for the current ChatGPT Intelligence pill before falling back to the default thinking level, and make `--browser-model-strategy select` prefer concrete requested variants over version-only submenu wrappers with bounded retries. This lets current-model runs select and verify Extra High before submitting and prevents explicit Instant selection from hanging (thanks @alex-on-java and @servrox).

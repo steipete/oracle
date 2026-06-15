@@ -41,6 +41,17 @@ describe("buildBrowserConfig", () => {
     expect(config.modelStrategy).toBe("current");
   });
 
+  test("maps --copy-profile to copyProfileSource", async () => {
+    const source = "/Users/me/Library/Application Support/Google/Chrome";
+    const config = await buildBrowserConfig({ model: "gpt-5.5-pro", copyProfile: source });
+    expect(config.copyProfileSource).toBe(source);
+  });
+
+  test("leaves copyProfileSource undefined without --copy-profile", async () => {
+    const config = await buildBrowserConfig({ model: "gpt-5.5-pro" });
+    expect(config.copyProfileSource).toBeUndefined();
+  });
+
   test("enables Deep Research browser mode when requested", async () => {
     const config = await buildBrowserConfig({
       model: "gpt-5.4-pro",
