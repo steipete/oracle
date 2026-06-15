@@ -13,7 +13,7 @@ import { buildClickDispatcher } from "./domEvents.js";
 // --verbose. Loosely typed: the shape is whatever the injected probe returns.
 type ThinkingTimePickerDiagnostic = Record<string, unknown>;
 
-type ThinkingTimeOutcome =
+type ThinkingTimeOutcome = (
   | { status: "already-selected"; label?: string | null }
   | { status: "switched"; label?: string | null }
   | { status: "chip-not-found"; diagnostic?: ThinkingTimePickerDiagnostic }
@@ -22,9 +22,9 @@ type ThinkingTimeOutcome =
   | { status: "selection-unverified"; diagnostic?: ThinkingTimePickerDiagnostic }
   | {
       status: "model-kind-not-found";
-      modelKind?: string | null;
       diagnostic?: ThinkingTimePickerDiagnostic;
-    };
+    }
+) & { modelKind?: string | null };
 
 const BROWSER_THINKING_LOG_PREFIX = "[browser] Thinking time:";
 
@@ -64,7 +64,9 @@ export async function ensureThinkingTime(
   const result = await evaluateThinkingTimeSelection(Runtime, level, desiredModel);
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
   const targetModelKind = inferThinkingTargetModelKind(desiredModel);
-  const strictProEffort = targetModelKind === "pro" && level === "extended";
+  const observedModelKind = result && "modelKind" in result ? result.modelKind : null;
+  const strictProEffort =
+    (targetModelKind === "pro" || observedModelKind === "pro") && level === "extended";
 
   switch (result?.status) {
     case "already-selected":
@@ -363,17 +365,55 @@ function buildThinkingTimeExpression(
         return { error: redactDiagnosticText(err && err.message ? err.message : err) };
       }
     };
+    const currentModelKind = () => {
+      const button = findModelButton();
+      const label = normalize(
+        (button?.textContent ?? '') + ' ' + (button?.getAttribute?.('aria-label') ?? ''),
+      );
+      if (hasToken(label, 'pro')) return 'pro';
+      if (hasToken(label, 'thinking')) return 'thinking';
+      if (hasToken(label, 'instant')) return 'instant';
+      return null;
+    };
+    const effectiveTargetModelKind = () => TARGET_MODEL_KIND || currentModelKind();
+    const isIntelligenceEffortMenu = (menu) => {
+      if (menu?.getAttribute?.('data-testid') === 'composer-intelligence-picker-content') {
+        return true;
+      }
+      const label = menu?.querySelector?.('.__menu-label, [class*="menu-label"]');
+      return normalize(label?.textContent ?? '').includes('intelligence');
+    };
     const failure = (status, extra = {}) => ({
       status,
+      modelKind: effectiveTargetModelKind(),
       ...extra,
       diagnostic: collectPickerDiagnostic(),
     });
     const findOptionInMenu = (menu) => {
-      for (const item of menu.querySelectorAll(MENU_ITEM_SELECTOR)) {
+      const items = Array.from(menu.querySelectorAll(MENU_ITEM_SELECTOR));
+      const modelKind = effectiveTargetModelKind();
+      if (modelKind === 'pro') {
+        for (const item of items) {
+          const itemText = normalize(
+            (item.textContent ?? '') + ' ' + (item.getAttribute?.('aria-label') ?? ''),
+          );
+          if (
+            hasToken(itemText, 'pro') &&
+            (matchesLevel(item.textContent ?? '') ||
+              matchesLevel(item.getAttribute?.('aria-label') ?? ''))
+          ) {
+            return item;
+          }
+        }
+        if (isIntelligenceEffortMenu(menu)) {
+          return null;
+        }
+      }
+      for (const item of items) {
         const itemText = normalize(
           (item.textContent ?? '') + ' ' + (item.getAttribute?.('aria-label') ?? ''),
         );
-        if (TARGET_MODEL_KIND !== 'pro' && hasToken(itemText, 'pro')) {
+        if (modelKind && modelKind !== 'pro' && hasToken(itemText, 'pro')) {
           continue;
         }
         if (

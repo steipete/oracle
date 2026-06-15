@@ -275,6 +275,18 @@ describe("browser thinking-time selection expression", () => {
     }
   });
 
+  it("fails closed when the current model is inferred as Pro", async () => {
+    const runtime = {
+      evaluate: async () => ({
+        result: { value: { status: "selection-unverified", modelKind: "pro" } },
+      }),
+    };
+
+    await expect(
+      ensureThinkingTime(runtime as never, "extended", (() => {}) as never, null),
+    ).rejects.toThrow(/refusing to submit without confirmed Pro Extended/);
+  });
+
   it("keeps thinking effort best-effort when no target model kind is provided", async () => {
     const runtime = {
       evaluate: async () => ({
@@ -699,7 +711,7 @@ describe("browser thinking-time selection expression", () => {
     expect(serialized).not.toContain(secret);
   });
 
-  it("confirms Pro Extended from the Intelligence menu's checked radio", async () => {
+  it("preserves current Pro Extended when no target model kind is supplied", async () => {
     class FakeEventTarget {
       dispatchEvent(_event: unknown): boolean {
         return true;
@@ -725,8 +737,11 @@ describe("browser thinking-time selection expression", () => {
       closest(_selector: string): FakeElement | null {
         return null;
       }
-      matches(_selector: string): boolean {
-        return false;
+      matches(selector: string): boolean {
+        return (
+          selector.includes("__composer-pill") &&
+          this.attributes.class?.includes("__composer-pill") === true
+        );
       }
       getBoundingClientRect(): { width: number; height: number } {
         return { width: 144, height: 36 };
@@ -739,6 +754,10 @@ describe("browser thinking-time selection expression", () => {
       ) {}
     }
 
+    const highRadio = new FakeElement("High", {
+      role: "menuitemradio",
+      "aria-checked": "false",
+    });
     const proExtendedRadio = new FakeElement("Pro Extended", {
       role: "menuitemradio",
       "aria-checked": "true",
@@ -746,9 +765,10 @@ describe("browser thinking-time selection expression", () => {
     const intelligenceMenu = new FakeElement(
       "InstantMediumHighExtra HighPro Extended",
       { "data-testid": "composer-intelligence-picker-content", role: "menu" },
-      [proExtendedRadio],
+      [highRadio, proExtendedRadio],
     );
     const modelButton = new FakeElement("Pro Extended", {
+      class: "__composer-pill",
       "aria-expanded": "true",
       "aria-haspopup": "menu",
     });
@@ -764,12 +784,18 @@ describe("browser thinking-time selection expression", () => {
         }
         return null;
       },
-      querySelectorAll: (_selector: string) => [],
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+          return [intelligenceMenu];
+        }
+        return [];
+      },
       dispatchEvent: () => true,
     };
     let now = 0;
     const performanceStub = { now: () => (now += 100) };
-    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
+    const expression = buildThinkingTimeExpressionForTest("extended", null);
     const evaluate = new Function(
       "document",
       "performance",
@@ -803,6 +829,45 @@ describe("browser thinking-time selection expression", () => {
         FakeElement,
       ),
     ).resolves.toEqual({ status: "already-selected", label: "Pro Extended" });
+
+    const genericOnlyMenu = new FakeElement(
+      "IntelligenceInstantMediumHighExtra High",
+      { "data-testid": "composer-intelligence-picker-content", role: "menu" },
+      [highRadio],
+    );
+    const genericOnlyDocument = {
+      ...documentStub,
+      querySelector: (selector: string) => {
+        if (selector.includes("composer-intelligence-picker-content")) return genericOnlyMenu;
+        if (
+          selector.includes("model-switcher-dropdown-button") ||
+          selector.includes("__composer-pill")
+        ) {
+          return modelButton;
+        }
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [modelButton];
+        if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+          return [genericOnlyMenu];
+        }
+        return [];
+      },
+    };
+
+    await expect(
+      evaluate(
+        genericOnlyDocument,
+        performanceStub,
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toMatchObject({ status: "option-not-found", modelKind: "pro" });
   });
 
   it("opens the Pro effort submenu before selecting Pro Standard", async () => {
