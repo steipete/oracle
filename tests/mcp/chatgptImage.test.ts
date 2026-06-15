@@ -2,6 +2,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { z } from "zod";
 import {
   buildChatGptImageConsultInput,
   registerChatGptImageTool,
@@ -45,6 +46,35 @@ describe("chatgpt_image MCP tool", () => {
       browserThinkingTime: "extended",
     });
     expect(input.prompt).toContain("aspect ratio 9:16");
+  });
+
+  test("keeps the registered input schema discoverable and normalizes thinking aliases", async () => {
+    let inputSchema: z.ZodRawShape | undefined;
+    let handler: ((input: unknown) => Promise<unknown>) | undefined;
+    registerChatGptImageTool({
+      registerTool: (
+        _name: string,
+        def: unknown,
+        registeredHandler: (input: unknown) => Promise<unknown>,
+      ) => {
+        inputSchema = (def as { inputSchema: z.ZodRawShape }).inputSchema;
+        handler = registeredHandler;
+      },
+      server: {
+        sendLoggingMessage: async () => undefined,
+      },
+    } as unknown as Parameters<typeof registerChatGptImageTool>[0]);
+
+    expect(inputSchema).toBeDefined();
+    expect(() => z.toJSONSchema(z.object(inputSchema!))).not.toThrow();
+    const result = (await handler?.({
+      dryRun: true,
+      prompt: "Create a small product mockup.",
+      browserThinkingTime: "xhigh",
+    })) as {
+      structuredContent: { resolved: { browser?: { thinkingTime?: string } } };
+    };
+    expect(result.structuredContent.resolved.browser?.thinkingTime).toBe("heavy");
   });
 
   test("uses a unique default output path when agents only provide a prompt", () => {

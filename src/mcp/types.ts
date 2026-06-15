@@ -4,15 +4,17 @@ import type { ThinkingTimeLevel } from "../oracle/types.js";
 
 export const CONSULT_PRESETS = ["chatgpt-pro-heavy"] as const;
 
-export const browserThinkingTimeInputSchema = z
-  .enum(THINKING_TIME_INPUT_VALUES)
-  .transform((value): ThinkingTimeLevel => {
+export const browserThinkingTimeRawSchema = z.enum(THINKING_TIME_INPUT_VALUES);
+
+export const browserThinkingTimeInputSchema = browserThinkingTimeRawSchema.transform(
+  (value): ThinkingTimeLevel => {
     const normalized = normalizeThinkingTimeLevel(value);
     if (!normalized) {
       throw new Error(`Unknown browserThinkingTime value: ${value}`);
     }
     return normalized;
-  });
+  },
+);
 
 export const consultInputSchema = z
   .object({

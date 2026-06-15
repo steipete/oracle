@@ -4,7 +4,11 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getOracleHomeDir } from "../../oracleHome.js";
-import { browserThinkingTimeInputSchema, type ConsultInput } from "../types.js";
+import {
+  browserThinkingTimeInputSchema,
+  browserThinkingTimeRawSchema,
+  type ConsultInput,
+} from "../types.js";
 import { consultOutputShape, runConsultTool } from "./consult.js";
 
 const chatGptImageInputShape = {
@@ -37,7 +41,7 @@ const chatGptImageInputShape = {
     .describe(
       'How to deliver files. Defaults to "always" when files are present so reference images are uploaded.',
     ),
-  browserThinkingTime: browserThinkingTimeInputSchema
+  browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
     .describe("Set ChatGPT thinking time when supported by the chosen model."),
   browserModelStrategy: z
@@ -67,7 +71,12 @@ const chatGptImageOutputShape = {
   requestedOutputPath: z.string(),
 } satisfies z.ZodRawShape;
 
-const chatGptImageInputSchema = z.object(chatGptImageInputShape).strict();
+const chatGptImageInputSchema = z
+  .object({
+    ...chatGptImageInputShape,
+    browserThinkingTime: browserThinkingTimeInputSchema.optional(),
+  })
+  .strict();
 
 export type ChatGptImageInput = z.infer<typeof chatGptImageInputSchema>;
 

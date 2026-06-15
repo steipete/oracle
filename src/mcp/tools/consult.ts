@@ -28,7 +28,7 @@ async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<
 import { performSessionRun } from "../../cli/sessionRunner.js";
 import { runDryRunSummary } from "../../cli/dryRun.js";
 import { CHATGPT_URL } from "../../browser/constants.js";
-import { CONSULT_PRESETS, browserThinkingTimeInputSchema, consultInputSchema } from "../types.js";
+import { CONSULT_PRESETS, browserThinkingTimeRawSchema, consultInputSchema } from "../types.js";
 import { applyConsultPreset } from "../consultPresets.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
@@ -88,7 +88,7 @@ const consultInputShape = {
     .describe(
       'Browser-only: bundle upload format when browserBundleFiles is true or auto-bundling is needed. Defaults to "text"; "zip" preserves individual file names in one uploaded archive.',
     ),
-  browserThinkingTime: browserThinkingTimeInputSchema
+  browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
     .describe("Browser-only: set ChatGPT thinking time when supported by the chosen model."),
   browserModelStrategy: z
