@@ -338,6 +338,20 @@ function buildModelSelectionExpression(
       label === 'medium' ||
       label === 'high' ||
       label === 'extra high';
+    const isNonProIntelligenceThinkingLabel = (label) =>
+      label === 'medium' || label === 'high' || label === 'extra high';
+    const scoreNonProGpt55ThinkingLabel = (label) => {
+      if (label === 'extra high') return 1400;
+      if (label === 'high') return 1200;
+      return 1000;
+    };
+    const versionFromLabel = (label) => {
+      if (label === '5 5' || label === 'gpt 5 5') return '5-5';
+      if (label === '5 4' || label === 'gpt 5 4') return '5-4';
+      if (label === '5 3' || label === 'gpt 5 3') return '5-3';
+      if (label === '4 5' || label === 'gpt 4 5') return '4-5';
+      return null;
+    };
     if (MODEL_STRATEGY === 'current') {
       const currentLabel = getResolvedLabel('') || null;
       return {
@@ -353,13 +367,15 @@ function buildModelSelectionExpression(
     const buttonMatchesTarget = () => {
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
+      if (wantsThinking && !wantsPro && hasProComposerPill()) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
         wantsThinking &&
         desiredVersion === '5-5' &&
         !hasProComposerPill() &&
         isThinkingEffortLabel(normalizedLabel) &&
-        isTargetGpt55VisibleAlias(readComposerModelSignal())
+        (isNonProIntelligenceThinkingLabel(normalizedLabel) ||
+          isTargetGpt55VisibleAlias(readComposerModelSignal()))
       ) {
         return true;
       }
@@ -453,10 +469,21 @@ function buildModelSelectionExpression(
     };
 
     const getOptionLabel = (node) => node?.textContent?.trim() ?? '';
-    const isThinkingEffortControl = (node) =>
+    const isDetachedProEffortMenu = (menu) => {
+      const text = normalizeText(menu?.textContent ?? '');
+      return (
+        menu?.getAttribute?.('data-testid') !== 'composer-intelligence-picker-content' &&
+        text.includes('pro standard') &&
+        text.includes('pro extended')
+      );
+    };
+    const isNestedEffortControl = (node, menu) =>
       node instanceof HTMLElement &&
       (node.getAttribute('data-model-picker-thinking-effort-action') === 'true' ||
-        Boolean(node.closest('[data-model-picker-thinking-effort-action="true"]')));
+        node.getAttribute('data-composer-intelligence-pro-effort-action') === 'true' ||
+        Boolean(node.closest('[data-model-picker-thinking-effort-action="true"]')) ||
+        Boolean(node.closest('[data-composer-intelligence-pro-effort-action="true"]')) ||
+        isDetachedProEffortMenu(menu));
     const optionIsSelected = (node) => {
       if (!(node instanceof HTMLElement)) {
         return false;
@@ -546,6 +573,27 @@ function buildModelSelectionExpression(
         }
       }
       const candidateGpt55VisibleAlias = isTargetGpt55VisibleAlias(normalizedText);
+      const candidateIsNonProThinkingEffort =
+        isNonProIntelligenceThinkingLabel(normalizedText) && !normalizedTestId.includes('pro');
+      const hasActiveProPill = hasProComposerPill();
+      const candidateIsNonProGpt55Thinking =
+        wantsThinking && desiredVersion === '5-5' && candidateIsNonProThinkingEffort;
+      const candidateClearsProForThinking =
+        wantsThinking && !wantsPro && hasActiveProPill && candidateIsNonProThinkingEffort;
+      const candidateOpensVersionSubmenu =
+        wantsThinking &&
+        desiredVersion !== '5-5' &&
+        normalizedText === 'gpt 5 5' &&
+        !normalizedTestId.includes('pro');
+      const candidateTextVersion = versionFromLabel(normalizedText);
+      if (
+        desiredVersion &&
+        candidateTextVersion &&
+        candidateTextVersion !== desiredVersion &&
+        !candidateOpensVersionSubmenu
+      ) {
+        return 0;
+      }
       const candidateIsGpt55ThinkingFamily =
         wantsThinking &&
         desiredVersion === '5-5' &&
@@ -557,8 +605,13 @@ function buildModelSelectionExpression(
       const candidateHasThinking =
         normalizedText.includes('thinking') ||
         normalizedTestId.includes('thinking') ||
+        candidateIsNonProGpt55Thinking ||
+        candidateClearsProForThinking ||
+        candidateOpensVersionSubmenu ||
         candidateIsGpt55ThinkingFamily ||
-        (wantsThinking && desiredVersion === '5-4' && exactTestIdMatch);
+        (wantsThinking &&
+          desiredVersion === '5-4' &&
+          (exactTestIdMatch || candidateTextVersion === '5-4'));
       const candidateHasLegacyProVersion = labelHasLegacyProVersion(normalizedText);
       const candidateHasPro =
         labelHasProWord(normalizedText) ||
@@ -584,6 +637,22 @@ function buildModelSelectionExpression(
       }
       if (candidateGpt55VisibleAlias) {
         score += 900;
+      }
+      if (candidateIsNonProGpt55Thinking) {
+        score += scoreNonProGpt55ThinkingLabel(normalizedText);
+      }
+      if (candidateClearsProForThinking) {
+        score += scoreNonProGpt55ThinkingLabel(normalizedText) + 600;
+      }
+      if (
+        desiredVersion &&
+        candidateTextVersion === desiredVersion &&
+        !(wantsThinking && desiredVersion === '5-5' && normalizedText === 'gpt 5 5')
+      ) {
+        score += 1200;
+      }
+      if (candidateOpensVersionSubmenu) {
+        score += 500;
       }
       if (candidateIsGpt55ThinkingFamily) {
         score += 260;
@@ -625,6 +694,9 @@ function buildModelSelectionExpression(
       if (wantsThinking) {
         if (
           !candidateIsGpt55ThinkingFamily &&
+          !candidateIsNonProGpt55Thinking &&
+          !candidateClearsProForThinking &&
+          !candidateOpensVersionSubmenu &&
           !normalizedText.includes('thinking') &&
           !normalizedTestId.includes('thinking')
         ) {
@@ -668,6 +740,17 @@ function buildModelSelectionExpression(
       );
       return pickerMenus.concat(textFallbackMenus);
     };
+    const isSubmenuOption = (node, testid) =>
+      (testid ?? '').toLowerCase().includes('submenu') ||
+      node?.getAttribute?.('aria-haspopup') === 'menu' ||
+      node?.getAttribute?.('data-has-submenu') !== null;
+    const canTrustSelectedOption = (node, normalizedText) => {
+      if (!optionIsSelected(node)) return false;
+      const optionVersion = versionFromLabel(normalizedText);
+      if (desiredVersion && optionVersion && optionVersion !== desiredVersion) return false;
+      const currentButtonLabel = normalizeText(getButtonLabel());
+      return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
+    };
 
     const findBestOption = () => {
       // Walk through every menu item and keep whichever earns the highest score.
@@ -676,7 +759,7 @@ function buildModelSelectionExpression(
       for (const menu of menus) {
         const buttons = Array.from(menu.querySelectorAll(${menuItemLiteral}));
         for (const option of buttons) {
-          if (isThinkingEffortControl(option)) {
+          if (isNestedEffortControl(option, menu)) {
             continue;
           }
           const text = option.textContent ?? '';
@@ -686,7 +769,7 @@ function buildModelSelectionExpression(
           if (score <= 0) {
             continue;
           }
-          if (optionIsSelected(option)) {
+          if (canTrustSelectedOption(option, normalizedText)) {
             score += 1000;
           }
           const label = getOptionLabel(option);
@@ -726,10 +809,6 @@ function buildModelSelectionExpression(
       };
       check();
     });
-    const isSubmenuOption = (node, testid) =>
-      (testid ?? '').toLowerCase().includes('submenu') ||
-      node?.getAttribute?.('aria-haspopup') === 'menu' ||
-      node?.getAttribute?.('data-has-submenu') !== null;
     const dispatchHoverSequence = (target) => {
       if (!target || !(target instanceof EventTarget)) return false;
       const types = ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove'];
@@ -794,14 +873,13 @@ function buildModelSelectionExpression(
         ensureMenuOpen();
         const match = findBestOption();
         if (match) {
-          if (optionIsSelected(match.node) || activeSelectionMatchesTarget()) {
+          if (activeSelectionMatchesTarget() || canTrustSelectedOption(match.node, match.normalizedText)) {
             closeMenu();
             resolve({ status: 'already-selected', label: getResolvedLabel(match.label) });
             return;
           }
           const previousButtonLabel = normalizeText(getButtonLabel());
           const previousComposerSignal = readComposerModelSignal();
-          dispatchClickSequence(match.node);
           // Submenus (e.g. "Legacy models") need a second pass to pick the actual model option.
           // Keep scanning once the submenu opens instead of treating the submenu click as a final switch.
           const isSubmenu = isSubmenuOption(match.node, match.testid);
@@ -810,11 +888,21 @@ function buildModelSelectionExpression(
             setTimeout(attempt, REOPEN_INTERVAL_MS / 2);
             return;
           }
+          dispatchClickSequence(match.node);
           // Wait for the selected model signal to settle before reopening the picker.
           waitForTargetSelection(previousButtonLabel, previousComposerSignal).then((selectionSettled) => {
             if (selectionSettled === 'target') {
               closeMenu();
               resolve({ status: 'switched', label: getResolvedLabel(match.label) });
+              return;
+            }
+            if (
+              desiredVersion &&
+              versionFromLabel(match.normalizedText) === desiredVersion &&
+              !(wantsThinking && !wantsPro && hasProComposerPill())
+            ) {
+              closeMenu();
+              resolve({ status: 'switched-best-effort', label: getResolvedLabel(match.label) });
               return;
             }
             attempt();

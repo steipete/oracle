@@ -214,6 +214,7 @@ const evaluateMenuModelSelectionExpression = async (
 
 const evaluateIntelligenceModelSelectionExpression = async (
   targetModel: string,
+  initialButtonLabel = "Extra High",
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -233,6 +234,8 @@ const evaluateIntelligenceModelSelectionExpression = async (
 
   let intelligenceMenuOpen = false;
   let gpt55SubmenuOpen = false;
+  let modelButton: FakeElement;
+  let proPillActive = initialButtonLabel.toLowerCase().includes("pro");
 
   class FakeElement extends FakeEventTarget {
     constructor(
@@ -269,10 +272,13 @@ const evaluateIntelligenceModelSelectionExpression = async (
     }
 
     matches(selector: string): boolean {
-      return selector.includes("__composer-pill") &&
+      if (
+        selector.includes("__composer-pill") &&
         this.attributes.class?.includes("__composer-pill")
-        ? true
-        : selector.includes("aria-haspopup") && this.attributes["aria-haspopup"] === "menu";
+      ) {
+        return true;
+      }
+      return selector.includes("aria-haspopup") && this.attributes["aria-haspopup"] === "menu";
     }
 
     getBoundingClientRect(): { width: number; height: number } {
@@ -285,12 +291,31 @@ const evaluateIntelligenceModelSelectionExpression = async (
     }
   }
 
-  const fiveFive = new FakeElement("5.5", {
-    role: "menuitemradio",
-    "aria-checked": "true",
-    "data-state": "checked",
-  });
-  const gpt55Submenu = new FakeElement("5.55.45.34.5o3", { role: "menu" }, [fiveFive]);
+  const fiveFive = new FakeElement(
+    "5.5",
+    {
+      role: "menuitemradio",
+      "aria-checked": "true",
+      "data-state": "checked",
+    },
+    [],
+    () => {
+      modelButton.textContent = "GPT-5.5";
+    },
+  );
+  const fiveFour = new FakeElement(
+    "5.4",
+    {
+      role: "menuitemradio",
+      "aria-checked": "false",
+      "data-state": "unchecked",
+    },
+    [],
+    () => {
+      modelButton.textContent = "GPT-5.4";
+    },
+  );
+  const gpt55Submenu = new FakeElement("5.55.45.34.5o3", { role: "menu" }, [fiveFive, fiveFour]);
   const gpt55Trigger = new FakeElement(
     "GPT-5.5",
     {
@@ -304,6 +329,7 @@ const evaluateIntelligenceModelSelectionExpression = async (
       gpt55SubmenuOpen = true;
     },
   );
+  const initialIsPro = initialButtonLabel.toLowerCase().includes("pro");
   const intelligenceMenu = new FakeElement(
     "IntelligenceInstantMediumHighExtra HighPro ExtendedGPT-5.5",
     { role: "menu", "data-testid": "composer-intelligence-picker-content" },
@@ -311,19 +337,42 @@ const evaluateIntelligenceModelSelectionExpression = async (
       new FakeElement("Instant", { role: "menuitemradio", "aria-checked": "false" }),
       new FakeElement("Medium", { role: "menuitemradio", "aria-checked": "false" }),
       new FakeElement("High", { role: "menuitemradio", "aria-checked": "false" }),
-      new FakeElement("Extra High", { role: "menuitemradio", "aria-checked": "true" }),
-      new FakeElement("Pro Extended", { role: "menuitemradio", "aria-checked": "false" }),
+      new FakeElement(
+        "Extra High",
+        { role: "menuitemradio", "aria-checked": initialIsPro ? "false" : "true" },
+        [],
+        () => {
+          proPillActive = false;
+          modelButton.textContent = "Extra High";
+        },
+      ),
+      new FakeElement(
+        "Pro Extended",
+        {
+          role: "menuitemradio",
+          "aria-checked": initialIsPro ? "true" : "false",
+        },
+        [],
+        () => {
+          proPillActive = true;
+          modelButton.textContent = "Pro Extended";
+        },
+      ),
       gpt55Trigger,
     ],
   );
-  const modelButton = new FakeElement(
-    "Extra High",
+  modelButton = new FakeElement(
+    initialButtonLabel,
     { class: "__composer-pill", "aria-haspopup": "menu", "aria-expanded": "false" },
     [],
     () => {
       intelligenceMenuOpen = true;
     },
   );
+  const proPill = new FakeElement("Pro Extended", {
+    class: "__composer-pill",
+    "aria-label": "Pro Extended",
+  });
 
   const expression = buildModelSelectionExpressionForTest(targetModel);
   const documentStub = {
@@ -338,7 +387,7 @@ const evaluateIntelligenceModelSelectionExpression = async (
     },
     querySelectorAll: (selector: string) => {
       if (selector.includes("button.__composer-pill")) {
-        return [modelButton];
+        return proPillActive ? [modelButton, proPill] : [modelButton];
       }
       if (selector.includes('role="menu"') || selector.includes("data-radix")) {
         return [
@@ -441,6 +490,45 @@ const createNonPickerMenuForTest = (labels: string[]): unknown => {
     { "data-radix-collection-root": "" },
     labels.map((label) => new FakeElement(label)),
   );
+};
+
+const createDetachedProEffortMenuForTest = (): unknown => {
+  class FakeEventTarget {
+    dispatchEvent(_event: unknown): boolean {
+      return true;
+    }
+  }
+
+  class FakeElement extends FakeEventTarget {
+    constructor(
+      public textContent: string,
+      private readonly attributes: Readonly<Record<string, string>> = {},
+      private readonly children: readonly FakeElement[] = [],
+    ) {
+      super();
+    }
+
+    getAttribute(name: string): string | null {
+      return this.attributes[name] ?? null;
+    }
+
+    querySelector(_selector: string): FakeElement | null {
+      return null;
+    }
+
+    querySelectorAll(_selector: string): FakeElement[] {
+      return [...this.children];
+    }
+
+    closest(_selector: string): FakeElement | null {
+      return null;
+    }
+  }
+
+  return new FakeElement("Pro Standard Pro Extended", { role: "menu" }, [
+    new FakeElement("Pro Standard", { role: "menuitemradio", "aria-checked": "false" }),
+    new FakeElement("Pro Extended", { role: "menuitemradio", "aria-checked": "true" }),
+  ]);
 };
 
 const evaluateComposerPillFallbackExpression = (
@@ -805,9 +893,18 @@ describe("browser model selection matchers", () => {
 
   it("does not treat per-row thinking effort controls as model options", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
-    expect(expression).toContain("const isThinkingEffortControl = (node) =>");
+    expect(expression).toContain("const isNestedEffortControl = (node, menu) =>");
     expect(expression).toContain("data-model-picker-thinking-effort-action");
-    expect(expression).toContain("if (isThinkingEffortControl(option))");
+    expect(expression).toContain("data-composer-intelligence-pro-effort-action");
+    expect(expression).toContain("if (isNestedEffortControl(option, menu))");
+  });
+
+  it("ignores detached Pro effort submenus when selecting the Pro model row", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("Pro", { label: "Pro" }, [
+        createDetachedProEffortMenuForTest(),
+      ]),
+    ).resolves.toEqual({ status: "switched", label: "Pro" });
   });
 
   it("scopes model option scans to actual model picker menus", () => {
@@ -864,7 +961,7 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("resolve('changed')");
     expect(expression).toContain("if (selectionSettled === 'target')");
     expect(expression).toContain(
-      "if (optionIsSelected(match.node) || activeSelectionMatchesTarget())",
+      "if (activeSelectionMatchesTarget() || canTrustSelectedOption(match.node, match.normalizedText))",
     );
   });
 
@@ -989,7 +1086,41 @@ describe("browser model selection matchers", () => {
   it("recognizes GPT-5.5 from the new Intelligence submenu while the button shows effort", async () => {
     await expect(evaluateIntelligenceModelSelectionExpression("Thinking 5.5")).resolves.toEqual({
       status: "already-selected",
-      label: "GPT-5.5",
+      label: "Thinking 5.5",
     });
+  });
+
+  it("uses the non-Pro Intelligence effort row when switching from Pro to Thinking 5.5", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("Thinking 5.5", "Pro Extended"),
+    ).resolves.toEqual({
+      status: "switched",
+      label: "Extra High",
+    });
+  });
+
+  it("opens the GPT-5.5 submenu to select hidden Thinking 5.4", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("Thinking 5.4", "Extra High"),
+    ).resolves.toEqual({
+      status: "switched",
+      label: "GPT-5.4",
+    });
+  });
+
+  it("clears Pro thinking before selecting hidden Thinking 5.4", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("Thinking 5.4", "Pro Extended"),
+    ).resolves.toEqual({
+      status: "switched",
+      label: "GPT-5.4",
+    });
+  });
+
+  it("does not treat a checked GPT-5.5 submenu row as a match for Thinking 5.4", () => {
+    const expression = buildModelSelectionExpressionForTest("Thinking 5.4");
+    expect(expression).toContain("normalizedText === 'gpt 5 5'");
+    expect(expression).toContain("candidateTextVersion !== desiredVersion");
+    expect(expression).toContain("canTrustSelectedOption(option, normalizedText)");
   });
 });
