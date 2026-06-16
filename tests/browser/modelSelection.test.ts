@@ -445,6 +445,247 @@ const evaluateIntelligenceModelSelectionExpression = async (
   );
 };
 
+const evaluateConfiguredModelSelectionExpression = async (
+  targetModel: string,
+  initialVariant = "Thinking",
+): Promise<unknown> => {
+  class FakeEventTarget {
+    dispatchEvent(_event: unknown): boolean {
+      return true;
+    }
+  }
+
+  class FakeMouseEvent {
+    constructor(
+      readonly type: string,
+      readonly init?: unknown,
+    ) {}
+  }
+
+  let topMenuOpen = false;
+  let configurationOpen = false;
+  let versionListOpen = false;
+  let selectedVersion = "5.5";
+  let selectedVariant = initialVariant;
+
+  type AttributeValue = string | (() => string);
+  class FakeElement extends FakeEventTarget {
+    constructor(
+      public textContent: string,
+      private readonly attributes: Readonly<Record<string, AttributeValue>> = {},
+      private readonly children: readonly FakeElement[] = [],
+      private readonly onDispatch?: () => void,
+    ) {
+      super();
+    }
+
+    getAttribute(name: string): string | null {
+      const value = this.attributes[name];
+      return typeof value === "function" ? value() : (value ?? null);
+    }
+
+    querySelector(selector: string): FakeElement | null {
+      if (selector.includes("model-switcher-")) {
+        return (
+          this.children.find((child) =>
+            child.getAttribute("data-testid")?.startsWith("model-switcher-"),
+          ) ?? null
+        );
+      }
+      if (selector.includes("model-selection-label")) {
+        return (
+          this.children.find(
+            (child) => child.getAttribute("aria-labelledby") === "model-selection-label",
+          ) ?? null
+        );
+      }
+      if (selector.includes("Model options") && selector.includes('aria-checked="true"')) {
+        return (
+          this.children.find(
+            (child) =>
+              child.getAttribute("role") === "radio" &&
+              child.getAttribute("aria-checked") === "true",
+          ) ?? null
+        );
+      }
+      if (selector.includes("close-button")) {
+        return (
+          this.children.find((child) => child.getAttribute("data-testid") === "close-button") ??
+          null
+        );
+      }
+      return null;
+    }
+
+    querySelectorAll(_selector: string): FakeElement[] {
+      return [...this.children];
+    }
+
+    closest(_selector: string): FakeElement | null {
+      return null;
+    }
+
+    override dispatchEvent(event: unknown): boolean {
+      this.onDispatch?.();
+      return super.dispatchEvent(event);
+    }
+  }
+
+  const modelButton = new FakeElement(
+    "ChatGPT",
+    { "data-testid": "model-switcher-dropdown-button" },
+    [],
+    () => {
+      topMenuOpen = true;
+    },
+  );
+  const currentThinking = new FakeElement("ThinkingFor complex questions", {
+    role: "menuitemradio",
+    "data-testid": "model-switcher-gpt-5-5-thinking",
+    "aria-checked": "true",
+  });
+  const configure = new FakeElement(
+    "Configure...",
+    { role: "menuitem", "data-testid": "model-configure-modal" },
+    [],
+    () => {
+      topMenuOpen = false;
+      configurationOpen = true;
+    },
+  );
+  const topMenu = new FakeElement("Latest 5.5 Thinking Configure", { role: "menu" }, [
+    currentThinking,
+    configure,
+  ]);
+  const closeButton = new FakeElement("", { "data-testid": "close-button" }, [], () => {
+    configurationOpen = false;
+    versionListOpen = false;
+  });
+  const versionCombobox = new FakeElement(
+    selectedVersion,
+    {
+      role: "combobox",
+      "aria-labelledby": "model-selection-label",
+      "aria-expanded": () => String(versionListOpen),
+    },
+    [],
+    () => {
+      versionListOpen = true;
+    },
+  );
+  const variantRadio = (variant: string, description: string) =>
+    new FakeElement(
+      `${variant}${description}`,
+      {
+        role: "radio",
+        "aria-checked": () => String(selectedVariant === variant),
+      },
+      [],
+      () => {
+        selectedVariant = variant;
+      },
+    );
+  const instantRadio = variantRadio("Instant", "For everyday chats");
+  const thinkingRadio = variantRadio("Thinking", "For complex questions");
+  const proRadio = variantRadio("Pro", "Research-grade intelligence");
+  const configurationDialog = new FakeElement("Intelligence Model Thinking", { role: "dialog" }, [
+    closeButton,
+    versionCombobox,
+    instantRadio,
+    thinkingRadio,
+    proRadio,
+  ]);
+  const versionOption = (version: string) =>
+    new FakeElement(
+      version,
+      {
+        role: "option",
+        "aria-selected": () => String(selectedVersion === version),
+        "data-state": () => (selectedVersion === version ? "checked" : "unchecked"),
+      },
+      [],
+      () => {
+        selectedVersion = version;
+        versionCombobox.textContent = version;
+        versionListOpen = false;
+      },
+    );
+  const versionList = new FakeElement("5.5 5.4 5.3 5.2", { role: "listbox" }, [
+    versionOption("5.5"),
+    versionOption("5.4"),
+    versionOption("5.3"),
+    versionOption("5.2"),
+  ]);
+
+  const expression = buildModelSelectionExpressionForTest(targetModel);
+  const documentStub = {
+    querySelector: (selector: string) => {
+      if (selector.includes("close-button")) {
+        return configurationOpen ? closeButton : null;
+      }
+      if (selector === '[role="dialog"]') {
+        return configurationOpen ? configurationDialog : null;
+      }
+      if (selector.includes("model-switcher-dropdown-button")) {
+        return modelButton;
+      }
+      return null;
+    },
+    querySelectorAll: (selector: string) => {
+      if (selector.includes("button.__composer-pill")) {
+        return [];
+      }
+      if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+        return [
+          ...(topMenuOpen ? [topMenu] : []),
+          ...(configurationOpen ? [configurationDialog] : []),
+          ...(versionListOpen ? [versionList] : []),
+        ];
+      }
+      return [];
+    },
+    title: "",
+    body: { innerText: "" },
+    dispatchEvent: () => true,
+  };
+  let now = 0;
+  const performanceStub = { now: () => (now += 100) };
+  const immediateSetTimeout = (handler: TimerHandler): number => {
+    if (typeof handler === "function") handler();
+    return 0;
+  };
+  const evaluate = new Function(
+    "document",
+    "performance",
+    "setTimeout",
+    "window",
+    "EventTarget",
+    "MouseEvent",
+    "HTMLElement",
+    `return ${expression};`,
+  ) as (
+    document: unknown,
+    performance: unknown,
+    setTimeout: unknown,
+    window: unknown,
+    EventTarget: unknown,
+    MouseEvent: unknown,
+    HTMLElement: unknown,
+  ) => unknown;
+
+  return await Promise.resolve(
+    evaluate(
+      documentStub,
+      performanceStub,
+      immediateSetTimeout,
+      { location: { href: "https://chatgpt.com/" } },
+      FakeEventTarget,
+      FakeMouseEvent,
+      FakeElement,
+    ),
+  );
+};
+
 const createNonPickerMenuForTest = (labels: string[]): unknown => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -676,6 +917,12 @@ describe("browser model selection matchers", () => {
     );
   });
 
+  it("includes explicit 5.3 tokens for browser model overrides", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("Thinking 5.3");
+    expect(labelTokens).toContain("5.3");
+    expect(testIdTokens).toContain("model-switcher-gpt-5-3-thinking");
+  });
+
   it("includes rich tokens for gpt-5.1", () => {
     const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.1");
     expectContains(labelTokens, "gpt-5.1");
@@ -738,7 +985,9 @@ describe("browser model selection matchers", () => {
   it("hard-rejects non-Instant candidates when targeting Instant", () => {
     const expression = buildModelSelectionExpressionForTest("GPT-5.5 Instant");
     expect(expression).toContain("const candidateHasInstant =");
-    expect(expression).toContain("if (wantsInstant && !candidateHasInstant) return 0;");
+    expect(expression).toContain(
+      "if (wantsInstant && !candidateHasInstant && !candidateSelectsDesiredVersion) return 0;",
+    );
   });
 
   it("selects the observed bare GPT-5.5 row when its label is Instant", async () => {
@@ -828,12 +1077,16 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain("const candidateHasThinking =");
     expect(expression).toContain("if (wantsPro && candidateHasThinking) return 0;");
-    expect(expression).toContain("if (wantsPro && !candidateHasPro) return 0;");
+    expect(expression).toContain(
+      "if (wantsPro && !candidateHasPro && !candidateSelectsDesiredVersion) return 0;",
+    );
   });
 
   it("hard-rejects non-Thinking candidates when targeting Thinking", () => {
     const expression = buildModelSelectionExpressionForTest("Thinking 5.5");
-    expect(expression).toContain("if (wantsThinking && !candidateHasThinking) return 0;");
+    expect(expression).toContain(
+      "if (wantsThinking && !candidateHasThinking && !candidateSelectsDesiredVersion) return 0;",
+    );
     expect(expression).not.toContain("candidateGpt55VisibleAlias ||\n        labelHasProWord");
   });
 
@@ -961,8 +1214,9 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("resolve('changed')");
     expect(expression).toContain("if (selectionSettled === 'target')");
     expect(expression).toContain(
-      "if (activeSelectionMatchesTarget() || canTrustSelectedOption(match.node, match.normalizedText))",
+      "canTrustSelectedOption(match.node, match.normalizedText, match.testid)",
     );
+    expect(expression).not.toContain("switched-best-effort");
   });
 
   it("fails loudly if post-selection state resolves to Thinking instead of Pro", () => {
@@ -1108,6 +1362,33 @@ describe("browser model selection matchers", () => {
     });
   });
 
+  it("uses Configure to select Thinking 5.4 in the current picker", async () => {
+    await expect(evaluateConfiguredModelSelectionExpression("Thinking 5.4")).resolves.toEqual({
+      status: "switched",
+      label: "Thinking GPT-5.4",
+    });
+  });
+
+  it("selects the requested variant after changing Configure versions", async () => {
+    await expect(evaluateConfiguredModelSelectionExpression("GPT-5.2 Instant")).resolves.toEqual({
+      status: "switched",
+      label: "Instant GPT-5.2",
+    });
+    await expect(evaluateConfiguredModelSelectionExpression("Pro 5.4")).resolves.toEqual({
+      status: "switched",
+      label: "Pro GPT-5.4",
+    });
+    await expect(evaluateConfiguredModelSelectionExpression("Thinking 5.3")).resolves.toEqual({
+      status: "switched",
+      label: "Thinking GPT-5.3",
+    });
+  });
+
+  it("does not accept a generic Thinking label for an explicit 5.4 request", () => {
+    const result = evaluateImmediateModelSelectionExpression("Thinking 5.4", "Thinking");
+    expect(result).toBeInstanceOf(Promise);
+  });
+
   it("clears Pro thinking before selecting hidden Thinking 5.4", async () => {
     await expect(
       evaluateIntelligenceModelSelectionExpression("Thinking 5.4", "Pro Extended"),
@@ -1121,6 +1402,6 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("Thinking 5.4");
     expect(expression).toContain("normalizedText === 'gpt 5 5'");
     expect(expression).toContain("candidateTextVersion !== desiredVersion");
-    expect(expression).toContain("canTrustSelectedOption(option, normalizedText)");
+    expect(expression).toContain("canTrustSelectedOption(option, normalizedText, testid)");
   });
 });
