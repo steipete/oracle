@@ -5,6 +5,7 @@ import type { BrowserBundleFormat, FileSection, RunOracleOptions } from "../orac
 import {
   readFiles,
   createFileSections,
+  FileValidationError,
   MODEL_CONFIGS,
   TOKENIZER_OPTIONS,
   formatFileSections,
@@ -16,6 +17,8 @@ import { buildAttachmentPlan } from "./policies.js";
 import { createStoredZip } from "./zipBundle.js";
 
 const DEFAULT_BROWSER_INLINE_CHAR_BUDGET = 60_000;
+const MAX_BROWSER_ATTACHMENTS = 10;
+const MAX_BROWSER_ZIP_BUNDLE_BYTES = 128 * 1024 * 1024;
 
 const MEDIA_EXTENSIONS = new Set([
   ".mp4",
@@ -44,24 +47,43 @@ const MEDIA_EXTENSIONS = new Set([
 
 const ARCHIVE_EXTENSIONS = new Set([
   ".7z",
+  ".aab",
   ".apk",
   ".br",
   ".bz2",
+  ".cab",
+  ".crx",
+  ".deb",
   ".dmg",
+  ".doc",
+  ".docx",
   ".ear",
+  ".epub",
   ".gz",
   ".ipa",
+  ".iso",
   ".jar",
   ".lz",
   ".lz4",
+  ".msi",
+  ".odp",
+  ".ods",
+  ".odt",
   ".pkg",
+  ".ppt",
+  ".pptx",
   ".rar",
+  ".rpm",
   ".tar",
   ".tgz",
   ".war",
   ".whl",
+  ".xls",
+  ".xlsx",
   ".xz",
+  ".xpi",
   ".zip",
+  ".zipx",
   ".zst",
 ]);
 
@@ -113,6 +135,7 @@ interface WrittenBrowserBundle {
 interface BrowserBundleSource {
   absolutePath: string;
   displayPath: string;
+  sizeBytes: number;
 }
 
 type ResolvedBrowserBundleFormat = Exclude<BrowserBundleFormat, "auto">;
@@ -137,6 +160,40 @@ function resolveBrowserBundleFormat(
   return sources.hasRawUploadFiles ? "zip" : "text";
 }
 
+function shouldWriteBrowserBundle(
+  format: ResolvedBrowserBundleFormat,
+  {
+    attachmentCount,
+    bundleRequested,
+    textSourceCount,
+    textPlanShouldBundle,
+  }: {
+    attachmentCount: number;
+    bundleRequested: boolean;
+    textSourceCount: number;
+    textPlanShouldBundle: boolean;
+  },
+): boolean {
+  if (format === "zip") {
+    return (
+      textPlanShouldBundle ||
+      (bundleRequested && attachmentCount > 0) ||
+      attachmentCount > MAX_BROWSER_ATTACHMENTS
+    );
+  }
+  return textSourceCount > 0 && (textPlanShouldBundle || attachmentCount > MAX_BROWSER_ATTACHMENTS);
+}
+
+function assertAttachmentCount(
+  attachments: BrowserAttachment[],
+  format: BrowserBundleFormat,
+): void {
+  if (attachments.length <= MAX_BROWSER_ATTACHMENTS) return;
+  throw new Error(
+    `Browser upload has ${attachments.length} attachments after applying bundle format "${format}". Use --browser-bundle-format auto or zip to stay within the ${MAX_BROWSER_ATTACHMENTS}-attachment limit.`,
+  );
+}
+
 async function writeBrowserBundle(
   sections: FileSection[],
   sources: BrowserBundleSource[],
@@ -147,6 +204,12 @@ async function writeBrowserBundle(
     lineNumbers: format === "text",
   });
   if (format === "zip") {
+    const totalSourceBytes = sources.reduce((total, source) => total + source.sizeBytes, 0);
+    if (totalSourceBytes > MAX_BROWSER_ZIP_BUNDLE_BYTES) {
+      throw new Error(
+        `Browser ZIP bundle inputs exceed the ${MAX_BROWSER_ZIP_BUNDLE_BYTES}-byte in-memory limit.`,
+      );
+    }
     const bundlePath = path.join(bundleDir, "attachments-bundle.zip");
     const buffer = createStoredZip(
       await Promise.all(
@@ -202,11 +265,23 @@ export async function assembleBrowserPrompt(
     .filter((file) => !isRawUploadFile(file.path))
     .map((file) => file.path);
   const rawUploadFiles = discoveredFiles.filter((file) => isRawUploadFile(file.path));
+  const maxFileSizeBytes = runOptions.maxFileSizeBytes;
 
   const rawUploadAttachments: BrowserAttachment[] = await Promise.all(
     rawUploadFiles.map(async ({ path: filePath }) => {
       const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
       const stats = await fs.stat(resolvedPath);
+      if (maxFileSizeBytes && stats.size > maxFileSizeBytes) {
+        throw new FileValidationError(
+          `The following file exceeds the ${maxFileSizeBytes}-byte limit:\n- ${
+            path.relative(cwd, resolvedPath) || resolvedPath
+          } (${stats.size} bytes)`,
+          {
+            files: [resolvedPath],
+            limitBytes: maxFileSizeBytes,
+          },
+        );
+      }
       return {
         path: resolvedPath,
         displayPath: path.relative(cwd, resolvedPath) || path.basename(resolvedPath),
@@ -230,6 +305,12 @@ export async function assembleBrowserPrompt(
     : (runOptions.browserAttachments ?? "auto");
   const bundleRequested = Boolean(runOptions.browserBundleFiles);
   const bundleFormat = runOptions.browserBundleFormat ?? "auto";
+  if (attachmentsPolicy === "never" && rawUploadAttachments.length > 0) {
+    throw new FileValidationError(
+      "Raw or binary files cannot be pasted inline when browser attachments are disabled. Use --browser-attachments auto or always.",
+      { files: rawUploadAttachments.map((attachment) => attachment.displayPath) },
+    );
+  }
 
   const inlinePlan = buildAttachmentPlan(sections, { inlineFiles: true, bundleRequested });
   const uploadPlan = buildAttachmentPlan(sections, { inlineFiles: false, bundleRequested });
@@ -254,20 +335,24 @@ export async function assembleBrowserPrompt(
   const textBundleSources: BrowserBundleSource[] = sections.map((section) => ({
     absolutePath: section.absolutePath,
     displayPath: section.displayPath,
+    sizeBytes: Buffer.byteLength(section.content, "utf8"),
   }));
   const rawUploadBundleSources: BrowserBundleSource[] = rawUploadAttachments.map((attachment) => ({
     absolutePath: attachment.path,
     displayPath: attachment.displayPath,
+    sizeBytes: attachment.sizeBytes ?? 0,
   }));
   const allBundleSources = [...textBundleSources, ...rawUploadBundleSources];
   const attachments: BrowserAttachment[] = [...selectedPlan.attachments, ...rawUploadAttachments];
 
-  const shouldBundle =
-    selectedPlan.shouldBundle ||
-    (bundleRequested && attachments.length > 0) ||
-    attachments.length > 10;
   const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
     hasRawUploadFiles: rawUploadAttachments.length > 0,
+  });
+  const shouldBundle = shouldWriteBrowserBundle(resolvedBundleFormat, {
+    attachmentCount: attachments.length,
+    bundleRequested,
+    textSourceCount: textBundleSources.length,
+    textPlanShouldBundle: selectedPlan.shouldBundle,
   });
   const composerText = (
     !shouldBundle && selectedPlan.inlineBlock
@@ -294,6 +379,7 @@ export async function assembleBrowserPrompt(
     }
     bundled = writtenBundle.metadata;
   }
+  assertAttachmentCount(attachments, resolvedBundleFormat);
 
   const inlineFileCount = shouldBundle ? 0 : selectedPlan.inlineFileCount;
   const modelConfig = isKnownModel(runOptions.model)
@@ -330,14 +416,16 @@ export async function assembleBrowserPrompt(
     const fallbackComposerText = baseComposerSections.join("\n\n").trim();
     const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
     let fallbackBundled: BrowserBundleMetadata | null = null;
-    const fallbackShouldBundle =
-      uploadPlan.shouldBundle ||
-      (bundleRequested && fallbackAttachments.length > 0) ||
-      fallbackAttachments.length > 10;
+    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+      hasRawUploadFiles: rawUploadAttachments.length > 0,
+    });
+    const fallbackShouldBundle = shouldWriteBrowserBundle(fallbackBundleFormat, {
+      attachmentCount: fallbackAttachments.length,
+      bundleRequested,
+      textSourceCount: textBundleSources.length,
+      textPlanShouldBundle: uploadPlan.shouldBundle,
+    });
     if (fallbackShouldBundle) {
-      const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
-        hasRawUploadFiles: rawUploadAttachments.length > 0,
-      });
       const writtenBundle = await writeBrowserBundle(
         sections,
         fallbackBundleFormat === "zip" ? allBundleSources : textBundleSources,
@@ -350,6 +438,7 @@ export async function assembleBrowserPrompt(
       }
       fallbackBundled = writtenBundle.metadata;
     }
+    assertAttachmentCount(fallbackAttachments, fallbackBundleFormat);
     fallback = {
       composerText: fallbackComposerText,
       attachments: fallbackAttachments,
@@ -365,7 +454,13 @@ export async function assembleBrowserPrompt(
     inlineFileCount,
     tokenEstimateIncludesInlineFiles,
     attachmentsPolicy,
-    attachmentMode: shouldBundle ? "bundle" : selectedPlan.mode,
+    attachmentMode: shouldBundle
+      ? "bundle"
+      : attachments.length > 0
+        ? "upload"
+        : selectedPlan.mode === "bundle"
+          ? "inline"
+          : selectedPlan.mode,
     fallback,
     bundled,
   };

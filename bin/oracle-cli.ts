@@ -806,7 +806,7 @@ program
   .addOption(
     new Option(
       "--browser-attachments <mode>",
-      "How to deliver --file inputs in browser mode: auto (default) pastes inline up to ~60k chars then uploads; never always paste inline; always always upload.",
+      "How to deliver --file inputs in browser mode: auto (default) pastes text inline up to ~60k chars then uploads; never requires inline-compatible text files; always uploads.",
     )
       .choices(["auto", "never", "always"])
       .default("auto"),

@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Browser: preserve original bytes when ZIP-bundling raw, archive, office, and media uploads; choose byte-preserving ZIPs automatically for mixed bundles while enforcing attachment and memory limits. Thanks @orbitingflea!
 - Browser: select explicit Thinking model versions through ChatGPT's current `Configure...` Intelligence dialog, retain support for the earlier direct-version submenu, and require observable version evidence before reporting success. Thanks @aaronflorey!
 - Browser: retry manual-login DevTools tab creation on fresh Chrome launches, recover ChatGPT generated-image downloads through the authenticated browser context when Node-side fetch fails, and keep generated-image artifact waits fail-fast on visible ChatGPT warnings. Thanks @derekszen!
 - Browser: support ChatGPT's updated Intelligence model picker and Pro effort submenu, and accept `instant`, `medium`, `high`, and `extra-high` as thinking-time aliases while preserving existing Oracle names. Thanks @orbitingflea!

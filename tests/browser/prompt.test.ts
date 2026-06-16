@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { assembleBrowserPrompt } from "../../src/browser/prompt.js";
+import { assembleBrowserPrompt, isRawUploadFile } from "../../src/browser/prompt.js";
 import { createStoredZip } from "../../src/browser/zipBundle.js";
 import { DEFAULT_SYSTEM_PROMPT, type MODEL_CONFIGS } from "../../src/oracle.js";
 import type { RunOracleOptions } from "../../src/oracle.js";
@@ -238,6 +238,165 @@ describe("assembleBrowserPrompt", () => {
     expect(result.attachments).toEqual([]);
     expect(result.inlineFileCount).toBe(1);
     expect(result.tokenEstimateIncludesInlineFiles).toBe(true);
+  });
+
+  test("rejects raw files when browser attachments are disabled", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-disabled-raw-upload-"));
+    try {
+      await fs.writeFile(path.join(tempDir, "archive.zip"), Buffer.from("PK"));
+      await expect(
+        assembleBrowserPrompt(
+          buildOptions({
+            file: ["archive.zip"],
+            browserAttachments: "never",
+          }),
+          { cwd: tempDir, tokenizeImpl: fastTokenizer },
+        ),
+      ).rejects.toThrow(/cannot be pasted inline/i);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit text format skips empty bundles for raw-only inputs", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-raw-text-bundle-"));
+    try {
+      const archivePath = path.join(tempDir, "archive.zip");
+      await fs.writeFile(archivePath, Buffer.from("PK"));
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["archive.zip"],
+          browserAttachments: "always",
+          browserBundleFiles: true,
+          browserBundleFormat: "text",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toEqual([
+        expect.objectContaining({ path: archivePath, displayPath: "archive.zip" }),
+      ]);
+      expect(result.attachmentMode).toBe("upload");
+      expect(result.bundled).toBeNull();
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit text format bundles text files to keep mixed uploads within the limit", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-mixed-text-bundle-"));
+    try {
+      const textFiles = ["one.txt", "two.txt"];
+      const rawFiles = Array.from({ length: 9 }, (_, index) => `archive-${index}.zip`);
+      await Promise.all([
+        ...textFiles.map((file) => fs.writeFile(path.join(tempDir, file), file, "utf8")),
+        ...rawFiles.map((file) => fs.writeFile(path.join(tempDir, file), Buffer.from("PK"))),
+      ]);
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [...textFiles, ...rawFiles],
+          browserAttachments: "always",
+          browserBundleFormat: "text",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(10);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
+      expect(result.bundled?.format).toBe("text");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps ordinary raw uploads uncapped when no explicit file-size limit is set", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-raw-upload-default-size-"));
+    try {
+      const archivePath = path.join(tempDir, "archive.zip");
+      await fs.writeFile(archivePath, Buffer.alloc(2 * 1024 * 1024));
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["archive.zip"],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toEqual([
+        expect.objectContaining({ path: archivePath, sizeBytes: 2 * 1024 * 1024 }),
+      ]);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects oversized in-memory ZIP bundles before reading source bytes", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-zip-memory-limit-"));
+    try {
+      const archivePath = path.join(tempDir, "archive.zip");
+      await fs.writeFile(archivePath, "");
+      await fs.truncate(archivePath, 128 * 1024 * 1024 + 1);
+      await expect(
+        assembleBrowserPrompt(
+          buildOptions({
+            file: ["archive.zip"],
+            browserAttachments: "always",
+            browserBundleFiles: true,
+          }),
+          { cwd: tempDir, tokenizeImpl: fastTokenizer },
+        ),
+      ).rejects.toThrow(/in-memory limit/i);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects raw files that exceed the configured file-size limit before bundling", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-large-raw-upload-"));
+    try {
+      await fs.writeFile(path.join(tempDir, "archive.zip"), Buffer.alloc(5));
+      await expect(
+        assembleBrowserPrompt(
+          buildOptions({
+            file: ["archive.zip"],
+            browserAttachments: "always",
+            browserBundleFiles: true,
+            maxFileSizeBytes: 4,
+          }),
+          { cwd: tempDir, tokenizeImpl: fastTokenizer },
+        ),
+      ).rejects.toThrow(/exceeds the 4-byte limit/i);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects too many raw uploads when explicit text format cannot bundle them", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-many-raw-uploads-"));
+    try {
+      const files = Array.from({ length: 11 }, (_, index) => `archive-${index}.zip`);
+      await Promise.all(
+        files.map((file) => fs.writeFile(path.join(tempDir, file), Buffer.from("PK"))),
+      );
+      await expect(
+        assembleBrowserPrompt(
+          buildOptions({
+            file: files,
+            browserAttachments: "always",
+            browserBundleFormat: "text",
+          }),
+          { cwd: tempDir, tokenizeImpl: fastTokenizer },
+        ),
+      ).rejects.toThrow(/use --browser-bundle-format auto or zip/i);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("classifies package, disk-image, and office containers as raw uploads", () => {
+    for (const file of ["package.deb", "package.rpm", "disk.iso", "slides.pptx", "book.epub"]) {
+      expect(isRawUploadFile(file)).toBe(true);
+    }
   });
 
   test("counts uploaded file content in token estimate", async () => {
