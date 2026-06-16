@@ -151,7 +151,7 @@ interface CliOptions extends OptionValues {
   browserAttachments?: string;
   browserInlineFiles?: boolean;
   browserBundleFiles?: boolean;
-  browserBundleFormat?: "text" | "zip";
+  browserBundleFormat?: "auto" | "text" | "zip";
   remoteChrome?: string;
   browserPort?: number;
   browserDebugPort?: number;
@@ -845,10 +845,10 @@ program
   .addOption(
     new Option(
       "--browser-bundle-format <format>",
-      "Bundle format for browser uploads when files are bundled: text (default) or zip.",
+      "Bundle format for browser uploads when files are bundled: auto (default), text, or zip.",
     )
-      .choices(["text", "zip"])
-      .default("text"),
+      .choices(["auto", "text", "zip"])
+      .default("auto"),
   )
   .addOption(
     new Option(
@@ -1351,7 +1351,7 @@ function buildRunOptions(
       "auto",
     browserInlineFiles: overrides.browserInlineFiles ?? options.browserInlineFiles ?? false,
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
-    browserBundleFormat: overrides.browserBundleFormat ?? options.browserBundleFormat ?? "text",
+    browserBundleFormat: overrides.browserBundleFormat ?? options.browserBundleFormat ?? "auto",
     generateImage: overrides.generateImage ?? options.generateImage,
     outputPath: overrides.outputPath ?? options.output,
     browserFollowUps: overrides.browserFollowUps ?? options.browserFollowUp ?? [],

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserBundleFormat, RunOracleOptions } from "../oracle.js";
+import type { BrowserBundleFormat, FileSection, RunOracleOptions } from "../oracle.js";
 import {
   readFiles,
   createFileSections,
@@ -42,9 +42,37 @@ const MEDIA_EXTENSIONS = new Set([
   ".pdf",
 ]);
 
+const ARCHIVE_EXTENSIONS = new Set([
+  ".7z",
+  ".apk",
+  ".br",
+  ".bz2",
+  ".dmg",
+  ".ear",
+  ".gz",
+  ".ipa",
+  ".jar",
+  ".lz",
+  ".lz4",
+  ".pkg",
+  ".rar",
+  ".tar",
+  ".tgz",
+  ".war",
+  ".whl",
+  ".xz",
+  ".zip",
+  ".zst",
+]);
+
 export function isMediaFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return MEDIA_EXTENSIONS.has(ext);
+}
+
+export function isRawUploadFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return MEDIA_EXTENSIONS.has(ext) || ARCHIVE_EXTENSIONS.has(ext);
 }
 
 export interface BrowserPromptArtifacts {
@@ -82,6 +110,13 @@ interface WrittenBrowserBundle {
   tokenEstimateText: string;
 }
 
+interface BrowserBundleSource {
+  absolutePath: string;
+  displayPath: string;
+}
+
+type ResolvedBrowserBundleFormat = Exclude<BrowserBundleFormat, "auto">;
+
 function formatSectionsForBundle(
   sections: Array<{ displayPath: string; content: string }>,
   options: { lineNumbers?: boolean } = {},
@@ -92,9 +127,20 @@ function formatSectionsForBundle(
   });
 }
 
-async function writeBrowserBundle(
-  sections: Array<{ displayPath: string; content: string }>,
+function resolveBrowserBundleFormat(
   format: BrowserBundleFormat,
+  sources: { hasRawUploadFiles: boolean },
+): ResolvedBrowserBundleFormat {
+  if (format !== "auto") {
+    return format;
+  }
+  return sources.hasRawUploadFiles ? "zip" : "text";
+}
+
+async function writeBrowserBundle(
+  sections: FileSection[],
+  sources: BrowserBundleSource[],
+  format: ResolvedBrowserBundleFormat,
 ): Promise<WrittenBrowserBundle> {
   const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
   const tokenEstimateText = formatSectionsForBundle(sections, {
@@ -103,10 +149,12 @@ async function writeBrowserBundle(
   if (format === "zip") {
     const bundlePath = path.join(bundleDir, "attachments-bundle.zip");
     const buffer = createStoredZip(
-      sections.map((section) => ({
-        path: section.displayPath,
-        content: section.content,
-      })),
+      await Promise.all(
+        sources.map(async (source) => ({
+          path: source.displayPath,
+          content: await fs.readFile(source.absolutePath),
+        })),
+      ),
     );
     await fs.writeFile(bundlePath, buffer);
     return {
@@ -116,7 +164,7 @@ async function writeBrowserBundle(
         sizeBytes: buffer.length,
         generatedBundle: true,
       },
-      metadata: { originalCount: sections.length, bundlePath, format },
+      metadata: { originalCount: sources.length, bundlePath, format },
       tokenEstimateText,
     };
   }
@@ -142,11 +190,21 @@ export async function assembleBrowserPrompt(
   const readFilesFn = deps.readFilesImpl ?? readFiles;
 
   const allFilePaths = runOptions.file ?? [];
-  const textFilePaths = allFilePaths.filter((f) => !isMediaFile(f));
-  const mediaFilePaths = allFilePaths.filter((f) => isMediaFile(f));
+  const discoveredFiles =
+    allFilePaths.length > 0
+      ? await readFilesFn(allFilePaths, {
+          cwd,
+          maxFileSizeBytes: 0,
+          readContents: false,
+        })
+      : [];
+  const textFilePaths = discoveredFiles
+    .filter((file) => !isRawUploadFile(file.path))
+    .map((file) => file.path);
+  const rawUploadFiles = discoveredFiles.filter((file) => isRawUploadFile(file.path));
 
-  const mediaAttachments: BrowserAttachment[] = await Promise.all(
-    mediaFilePaths.map(async (filePath) => {
+  const rawUploadAttachments: BrowserAttachment[] = await Promise.all(
+    rawUploadFiles.map(async ({ path: filePath }) => {
       const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
       const stats = await fs.stat(resolvedPath);
       return {
@@ -171,7 +229,7 @@ export async function assembleBrowserPrompt(
     ? "never"
     : (runOptions.browserAttachments ?? "auto");
   const bundleRequested = Boolean(runOptions.browserBundleFiles);
-  const bundleFormat = runOptions.browserBundleFormat ?? "text";
+  const bundleFormat = runOptions.browserBundleFormat ?? "auto";
 
   const inlinePlan = buildAttachmentPlan(sections, { inlineFiles: true, bundleRequested });
   const uploadPlan = buildAttachmentPlan(sections, { inlineFiles: false, bundleRequested });
@@ -193,8 +251,26 @@ export async function assembleBrowserPrompt(
           ? inlinePlan
           : uploadPlan;
 
+  const textBundleSources: BrowserBundleSource[] = sections.map((section) => ({
+    absolutePath: section.absolutePath,
+    displayPath: section.displayPath,
+  }));
+  const rawUploadBundleSources: BrowserBundleSource[] = rawUploadAttachments.map((attachment) => ({
+    absolutePath: attachment.path,
+    displayPath: attachment.displayPath,
+  }));
+  const allBundleSources = [...textBundleSources, ...rawUploadBundleSources];
+  const attachments: BrowserAttachment[] = [...selectedPlan.attachments, ...rawUploadAttachments];
+
+  const shouldBundle =
+    selectedPlan.shouldBundle ||
+    (bundleRequested && attachments.length > 0) ||
+    attachments.length > 10;
+  const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+    hasRawUploadFiles: rawUploadAttachments.length > 0,
+  });
   const composerText = (
-    selectedPlan.inlineBlock
+    !shouldBundle && selectedPlan.inlineBlock
       ? [...baseComposerSections, selectedPlan.inlineBlock]
       : baseComposerSections
   )
@@ -202,21 +278,24 @@ export async function assembleBrowserPrompt(
     .join("\n\n")
     .trim();
 
-  const attachments: BrowserAttachment[] = [...selectedPlan.attachments, ...mediaAttachments];
-
-  const shouldBundle = selectedPlan.shouldBundle;
   let bundleText: string | null = null;
   let bundled: BrowserBundleMetadata | null = null;
   if (shouldBundle) {
-    const writtenBundle = await writeBrowserBundle(sections, bundleFormat);
+    const writtenBundle = await writeBrowserBundle(
+      sections,
+      resolvedBundleFormat === "zip" ? allBundleSources : textBundleSources,
+      resolvedBundleFormat,
+    );
     bundleText = writtenBundle.tokenEstimateText;
     attachments.length = 0;
     attachments.push(writtenBundle.attachment);
-    attachments.push(...mediaAttachments);
+    if (resolvedBundleFormat === "text") {
+      attachments.push(...rawUploadAttachments);
+    }
     bundled = writtenBundle.metadata;
   }
 
-  const inlineFileCount = selectedPlan.inlineFileCount;
+  const inlineFileCount = shouldBundle ? 0 : selectedPlan.inlineFileCount;
   const modelConfig = isKnownModel(runOptions.model)
     ? MODEL_CONFIGS[runOptions.model]
     : MODEL_CONFIGS["gpt-5.1"];
@@ -249,13 +328,26 @@ export async function assembleBrowserPrompt(
   let fallback: BrowserPromptArtifacts["fallback"] = null;
   if (attachmentsPolicy === "auto" && selectedPlan.mode === "inline" && sections.length > 0) {
     const fallbackComposerText = baseComposerSections.join("\n\n").trim();
-    const fallbackAttachments = [...uploadPlan.attachments, ...mediaAttachments];
+    const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
     let fallbackBundled: BrowserBundleMetadata | null = null;
-    if (uploadPlan.shouldBundle) {
-      const writtenBundle = await writeBrowserBundle(sections, bundleFormat);
+    const fallbackShouldBundle =
+      uploadPlan.shouldBundle ||
+      (bundleRequested && fallbackAttachments.length > 0) ||
+      fallbackAttachments.length > 10;
+    if (fallbackShouldBundle) {
+      const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+        hasRawUploadFiles: rawUploadAttachments.length > 0,
+      });
+      const writtenBundle = await writeBrowserBundle(
+        sections,
+        fallbackBundleFormat === "zip" ? allBundleSources : textBundleSources,
+        fallbackBundleFormat,
+      );
       fallbackAttachments.length = 0;
       fallbackAttachments.push(writtenBundle.attachment);
-      fallbackAttachments.push(...mediaAttachments);
+      if (fallbackBundleFormat === "text") {
+        fallbackAttachments.push(...rawUploadAttachments);
+      }
       fallbackBundled = writtenBundle.metadata;
     }
     fallback = {
@@ -273,7 +365,7 @@ export async function assembleBrowserPrompt(
     inlineFileCount,
     tokenEstimateIncludesInlineFiles,
     attachmentsPolicy,
-    attachmentMode: selectedPlan.mode,
+    attachmentMode: shouldBundle ? "bundle" : selectedPlan.mode,
     fallback,
     bundled,
   };

@@ -110,7 +110,7 @@ export function mapConsultToRunOptions({
   search?: boolean;
   browserAttachments?: "auto" | "never" | "always";
   browserBundleFiles?: boolean;
-  browserBundleFormat?: "text" | "zip";
+  browserBundleFormat?: "auto" | "text" | "zip";
   browserFollowUps?: string[];
   generateImage?: string;
   outputPath?: string;

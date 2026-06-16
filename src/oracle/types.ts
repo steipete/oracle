@@ -36,7 +36,7 @@ export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
 export type ThinkingTimeLevel = "light" | "standard" | "extended" | "heavy";
 
-export type BrowserBundleFormat = "text" | "zip";
+export type BrowserBundleFormat = "auto" | "text" | "zip";
 
 export interface AzureOptions {
   endpoint?: string;

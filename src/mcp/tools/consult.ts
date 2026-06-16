@@ -84,10 +84,10 @@ const consultInputShape = {
     .optional()
     .describe("Browser-only: bundle many files into a single upload (helps with upload limits)."),
   browserBundleFormat: z
-    .enum(["text", "zip"])
+    .enum(["auto", "text", "zip"])
     .optional()
     .describe(
-      'Browser-only: bundle upload format when browserBundleFiles is true or auto-bundling is needed. Defaults to "text"; "zip" preserves individual file names in one uploaded archive.',
+      'Browser-only: bundle upload format when browserBundleFiles is true or auto-bundling is needed. Defaults to "auto"; "auto" uses ZIP when bundled inputs include raw/binary files.',
     ),
   browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
@@ -206,7 +206,7 @@ const consultDryRunResolvedShape = z.object({
       researchMode: z.string().nullable().optional(),
       attachments: z.string().optional(),
       bundleFiles: z.boolean().optional(),
-      bundleFormat: z.enum(["text", "zip"]).optional(),
+      bundleFormat: z.enum(["auto", "text", "zip"]).optional(),
       keepBrowser: z.boolean().optional(),
       manualLogin: z.boolean().optional(),
       profileDir: z.string().nullable().optional(),
@@ -469,7 +469,7 @@ export function formatConsultDryRunResolved(details: ConsultDryRunResolved): str
     lines.push(`  browser research mode: ${details.browser.researchMode ?? "off"}`);
     lines.push(`  browser attachments: ${details.browser.attachments ?? "auto"}`);
     lines.push(`  browser bundle files: ${details.browser.bundleFiles ? "yes" : "no"}`);
-    lines.push(`  browser bundle format: ${details.browser.bundleFormat ?? "text"}`);
+    lines.push(`  browser bundle format: ${details.browser.bundleFormat ?? "auto"}`);
     lines.push(`  browser keep browser: ${details.browser.keepBrowser ? "yes" : "no"}`);
     lines.push(`  browser manual login: ${details.browser.manualLogin ? "yes" : "no"}`);
     if (details.browser.profileDir) {
