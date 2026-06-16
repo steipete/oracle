@@ -36,8 +36,16 @@ const RSYNC_EXCLUDES = [
 export async function copyChromeProfile(srcUserDataDir: string, destDir: string): Promise<void> {
   const srcDefault = path.join(srcUserDataDir, "Default");
   await mkdir(path.join(destDir, "Default"), { recursive: true });
+  // `Local State` is required (holds the Keychain-wrapped key that decrypts the
+  // cookies), so a copy failure must fail fast — otherwise the run continues with
+  // a profile that silently looks logged-out.
   await cp(path.join(srcUserDataDir, "Local State"), path.join(destDir, "Local State")).catch(
-    () => undefined,
+    (err: unknown) => {
+      throw new Error(
+        `--copy-profile: could not copy required "Local State" from ${srcUserDataDir} ` +
+          `(needed to decrypt the signed-in session): ${(err as Error).message}`,
+      );
+    },
   );
   const args = ["-a"];
   for (const exclude of RSYNC_EXCLUDES) {

@@ -1027,6 +1027,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         isInFlight: () => runStatus !== "complete",
         emitRuntimeHint,
         preserveUserDataDir: manualLogin,
+        // copy-profile is a throwaway copy of a signed-in profile; never leave it on disk.
+        forceProfileCleanup: Boolean(config.copyProfileSource),
       },
     );
   } catch {

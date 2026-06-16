@@ -131,6 +131,11 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
 export async function buildBrowserConfig(
   options: BrowserFlagOptions,
 ): Promise<BrowserSessionConfig> {
+  if (options.copyProfile && options.browserKeepBrowser) {
+    throw new Error(
+      "--copy-profile cannot be combined with --browser-keep-browser: the copied profile is a throwaway that is deleted after the run, so it must not be retained.",
+    );
+  }
   const desiredModelOverride = options.browserModelLabel?.trim();
   const normalizedOverride = desiredModelOverride?.toLowerCase() ?? "";
   const baseModel = options.model.toLowerCase();

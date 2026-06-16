@@ -67,6 +67,12 @@ export function registerTerminationHooks(
     emitRuntimeHint?: () => Promise<void>;
     /** Preserve the profile directory even when Chrome is terminated. */
     preserveUserDataDir?: boolean;
+    /**
+     * Always terminate Chrome and delete `userDataDir` on signal, even when the run is
+     * in-flight — for throwaway copied profiles (`--copy-profile`) that must not be left
+     * on disk. Overrides the in-flight "leave running" behavior.
+     */
+    forceProfileCleanup?: boolean;
   },
 ): () => void {
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGQUIT"];
@@ -78,10 +84,15 @@ export function registerTerminationHooks(
     }
     handling = true;
     const inFlight = opts?.isInFlight?.() ?? false;
-    const leaveRunning = keepBrowser || inFlight;
+    const forceCleanup = opts?.forceProfileCleanup ?? false;
+    const leaveRunning = (keepBrowser || inFlight) && !forceCleanup;
     if (leaveRunning) {
       logger(
         `Received ${signal}; leaving Chrome running${inFlight ? " (assistant response pending)" : ""}`,
+      );
+    } else if (forceCleanup && (keepBrowser || inFlight)) {
+      logger(
+        `Received ${signal}; terminating Chrome and removing the copied profile (copy-profile is not retained)`,
       );
     } else {
       logger(`Received ${signal}; terminating Chrome process`);
