@@ -17,6 +17,7 @@ import {
   buildDeepResearchFrameStatusExpressionForTest,
   buildDeepResearchStatusExpressionForTest,
   captureDeepResearchTargetKeys,
+  filterIncompleteDeepResearchReadForTest,
   findDeepResearchFrameIdForTest,
   isConfirmedDeepResearchTargetForTest,
   isDeepResearchPlaceholderTextForTest,
@@ -133,9 +134,53 @@ describe("isDeepResearchPlaceholderTextForTest", () => {
     expect(isDeepResearchPlaceholderTextForTest("Użyto narzędzia")).toBe(true);
     expect(isDeepResearchPlaceholderTextForTest("CHECK_DEEP_OK https://example.com")).toBe(false);
   });
+
+  it("rejects Deep Research planning and status captures", () => {
+    expect(
+      isDeepResearchPlaceholderTextForTest(
+        "project root-cause analysis\nUpdate\nInspect the adapter.\nDetermining steps for creating a report...\nStop research",
+      ),
+    ).toBe(true);
+    expect(
+      isDeepResearchPlaceholderTextForTest(
+        "<system-reminder>\n# Plan Mode - System Reminder\nDo not make edits.\n</system-reminder>",
+      ),
+    ).toBe(true);
+    expect(
+      isDeepResearchPlaceholderTextForTest(
+        "The final report explains why the Stop research control can remain visible.",
+      ),
+    ).toBe(false);
+    expect(
+      isDeepResearchPlaceholderTextForTest(
+        "# UI findings\n\nThe control can remain visible after completion:\n\nStop research\n\nThis is the defect.",
+      ),
+    ).toBe(false);
+    expect(
+      isDeepResearchPlaceholderTextForTest(
+        "# Evidence\n\nThe captured panel ended with:\n\nDetermining steps for creating a report...\nStop research\n\nThat was not a final report.",
+      ),
+    ).toBe(false);
+    expect(
+      isDeepResearchPlaceholderTextForTest(
+        "# Evidence\n\nThis completed report quotes the two final UI lines.\n\nDetermining steps for creating a report...\nStop research",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("Deep Research iframe helpers", () => {
+  it("downgrades incomplete iframe content from completed to in-progress", () => {
+    expect(
+      filterIncompleteDeepResearchReadForTest({
+        completed: true,
+        inProgress: false,
+        textLength: 120,
+        text: "project root-cause analysis\nUpdate\nInspect the adapter.\nDetermining steps for creating a report...\nStop research",
+      }),
+    ).toMatchObject({ completed: false, inProgress: true });
+  });
+
   it("finds nested Deep Research frames", () => {
     expect(
       findDeepResearchFrameIdForTest({
@@ -400,7 +445,14 @@ describe("waitForDeepResearchCompletion", () => {
     // First poll: still in progress
     mockRuntime.evaluate.mockResolvedValueOnce({
       result: {
-        value: { finished: false, stopVisible: true, textLength: 100, hasIframe: true },
+        value: {
+          finished: false,
+          stopVisible: true,
+          textLength: 100,
+          hasIframe: true,
+          incompleteResult: true,
+          researchActivity: true,
+        },
       },
     });
     // Second poll: completed
@@ -424,6 +476,128 @@ describe("waitForDeepResearchCompletion", () => {
     mockRuntime.evaluate.mockResolvedValueOnce({
       result: { value: null },
     });
+
+    const result = await waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000);
+    expect(result.text).toBe("Research report content");
+  });
+
+  it("fails clearly when ChatGPT silently returns a normal response", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: true, stopVisible: false, textLength: 100, hasIframe: false },
+      },
+    });
+
+    await expect(
+      waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000),
+    ).rejects.toThrow(/without starting Deep Research/);
+  });
+
+  it("does not treat an unscoped page iframe as evidence for a normal response", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: false, stopVisible: true, textLength: 10, hasIframe: true },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: true, stopVisible: false, textLength: 100, hasIframe: true },
+      },
+    });
+
+    await expect(
+      waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000),
+    ).rejects.toThrow(/without starting Deep Research/);
+  });
+
+  it("does not treat a system reminder as evidence for a normal response", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          finished: false,
+          stopVisible: true,
+          textLength: 100,
+          hasIframe: false,
+          incompleteResult: true,
+          researchActivity: false,
+        },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: true, stopVisible: false, textLength: 100, hasIframe: false },
+      },
+    });
+
+    await expect(
+      waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000),
+    ).rejects.toThrow(/without starting Deep Research/);
+  });
+
+  it("accepts a finished DOM report after observing a planning panel", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          finished: false,
+          stopVisible: true,
+          textLength: 100,
+          hasIframe: false,
+          incompleteResult: true,
+          researchActivity: true,
+        },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: true, stopVisible: false, textLength: 5000, hasIframe: false },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          text: "Research report content",
+          html: "<p>Research report content</p>",
+          turnId: "t1",
+          messageId: "m1",
+        },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({ result: { value: null } });
+
+    const result = await waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000);
+    expect(result.text).toBe("Research report content");
+  });
+
+  it("accepts a finished DOM report after scoped tool activity", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          finished: false,
+          stopVisible: true,
+          textLength: 11,
+          hasIframe: true,
+          incompleteResult: true,
+          researchActivity: false,
+          hasActiveScopedResearch: true,
+        },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: true, stopVisible: false, textLength: 5000, hasIframe: false },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          text: "Research report content",
+          html: "<p>Research report content</p>",
+          turnId: "t1",
+          messageId: "m1",
+        },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({ result: { value: null } });
 
     const result = await waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000);
     expect(result.text).toBe("Research report content");
@@ -1653,6 +1827,29 @@ describe("checkDeepResearchStatus", () => {
     expect(result.completed).toBe(false);
     expect(result.placeholderOnly).toBe(true);
     expect(result.textLength).toBe("Called tool".length);
+  });
+
+  it("does not report completed for a Deep Research planning panel", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest();
+    const assistantTurn = {
+      textContent:
+        "project root-cause analysis\nUpdate\nInspect the adapter.\nDetermining steps for creating a report...\nStop research",
+      querySelector: () => ({}),
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: assistantTurn.textContent },
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [];
+          if (selector.includes("data-message-author-role")) return [assistantTurn];
+          return [];
+        },
+      },
+    }) as { finished?: boolean; incompleteResult?: boolean };
+
+    expect(result.finished).toBe(false);
+    expect(result.incompleteResult).toBe(true);
   });
 
   it("detects ChatGPT account security blocks during completion polling", () => {

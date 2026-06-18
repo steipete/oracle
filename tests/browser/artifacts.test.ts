@@ -52,6 +52,19 @@ describe("browser session artifacts", () => {
     ).resolves.toBeNull();
   });
 
+  test("does not save Deep Research planning panels as reports", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-artifacts-"));
+    setOracleHomeDirOverrideForTest(tmpHome);
+
+    await expect(
+      saveDeepResearchReportArtifact({
+        sessionId: "planning-placeholder",
+        reportMarkdown:
+          "project root-cause analysis\nUpdate\nInspect the adapter.\nDetermining steps for creating a report...\nStop research",
+      }),
+    ).resolves.toBeNull();
+  });
+
   test("writes a transcript with prompt, answer, conversation URL, and artifact references", async () => {
     const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-transcript-"));
     setOracleHomeDirOverrideForTest(tmpHome);

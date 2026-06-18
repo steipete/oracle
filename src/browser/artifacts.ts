@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getOracleHomeDir } from "../oracleHome.js";
 import type { SessionArtifact } from "../sessionStore.js";
+import { isDeepResearchIncompleteText } from "./deepResearchResult.js";
 import type { BrowserLogger } from "./types.js";
 
 const ARTIFACTS_DIRNAME = "artifacts";
@@ -118,16 +119,6 @@ export async function writeBinaryBrowserArtifact(params: {
   };
 }
 
-function isToolOnlyPlaceholder(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
-  return (
-    normalized === "called tool" ||
-    normalized === "used tool" ||
-    normalized === "użyto narzędzia" ||
-    normalized === "narzędzie wywołane"
-  );
-}
-
 export async function saveDeepResearchReportArtifact(params: {
   sessionId?: string;
   reportMarkdown: string;
@@ -135,7 +126,7 @@ export async function saveDeepResearchReportArtifact(params: {
   logger?: BrowserLogger;
 }): Promise<SessionArtifact | null> {
   const report = params.reportMarkdown.trim();
-  if (report.length < 40 || isToolOnlyPlaceholder(report)) {
+  if (report.length < 40 || isDeepResearchIncompleteText(report)) {
     return null;
   }
   return writeTextBrowserArtifact({

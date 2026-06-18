@@ -11,6 +11,7 @@ import {
   CONVERSATION_TURN_SELECTOR,
 } from "../constants.js";
 import { delay } from "../utils.js";
+import { isDeepResearchIncompleteText } from "../deepResearchResult.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { captureAssistantMarkdown, readAssistantSnapshot } from "./assistantResponse.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
@@ -183,6 +184,8 @@ export async function waitForDeepResearchCompletion(
   const scopedToNewTurns = minTurnLiteral >= 0;
   const ignoredTargetKeys = new Set(options?.ignoredTargetKeys ?? []);
   const requireScopedTargetOwner = options?.requireScopedTargetOwner === true;
+  let observedResearchEvidence = false;
+  let loggedIncompleteResult = false;
 
   logger(`Monitoring Deep Research (timeout: ${Math.round(timeoutMs / 60_000)}min)...`);
 
@@ -199,6 +202,8 @@ export async function waitForDeepResearchCompletion(
           textLength?: number;
           hasIframe?: boolean;
           hasActiveScopedResearch?: boolean;
+          incompleteResult?: boolean;
+          researchActivity?: boolean;
           accountBlocked?: boolean;
         }
       | undefined;
@@ -219,7 +224,7 @@ export async function waitForDeepResearchCompletion(
     // (readDeepResearchTargetResult) attaches to the iframe's own CDP target and
     // walks its nested frames, so it CAN read the report. Prefer the target path
     // and fall back to the in-page frame path for legacy/inline rendering.
-    const targetResult = client
+    const rawTargetResult = client
       ? ((
           await readDeepResearchTargetResult(
             client,
@@ -228,14 +233,22 @@ export async function waitForDeepResearchCompletion(
           ).catch(() => null)
         )?.read ?? null)
       : null;
+    const targetResult = filterIncompleteDeepResearchRead(rawTargetResult);
     // A completed target read is authoritative. If the target read is missing or
     // only in-progress, still try the in-page frame path so an incomplete target
     // read does not suppress a completed report there (legacy/inline rendering).
-    const inPageResult =
+    const rawInPageResult =
       !targetResult?.completed && Page
         ? await readDeepResearchFrameResult(Runtime, Page).catch(() => null)
         : null;
+    const inPageResult = filterIncompleteDeepResearchRead(rawInPageResult);
     const read = pickPreferredDeepResearchRead(targetResult, inPageResult);
+    // Target keys captured before submission are ignored, so a target result is
+    // tied to this run. Main-page iframes are not: old reports can remain in the
+    // conversation and must never authorize a new normal-response fallback.
+    observedResearchEvidence ||= Boolean(
+      rawTargetResult || val?.researchActivity || val?.hasActiveScopedResearch,
+    );
     // A target-confirmed completion read the live connector iframe directly, so
     // it is authoritative even when the main DOM exposes no assistant turn (the
     // report lives entirely in the OOPIF). The main-DOM hasActiveScopedResearch
@@ -256,8 +269,23 @@ export async function waitForDeepResearchCompletion(
 
     // Completion detected
     if (val?.finished) {
+      if (!observedResearchEvidence) {
+        throw new BrowserAutomationError(
+          "ChatGPT returned a completed response without starting Deep Research. The Deep Research selection may have silently fallen back to a normal response.",
+          { stage: "deep-research-not-started", code: "deep-research-not-started" },
+        );
+      }
       logger(`Deep Research completed (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
       return await extractDeepResearchResult(Runtime, logger, minTurnIndex ?? undefined);
+    }
+
+    const incompleteFrameResult = Boolean(
+      (rawTargetResult?.completed && !targetResult?.completed) ||
+      (rawInPageResult?.completed && !inPageResult?.completed),
+    );
+    if ((val?.incompleteResult || incompleteFrameResult) && !loggedIncompleteResult) {
+      logger("Deep Research interim status detected; waiting for the final report");
+      loggedIncompleteResult = true;
     }
 
     // Progress logging every 60 seconds
@@ -314,12 +342,12 @@ export async function extractDeepResearchResult(
 
   // Try the copy-button approach first for clean markdown
   const markdown = await captureAssistantMarkdown(Runtime, meta, logger);
-  if (markdown && !isDeepResearchPlaceholderText(markdown)) {
+  if (markdown && !isDeepResearchIncompleteText(markdown)) {
     return { text: markdown, html: snapshot?.html ?? undefined, meta };
   }
 
   // Fall back to snapshot text
-  if (snapshot?.text && !isDeepResearchPlaceholderText(snapshot.text)) {
+  if (snapshot?.text && !isDeepResearchIncompleteText(snapshot.text)) {
     return { text: snapshot.text, html: snapshot.html ?? undefined, meta };
   }
 
@@ -329,18 +357,8 @@ export async function extractDeepResearchResult(
   );
 }
 
-function isDeepResearchPlaceholderText(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/\s+/g, " ").trim();
-  return (
-    normalized === "called tool" ||
-    normalized === "used tool" ||
-    normalized === "użyto narzędzia" ||
-    normalized === "narzędzie wywołane"
-  );
-}
-
 export function isDeepResearchPlaceholderTextForTest(text: string): boolean {
-  return isDeepResearchPlaceholderText(text);
+  return isDeepResearchIncompleteText(text);
 }
 
 interface DeepResearchFrameTree {
@@ -365,6 +383,21 @@ interface DeepResearchTargetSessionResult {
   confirmed: boolean;
   read: DeepResearchFrameStatus | null;
   frameId?: string;
+}
+
+function filterIncompleteDeepResearchRead(
+  result: DeepResearchFrameStatus | null,
+): DeepResearchFrameStatus | null {
+  if (!result?.completed || !result.text || !isDeepResearchIncompleteText(result.text)) {
+    return result;
+  }
+  return { ...result, completed: false, inProgress: true };
+}
+
+export function filterIncompleteDeepResearchReadForTest(
+  result: DeepResearchFrameStatus | null,
+): DeepResearchFrameStatus | null {
+  return filterIncompleteDeepResearchRead(result);
 }
 
 /**
@@ -942,20 +975,34 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
     const text = (lastTurn?.textContent || '').trim();
     const normalized = text.toLowerCase().replace(/\\s+/g, ' ').trim();
     const textLength = text.length;
+    const lines = text.split(/\\n+/).map(line => line.trim()).filter(Boolean);
+    const tailIsPlanningPanel = text.length <= 1500 &&
+      lines.length >= 4 &&
+      lines.length <= 20 &&
+      /^update$/i.test(lines[1] || '') &&
+      /^stop research$/i.test(lines[lines.length - 1] || '') &&
+      /^determining steps for creating a report(?:\\.\\.\\.)?$/i.test(lines[lines.length - 2] || '');
     const isToolStub = normalized === 'called tool' ||
       normalized === 'used tool' ||
       normalized === 'użyto narzędzia' ||
       normalized === 'narzędzie wywołane';
+    const incompleteResult = isToolStub ||
+      normalized === 'planning' ||
+      normalized === 'researching' ||
+      normalized === 'searching the web' ||
+      (text.trimStart().startsWith('<system-reminder>') &&
+        /<system-reminder>[\\s\\S]*#\\s*plan mode\\b/i.test(text)) ||
+      tailIsPlanningPanel;
     const finished = Boolean(lastTurn?.querySelector(${finishedSelector})) &&
       textLength >= 40 &&
-      !isToolStub;
+      !incompleteResult;
     const hasIframe = Array.from(document.querySelectorAll('iframe')).some(f => {
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
     });
     const hasActiveScopedResearch = scopedToNewTurns && Boolean(lastTurn) && hasIframe &&
-      (textLength < 40 || isToolStub || /chatgpt\\s+said:?$/i.test(text));
-    return { finished, stopVisible, textLength, hasIframe, isToolStub, hasActiveScopedResearch, accountBlocked };
+      (isToolStub || tailIsPlanningPanel);
+    return { finished, stopVisible, textLength, hasIframe, isToolStub, incompleteResult, researchActivity: tailIsPlanningPanel, hasActiveScopedResearch, accountBlocked };
   })()`;
 }
 
