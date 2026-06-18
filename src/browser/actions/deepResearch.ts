@@ -183,7 +183,6 @@ export async function waitForDeepResearchCompletion(
       : -1;
   const scopedToNewTurns = minTurnLiteral >= 0;
   const ignoredTargetKeys = new Set(options?.ignoredTargetKeys ?? []);
-  const requireScopedTargetOwner = options?.requireScopedTargetOwner === true;
   let observedResearchEvidence = false;
   let loggedIncompleteResult = false;
 
@@ -214,8 +213,6 @@ export async function waitForDeepResearchCompletion(
         { stage: "chatgpt-account-blocked", code: "chatgpt-account-blocked" },
       );
     }
-    const activeScopedResearch = Boolean(val?.hasActiveScopedResearch);
-
     // ChatGPT renders the Deep Research report inside an out-of-process,
     // sandboxed iframe (connector_openai_deep_research.*.oaiusercontent.com),
     // doubly nested and same-origin. That OOPIF does NOT appear in the main
@@ -226,39 +223,37 @@ export async function waitForDeepResearchCompletion(
     // and fall back to the in-page frame path for legacy/inline rendering.
     const rawTargetResult = client
       ? ((
-          await readDeepResearchTargetResult(
-            client,
-            ignoredTargetKeys,
-            requireScopedTargetOwner ? minTurnLiteral : -1,
-          ).catch(() => null)
+          await readDeepResearchTargetResult(client, ignoredTargetKeys, minTurnLiteral).catch(
+            () => null,
+          )
         )?.read ?? null)
       : null;
     const targetResult = filterIncompleteDeepResearchRead(rawTargetResult);
     // A completed target read is authoritative. If the target read is missing or
     // only in-progress, still try the in-page frame path so an incomplete target
     // read does not suppress a completed report there (legacy/inline rendering).
-    const rawInPageResult =
+    const inPageScan =
       !targetResult?.completed && Page
-        ? await readDeepResearchFrameResult(Runtime, Page).catch(() => null)
+        ? await readDeepResearchFrameResult(
+            Runtime,
+            Page,
+            client,
+            scopedToNewTurns ? minTurnLiteral : -1,
+          ).catch(() => null)
         : null;
+    const rawInPageResult = inPageScan?.read ?? null;
     const inPageResult = filterIncompleteDeepResearchRead(rawInPageResult);
     const read = pickPreferredDeepResearchRead(targetResult, inPageResult);
     // Target keys captured before submission are ignored, so a target result is
     // tied to this run. Main-page iframes are not: old reports can remain in the
     // conversation and must never authorize a new normal-response fallback.
     observedResearchEvidence ||= Boolean(
-      rawTargetResult || val?.researchActivity || val?.hasActiveScopedResearch,
+      rawTargetResult ||
+      (scopedToNewTurns && rawInPageResult) ||
+      val?.researchActivity ||
+      val?.hasActiveScopedResearch,
     );
-    // A target-confirmed completion read the live connector iframe directly, so
-    // it is authoritative even when the main DOM exposes no assistant turn (the
-    // report lives entirely in the OOPIF). The main-DOM hasActiveScopedResearch
-    // heuristic no longer holds in that case, so don't gate on it.
-    const completedFromTarget = Boolean(targetResult?.completed);
-    if (
-      read?.completed &&
-      read.text &&
-      (completedFromTarget || !scopedToNewTurns || activeScopedResearch)
-    ) {
+    if (read?.completed && read.text) {
       logger(`Deep Research completed (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
       return {
         text: read.text,
@@ -385,6 +380,11 @@ interface DeepResearchTargetSessionResult {
   frameId?: string;
 }
 
+interface DeepResearchFrameReadResult {
+  read: DeepResearchFrameStatus;
+  ownerTurnIndex: number | null;
+}
+
 function filterIncompleteDeepResearchRead(
   result: DeepResearchFrameStatus | null,
 ): DeepResearchFrameStatus | null {
@@ -431,7 +431,9 @@ export function pickPreferredDeepResearchReadForTest(
 async function readDeepResearchFrameResult(
   Runtime: ChromeClient["Runtime"],
   Page: ChromeClient["Page"],
-): Promise<DeepResearchFrameStatus | null> {
+  client?: ChromeClient,
+  minTurnIndex = -1,
+): Promise<DeepResearchFrameReadResult | null> {
   const pageWithFrames = Page as ChromeClient["Page"] & {
     getFrameTree?: () => Promise<{ frameTree?: DeepResearchFrameTree }>;
     createIsolatedWorld?: (params: {
@@ -447,24 +449,61 @@ async function readDeepResearchFrameResult(
     return null;
   }
   const frameTree = (await pageWithFrames.getFrameTree())?.frameTree;
-  const frameId = findDeepResearchFrameId(frameTree);
-  if (!frameId) {
+  const frameIds = collectPageDeepResearchFrameIds(frameTree);
+  if (frameIds.length === 0) {
     return null;
   }
-  const world = await pageWithFrames.createIsolatedWorld({
-    frameId,
-    worldName: "oracle-deep-research",
-    grantUniveralAccess: true,
-  });
-  if (typeof world.executionContextId !== "number") {
-    return null;
+  const rawClient = client as
+    | (ChromeClient & {
+        send?: (
+          method: string,
+          params?: Record<string, unknown>,
+          sessionId?: string,
+        ) => Promise<unknown>;
+        oraclePageSessionId?: string;
+      })
+    | undefined;
+  if (minTurnIndex >= 0) {
+    if (typeof rawClient?.send !== "function") {
+      return null;
+    }
   }
-  const { result } = await Runtime.evaluate({
-    expression: buildDeepResearchFrameStatusExpression(),
-    contextId: world.executionContextId,
-    returnByValue: true,
-  });
-  return (result?.value as DeepResearchFrameStatus | undefined) ?? null;
+  let best: DeepResearchFrameReadResult | null = null;
+  for (const frameId of frameIds) {
+    let ownerTurnIndex: number | null = null;
+    if (minTurnIndex >= 0 && rawClient?.send) {
+      ownerTurnIndex = await readDeepResearchTargetOwnerTurnIndex(
+        rawClient as ChromeClient & { send: NonNullable<typeof rawClient.send> },
+        frameId,
+        rawClient.oraclePageSessionId,
+      );
+      if (ownerTurnIndex === null || ownerTurnIndex < minTurnIndex) {
+        continue;
+      }
+    }
+    const world = await pageWithFrames.createIsolatedWorld({
+      frameId,
+      worldName: "oracle-deep-research",
+      grantUniveralAccess: true,
+    });
+    if (typeof world.executionContextId !== "number") {
+      continue;
+    }
+    const { result } = await Runtime.evaluate({
+      expression: buildDeepResearchFrameStatusExpression(),
+      contextId: world.executionContextId,
+      returnByValue: true,
+    });
+    const read = (result?.value as DeepResearchFrameStatus | undefined) ?? null;
+    if (!read) {
+      continue;
+    }
+    best = { read, ownerTurnIndex };
+    if (read.completed) {
+      return best;
+    }
+  }
+  return best;
 }
 
 async function readDeepResearchTargetResult(
@@ -679,7 +718,7 @@ async function readDeepResearchTargetSession(
   const frameTree = (await rawClient
     .send("Page.getFrameTree", {}, sessionId)
     .catch(() => null)) as { frameTree?: DeepResearchFrameTree } | null;
-  const frameId = frameTree?.frameTree?.frame?.id;
+  const ownerFrameId = frameTree?.frameTree?.frame?.id;
   if (!isConfirmedDeepResearchTarget(targetUrl, frameTree?.frameTree)) {
     return { confirmed: false, read: null };
   }
@@ -707,7 +746,7 @@ async function readDeepResearchTargetSession(
       world.executionContextId,
     );
     if (value?.completed) {
-      return { confirmed: true, read: value, frameId };
+      return { confirmed: true, read: value, frameId: ownerFrameId };
     }
     if ((value?.textLength ?? 0) > (best?.textLength ?? 0) || value?.inProgress) {
       best = value;
@@ -716,13 +755,13 @@ async function readDeepResearchTargetSession(
 
   const topFrameValue = await evaluateDeepResearchFrameStatus(rawClient, sessionId);
   if (topFrameValue?.completed) {
-    return { confirmed: true, read: topFrameValue, frameId };
+    return { confirmed: true, read: topFrameValue, frameId: ownerFrameId };
   }
   if ((topFrameValue?.textLength ?? 0) > (best?.textLength ?? 0) || topFrameValue?.inProgress) {
     best = topFrameValue;
   }
 
-  return { confirmed: true, read: best, frameId };
+  return { confirmed: true, read: best, frameId: ownerFrameId };
 }
 
 async function evaluateDeepResearchFrameStatus(
@@ -769,21 +808,21 @@ function isDeepResearchFrameDescriptor(url: string, name = ""): boolean {
 }
 
 function findDeepResearchFrameId(tree: DeepResearchFrameTree | undefined): string | null {
+  return collectPageDeepResearchFrameIds(tree)[0] ?? null;
+}
+
+function collectPageDeepResearchFrameIds(tree: DeepResearchFrameTree | undefined): string[] {
   if (!tree?.frame) {
-    return null;
+    return [];
   }
-  const url = tree.frame.url ?? "";
-  const name = tree.frame.name ?? "";
-  if (isDeepResearchFrameDescriptor(url, name)) {
-    return tree.frame.id ?? null;
+  const ids: string[] = [];
+  if (tree.frame.id && isDeepResearchFrameDescriptor(tree.frame.url ?? "", tree.frame.name ?? "")) {
+    ids.push(tree.frame.id);
   }
   for (const child of tree.childFrames ?? []) {
-    const match = findDeepResearchFrameId(child);
-    if (match) {
-      return match;
-    }
+    ids.push(...collectPageDeepResearchFrameIds(child));
   }
-  return null;
+  return ids;
 }
 
 function collectDeepResearchFrameIds(tree: DeepResearchFrameTree | undefined): string[] {
@@ -1000,9 +1039,16 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
     });
-    const hasActiveScopedResearch = scopedToNewTurns && Boolean(lastTurn) && hasIframe &&
-      (isToolStub || tailIsPlanningPanel);
-    return { finished, stopVisible, textLength, hasIframe, isToolStub, incompleteResult, researchActivity: tailIsPlanningPanel, hasActiveScopedResearch, accountBlocked };
+    const hasScopedDeepResearchIframe = Array.from(lastTurn?.querySelectorAll?.('iframe') || []).some(f => {
+      const rect = f.getBoundingClientRect();
+      const descriptor = String(f.getAttribute('src') || '') + ' ' + String(f.getAttribute('name') || '');
+      return rect.width > 200 && rect.height > 200 &&
+        /connector_openai_deep_research|deep-research/i.test(descriptor);
+    });
+    const hasActiveScopedResearch = scopedToNewTurns && Boolean(lastTurn) &&
+      hasScopedDeepResearchIframe &&
+      (textLength < 40 || isToolStub || tailIsPlanningPanel || /chatgpt\\s+said:?$/i.test(text));
+    return { finished, stopVisible, textLength, hasIframe, isToolStub, incompleteResult, researchActivity: tailIsPlanningPanel || (isToolStub && hasScopedDeepResearchIframe), hasActiveScopedResearch, accountBlocked };
   })()`;
 }
 

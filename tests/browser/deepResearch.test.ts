@@ -41,6 +41,34 @@ function createMockLogger(): BrowserLogger {
   return fn;
 }
 
+function createFrameOwnerClient(
+  ownerTurnIndex: number | null | ((frameId: string) => number | null),
+) {
+  let currentFrameId = "";
+  return {
+    on: vi.fn(),
+    removeListener: vi.fn(),
+    send: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === "DOM.getFrameOwner") {
+        currentFrameId = String(params?.frameId ?? "");
+        return { backendNodeId: 7 };
+      }
+      if (method === "DOM.resolveNode") return { object: { objectId: "frame-owner" } };
+      if (method === "Runtime.callFunctionOn") {
+        return {
+          result: {
+            value:
+              typeof ownerTurnIndex === "function"
+                ? ownerTurnIndex(currentFrameId)
+                : ownerTurnIndex,
+          },
+        };
+      }
+      return {};
+    }),
+  };
+}
+
 describe("activateDeepResearch", () => {
   let mockRuntime: ReturnType<typeof createMockRuntime>;
   let mockInput: Record<string, unknown>;
@@ -577,8 +605,9 @@ describe("waitForDeepResearchCompletion", () => {
           textLength: 11,
           hasIframe: true,
           incompleteResult: true,
-          researchActivity: false,
+          researchActivity: true,
           hasActiveScopedResearch: true,
+          hasVerifiedScopedResearchActivity: true,
         },
       },
     });
@@ -1095,6 +1124,18 @@ describe("waitForDeepResearchCompletion", () => {
         if (method === "Page.createIsolatedWorld") {
           return { executionContextId: sessionId === "old-session" ? 10 : 20 };
         }
+        if (method === "DOM.getFrameOwner") {
+          const frameId = (params as { frameId?: string }).frameId;
+          return { backendNodeId: frameId === "current-session-frame" ? 20 : 10 };
+        }
+        if (method === "DOM.resolveNode") {
+          const backendNodeId = (params as { backendNodeId?: number }).backendNodeId;
+          return { object: { objectId: backendNodeId === 20 ? "current-owner" : "old-owner" } };
+        }
+        if (method === "Runtime.callFunctionOn" && sessionId === "page-session") {
+          const objectId = (params as { objectId?: string }).objectId;
+          return { result: { value: objectId === "current-owner" ? 1 : 0 } };
+        }
         if (method === "Runtime.evaluate" && sessionId) {
           evaluatedSessions.push(sessionId);
           if (sessionId === "old-session") {
@@ -1288,6 +1329,9 @@ describe("waitForDeepResearchCompletion", () => {
         if (method === "Page.createIsolatedWorld") {
           return { executionContextId: sessionId === "complete-session" ? 22 : 11 };
         }
+        if (method === "DOM.getFrameOwner") return { backendNodeId: 7 };
+        if (method === "DOM.resolveNode") return { object: { objectId: "current-owner" } };
+        if (method === "Runtime.callFunctionOn") return { result: { value: 1 } };
         if (method === "Runtime.evaluate" && sessionId === "complete-session") {
           return {
             result: {
@@ -1374,6 +1418,9 @@ describe("waitForDeepResearchCompletion", () => {
             frameTree: { frame: { id: `${sessionId}-frame`, name: "root", url: deepResearchUrl } },
           };
         }
+        if (method === "DOM.getFrameOwner") return { backendNodeId: 7 };
+        if (method === "DOM.resolveNode") return { object: { objectId: "current-owner" } };
+        if (method === "Runtime.callFunctionOn") return { result: { value: 1 } };
         if (method === "Runtime.evaluate" && sessionId === "complete-session") {
           return {
             result: {
@@ -1565,6 +1612,9 @@ describe("waitForDeepResearchCompletion", () => {
             executionContextId: (params as { frameId?: string }).frameId === "root-frame" ? 12 : 11,
           };
         }
+        if (method === "DOM.getFrameOwner") return { backendNodeId: 7 };
+        if (method === "DOM.resolveNode") return { object: { objectId: "current-owner" } };
+        if (method === "Runtime.callFunctionOn") return { result: { value: 1 } };
         if (
           method === "Runtime.evaluate" &&
           sessionId === "deep-session" &&
@@ -1607,6 +1657,11 @@ describe("waitForDeepResearchCompletion", () => {
     );
 
     expect(result.text).toBe("OOPIF_REPORT https://example.com/report");
+    expect(mockClient.send).toHaveBeenCalledWith(
+      "DOM.getFrameOwner",
+      { frameId: "sandbox" },
+      undefined,
+    );
   });
 
   it("does not complete from an unscoped frame result during a scoped run", async () => {
@@ -1645,6 +1700,7 @@ describe("waitForDeepResearchCompletion", () => {
       }),
       createIsolatedWorld: vi.fn().mockResolvedValue({ executionContextId: 42 }),
     };
+    const mockClient = createFrameOwnerClient(0);
     let nowCalls = 0;
     const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
       nowCalls += 1;
@@ -1653,11 +1709,16 @@ describe("waitForDeepResearchCompletion", () => {
 
     try {
       await expect(
-        waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 100, 1, mockPage as never),
+        waitForDeepResearchCompletion(
+          mockRuntime as never,
+          mockLogger,
+          100,
+          1,
+          mockPage as never,
+          mockClient as never,
+        ),
       ).rejects.toThrow(/did not complete/);
-      expect(mockPage.createIsolatedWorld).toHaveBeenCalledWith(
-        expect.objectContaining({ frameId: "old-deep-frame" }),
-      );
+      expect(mockPage.createIsolatedWorld).not.toHaveBeenCalled();
     } finally {
       dateNowSpy.mockRestore();
     }
@@ -1696,6 +1757,12 @@ describe("waitForDeepResearchCompletion", () => {
           childFrames: [
             {
               frame: {
+                id: "old-deep-frame",
+                url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/old",
+              },
+            },
+            {
+              frame: {
                 id: "fresh-deep-frame",
                 url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
               },
@@ -1705,6 +1772,9 @@ describe("waitForDeepResearchCompletion", () => {
       }),
       createIsolatedWorld: vi.fn().mockResolvedValue({ executionContextId: 42 }),
     };
+    const mockClient = createFrameOwnerClient((frameId) =>
+      frameId === "fresh-deep-frame" ? 1 : 0,
+    );
 
     const result = await waitForDeepResearchCompletion(
       mockRuntime as never,
@@ -1712,9 +1782,14 @@ describe("waitForDeepResearchCompletion", () => {
       60_000,
       1,
       mockPage as never,
+      mockClient as never,
     );
 
     expect(result.text).toBe("FRESH_REPORT https://example.com/report");
+    expect(mockPage.createIsolatedWorld).toHaveBeenCalledTimes(1);
+    expect(mockPage.createIsolatedWorld).toHaveBeenCalledWith(
+      expect.objectContaining({ frameId: "fresh-deep-frame" }),
+    );
   });
 
   it("does not fall back to an older completed turn when scoped to new turns", () => {
@@ -1850,6 +1925,107 @@ describe("checkDeepResearchStatus", () => {
 
     expect(result.finished).toBe(false);
     expect(result.incompleteResult).toBe(true);
+  });
+
+  it("keeps short scoped iframe turns active", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(0);
+    const iframe = {
+      getBoundingClientRect: () => ({ width: 800, height: 600 }),
+      getAttribute: (name: string) =>
+        name === "src"
+          ? "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/"
+          : null,
+    };
+    const assistantTurn = {
+      textContent: "ChatGPT said:",
+      innerText: "ChatGPT said:",
+      dataset: {},
+      getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+      querySelector: () => null,
+      querySelectorAll: (selector: string) => (selector === "iframe" ? [iframe] : []),
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: assistantTurn.textContent },
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") {
+            return [iframe];
+          }
+          if (selector.includes("conversation-turn")) return [assistantTurn];
+          if (selector.includes("data-message-author-role")) return [assistantTurn];
+          return [];
+        },
+      },
+    }) as { hasActiveScopedResearch?: boolean };
+
+    expect(result.hasActiveScopedResearch).toBe(true);
+  });
+
+  it("does not treat a page-global stale iframe as scoped activity", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(0);
+    const iframe = {
+      getBoundingClientRect: () => ({ width: 800, height: 600 }),
+      getAttribute: (name: string) =>
+        name === "src"
+          ? "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/old"
+          : null,
+    };
+    const assistantTurn = {
+      textContent: "ChatGPT said:",
+      innerText: "ChatGPT said:",
+      dataset: {},
+      getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: assistantTurn.textContent },
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [iframe];
+          if (selector.includes("conversation-turn")) return [assistantTurn];
+          if (selector.includes("data-message-author-role")) return [assistantTurn];
+          return [];
+        },
+      },
+    }) as { hasActiveScopedResearch?: boolean };
+
+    expect(result.hasActiveScopedResearch).toBe(false);
+  });
+
+  it("does not treat a bare tool stub as Deep Research evidence", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(0);
+    const staleIframe = {
+      getBoundingClientRect: () => ({ width: 800, height: 600 }),
+      getAttribute: (name: string) =>
+        name === "src"
+          ? "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/old"
+          : null,
+    };
+    const assistantTurn = {
+      textContent: "Called tool",
+      innerText: "Called tool",
+      dataset: {},
+      getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+      querySelector: () => null,
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: assistantTurn.textContent },
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [staleIframe];
+          if (selector.includes("conversation-turn")) return [assistantTurn];
+          if (selector.includes("data-message-author-role")) return [assistantTurn];
+          return [];
+        },
+      },
+    }) as { researchActivity?: boolean; hasActiveScopedResearch?: boolean };
+
+    expect(result.researchActivity).toBe(false);
+    expect(result.hasActiveScopedResearch).toBe(false);
   });
 
   it("detects ChatGPT account security blocks during completion polling", () => {
