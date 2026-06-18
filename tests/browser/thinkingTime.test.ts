@@ -610,6 +610,166 @@ describe("browser thinking-time selection expression", () => {
     expect(standard.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("waits for the current Intelligence composer pill before selecting Extra High", async () => {
+    class FakeEventTarget {
+      dispatchEvent(_event: unknown): boolean {
+        return true;
+      }
+    }
+    class FakeElement extends FakeEventTarget {
+      constructor(
+        public textContent: string,
+        private readonly attributes: Record<string, string> = {},
+        private readonly children: FakeElement[] = [],
+        private readonly onDispatch?: () => void,
+      ) {
+        super();
+      }
+      getAttribute(name: string): string | null {
+        return this.attributes[name] ?? null;
+      }
+      setAttribute(name: string, value: string): void {
+        this.attributes[name] = value;
+      }
+      querySelector(_selector: string): FakeElement | null {
+        return null;
+      }
+      querySelectorAll(selector: string): FakeElement[] {
+        return selector.includes("menuitem") || selector === "button" ? this.children : [];
+      }
+      closest(_selector: string): FakeElement | null {
+        return null;
+      }
+      matches(selector: string): boolean {
+        return selector.includes("__composer-pill") && this.attributes.class === "__composer-pill";
+      }
+      contains(_node: unknown): boolean {
+        return false;
+      }
+      getBoundingClientRect(): { width: number; height: number } {
+        return { width: 144, height: 36 };
+      }
+      override dispatchEvent(event: unknown): boolean {
+        this.onDispatch?.();
+        return super.dispatchEvent(event);
+      }
+    }
+    class FakeMouseEvent {
+      constructor(
+        public readonly type: string,
+        public readonly init?: unknown,
+      ) {}
+    }
+
+    let pillVisible = false;
+    const intelligencePill = new FakeElement(
+      "Medium",
+      {
+        class: "__composer-pill",
+        "aria-controls": "intelligence-menu",
+        "aria-expanded": "false",
+        "aria-haspopup": "menu",
+      },
+      [],
+      () => intelligencePill.setAttribute("aria-expanded", "true"),
+    );
+    const medium = new FakeElement("Medium", {
+      role: "menuitemradio",
+      "aria-checked": "true",
+      "data-state": "checked",
+    });
+    const extraHigh = new FakeElement(
+      "Extra High",
+      {
+        role: "menuitemradio",
+        "aria-checked": "false",
+        "data-state": "unchecked",
+      },
+      [],
+      () => {
+        medium.setAttribute("aria-checked", "false");
+        medium.setAttribute("data-state", "unchecked");
+        extraHigh.setAttribute("aria-checked", "true");
+        extraHigh.setAttribute("data-state", "checked");
+        intelligencePill.textContent = "Extra High";
+        intelligencePill.setAttribute("aria-expanded", "false");
+      },
+    );
+    const effortMenu = new FakeElement(
+      "Intelligence Instant Medium High Extra High",
+      { role: "menu", "data-state": "open" },
+      [
+        new FakeElement("Instant", { role: "menuitemradio", "aria-checked": "false" }),
+        medium,
+        new FakeElement("High", { role: "menuitemradio", "aria-checked": "false" }),
+        extraHigh,
+      ],
+    );
+    const documentStub = {
+      body: new FakeElement(""),
+      querySelector: (_selector: string) => null,
+      querySelectorAll: (selector: string) => {
+        if (
+          selector.includes("form button.__composer-pill") ||
+          selector.includes("composer-footer-actions") ||
+          selector.includes("__composer-pill-composite")
+        ) {
+          return pillVisible ? [intelligencePill] : [];
+        }
+        if (selector.includes('[role="menu"]')) {
+          return intelligencePill.getAttribute("aria-expanded") === "true" ? [effortMenu] : [];
+        }
+        return [];
+      },
+      getElementById: (id: string) =>
+        id === "intelligence-menu" && intelligencePill.getAttribute("aria-expanded") === "true"
+          ? effortMenu
+          : null,
+      dispatchEvent: () => true,
+    };
+    let now = 0;
+    let timers = 0;
+    const expression = buildThinkingTimeExpressionForTest("heavy", null);
+    const evaluate = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${expression};`,
+    ) as (
+      document: unknown,
+      performance: unknown,
+      setTimeout: unknown,
+      window: unknown,
+      EventTarget: unknown,
+      PointerEvent: unknown,
+      MouseEvent: unknown,
+      HTMLElement: unknown,
+    ) => Promise<unknown>;
+
+    await expect(
+      evaluate(
+        documentStub,
+        { now: () => (now += 100) },
+        (callback: () => void) => {
+          timers += 1;
+          if (timers >= 2) pillVisible = true;
+          callback();
+        },
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "switched", label: "Extra High" });
+    expect(intelligencePill.textContent).toBe("Extra High");
+  });
+
   it("captures a model-picker diagnostic on failure outcomes", () => {
     const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
     expect(expression).toContain("collectPickerDiagnostic");
@@ -702,9 +862,10 @@ describe("browser thinking-time selection expression", () => {
       HTMLElement: unknown,
     ) => Promise<unknown>;
 
+    let now = 0;
     const result = await evaluate(
       documentStub,
-      { now: () => 0 },
+      { now: () => (now += 500) },
       (callback: () => void) => callback(),
       { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
       FakeEventTarget,

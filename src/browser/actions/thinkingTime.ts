@@ -643,7 +643,12 @@ function buildThinkingTimeExpression(
       return null;
     };
 
-    const composerEffortPill = findComposerEffortPill();
+    let composerEffortPill = findComposerEffortPill();
+    const composerPillDeadline = performance.now() + MAX_WAIT_MS;
+    while (!composerEffortPill && performance.now() < composerPillDeadline) {
+      await sleep(100);
+      composerEffortPill = findComposerEffortPill();
+    }
     if (composerEffortPill) {
       const composerModelKind = TARGET_MODEL_KIND || modelKindFromNode(composerEffortPill);
       if (composerEffortPill.getAttribute?.('aria-expanded') !== 'true') {
@@ -762,7 +767,12 @@ function buildThinkingTimeExpression(
       return null;
     };
 
-    const modelBtn = findModelButton();
+    let modelBtn = findModelButton();
+    const modelButtonDeadline = performance.now() + MAX_WAIT_MS;
+    while (!modelBtn && performance.now() < modelButtonDeadline) {
+      await sleep(100);
+      modelBtn = findModelButton();
+    }
     if (!modelBtn) {
       return failure('chip-not-found');
     }
