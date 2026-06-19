@@ -1264,6 +1264,46 @@ describe("performSessionRun", () => {
     expect(logLines).toContain("oracle session sess-1 --render");
   });
 
+  test("marks copied-profile connection loss as non-reattachable", async () => {
+    const automationError = new BrowserAutomationError(
+      "Chrome window closed before oracle finished.",
+      {
+        stage: "connection-lost",
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+        },
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null, copyProfileSource: "/tmp/source-profile" },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("Chrome window closed");
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({ status: "error" });
+    expect(finalUpdate?.browser?.runtime).toBeUndefined();
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      "gpt-5.2-pro",
+      expect.objectContaining({ status: "error" }),
+    );
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).not.toContain("keeping session running for reattach");
+    expect(logLines).not.toContain("oracle session sess-1 --render");
+  });
+
   test("marks early browser disconnect as error before a conversation exists", async () => {
     const automationError = new BrowserAutomationError(
       "Chrome window closed before oracle reached the composer.",
@@ -1442,6 +1482,69 @@ describe("performSessionRun", () => {
     expect(logLines).toContain(
       "Reuse this browser profile with: oracle --engine browser --browser-manual-login",
     );
+    expect(logLines).not.toContain("oracle session sess-1 --render");
+  });
+
+  test("does not advertise reattach for a removed copied profile after Cloudflare", async () => {
+    const automationError = new BrowserAutomationError(
+      "Cloudflare challenge detected. Copy-profile runs cannot be retained.",
+      {
+        stage: "cloudflare-challenge",
+        reattachable: false,
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null, copyProfileSource: "/tmp/source-profile" },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("Copy-profile runs cannot be retained");
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate?.browser?.runtime).toBeUndefined();
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).toContain("Cloudflare challenge detected; copied profile closed and removed.");
+    expect(logLines).not.toContain("browser left running");
+    expect(logLines).not.toContain("oracle session sess-1 --render");
+  });
+
+  test("does not auto-reattach after a copied-profile assistant timeout", async () => {
+    const automationError = new BrowserAutomationError("assistant timed out", {
+      stage: "assistant-timeout",
+      reattachable: false,
+    });
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: {
+          chromePath: null,
+          copyProfileSource: "/tmp/source-profile",
+          autoReattachIntervalMs: 100,
+        },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("assistant timed out");
+
+    expect(resumeBrowserSession).not.toHaveBeenCalled();
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate?.browser?.runtime).toBeUndefined();
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).not.toContain("capture incomplete for reattach");
     expect(logLines).not.toContain("oracle session sess-1 --render");
   });
 

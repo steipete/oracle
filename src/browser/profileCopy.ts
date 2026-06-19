@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -34,37 +34,44 @@ const RSYNC_EXCLUDES = [
  * cleanly — rsync exit 24 ("source files vanished") is tolerated.
  */
 export async function copyChromeProfile(srcUserDataDir: string, destDir: string): Promise<void> {
-  const srcDefault = path.join(srcUserDataDir, "Default");
-  await mkdir(path.join(destDir, "Default"), { recursive: true });
-  // `Local State` is required (holds the Keychain-wrapped key that decrypts the
-  // cookies), so a copy failure must fail fast — otherwise the run continues with
-  // a profile that silently looks logged-out.
-  await cp(path.join(srcUserDataDir, "Local State"), path.join(destDir, "Local State")).catch(
-    (err: unknown) => {
-      throw new Error(
-        `--copy-profile: could not copy required "Local State" from ${srcUserDataDir} ` +
-          `(needed to decrypt the signed-in session): ${(err as Error).message}`,
-      );
-    },
-  );
-  const args = ["-a"];
-  for (const exclude of RSYNC_EXCLUDES) {
-    args.push("--exclude", exclude);
-  }
-  args.push(`${srcDefault}/`, `${path.join(destDir, "Default")}/`);
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("rsync", args, { stdio: "ignore" });
-    child.on("error", (err) =>
-      reject(
-        new Error(
-          `--copy-profile requires rsync on PATH (spawn failed): ${(err as Error).message}`,
+  try {
+    const srcDefault = path.join(srcUserDataDir, "Default");
+    await mkdir(path.join(destDir, "Default"), { recursive: true });
+    // `Local State` is required (holds the Keychain-wrapped key that decrypts the
+    // cookies), so a copy failure must fail fast — otherwise the run continues with
+    // a profile that silently looks logged-out.
+    await cp(path.join(srcUserDataDir, "Local State"), path.join(destDir, "Local State")).catch(
+      (err: unknown) => {
+        throw new Error(
+          `--copy-profile: could not copy required "Local State" from ${srcUserDataDir} ` +
+            `(needed to decrypt the signed-in session): ${(err as Error).message}`,
+        );
+      },
+    );
+    const args = ["-a"];
+    for (const exclude of RSYNC_EXCLUDES) {
+      args.push("--exclude", exclude);
+    }
+    args.push(`${srcDefault}/`, `${path.join(destDir, "Default")}/`);
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("rsync", args, { stdio: "ignore" });
+      child.on("error", (err) =>
+        reject(
+          new Error(
+            `--copy-profile requires rsync on PATH (spawn failed): ${(err as Error).message}`,
+          ),
         ),
-      ),
-    );
-    child.on("close", (code) =>
-      code === 0 || code === 24
-        ? resolve()
-        : reject(new Error(`rsync failed copying Chrome profile (exit ${code})`)),
-    );
-  });
+      );
+      child.on("close", (code) =>
+        code === 0 || code === 24
+          ? resolve()
+          : reject(new Error(`rsync failed copying Chrome profile (exit ${code})`)),
+      );
+    });
+  } catch (error) {
+    // The destination is always a newly-created throwaway profile. Remove partial
+    // session-bearing copies before surfacing setup failures.
+    await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }

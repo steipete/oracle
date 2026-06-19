@@ -156,6 +156,15 @@ function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolea
   return classifyPreservedBrowserError(error, headless) !== null;
 }
 
+function shouldKeepLocalBrowserOpen(options: {
+  effectiveKeepBrowser: boolean;
+  preserveBrowserOnError: boolean;
+  usingCopiedProfile: boolean;
+}): boolean {
+  if (options.usingCopiedProfile) return false;
+  return options.effectiveKeepBrowser || options.preserveBrowserOnError;
+}
+
 export function shouldPreserveBrowserOnErrorForTest(error: unknown, headless: boolean): boolean {
   return shouldPreserveBrowserOnError(error, headless);
 }
@@ -949,9 +958,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   }
 
   const manualLogin = Boolean(config.manualLogin);
+  const usingCopiedProfile = Boolean(config.copyProfileSource);
   // Manual-login and copy-profile both start from an already-signed-in profile,
   // so neither clears nor syncs cookies.
-  const profileIsPreSigned = manualLogin || Boolean(config.copyProfileSource);
+  const profileIsPreSigned = manualLogin || usingCopiedProfile;
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
     : defaultManualLoginProfileDir();
@@ -1006,6 +1016,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tabLease = null;
       await handle.release().catch(() => undefined);
     }
+    if (usingCopiedProfile) {
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+    }
     throw error;
   }
   const { chrome, reusedChrome } = acquiredChrome;
@@ -1028,7 +1041,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         emitRuntimeHint,
         preserveUserDataDir: manualLogin,
         // copy-profile is a throwaway copy of a signed-in profile; never leave it on disk.
-        forceProfileCleanup: Boolean(config.copyProfileSource),
+        forceProfileCleanup: usingCopiedProfile,
       },
     );
   } catch {
@@ -2150,6 +2163,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
     const preservedErrorKind = classifyPreservedBrowserError(normalizedError, config.headless);
     if (preservedErrorKind === "cloudflare-challenge") {
+      if (usingCopiedProfile) {
+        logger(
+          "Cloudflare challenge detected; closing Chrome and removing the copied profile because copy-profile runs cannot be retained.",
+        );
+        throw new BrowserAutomationError(
+          "Cloudflare challenge detected. Copy-profile runs cannot be retained; complete the check in the source Chrome profile, then rerun.",
+          { stage: "cloudflare-challenge", reattachable: false },
+          normalizedError,
+        );
+      }
       preserveBrowserOnError = true;
       const runtime = {
         chromePid: chrome.pid,
@@ -2178,6 +2201,16 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
     if (preservedErrorKind === "reattachable-capture") {
+      if (usingCopiedProfile) {
+        logger(
+          "Assistant capture incomplete; closing Chrome and removing the copied profile because copy-profile runs cannot be reattached.",
+        );
+        const details =
+          normalizedError instanceof BrowserAutomationError
+            ? { ...normalizedError.details, runtime: undefined, reattachable: false }
+            : { stage: "assistant-recheck", reattachable: false };
+        throw new BrowserAutomationError(normalizedError.message, details, normalizedError);
+      }
       preserveBrowserOnError = true;
       await emitRuntimeHint();
       logger("Assistant capture incomplete; leaving browser open for reattach.");
@@ -2234,7 +2267,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     ) {
       await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
     }
-    let keepBrowserOpen = effectiveKeepBrowser || preserveBrowserOnError;
+    let keepBrowserOpen = shouldKeepLocalBrowserOpen({
+      effectiveKeepBrowser,
+      preserveBrowserOnError,
+      usingCopiedProfile,
+    });
     let cleanupProfileLock: ProfileRunLock | null = null;
     let terminatedRecordedChrome = false;
     let otherActiveBrowserTabLeases: boolean | null = null;
@@ -3594,6 +3631,7 @@ export const __test__ = {
   listIgnoredRemoteChromeFlags,
   resolveManualLoginWaitMs,
   shouldCloseOwnedRunTargetAfterRun,
+  shouldKeepLocalBrowserOpen,
 };
 export { syncCookies } from "./cookies.js";
 export {

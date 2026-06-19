@@ -74,6 +74,26 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
 });
 
 describe("browser run target cleanup", () => {
+  test("never retains a copied profile after a preserved browser error", () => {
+    expect(
+      __test__.shouldKeepLocalBrowserOpen({
+        effectiveKeepBrowser: false,
+        preserveBrowserOnError: true,
+        usingCopiedProfile: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("keeps existing retention semantics for ordinary profiles", () => {
+    expect(
+      __test__.shouldKeepLocalBrowserOpen({
+        effectiveKeepBrowser: false,
+        preserveBrowserOnError: true,
+        usingCopiedProfile: false,
+      }),
+    ).toBe(true);
+  });
+
   test("keeps the completed conversation tab when keepBrowser is enabled", () => {
     expect(
       __test__.shouldCloseOwnedRunTargetAfterRun({

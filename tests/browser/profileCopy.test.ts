@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -24,5 +24,6 @@ describe("copyChromeProfile", () => {
     tmpDirs.push(srcWithoutLocalState);
 
     await expect(copyChromeProfile(srcWithoutLocalState, dest)).rejects.toThrow(/Local State/);
+    await expect(stat(dest)).rejects.toThrow();
   });
 });
