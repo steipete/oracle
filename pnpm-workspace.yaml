@@ -1,6 +1,6 @@
 overrides:
   devtools-protocol: 0.0.1643702
-  vite: 7.3.2
+  vite: 8.0.16
 
 onlyBuiltDependencies:
   - esbuild

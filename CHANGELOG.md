@@ -6,6 +6,10 @@
 
 - Browser: `--copy-profile <dir>` copies the active signed-in Chrome profile (or an explicit `--browser-chrome-profile`) to a throwaway profile and runs browser mode against it, reusing the live ChatGPT session with no manual sign-in. Skips keychain-mocking flags so encrypted cookies decrypt via the real Chrome "Safe Storage" key (macOS/Linux; requires `rsync`). The throwaway copy is always cleaned up, rejects incompatible persistent/existing/remote browser modes, and fails fast if the required `Local State` cannot be copied. Thanks @edwarddgao!
 
+### Changed
+
+- Dependencies: update Vitest, coverage tooling, and Vite to remove the vulnerable transitive esbuild release.
+
 ### Fixed
 
 - Browser: wait for the current ChatGPT Intelligence pill before falling back to the default thinking level, and make `--browser-model-strategy select` prefer concrete requested variants over version-only submenu wrappers with bounded retries. This lets current-model runs select and verify Extra High before submitting and prevents explicit Instant selection from hanging (thanks @alex-on-java and @servrox).
