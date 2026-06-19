@@ -193,7 +193,9 @@ export async function buildBrowserConfig(
       : mapModelToBrowserLabel(options.model);
 
   return {
-    chromeProfile: options.browserChromeProfile ?? DEFAULT_CHROME_PROFILE,
+    chromeProfile: options.copyProfile
+      ? (options.browserChromeProfile ?? null)
+      : (options.browserChromeProfile ?? DEFAULT_CHROME_PROFILE),
     chromePath: options.browserChromePath ?? null,
     chromeCookiePath: options.browserCookiePath ?? null,
     attachRunning,

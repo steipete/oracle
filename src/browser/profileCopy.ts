@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -33,26 +33,37 @@ const RSYNC_EXCLUDES = [
  * Uses rsync (present on macOS/Linux) so a live, in-use source profile copies
  * cleanly — rsync exit 24 ("source files vanished") is tolerated.
  */
-export async function copyChromeProfile(srcUserDataDir: string, destDir: string): Promise<void> {
+export async function copyChromeProfile(
+  srcUserDataDir: string,
+  destDir: string,
+  requestedProfile?: string | null,
+): Promise<string> {
   try {
-    const srcDefault = path.join(srcUserDataDir, "Default");
-    await mkdir(path.join(destDir, "Default"), { recursive: true });
+    const localStatePath = path.join(srcUserDataDir, "Local State");
+    const copiedLocalStatePath = path.join(destDir, "Local State");
+    await cp(localStatePath, copiedLocalStatePath).catch((err: unknown) => {
+      throw new Error(
+        `--copy-profile: could not copy required "Local State" from ${srcUserDataDir} ` +
+          `(needed to select and decrypt the signed-in profile): ${(err as Error).message}`,
+      );
+    });
+    const localState = await readFile(copiedLocalStatePath, "utf8");
+    const profileDirectory = resolveChromeProfileDirectory(
+      srcUserDataDir,
+      localState,
+      requestedProfile,
+    );
+    const srcProfile = path.join(srcUserDataDir, profileDirectory);
+    const destProfile = path.join(destDir, profileDirectory);
+    await mkdir(destProfile, { recursive: true });
     // `Local State` is required (holds the Keychain-wrapped key that decrypts the
     // cookies), so a copy failure must fail fast — otherwise the run continues with
     // a profile that silently looks logged-out.
-    await cp(path.join(srcUserDataDir, "Local State"), path.join(destDir, "Local State")).catch(
-      (err: unknown) => {
-        throw new Error(
-          `--copy-profile: could not copy required "Local State" from ${srcUserDataDir} ` +
-            `(needed to decrypt the signed-in session): ${(err as Error).message}`,
-        );
-      },
-    );
     const args = ["-a"];
     for (const exclude of RSYNC_EXCLUDES) {
       args.push("--exclude", exclude);
     }
-    args.push(`${srcDefault}/`, `${path.join(destDir, "Default")}/`);
+    args.push(`${srcProfile}/`, `${destProfile}/`);
     await new Promise<void>((resolve, reject) => {
       const child = spawn("rsync", args, { stdio: "ignore" });
       child.on("error", (err) =>
@@ -68,10 +79,48 @@ export async function copyChromeProfile(srcUserDataDir: string, destDir: string)
           : reject(new Error(`rsync failed copying Chrome profile (exit ${code})`)),
       );
     });
+    return profileDirectory;
   } catch (error) {
     // The destination is always a newly-created throwaway profile. Remove partial
     // session-bearing copies before surfacing setup failures.
     await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+function resolveChromeProfileDirectory(
+  srcUserDataDir: string,
+  localState: string,
+  requestedProfile?: string | null,
+): string {
+  let profile = requestedProfile?.trim();
+  if (!profile) {
+    try {
+      const parsed = JSON.parse(localState) as { profile?: { last_used?: unknown } };
+      profile =
+        typeof parsed.profile?.last_used === "string" ? parsed.profile.last_used.trim() : "";
+    } catch (error) {
+      throw new Error(
+        `--copy-profile: could not parse "Local State" to select the active Chrome profile: ${(error as Error).message}`,
+      );
+    }
+  }
+  profile ||= "Default";
+
+  const root = path.resolve(srcUserDataDir);
+  const resolved = path.resolve(root, profile);
+  if (path.dirname(resolved) !== root) {
+    throw new Error(
+      `--copy-profile: Chrome profile must be a direct child of the user-data directory; received ${JSON.stringify(profile)}.`,
+    );
+  }
+  return path.basename(resolved);
+}
+
+export function resolveChromeProfileDirectoryForTest(
+  srcUserDataDir: string,
+  localState: string,
+  requestedProfile?: string | null,
+): string {
+  return resolveChromeProfileDirectory(srcUserDataDir, localState, requestedProfile);
 }

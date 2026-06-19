@@ -2100,6 +2100,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       await import("../src/cli/browserConfig.js");
     const config = await buildBrowserConfig({
       ...options,
+      remoteHost: remoteHost ?? undefined,
       model: activeModel,
       browserModelLabel: resolveBrowserModelLabel(cliModelArg, activeModel),
     });

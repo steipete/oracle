@@ -990,9 +990,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       keepBrowser: effectiveKeepBrowser,
     });
   } else if (config.copyProfileSource) {
-    await copyChromeProfile(config.copyProfileSource, userDataDir);
+    const copiedProfileDirectory = await copyChromeProfile(
+      config.copyProfileSource,
+      userDataDir,
+      config.chromeProfile,
+    );
+    config = { ...config, chromeProfile: copiedProfileDirectory };
     logger(
-      `Seeded temporary Chrome profile from ${config.copyProfileSource} (copy-profile mode; signed-in session reused without manual login)`,
+      `Seeded temporary Chrome profile ${copiedProfileDirectory} from ${config.copyProfileSource} (copy-profile mode; signed-in session reused without manual login)`,
     );
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);

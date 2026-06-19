@@ -27,6 +27,9 @@ export async function launchChrome(
   // strip the keychain-mocking flags from both chrome-launcher's defaults and
   // Oracle's set, and ignore the defaults so they aren't re-added.
   const usingCopiedProfile = Boolean(config.copyProfileSource);
+  if (usingCopiedProfile && config.chromeProfile) {
+    chromeFlags.push(`--profile-directory=${config.chromeProfile}`);
+  }
   const launchOptions = resolveChromeLaunchOptions(chromeFlags, usingCopiedProfile);
   const launcher = usePatchedLauncher
     ? await launchWithCustomHost({
