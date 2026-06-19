@@ -390,6 +390,18 @@ describe("ChatGPT UI warning detection", () => {
 });
 
 describe("browser follow-ups", () => {
+  test("rejects copy-profile with manual-login before launching Chrome", async () => {
+    await expect(
+      runBrowserMode({
+        prompt: "test",
+        config: {
+          manualLogin: true,
+          copyProfileSource: "/tmp/source-profile",
+        },
+      }),
+    ).rejects.toThrow(/cannot be combined.*browser-manual-login/i);
+  });
+
   test("rejects Deep Research follow-ups before launching Chrome", async () => {
     await expect(
       runBrowserMode({

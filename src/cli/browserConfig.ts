@@ -136,6 +136,11 @@ export async function buildBrowserConfig(
       "--copy-profile cannot be combined with --browser-keep-browser: the copied profile is a throwaway that is deleted after the run, so it must not be retained.",
     );
   }
+  if (options.copyProfile && options.browserManualLogin) {
+    throw new Error(
+      "--copy-profile cannot be combined with --browser-manual-login: choose either a throwaway copied profile or the persistent manual-login profile.",
+    );
+  }
   const desiredModelOverride = options.browserModelLabel?.trim();
   const normalizedOverride = desiredModelOverride?.toLowerCase() ?? "";
   const baseModel = options.model.toLowerCase();

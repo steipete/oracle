@@ -62,6 +62,16 @@ describe("buildBrowserConfig", () => {
     ).rejects.toThrow(/--copy-profile cannot be combined with --browser-keep-browser/);
   });
 
+  test("rejects --copy-profile combined with --browser-manual-login", async () => {
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.5-pro",
+        copyProfile: "/Users/me/Library/Application Support/Google/Chrome",
+        browserManualLogin: true,
+      }),
+    ).rejects.toThrow(/--copy-profile cannot be combined with --browser-manual-login/);
+  });
+
   test("enables Deep Research browser mode when requested", async () => {
     const config = await buildBrowserConfig({
       model: "gpt-5.4-pro",

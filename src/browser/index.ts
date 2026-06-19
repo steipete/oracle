@@ -959,6 +959,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
 
   const manualLogin = Boolean(config.manualLogin);
   const usingCopiedProfile = Boolean(config.copyProfileSource);
+  if (manualLogin && usingCopiedProfile) {
+    throw new BrowserAutomationError(
+      "--copy-profile cannot be combined with --browser-manual-login: choose either a throwaway copied profile or the persistent manual-login profile.",
+      { stage: "profile-config" },
+    );
+  }
   // Manual-login and copy-profile both start from an already-signed-in profile,
   // so neither clears nor syncs cookies.
   const profileIsPreSigned = manualLogin || usingCopiedProfile;
