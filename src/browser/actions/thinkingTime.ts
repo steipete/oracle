@@ -642,9 +642,62 @@ function buildThinkingTimeExpression(
       }
       return null;
     };
-
-    const composerEffortPill = findComposerEffortPill();
+    let composerEffortPill = findComposerEffortPill();
+    let modelBtn = findModelButton();
+    const modelKindFromLegacyTrailing = (trailing) => {
+      const row = trailing.closest?.(
+        '[role="menuitem"], [role="menuitemradio"], [data-radix-collection-item]',
+      );
+      const idText = normalize(
+        (row?.getAttribute?.('data-testid') ?? '') + ' ' +
+        (trailing.getAttribute?.('data-testid') ?? '')
+      );
+      if (!idText.includes('model switcher')) return null;
+      const modelPart = normalize(idText.replace(/\\bthinking effort\\b.*$/, ''));
+      if (hasToken(modelPart, 'pro')) return 'pro';
+      if (hasToken(modelPart, 'thinking')) return 'thinking';
+      if (hasToken(modelPart, 'instant')) return 'instant';
+      return null;
+    };
+    const legacyEffortOwnerIsReady = () => {
+      if (
+        TARGET_MODEL_KIND === 'pro' &&
+        TARGET_LEVEL === 'extended' &&
+        isVisible(document.querySelector(INTELLIGENCE_MENU_SELECTOR))
+      ) {
+        return true;
+      }
+      const expectedKind = TARGET_MODEL_KIND || modelKindFromNode(modelBtn);
+      return Boolean(
+        expectedKind &&
+        findTrailingButtons().some(
+          (button) => isVisible(button) && modelKindFromLegacyTrailing(button) === expectedKind,
+        ),
+      );
+    };
+    let attemptedModelButton =
+      modelBtn?.getAttribute?.('aria-expanded') === 'true' ? modelBtn : null;
+    const effortOwnerDeadline = performance.now() + MAX_WAIT_MS;
+    while (!composerEffortPill && performance.now() < effortOwnerDeadline) {
+      if (
+        modelBtn &&
+        attemptedModelButton !== modelBtn &&
+        modelBtn.getAttribute?.('aria-expanded') !== 'true'
+      ) {
+        dispatchClickSequence(modelBtn);
+        attemptedModelButton = modelBtn;
+        await sleep(INITIAL_WAIT_MS);
+      }
+      if (modelBtn && legacyEffortOwnerIsReady()) break;
+      await sleep(100);
+      composerEffortPill = findComposerEffortPill();
+      modelBtn = findModelButton();
+      if (modelBtn?.getAttribute?.('aria-expanded') === 'true') {
+        attemptedModelButton = modelBtn;
+      }
+    }
     if (composerEffortPill) {
+      if (attemptedModelButton && attemptedModelButton !== composerEffortPill) closeOpenMenus();
       const composerModelKind = TARGET_MODEL_KIND || modelKindFromNode(composerEffortPill);
       if (composerEffortPill.getAttribute?.('aria-expanded') !== 'true') {
         dispatchClickSequence(composerEffortPill);
@@ -710,22 +763,7 @@ function buildThinkingTimeExpression(
         (trailing.getAttribute?.('data-testid') ?? '')
       );
     };
-    const testIdTextForTrailing = (trailing) => {
-      const row = rowForTrailing(trailing) || findEffortRow(trailing);
-      return normalize(
-        (row?.getAttribute?.('data-testid') ?? '') + ' ' +
-        (trailing.getAttribute?.('data-testid') ?? '')
-      );
-    };
-    const modelKindFromTrailing = (trailing) => {
-      const idText = testIdTextForTrailing(trailing);
-      if (!idText.includes('model switcher')) return null;
-      const modelPart = normalize(idText.replace(/\\bthinking effort\\b.*$/, ''));
-      if (hasToken(modelPart, 'pro')) return 'pro';
-      if (hasToken(modelPart, 'thinking')) return 'thinking';
-      if (hasToken(modelPart, 'instant')) return 'instant';
-      return null;
-    };
+    const modelKindFromTrailing = modelKindFromLegacyTrailing;
     const trailingMatchesTargetModelKind = (trailing) => {
       if (!TARGET_MODEL_KIND) return false;
       const idKind = modelKindFromTrailing(trailing);
@@ -762,12 +800,19 @@ function buildThinkingTimeExpression(
       return null;
     };
 
-    const modelBtn = findModelButton();
+    const modelButtonDeadline = performance.now() + MAX_WAIT_MS;
+    while (!modelBtn && performance.now() < modelButtonDeadline) {
+      await sleep(100);
+      modelBtn = findModelButton();
+    }
     if (!modelBtn) {
       return failure('chip-not-found');
     }
     // Open model menu (idempotent — leaves it open if already open).
-    if (modelBtn.getAttribute('aria-expanded') !== 'true') {
+    if (
+      modelBtn.getAttribute('aria-expanded') !== 'true' &&
+      !legacyEffortOwnerIsReady()
+    ) {
       dispatchClickSequence(modelBtn);
       await sleep(INITIAL_WAIT_MS);
     }

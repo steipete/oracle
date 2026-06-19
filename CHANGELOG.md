@@ -2,6 +2,10 @@
 
 ## 0.14.2 — Unreleased
 
+### Fixed
+
+- Browser: wait for the current ChatGPT Intelligence pill before falling back to the default thinking level. This lets `--browser-model-strategy current --browser-thinking-time extra-high` select and verify Extra High before submitting (thanks @alex-on-java).
+
 ## 0.14.1 — 2026-06-15
 
 ### Changed
