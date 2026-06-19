@@ -76,6 +76,7 @@ export interface BrowserFlagOptions {
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
   copyProfile?: string;
+  remoteHost?: string;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
   browserResearch?: BrowserResearchMode;
@@ -139,6 +140,16 @@ export async function buildBrowserConfig(
   if (options.copyProfile && options.browserManualLogin) {
     throw new Error(
       "--copy-profile cannot be combined with --browser-manual-login: choose either a throwaway copied profile or the persistent manual-login profile.",
+    );
+  }
+  if (options.copyProfile && options.remoteChrome) {
+    throw new Error(
+      "--copy-profile cannot be combined with --remote-chrome: copied profiles require a locally launched Chrome instance.",
+    );
+  }
+  if (options.copyProfile && options.remoteHost) {
+    throw new Error(
+      "--copy-profile cannot be combined with --remote-host: the local profile source is not available to the remote browser service.",
     );
   }
   const desiredModelOverride = options.browserModelLabel?.trim();
@@ -266,6 +277,7 @@ function validateAttachRunningOptions(
     options.browserKeepBrowser ? "--browser-keep-browser" : null,
     options.browserManualLogin ? "--browser-manual-login" : null,
     options.browserManualLoginProfileDir ? "--browser-manual-login-profile-dir" : null,
+    options.copyProfile ? "--copy-profile" : null,
     hasInlineCookies ? "--browser-inline-cookies/--browser-inline-cookies-file" : null,
     options.browserPort != null || options.browserDebugPort != null
       ? "--browser-port/--browser-debug-port"

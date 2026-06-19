@@ -402,6 +402,27 @@ describe("browser follow-ups", () => {
     ).rejects.toThrow(/cannot be combined.*browser-manual-login/i);
   });
 
+  test("rejects copy-profile with existing-browser modes before connecting", async () => {
+    await expect(
+      runBrowserMode({
+        prompt: "test",
+        config: {
+          attachRunning: true,
+          copyProfileSource: "/tmp/source-profile",
+        },
+      }),
+    ).rejects.toThrow(/cannot be combined.*remote Chrome/i);
+    await expect(
+      runBrowserMode({
+        prompt: "test",
+        config: {
+          remoteChrome: { host: "127.0.0.1", port: 9222 },
+          copyProfileSource: "/tmp/source-profile",
+        },
+      }),
+    ).rejects.toThrow(/cannot be combined.*remote Chrome/i);
+  });
+
   test("rejects Deep Research follow-ups before launching Chrome", async () => {
     await expect(
       runBrowserMode({

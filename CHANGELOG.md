@@ -4,7 +4,7 @@
 
 ### Added
 
-- Browser: `--copy-profile <dir>` copies a signed-in Chrome user-data directory to a throwaway profile and runs browser mode against it, reusing the live ChatGPT session with no manual sign-in and deleting the copy on completion. Skips the keychain-mocking launch flags so the copied profile's Keychain-encrypted cookies decrypt via the real Chrome "Safe Storage" key (macOS/Linux; requires `rsync`). The throwaway copy is always cleaned up (including on interrupt), is rejected with `--browser-keep-browser` or `--browser-manual-login`, and fails fast if the required `Local State` cannot be copied. Thanks @edwarddgao!
+- Browser: `--copy-profile <dir>` copies a signed-in Chrome user-data directory to a throwaway profile and runs browser mode against it, reusing the live ChatGPT session with no manual sign-in and deleting the copy on completion. Skips the keychain-mocking launch flags so the copied profile's Keychain-encrypted cookies decrypt via the real Chrome "Safe Storage" key (macOS/Linux; requires `rsync`). The throwaway copy is always cleaned up (including on interrupt), rejects incompatible persistent/existing/remote browser modes, and fails fast if the required `Local State` cannot be copied. Thanks @edwarddgao!
 
 ### Fixed
 

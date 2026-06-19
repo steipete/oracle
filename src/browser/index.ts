@@ -854,6 +854,13 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   const fallbackSubmission = options.fallbackSubmission;
 
   let config = resolveBrowserConfig(options.config);
+  const usingCopiedProfile = Boolean(config.copyProfileSource);
+  if (usingCopiedProfile && (config.attachRunning || config.remoteChrome)) {
+    throw new BrowserAutomationError(
+      "--copy-profile requires a locally launched Chrome instance and cannot be combined with attach-running or remote Chrome.",
+      { stage: "profile-config" },
+    );
+  }
   const isResumingConversation = Boolean(config.resumeConversationUrl);
   const followUpPrompts = normalizeBrowserFollowUpPrompts(options.followUpPrompts);
   if (config.researchMode === "deep" && followUpPrompts.length > 0) {
@@ -958,7 +965,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   }
 
   const manualLogin = Boolean(config.manualLogin);
-  const usingCopiedProfile = Boolean(config.copyProfileSource);
   if (manualLogin && usingCopiedProfile) {
     throw new BrowserAutomationError(
       "--copy-profile cannot be combined with --browser-manual-login: choose either a throwaway copied profile or the persistent manual-login profile.",
