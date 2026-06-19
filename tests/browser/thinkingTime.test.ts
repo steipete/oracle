@@ -81,7 +81,7 @@ describe("browser thinking-time selection expression", () => {
     expect(inferThinkingTargetModelKindForTest("project")).toBeNull();
   });
 
-  it("uses current ChatGPT data-testid shape to target the Pro effort row", async () => {
+  it("waits for the model button when current Pro effort rows render first", async () => {
     class FakeEventTarget {
       dispatchEvent(_event: unknown): boolean {
         return true;
@@ -148,10 +148,20 @@ describe("browser thinking-time selection expression", () => {
     let proClicks = 0;
     let thinkingClicks = 0;
     let now = 0;
-    const modelButton = new FakeElement("Extended", {
-      "data-testid": "model-switcher-dropdown-button",
-      "aria-expanded": "true",
-    });
+    let modelButtonClicks = 0;
+    let firstModelButtonClickAt: number | null = null;
+    const modelButton = new FakeElement(
+      "Extended",
+      {
+        "data-testid": "model-switcher-dropdown-button",
+        "aria-expanded": "false",
+      },
+      null,
+      () => {
+        modelButtonClicks += 1;
+        firstModelButtonClickAt ??= now;
+      },
+    );
     const unrelatedComposerPill = new FakeElement("Canvas", {
       class: "__composer-pill",
     });
@@ -188,7 +198,7 @@ describe("browser thinking-time selection expression", () => {
     const documentStub = {
       body: new FakeElement(""),
       querySelector: (selector: string) =>
-        selector.includes("model-switcher-dropdown-button") ? modelButton : null,
+        selector.includes("model-switcher-dropdown-button") && now >= 1_000 ? modelButton : null,
       querySelectorAll: (selector: string) => {
         if (selector.includes("__composer-pill")) return [unrelatedComposerPill];
         return selector.includes("data-model-picker-thinking-effort-action")
@@ -242,6 +252,9 @@ describe("browser thinking-time selection expression", () => {
         FakeElement,
       ),
     ).resolves.toMatchObject({ status: "menu-not-found" });
+    expect(modelButtonClicks).toBeGreaterThan(0);
+    expect(firstModelButtonClickAt).not.toBeNull();
+    expect(firstModelButtonClickAt ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(2_000);
     expect(proClicks).toBeGreaterThan(0);
     expect(thinkingClicks).toBe(0);
   });
@@ -610,7 +623,7 @@ describe("browser thinking-time selection expression", () => {
     expect(standard.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("waits for the current Intelligence composer pill before selecting Extra High", async () => {
+  it("waits for a delayed Intelligence pill when its model button and menu appear first", async () => {
     class FakeEventTarget {
       dispatchEvent(_event: unknown): boolean {
         return true;
@@ -662,6 +675,19 @@ describe("browser thinking-time selection expression", () => {
     }
 
     let pillVisible = false;
+    let modelButtonClicks = 0;
+    const modelButton = new FakeElement(
+      "Thinking",
+      {
+        "data-testid": "model-switcher-dropdown-button",
+        "aria-expanded": "false",
+        "aria-haspopup": "menu",
+      },
+      [],
+      () => {
+        modelButtonClicks += 1;
+      },
+    );
     const intelligencePill = new FakeElement(
       "Medium",
       {
@@ -707,7 +733,11 @@ describe("browser thinking-time selection expression", () => {
     );
     const documentStub = {
       body: new FakeElement(""),
-      querySelector: (_selector: string) => null,
+      querySelector: (selector: string) => {
+        if (selector.includes("model-switcher-dropdown-button")) return modelButton;
+        if (selector === '[data-testid="composer-intelligence-picker-content"]') return effortMenu;
+        return null;
+      },
       querySelectorAll: (selector: string) => {
         if (
           selector.includes("form button.__composer-pill") ||
@@ -727,47 +757,58 @@ describe("browser thinking-time selection expression", () => {
           : null,
       dispatchEvent: () => true,
     };
-    let now = 0;
-    let timers = 0;
-    const expression = buildThinkingTimeExpressionForTest("heavy", null);
-    const evaluate = new Function(
-      "document",
-      "performance",
-      "setTimeout",
-      "window",
-      "EventTarget",
-      "PointerEvent",
-      "MouseEvent",
-      "HTMLElement",
-      `return ${expression};`,
-    ) as (
-      document: unknown,
-      performance: unknown,
-      setTimeout: unknown,
-      window: unknown,
-      EventTarget: unknown,
-      PointerEvent: unknown,
-      MouseEvent: unknown,
-      HTMLElement: unknown,
-    ) => Promise<unknown>;
+    for (const targetModel of [null, "gpt-5.5"] as const) {
+      pillVisible = false;
+      modelButtonClicks = 0;
+      intelligencePill.textContent = "Medium";
+      intelligencePill.setAttribute("aria-expanded", "false");
+      medium.setAttribute("aria-checked", "true");
+      medium.setAttribute("data-state", "checked");
+      extraHigh.setAttribute("aria-checked", "false");
+      extraHigh.setAttribute("data-state", "unchecked");
+      let now = 0;
+      let timers = 0;
+      const expression = buildThinkingTimeExpressionForTest("heavy", targetModel);
+      const evaluate = new Function(
+        "document",
+        "performance",
+        "setTimeout",
+        "window",
+        "EventTarget",
+        "PointerEvent",
+        "MouseEvent",
+        "HTMLElement",
+        `return ${expression};`,
+      ) as (
+        document: unknown,
+        performance: unknown,
+        setTimeout: unknown,
+        window: unknown,
+        EventTarget: unknown,
+        PointerEvent: unknown,
+        MouseEvent: unknown,
+        HTMLElement: unknown,
+      ) => Promise<unknown>;
 
-    await expect(
-      evaluate(
-        documentStub,
-        { now: () => (now += 100) },
-        (callback: () => void) => {
-          timers += 1;
-          if (timers >= 2) pillVisible = true;
-          callback();
-        },
-        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
-        FakeEventTarget,
-        FakeMouseEvent,
-        FakeMouseEvent,
-        FakeElement,
-      ),
-    ).resolves.toEqual({ status: "switched", label: "Extra High" });
-    expect(intelligencePill.textContent).toBe("Extra High");
+      await expect(
+        evaluate(
+          documentStub,
+          { now: () => (now += 100) },
+          (callback: () => void) => {
+            timers += 1;
+            if (timers >= 40) pillVisible = true;
+            callback();
+          },
+          { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+          FakeEventTarget,
+          FakeMouseEvent,
+          FakeMouseEvent,
+          FakeElement,
+        ),
+      ).resolves.toEqual({ status: "switched", label: "Extra High" });
+      expect(intelligencePill.textContent).toBe("Extra High");
+      expect(modelButtonClicks).toBeGreaterThan(0);
+    }
   });
 
   it("captures a model-picker diagnostic on failure outcomes", () => {
