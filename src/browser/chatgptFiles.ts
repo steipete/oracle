@@ -648,6 +648,14 @@ async function moveDownloadedFileToExpectedName(
   if (path.resolve(targetPath) === path.resolve(filePath)) {
     return filePath;
   }
+  const expected = path.parse(filename);
+  const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const duplicatePattern = new RegExp(
+    `^${escapeRegExp(expected.name)} ?\\(\\d+\\)${escapeRegExp(expected.ext)}$`,
+  );
+  if (!duplicatePattern.test(path.basename(filePath))) {
+    return filePath;
+  }
   const targetExists = await fs
     .stat(targetPath)
     .then((stat) => stat.isFile())
@@ -778,7 +786,8 @@ export async function saveAssistantDownloadButtonArtifacts(params: {
   const downloadedPaths: string[] = [];
   const missingFiles: string[] = [];
 
-  for (const file of expectedFiles) {
+  const unattemptedFiles: string[] = [];
+  for (const [fileIndex, file] of expectedFiles.entries()) {
     const expectedLabels = resolveDownloadButtonLabels([file]);
     const clicked = await clickAssistantDownloadButtons({
       Runtime: params.Runtime,
@@ -805,8 +814,16 @@ export async function saveAssistantDownloadButtonArtifacts(params: {
     );
     if (downloaded.length === 0) {
       missingFiles.push(displayName);
-      knownEntries = new Set(await fs.readdir(artifactsDir).catch(() => []));
-      continue;
+      unattemptedFiles.push(...expectedFiles.slice(fileIndex + 1).map(describeDownloadableFile));
+      missingFiles.push(...unattemptedFiles);
+      params.logger?.(
+        `[browser] Download timed out for ${displayName}${
+          unattemptedFiles.length > 0
+            ? `; skipped remaining expected file(s) to avoid misassigning a late completion: ${unattemptedFiles.join(", ")}`
+            : ""
+        }`,
+      );
+      break;
     }
 
     const normalizedDownloads = await Promise.all(

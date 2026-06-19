@@ -612,12 +612,54 @@ describe("collectChatGptFileArtifacts", () => {
     }
   });
 
-  test("reports missing expected files after partial button fallback", async () => {
+  test("preserves a browser-provided filename for a generic download endpoint", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chatgpt-file-filename-"));
+    setOracleHomeDirOverrideForTest(tmpHome);
+    const sessionId = "collect-session";
+    const artifactsDir = path.join(tmpHome, "sessions", sessionId, "artifacts");
+    const runtime = {
+      evaluate: vi.fn().mockImplementation(async () => {
+        await fs.mkdir(artifactsDir, { recursive: true });
+        await fs.writeFile(path.join(artifactsDir, "report.csv"), "a,b\n1,2\n", "utf8");
+        return { result: { value: [{ text: "Download", ariaLabel: "", testId: "" }] } };
+      }),
+    } as unknown as ChromeClient["Runtime"];
+    const page = {
+      setDownloadBehavior: vi.fn().mockResolvedValue({}),
+    } as unknown as ChromeClient["Page"];
+
+    const savedFiles = await saveAssistantDownloadButtonArtifacts({
+      Page: page,
+      Runtime: runtime,
+      sessionId,
+      downloadWaitMs: 25,
+      files: [
+        {
+          url: "https://chatgpt.com/backend-api/files/file_csv/download",
+          downloadUrl: "https://chatgpt.com/backend-api/files/file_csv/download",
+        },
+      ],
+    });
+
+    expect(savedFiles).toHaveLength(1);
+    expect(savedFiles[0]).toMatchObject({
+      filename: "report.csv",
+      label: "report.csv",
+      mimeType: "text/csv",
+    });
+    await expect(fs.readFile(path.join(artifactsDir, "report.csv"), "utf8")).resolves.toBe(
+      "a,b\n1,2\n",
+    );
+    await expect(fs.stat(path.join(artifactsDir, "download"))).rejects.toThrow();
+  });
+
+  test("stops after a timed-out download so a late completion cannot become the next file", async () => {
     const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chatgpt-file-missing-"));
     setOracleHomeDirOverrideForTest(tmpHome);
     const sessionId = "collect-session";
     const artifactsDir = path.join(tmpHome, "sessions", sessionId, "artifacts");
     const logger = vi.fn();
+    let lateCompletion: Promise<void> | undefined;
     const runtime = {
       evaluate: vi.fn().mockImplementation(async ({ expression }: { expression?: string }) => {
         const text = String(expression ?? "");
@@ -627,10 +669,16 @@ describe("collectChatGptFileArtifacts", () => {
           return { result: { value: [{ text: "Download A.txt", ariaLabel: "", testId: "" }] } };
         }
         if (text.includes('"b.md"')) {
+          const partialPath = path.join(artifactsDir, "B.md.crdownload");
+          await fs.writeFile(partialPath, "B");
+          lateCompletion = new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+              void fs.rename(partialPath, path.join(artifactsDir, "B.md")).then(resolve, reject);
+            }, 275);
+          });
           return { result: { value: [{ text: "Download B.md", ariaLabel: "", testId: "" }] } };
         }
         if (text.includes('"c.zip"')) {
-          await fs.writeFile(path.join(artifactsDir, "C(1).zip"), "C");
           return { result: { value: [{ text: "Download C.zip", ariaLabel: "", testId: "" }] } };
         }
         return { result: { value: [] } };
@@ -661,9 +709,24 @@ describe("collectChatGptFileArtifacts", () => {
       ],
     });
 
-    expect(savedFiles.map((file) => file.filename).sort()).toEqual(["A.txt", "C.zip"]);
+    await lateCompletion;
+    expect(savedFiles.map((file) => file.filename)).toEqual(["A.txt"]);
+    expect(
+      vi
+        .mocked(runtime.evaluate)
+        .mock.calls.some(([options]) => String(options?.expression ?? "").includes('"c.zip"')),
+    ).toBe(false);
+    await expect(fs.readFile(path.join(artifactsDir, "B.md"), "utf8")).resolves.toBe("B");
+    await expect(fs.stat(path.join(artifactsDir, "C.zip"))).rejects.toThrow();
     expect(logger).toHaveBeenCalledWith(
-      expect.stringContaining("Download button fallback did not save expected file(s): B.md"),
+      expect.stringContaining(
+        "Download timed out for B.md; skipped remaining expected file(s) to avoid misassigning a late completion: C.zip",
+      ),
+    );
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Download button fallback did not save expected file(s): B.md, C.zip",
+      ),
     );
   });
 
