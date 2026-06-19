@@ -507,6 +507,7 @@ function buildClickAssistantDownloadButtonsExpression(
   minTurnIndex?: number | null,
   expectedLabels: string[] = [],
   allowGenericDownloadLabels = true,
+  options: { markClicked?: boolean; maxClicks?: number } = {},
 ): string {
   const minTurnLiteral =
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
@@ -516,12 +517,23 @@ function buildClickAssistantDownloadButtonsExpression(
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   const expectedLabelsLiteral = JSON.stringify(expectedLabels);
   const allowGenericDownloadLabelsLiteral = JSON.stringify(allowGenericDownloadLabels);
+  const markClickedLiteral = JSON.stringify(options.markClicked === true);
+  const maxClicksLiteral =
+    typeof options.maxClicks === "number" &&
+    Number.isFinite(options.maxClicks) &&
+    options.maxClicks > 0
+      ? Math.floor(options.maxClicks)
+      : 0;
   return `(() => {
     const MIN_TURN_INDEX = ${minTurnLiteral};
     const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const EXPECTED_LABELS = ${expectedLabelsLiteral};
     const ALLOW_GENERIC_DOWNLOAD_LABELS = ${allowGenericDownloadLabelsLiteral};
+    const MARK_CLICKED = ${markClickedLiteral};
+    const MAX_CLICKS = ${maxClicksLiteral};
+    const HAS_EXPECTED_LABELS = EXPECTED_LABELS.length > 0;
+    const CLICKED_ATTRIBUTE = 'data-oracle-download-clicked';
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
@@ -532,39 +544,165 @@ function buildClickAssistantDownloadButtonsExpression(
       if (testId.includes('assistant')) return true;
       return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
     };
+    const expectedFileButton = (button) => {
+      const text = (button.textContent || '').trim().toLowerCase();
+      return EXPECTED_LABELS.some((label) => {
+        const downloadLabel = 'download ' + label;
+        return text === label ||
+          text.startsWith(label + ' ') ||
+          text === downloadLabel ||
+          text.startsWith(downloadLabel + ' ');
+      });
+    };
+    const genericBehaviorButton = (button) => {
+      const text = (button.textContent || '').trim().toLowerCase();
+      return ALLOW_GENERIC_DOWNLOAD_LABELS && /^download\\b/.test(text);
+    };
+    const genericFallbackButton = (button) => {
+      if (!ALLOW_GENERIC_DOWNLOAD_LABELS) return false;
+      const text = (button.textContent || '').trim().toLowerCase();
+      const aria = (button.getAttribute('aria-label') || '').trim().toLowerCase();
+      const testId = (button.getAttribute('data-testid') || '').trim().toLowerCase();
+      return text === 'download' || aria === 'download' || testId === 'download-files-turn-action-button';
+    };
     const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
-    const selected = new Set();
+    const expectedMatches = new Set();
+    const genericBehaviorMatches = new Set();
+    const genericFallbackMatches = new Set();
+    const genericAllMatches = new Set();
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       const turn = turns[index];
       if (!isAssistantTurn(turn)) continue;
       if (MIN_TURN_INDEX >= 0 && index < MIN_TURN_INDEX) continue;
       const messageRoot = turn.querySelector(ASSISTANT_SELECTOR) || turn;
-      const buttons = Array.from(messageRoot.querySelectorAll('button'));
-      const primary = buttons.filter((button) => {
-        const text = (button.textContent || '').trim().toLowerCase();
-        const expectedFile = EXPECTED_LABELS.some(
-          (label) => text === label || text.startsWith(label + ' ')
-        );
-        return String(button.className || '').includes('behavior-btn') &&
-          (expectedFile || (ALLOW_GENERIC_DOWNLOAD_LABELS && /^download\\b/.test(text)));
+      const buttons = Array.from(messageRoot.querySelectorAll('button'))
+        .filter((button) => !(MARK_CLICKED && button.getAttribute(CLICKED_ATTRIBUTE) === 'true'));
+      const behaviorButtons = buttons.filter((button) =>
+        String(button.className || '').includes('behavior-btn')
+      );
+      behaviorButtons.filter(expectedFileButton).forEach((button) => expectedMatches.add(button));
+      const genericBehavior = behaviorButtons.filter(genericBehaviorButton);
+      genericBehavior.forEach((button) => {
+        genericBehaviorMatches.add(button);
+        genericAllMatches.add(button);
       });
-      const fallback = primary.length > 0 ? [] : buttons.filter((button) => {
-        if (!ALLOW_GENERIC_DOWNLOAD_LABELS) return false;
-        const text = (button.textContent || '').trim().toLowerCase();
-        const aria = (button.getAttribute('aria-label') || '').trim().toLowerCase();
-        const testId = (button.getAttribute('data-testid') || '').trim().toLowerCase();
-        return text === 'download' || aria === 'download' || testId === 'download-files-turn-action-button';
-      });
-      [...primary, ...fallback].forEach((button) => selected.add(button));
+      if (genericBehavior.length === 0) {
+        buttons.filter(genericFallbackButton).forEach((button) => {
+          genericFallbackMatches.add(button);
+          genericAllMatches.add(button);
+        });
+      }
     }
-    const selectedButtons = Array.from(selected);
-    selectedButtons.forEach((button) => button.click());
+    const selected = expectedMatches.size > 0
+      ? expectedMatches
+      : HAS_EXPECTED_LABELS
+        ? genericBehaviorMatches.size > 0
+          ? genericBehaviorMatches
+          : genericFallbackMatches
+        : genericAllMatches;
+    const selectedButtons = Array.from(selected).slice(0, MAX_CLICKS > 0 ? MAX_CLICKS : undefined);
+    selectedButtons.forEach((button) => {
+      if (MARK_CLICKED) button.setAttribute(CLICKED_ATTRIBUTE, 'true');
+      button.click();
+    });
     return selectedButtons.map((button) => ({
       text: (button.textContent || '').trim(),
       ariaLabel: button.getAttribute('aria-label') || '',
       testId: button.getAttribute('data-testid') || '',
     }));
   })()`;
+}
+
+function describeDownloadableFile(file: BrowserDownloadableFile): string {
+  return (
+    file.filename ??
+    file.label ??
+    filenameFromUrl(file.sandboxUrl) ??
+    filenameFromUrl(file.downloadUrl) ??
+    filenameFromUrl(file.url) ??
+    file.sandboxUrl ??
+    file.downloadUrl ??
+    file.url
+  );
+}
+
+function expectedDownloadedFilename(file: BrowserDownloadableFile): string | undefined {
+  const filename =
+    file.filename ??
+    filenameFromUrl(file.sandboxUrl) ??
+    filenameFromUrl(file.downloadUrl) ??
+    filenameFromUrl(file.url);
+  const basename = path.basename(String(filename ?? "").trim());
+  return basename && basename !== "." ? basename : undefined;
+}
+
+async function moveDownloadedFileToExpectedName(
+  filePath: string,
+  file: BrowserDownloadableFile,
+): Promise<string> {
+  const filename = expectedDownloadedFilename(file);
+  if (!filename) {
+    return filePath;
+  }
+  const targetPath = path.join(path.dirname(filePath), filename);
+  if (path.resolve(targetPath) === path.resolve(filePath)) {
+    return filePath;
+  }
+  const targetExists = await fs
+    .stat(targetPath)
+    .then((stat) => stat.isFile())
+    .catch(() => false);
+  if (targetExists) {
+    return filePath;
+  }
+  await fs.rename(filePath, targetPath);
+  return targetPath;
+}
+
+async function clickAssistantDownloadButtons(params: {
+  Runtime: ChromeClient["Runtime"];
+  minTurnIndex?: number | null;
+  expectedLabels?: string[];
+  allowGenericDownloadLabels?: boolean;
+  markClicked?: boolean;
+  maxClicks?: number;
+  timeoutMs?: number;
+}): Promise<unknown[]> {
+  const expression = buildClickAssistantDownloadButtonsExpression(
+    params.minTurnIndex,
+    params.expectedLabels ?? [],
+    params.allowGenericDownloadLabels,
+    { markClicked: params.markClicked, maxClicks: params.maxClicks },
+  );
+  const deadline = Date.now() + (params.timeoutMs ?? DOWNLOAD_BUTTON_WAIT_MS);
+  while (Date.now() < deadline) {
+    const { result } = await params.Runtime.evaluate({
+      expression,
+      returnByValue: true,
+    });
+    const clicked = Array.isArray(result?.value) ? result.value : [];
+    if (clicked.length > 0) {
+      return clicked;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return [];
+}
+
+async function savedBrowserFileFromPath(filePath: string): Promise<SavedBrowserFile> {
+  const filename = path.basename(filePath);
+  const stat = await fs.stat(filePath);
+  return {
+    kind: "file",
+    path: filePath,
+    label: filename,
+    mimeType: mimeTypeFromFilename(filename),
+    sizeBytes: stat.size,
+    sourceUrl: "browser-download",
+    url: "browser-download",
+    finalUrl: "browser-download",
+    filename,
+  };
 }
 
 export async function saveAssistantDownloadButtonArtifacts(params: {
@@ -575,7 +713,9 @@ export async function saveAssistantDownloadButtonArtifacts(params: {
   logger?: BrowserLogger;
   files?: BrowserDownloadableFile[];
   allowGenericDownloadLabels?: boolean;
+  buttonWaitMs?: number;
   downloadPath?: string;
+  downloadWaitMs?: number;
   minTurnIndex?: number | null;
   sessionId?: string;
 }): Promise<SavedBrowserFile[]> {
@@ -607,47 +747,89 @@ export async function saveAssistantDownloadButtonArtifacts(params: {
     return [];
   }
 
-  let clicked: unknown[] = [];
-  const expression = buildClickAssistantDownloadButtonsExpression(
-    params.minTurnIndex,
-    resolveDownloadButtonLabels(params.files ?? []),
-    params.allowGenericDownloadLabels,
-  );
-  const deadline = Date.now() + DOWNLOAD_BUTTON_WAIT_MS;
-  while (Date.now() < deadline) {
-    const { result } = await params.Runtime.evaluate({
-      expression,
-      returnByValue: true,
+  const buttonWaitMs = params.buttonWaitMs ?? DOWNLOAD_BUTTON_WAIT_MS;
+  const downloadWaitMs = params.downloadWaitMs ?? DOWNLOAD_BUTTON_WAIT_MS;
+  const expectedFiles = params.files ?? [];
+
+  if (expectedFiles.length === 0) {
+    const clicked = await clickAssistantDownloadButtons({
+      Runtime: params.Runtime,
+      minTurnIndex: params.minTurnIndex,
+      expectedLabels: [],
+      allowGenericDownloadLabels: params.allowGenericDownloadLabels,
+      timeoutMs: buttonWaitMs,
     });
-    clicked = Array.isArray(result?.value) ? result.value : [];
-    if (clicked.length > 0) {
-      break;
+    if (clicked.length === 0) {
+      params.logger?.("[browser] No assistant download buttons found for button fallback.");
+      return [];
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    params.logger?.(`[browser] Clicked ${clicked.length} assistant download button(s).`);
+    const downloaded = await waitForCompletedDownloadFiles(
+      artifactsDir,
+      before,
+      clicked.length,
+      downloadWaitMs,
+    );
+    return Promise.all(downloaded.map(savedBrowserFileFromPath));
   }
-  if (clicked.length === 0) {
+
+  let clickedCount = 0;
+  let knownEntries = before;
+  const downloadedPaths: string[] = [];
+  const missingFiles: string[] = [];
+
+  for (const file of expectedFiles) {
+    const expectedLabels = resolveDownloadButtonLabels([file]);
+    const clicked = await clickAssistantDownloadButtons({
+      Runtime: params.Runtime,
+      minTurnIndex: params.minTurnIndex,
+      expectedLabels,
+      allowGenericDownloadLabels: params.allowGenericDownloadLabels === true,
+      markClicked: true,
+      maxClicks: 1,
+      timeoutMs: buttonWaitMs,
+    });
+    const displayName = describeDownloadableFile(file);
+    if (clicked.length === 0) {
+      missingFiles.push(displayName);
+      knownEntries = new Set(await fs.readdir(artifactsDir).catch(() => []));
+      continue;
+    }
+
+    clickedCount += clicked.length;
+    const downloaded = await waitForCompletedDownloadFiles(
+      artifactsDir,
+      knownEntries,
+      1,
+      downloadWaitMs,
+    );
+    if (downloaded.length === 0) {
+      missingFiles.push(displayName);
+      knownEntries = new Set(await fs.readdir(artifactsDir).catch(() => []));
+      continue;
+    }
+
+    const normalizedDownloads = await Promise.all(
+      downloaded.map((filePath, index) =>
+        index === 0 ? moveDownloadedFileToExpectedName(filePath, file) : filePath,
+      ),
+    );
+    downloadedPaths.push(...normalizedDownloads);
+    knownEntries = new Set(await fs.readdir(artifactsDir).catch(() => []));
+  }
+
+  if (clickedCount === 0) {
     params.logger?.("[browser] No assistant download buttons found for button fallback.");
-    return [];
+  } else {
+    params.logger?.(`[browser] Clicked ${clickedCount} assistant download button(s).`);
   }
-  params.logger?.(`[browser] Clicked ${clicked.length} assistant download button(s).`);
-  const downloaded = await waitForCompletedDownloadFiles(artifactsDir, before, clicked.length);
-  return Promise.all(
-    downloaded.map(async (filePath): Promise<SavedBrowserFile> => {
-      const filename = path.basename(filePath);
-      const stat = await fs.stat(filePath);
-      return {
-        kind: "file",
-        path: filePath,
-        label: filename,
-        mimeType: mimeTypeFromFilename(filename),
-        sizeBytes: stat.size,
-        sourceUrl: "browser-download",
-        url: "browser-download",
-        finalUrl: "browser-download",
-        filename,
-      };
-    }),
-  );
+  if (missingFiles.length > 0) {
+    params.logger?.(
+      `[browser] Download button fallback did not save expected file(s): ${missingFiles.join(", ")}`,
+    );
+  }
+
+  return Promise.all([...new Set(downloadedPaths)].map(savedBrowserFileFromPath));
 }
 
 interface DownloadedFilePayload {
