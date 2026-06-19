@@ -27,25 +27,23 @@ export async function launchChrome(
   // strip the keychain-mocking flags from both chrome-launcher's defaults and
   // Oracle's set, and ignore the defaults so they aren't re-added.
   const usingCopiedProfile = Boolean(config.copyProfileSource);
+  const launchOptions = resolveChromeLaunchOptions(chromeFlags, usingCopiedProfile);
   const launcher = usePatchedLauncher
     ? await launchWithCustomHost({
-        chromeFlags,
+        chromeFlags: launchOptions.chromeFlags,
         chromePath: config.chromePath ?? undefined,
         userDataDir,
         host: connectHost ?? "127.0.0.1",
         requestedPort: debugPort ?? undefined,
+        ignoreDefaultFlags: launchOptions.ignoreDefaultFlags,
       })
     : await launch({
         chromePath: config.chromePath ?? undefined,
-        chromeFlags: usingCopiedProfile
-          ? [...Launcher.defaultFlags(), ...chromeFlags].filter(
-              (flag) => flag !== "--use-mock-keychain" && flag !== "--password-store=basic",
-            )
-          : chromeFlags,
+        chromeFlags: launchOptions.chromeFlags,
         userDataDir,
         handleSIGINT: false,
         port: debugPort ?? undefined,
-        ignoreDefaultFlags: usingCopiedProfile,
+        ignoreDefaultFlags: launchOptions.ignoreDefaultFlags,
       });
   const pidLabel = typeof launcher.pid === "number" ? ` (pid ${launcher.pid})` : "";
   const hostLabel = connectHost ? ` on ${connectHost}` : "";
@@ -665,6 +663,28 @@ function buildChromeFlags(headless: boolean, debugBindAddress?: string | null): 
   return flags;
 }
 
+function resolveChromeLaunchOptions(
+  chromeFlags: string[],
+  usingCopiedProfile: boolean,
+): { chromeFlags: string[]; ignoreDefaultFlags: boolean } {
+  if (!usingCopiedProfile) {
+    return { chromeFlags, ignoreDefaultFlags: false };
+  }
+  return {
+    chromeFlags: [...Launcher.defaultFlags(), ...chromeFlags].filter(
+      (flag) => flag !== "--use-mock-keychain" && flag !== "--password-store=basic",
+    ),
+    ignoreDefaultFlags: true,
+  };
+}
+
+export function resolveChromeLaunchOptionsForTest(
+  chromeFlags: string[],
+  usingCopiedProfile: boolean,
+): { chromeFlags: string[]; ignoreDefaultFlags: boolean } {
+  return resolveChromeLaunchOptions(chromeFlags, usingCopiedProfile);
+}
+
 function parseDebugPortEnv(): number | null {
   const raw = process.env.ORACLE_BROWSER_PORT ?? process.env.ORACLE_BROWSER_DEBUG_PORT;
   if (!raw) return null;
@@ -715,12 +735,14 @@ async function launchWithCustomHost({
   userDataDir,
   host,
   requestedPort,
+  ignoreDefaultFlags,
 }: {
   chromeFlags: string[];
   chromePath?: string | null;
   userDataDir: string;
   host: string | null;
   requestedPort?: number;
+  ignoreDefaultFlags?: boolean;
 }): Promise<LaunchedChrome & { host?: string }> {
   const launcher = new Launcher({
     chromePath: chromePath ?? undefined,
@@ -728,6 +750,7 @@ async function launchWithCustomHost({
     userDataDir,
     handleSIGINT: false,
     port: requestedPort ?? undefined,
+    ignoreDefaultFlags,
   });
 
   if (host) {

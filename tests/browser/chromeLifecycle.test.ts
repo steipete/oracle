@@ -102,6 +102,23 @@ describe("registerTerminationHooks", () => {
   });
 });
 
+describe("copied-profile launch flags", () => {
+  test("strips mock keychain flags while retaining custom-host launch flags", async () => {
+    const { resolveChromeLaunchOptionsForTest } = await import(
+      "../../src/browser/chromeLifecycle.js"
+    );
+    const options = resolveChromeLaunchOptionsForTest(
+      ["--use-mock-keychain", "--password-store=basic", "--remote-debugging-address=0.0.0.0"],
+      true,
+    );
+
+    expect(options.ignoreDefaultFlags).toBe(true);
+    expect(options.chromeFlags).not.toContain("--use-mock-keychain");
+    expect(options.chromeFlags).not.toContain("--password-store=basic");
+    expect(options.chromeFlags).toContain("--remote-debugging-address=0.0.0.0");
+  });
+});
+
 describe("connectWithNewTab", () => {
   beforeEach(() => {
     cdpMock.mockReset();
