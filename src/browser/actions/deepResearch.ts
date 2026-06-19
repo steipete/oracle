@@ -168,6 +168,7 @@ export async function waitForDeepResearchCompletion(
   options?: {
     ignoredTargetKeys?: readonly string[];
     requireScopedTargetOwner?: boolean;
+    targetBaselineCaptured?: boolean;
   },
 ): Promise<{
   text: string;
@@ -183,6 +184,9 @@ export async function waitForDeepResearchCompletion(
       : -1;
   const scopedToNewTurns = minTurnLiteral >= 0;
   const ignoredTargetKeys = new Set(options?.ignoredTargetKeys ?? []);
+  const requireScopedTargetOwner =
+    options?.requireScopedTargetOwner === true ||
+    (scopedToNewTurns && options?.targetBaselineCaptured !== true);
   let observedResearchEvidence = false;
   let loggedIncompleteResult = false;
 
@@ -223,9 +227,11 @@ export async function waitForDeepResearchCompletion(
     // and fall back to the in-page frame path for legacy/inline rendering.
     const rawTargetResult = client
       ? ((
-          await readDeepResearchTargetResult(client, ignoredTargetKeys, minTurnLiteral).catch(
-            () => null,
-          )
+          await readDeepResearchTargetResult(
+            client,
+            ignoredTargetKeys,
+            requireScopedTargetOwner ? minTurnLiteral : -1,
+          ).catch(() => null)
         )?.read ?? null)
       : null;
     const targetResult = filterIncompleteDeepResearchRead(rawTargetResult);
@@ -522,6 +528,9 @@ async function readDeepResearchTargetResult(
   if (typeof rawClient.send !== "function") {
     return null;
   }
+  if (typeof client.on !== "function") {
+    return null;
+  }
 
   // On the browser-WSEndpoint path, `client` is a session-bound wrapper whose
   // domain methods target the page session but whose raw `send` is the
@@ -553,7 +562,7 @@ async function readDeepResearchTargetResult(
     }
   };
 
-  client.on?.("Target.attachedToTarget", onAttached as never);
+  client.on("Target.attachedToTarget", onAttached as never);
   try {
     // Scope discovery to the current Oracle-controlled page. `client` is
     // connected to the conversation page target, so enabling auto-attach on this
@@ -565,7 +574,7 @@ async function readDeepResearchTargetResult(
     // would surface another tab's completed Deep Research report and let it be
     // saved into the current session (cross-tab leak). Only auto-attached,
     // page-scoped sessions are treated as belonging to this run.
-    await rawClient
+    const autoAttachEnabled = await rawClient
       .send(
         "Target.setAutoAttach",
         {
@@ -575,7 +584,13 @@ async function readDeepResearchTargetResult(
         },
         pageSessionId,
       )
-      .catch(() => undefined);
+      .then(
+        () => true,
+        () => false,
+      );
+    if (!autoAttachEnabled) {
+      return null;
+    }
     await delay(100);
 
     if (minTurnIndex >= 0) {
@@ -647,7 +662,11 @@ async function readDeepResearchTargetResult(
 }
 
 export async function captureDeepResearchTargetKeys(client: ChromeClient): Promise<string[]> {
-  return (await readDeepResearchTargetResult(client))?.targetKeys ?? [];
+  const scan = await readDeepResearchTargetResult(client);
+  if (!scan) {
+    throw new Error("Deep Research target baseline capture unavailable");
+  }
+  return scan.targetKeys;
 }
 
 async function readDeepResearchTargetOwnerTurnIndex(

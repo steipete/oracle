@@ -201,6 +201,7 @@ describe("closeBlankChromeTabs", () => {
   });
 
   test("opens a dedicated tab through a browser websocket endpoint", async () => {
+    const send = vi.fn(async () => ({}));
     const browserClient = {
       Target: {
         createTarget: vi.fn(async () => ({ targetId: "target-9" })),
@@ -218,6 +219,7 @@ describe("closeBlankChromeTabs", () => {
       removeListener: vi.fn(),
       close: vi.fn(async () => {}),
     };
+    Object.defineProperty(browserClient, "send", { value: send });
     cdpMock.mockResolvedValue(browserClient);
 
     const { connectToRemoteChrome } = await import("../../src/browser/chromeLifecycle.js");
@@ -241,6 +243,16 @@ describe("closeBlankChromeTabs", () => {
       flatten: true,
     });
     expect(connection.targetId).toBe("target-9");
+    await (
+      connection.client as typeof connection.client & {
+        send: (method: string, params: unknown, sessionId: string) => Promise<unknown>;
+      }
+    ).send("Target.setAutoAttach", { autoAttach: true }, "session-9");
+    expect(send).toHaveBeenCalledWith(
+      "Target.setAutoAttach",
+      { autoAttach: true },
+      "session-9",
+    );
   });
 
   test("waits on a single websocket connection attempt for Chrome approval", async () => {

@@ -469,6 +469,23 @@ describe("waitForDeepResearchCompletion", () => {
     ]);
   });
 
+  it("rejects an unavailable target baseline instead of trusting an empty scan", async () => {
+    const mockClient = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+      send: vi.fn(async (method: string) => {
+        if (method === "Target.setAutoAttach") {
+          throw new Error("auto-attach unavailable");
+        }
+        return {};
+      }),
+    };
+
+    await expect(captureDeepResearchTargetKeys(mockClient as never)).rejects.toThrow(
+      "baseline capture unavailable",
+    );
+  });
+
   it("detects completion via finished actions", async () => {
     // First poll: still in progress
     mockRuntime.evaluate.mockResolvedValueOnce({
@@ -1059,32 +1076,19 @@ describe("waitForDeepResearchCompletion", () => {
     }
   });
 
-  it("ignores pre-submit targets while accepting an OOPIF-only current report", async () => {
-    mockRuntime.evaluate
-      .mockResolvedValueOnce({
-        result: {
-          value: {
-            finished: false,
-            stopVisible: true,
-            textLength: 11,
-            hasIframe: true,
-            hasActiveScopedResearch: false,
-          },
+  it("accepts a fresh OOPIF report when its frame owner is unavailable", async () => {
+    mockRuntime.evaluate.mockResolvedValue({
+      result: {
+        value: {
+          finished: false,
+          stopVisible: true,
+          textLength: 11,
+          hasIframe: true,
+          hasActiveScopedResearch: false,
         },
-      })
-      .mockResolvedValueOnce({
-        result: {
-          value: {
-            finished: false,
-            stopVisible: false,
-            textLength: 0,
-            hasIframe: true,
-            hasActiveScopedResearch: false,
-          },
-        },
-      });
+      },
+    });
 
-    let attachPoll = 0;
     const evaluatedSessions: string[] = [];
     const listeners = new Map<string, (params: unknown, sessionId?: string) => void>();
     const deepResearchUrl =
@@ -1097,7 +1101,6 @@ describe("waitForDeepResearchCompletion", () => {
       removeListener: vi.fn(),
       send: vi.fn(async (method: string, params?: unknown, sessionId?: string) => {
         if (method === "Target.setAutoAttach" && (params as { autoAttach?: boolean })?.autoAttach) {
-          attachPoll += 1;
           listeners.get("Target.attachedToTarget")?.(
             {
               sessionId: "old-session",
@@ -1125,16 +1128,7 @@ describe("waitForDeepResearchCompletion", () => {
           return { executionContextId: sessionId === "old-session" ? 10 : 20 };
         }
         if (method === "DOM.getFrameOwner") {
-          const frameId = (params as { frameId?: string }).frameId;
-          return { backendNodeId: frameId === "current-session-frame" ? 20 : 10 };
-        }
-        if (method === "DOM.resolveNode") {
-          const backendNodeId = (params as { backendNodeId?: number }).backendNodeId;
-          return { object: { objectId: backendNodeId === 20 ? "current-owner" : "old-owner" } };
-        }
-        if (method === "Runtime.callFunctionOn" && sessionId === "page-session") {
-          const objectId = (params as { objectId?: string }).objectId;
-          return { result: { value: objectId === "current-owner" ? 1 : 0 } };
+          return {};
         }
         if (method === "Runtime.evaluate" && sessionId) {
           evaluatedSessions.push(sessionId);
@@ -1152,19 +1146,12 @@ describe("waitForDeepResearchCompletion", () => {
           }
           return {
             result: {
-              value:
-                attachPoll >= 2
-                  ? {
-                      completed: true,
-                      inProgress: false,
-                      textLength: 90,
-                      text: "CURRENT_REPORT https://example.com/current",
-                    }
-                  : {
-                      completed: false,
-                      inProgress: true,
-                      textLength: 12,
-                    },
+              value: {
+                completed: true,
+                inProgress: false,
+                textLength: 90,
+                text: "CURRENT_REPORT https://example.com/current",
+              },
             },
           };
         }
@@ -1179,12 +1166,17 @@ describe("waitForDeepResearchCompletion", () => {
       1,
       undefined,
       mockClient as never,
-      { ignoredTargetKeys: ["old-target"] },
+      { ignoredTargetKeys: ["old-target"], targetBaselineCaptured: true },
     );
 
     expect(result.text).toBe("CURRENT_REPORT https://example.com/current");
     expect(evaluatedSessions).toContain("old-session");
     expect(evaluatedSessions).toContain("current-session");
+    expect(mockClient.send).not.toHaveBeenCalledWith(
+      "DOM.getFrameOwner",
+      expect.anything(),
+      "page-session",
+    );
   });
 
   it("scopes reattached OOPIF reports to their owning conversation turn", async () => {
@@ -1548,14 +1540,15 @@ describe("waitForDeepResearchCompletion", () => {
     }
   });
 
-  it("returns an OOPIF report via the target path during a scoped run when the main DOM has no assistant turn", async () => {
+  it("returns a fresh OOPIF report when the main DOM has no assistant turn", async () => {
     // Regression: ChatGPT renders the Deep Research report inside an
     // out-of-process iframe that is invisible to the main page's frame tree.
     // The main-DOM poll therefore shows no assistant turn and
     // hasActiveScopedResearch=false, while the target-attach path reads the
     // completed report directly. Both Page and client are passed (production
-    // shape) and the run is scoped (minTurnIndex>=0). The target-confirmed
-    // completion must be returned instead of hanging until timeout.
+    // shape), the run is scoped (minTurnIndex>=0), and the pre-submit target
+    // baseline is present. The target-confirmed completion must be returned
+    // without requiring frame-owner resolution, which OOPIFs may not support.
     mockRuntime.evaluate.mockResolvedValue({
       result: {
         value: {
@@ -1654,10 +1647,11 @@ describe("waitForDeepResearchCompletion", () => {
       1,
       mockPage as never,
       mockClient as never,
+      { ignoredTargetKeys: [], targetBaselineCaptured: true },
     );
 
     expect(result.text).toBe("OOPIF_REPORT https://example.com/report");
-    expect(mockClient.send).toHaveBeenCalledWith(
+    expect(mockClient.send).not.toHaveBeenCalledWith(
       "DOM.getFrameOwner",
       { frameId: "sandbox" },
       undefined,

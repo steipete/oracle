@@ -679,7 +679,22 @@ type BrowserSubmissionResult = {
   baselineTurns: number | null;
   baselineAssistantText: string | null;
   deepResearchTargetKeys?: string[];
+  deepResearchTargetBaselineCaptured?: boolean;
 };
+
+async function captureDeepResearchTargetBaseline(
+  client: ChromeClient,
+  logger: BrowserLogger,
+): Promise<{ targetKeys: string[]; captured: boolean }> {
+  try {
+    return { targetKeys: await captureDeepResearchTargetKeys(client), captured: true };
+  } catch {
+    logger(
+      "[browser] Deep Research target baseline unavailable; retaining conversation-turn owner scoping.",
+    );
+    return { targetKeys: [], captured: false };
+  }
+}
 
 type BrowserSubmissionFallback = {
   prompt: string;
@@ -1453,9 +1468,9 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         attachmentNames: attachmentExpectations,
         onPromptSubmitted: markPromptSubmitted,
       };
-      const deepResearchTargetKeys =
+      const deepResearchTargetBaseline =
         deepResearch && client
-          ? await captureDeepResearchTargetKeys(client).catch(() => [])
+          ? await captureDeepResearchTargetBaseline(client, logger)
           : undefined;
       await runProviderSubmissionFlow(chatgptDomProvider, {
         prompt,
@@ -1497,7 +1512,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
       // Reattach needs a /c/ URL; ChatGPT can update it late, so poll in the background.
       scheduleConversationHint("post-submit", config.timeoutMs ?? 120_000);
-      return { baselineTurns, baselineAssistantText, deepResearchTargetKeys };
+      return {
+        baselineTurns,
+        baselineAssistantText,
+        deepResearchTargetKeys: deepResearchTargetBaseline?.targetKeys,
+        deepResearchTargetBaselineCaptured: deepResearchTargetBaseline?.captured,
+      };
     };
     const reloadPromptComposer = async () => {
       logger("[browser] Composer became unresponsive; reloading page and retrying once.");
@@ -1508,6 +1528,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     let baselineTurns: number | null = null;
     let baselineAssistantText: string | null = null;
     let deepResearchTargetKeys: string[] = [];
+    let deepResearchTargetBaselineCaptured = false;
     await acquireProfileLockIfNeeded();
     try {
       const submission = await runSubmissionWithRecovery({
@@ -1526,6 +1547,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       baselineTurns = submission.baselineTurns;
       baselineAssistantText = submission.baselineAssistantText;
       deepResearchTargetKeys = submission.deepResearchTargetKeys ?? [];
+      deepResearchTargetBaselineCaptured = submission.deepResearchTargetBaselineCaptured ?? false;
     } finally {
       await releaseProfileLockIfHeld();
     }
@@ -1540,7 +1562,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           baselineTurns,
           Page,
           client,
-          { ignoredTargetKeys: deepResearchTargetKeys },
+          {
+            ignoredTargetKeys: deepResearchTargetKeys,
+            targetBaselineCaptured: deepResearchTargetBaselineCaptured,
+          },
         ),
       );
       await updateConversationHint("post-deep-research", 15_000).catch(() => false);
@@ -2889,9 +2914,9 @@ async function runRemoteBrowserMode(
         attachmentNames: attachmentExpectations,
         onPromptSubmitted: markPromptSubmitted,
       };
-      const deepResearchTargetKeys =
+      const deepResearchTargetBaseline =
         deepResearch && client
-          ? await captureDeepResearchTargetKeys(client).catch(() => [])
+          ? await captureDeepResearchTargetBaseline(client, logger)
           : undefined;
       await runProviderSubmissionFlow(chatgptDomProvider, {
         prompt,
@@ -2905,7 +2930,12 @@ async function runRemoteBrowserMode(
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
       }
-      return { baselineTurns, baselineAssistantText, deepResearchTargetKeys };
+      return {
+        baselineTurns,
+        baselineAssistantText,
+        deepResearchTargetKeys: deepResearchTargetBaseline?.targetKeys,
+        deepResearchTargetBaselineCaptured: deepResearchTargetBaseline?.captured,
+      };
     };
     const reloadPromptComposer = async () => {
       logger("[browser] Composer became unresponsive; reloading page and retrying once.");
@@ -2916,6 +2946,7 @@ async function runRemoteBrowserMode(
     let baselineTurns: number | null = null;
     let baselineAssistantText: string | null = null;
     let deepResearchTargetKeys: string[] = [];
+    let deepResearchTargetBaselineCaptured = false;
     const submission = await runSubmissionWithRecovery({
       prompt: promptText,
       attachments,
@@ -2931,6 +2962,7 @@ async function runRemoteBrowserMode(
     baselineTurns = submission.baselineTurns;
     baselineAssistantText = submission.baselineAssistantText;
     deepResearchTargetKeys = submission.deepResearchTargetKeys ?? [];
+    deepResearchTargetBaselineCaptured = submission.deepResearchTargetBaselineCaptured ?? false;
     const imageArtifactMinTurnIndex = baselineTurns;
     if (deepResearch) {
       await waitForResearchPlanAutoConfirm(Runtime, logger);
@@ -2941,7 +2973,10 @@ async function runRemoteBrowserMode(
         baselineTurns,
         Page,
         client,
-        { ignoredTargetKeys: deepResearchTargetKeys },
+        {
+          ignoredTargetKeys: deepResearchTargetKeys,
+          targetBaselineCaptured: deepResearchTargetBaselineCaptured,
+        },
       );
       await emitRuntimeHint();
       const durationMs = Date.now() - startedAt;
