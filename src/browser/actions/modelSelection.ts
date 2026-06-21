@@ -43,6 +43,7 @@ export async function ensureModelSelection(
   const deadline = Date.now() + Math.max(0, buttonWaitMs);
 
   let result: ModelSelectionResult;
+  let announcedWait = false;
   for (;;) {
     const outcome = await Runtime.evaluate({
       expression: buildModelSelectionExpression(desiredModel, strategy),
@@ -52,6 +53,12 @@ export async function ensureModelSelection(
     result = outcome.result?.value as ModelSelectionResult;
     if (result?.status !== "button-missing" || Date.now() >= deadline) {
       break;
+    }
+    if (!announcedWait) {
+      announcedWait = true;
+      logger(
+        `Model picker button not mounted yet; waiting up to ${Math.round(buttonWaitMs / 1000)}s for the composer pill to render.`,
+      );
     }
     await delay(buttonPollMs);
   }
