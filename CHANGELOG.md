@@ -2,6 +2,10 @@
 
 ## 0.15.1 — Unreleased
 
+### Fixed
+
+- Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!
+
 ## 0.15.0 — 2026-06-19
 
 ### Added
