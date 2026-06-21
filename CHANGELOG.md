@@ -2,6 +2,10 @@
 
 ## 0.15.1 — Unreleased
 
+### Fixed
+
+- Browser: wait for the ChatGPT model/effort composer pill to mount before failing model selection. ChatGPT now renders the model picker as a composer pill that React mounts ~1–4s after the page becomes interactive — later on a cold profile such as cookie-sync's throwaway Chrome — which is past the previous bounded retry window, so `--browser-model-strategy select` could abort with "Unable to locate the ChatGPT model selector button" (and close the browser before the pill rendered). `ensureModelSelection` now re-evaluates while the button is missing up to a bounded deadline (`MODEL_BUTTON_WAIT_MS`); only a genuinely missing button waits — a real "option-not-found" still surfaces immediately.
+
 ## 0.15.0 — 2026-06-19
 
 ### Added

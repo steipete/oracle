@@ -8,31 +8,53 @@ import {
 } from "../constants.js";
 import { logDomFailure } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
+import { delay } from "../utils.js";
 
 const LEGACY_PRO_VERSION_WORD_TOKENS = ["5 4", "5 2", "5 1", "5 0", "gpt 5 pro"] as const;
 const LEGACY_PRO_VERSION_COMPACT_TOKENS = ["gpt54", "gpt52", "gpt51", "gpt50"] as const;
+
+type ModelSelectionResult =
+  | { status: "already-selected"; label?: string | null }
+  | { status: "switched"; label?: string | null }
+  | {
+      status: "option-not-found";
+      hint?: { temporaryChat?: boolean; availableOptions?: string[] };
+    }
+  | { status: "button-missing" }
+  | undefined;
+
+// The model/effort picker is a composer pill that React mounts a beat after the page
+// becomes interactive (~1-4s on a cold profile, e.g. cookie-sync's throwaway Chrome).
+// Re-evaluate while it is still missing, up to a bounded deadline, so selection does not
+// give up before the pill renders. Only "button-missing" waits; a genuine
+// "option-not-found" surfaces immediately.
+const MODEL_BUTTON_WAIT_MS = 8000;
+const MODEL_BUTTON_POLL_MS = 250;
 
 export async function ensureModelSelection(
   Runtime: ChromeClient["Runtime"],
   desiredModel: string,
   logger: BrowserLogger,
   strategy: BrowserModelStrategy = "select",
+  options: { buttonWaitMs?: number; buttonPollMs?: number } = {},
 ): Promise<BrowserModelSelectionEvidence> {
-  const outcome = await Runtime.evaluate({
-    expression: buildModelSelectionExpression(desiredModel, strategy),
-    awaitPromise: true,
-    returnByValue: true,
-  });
+  const buttonWaitMs = options.buttonWaitMs ?? MODEL_BUTTON_WAIT_MS;
+  const buttonPollMs = options.buttonPollMs ?? MODEL_BUTTON_POLL_MS;
+  const deadline = Date.now() + Math.max(0, buttonWaitMs);
 
-  const result = outcome.result?.value as
-    | { status: "already-selected"; label?: string | null }
-    | { status: "switched"; label?: string | null }
-    | {
-        status: "option-not-found";
-        hint?: { temporaryChat?: boolean; availableOptions?: string[] };
-      }
-    | { status: "button-missing" }
-    | undefined;
+  let result: ModelSelectionResult;
+  for (;;) {
+    const outcome = await Runtime.evaluate({
+      expression: buildModelSelectionExpression(desiredModel, strategy),
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    result = outcome.result?.value as ModelSelectionResult;
+    if (result?.status !== "button-missing" || Date.now() >= deadline) {
+      break;
+    }
+    await delay(buttonPollMs);
+  }
 
   switch (result?.status) {
     case "already-selected":

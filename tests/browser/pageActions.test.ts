@@ -76,7 +76,10 @@ describe("ensureModelSelection", () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({ result: { value: { status: "button-missing" } } }),
     } as unknown as ChromeClient["Runtime"];
-    await expect(ensureModelSelection(runtime, "Instant", logger)).rejects.toThrow(
+    // buttonWaitMs: 0 skips the composer-pill wait so this exercises the give-up path directly.
+    await expect(
+      ensureModelSelection(runtime, "Instant", logger, "select", { buttonWaitMs: 0 }),
+    ).rejects.toThrow(
       /Unable to locate the ChatGPT model selector button.*--browser-model-strategy current.*--browser-model-strategy ignore/s,
     );
   });

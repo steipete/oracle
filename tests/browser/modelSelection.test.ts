@@ -1432,3 +1432,46 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("canTrustSelectedOption(option, normalizedText, testid)");
   });
 });
+
+describe("ensureModelSelection composer-pill wait", () => {
+  const noopLogger = (() => {}) as unknown as Parameters<typeof ensureModelSelection>[2];
+
+  const makeRuntime = (statuses: Array<Record<string, unknown>>) => {
+    let call = 0;
+    const evaluate = vi.fn(async () => {
+      const value = statuses[Math.min(call, statuses.length - 1)];
+      call += 1;
+      return { result: { value } };
+    });
+    return { evaluate } as unknown as Parameters<typeof ensureModelSelection>[0];
+  };
+
+  it("waits for a late-mounting model pill instead of failing on the first miss", async () => {
+    const Runtime = makeRuntime([
+      { status: "button-missing" },
+      { status: "button-missing" },
+      { status: "switched", label: "Pro Extended" },
+    ]);
+
+    const evidence = await ensureModelSelection(Runtime, "Pro", noopLogger, "select", {
+      buttonWaitMs: 1000,
+      buttonPollMs: 1,
+    });
+
+    expect(evidence.status).toBe("switched");
+    expect(evidence.resolvedLabel).toBe("Pro Extended");
+    expect(evidence.verified).toBe(true);
+    expect((Runtime.evaluate as ReturnType<typeof vi.fn>).mock.calls.length).toBe(3);
+  });
+
+  it("gives up once the button-wait deadline passes", async () => {
+    const Runtime = makeRuntime([{ status: "button-missing" }]);
+
+    await expect(
+      ensureModelSelection(Runtime, "Pro", noopLogger, "select", {
+        buttonWaitMs: 5,
+        buttonPollMs: 1,
+      }),
+    ).rejects.toThrow(/Unable to locate the ChatGPT model selector button/);
+  });
+});
