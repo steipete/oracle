@@ -249,6 +249,7 @@ export async function createRemoteServer(
         log: automationLogger,
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
         verbose: payload.options.verbose,
+        maxFileSizeBytes: payload.options.maxFileSizeBytes,
         sessionId: payload.options.sessionId,
         followUpPrompts: payload.options.followUpPrompts,
       });

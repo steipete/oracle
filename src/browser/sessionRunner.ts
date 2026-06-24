@@ -211,6 +211,7 @@ export async function runBrowserSessionExecution(
       log: automationLogger,
       heartbeatIntervalMs: runOptions.heartbeatIntervalMs,
       verbose: runOptions.verbose,
+      maxFileSizeBytes: runOptions.maxFileSizeBytes,
       sessionId: runOptions.sessionId,
       generateImagePath: runOptions.generateImage,
       outputPath: runOptions.outputPath,

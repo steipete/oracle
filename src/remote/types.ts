@@ -20,6 +20,7 @@ export interface RemoteRunPayload {
   options: {
     heartbeatIntervalMs?: number;
     verbose?: boolean;
+    maxFileSizeBytes?: number;
     sessionId?: string;
     followUpPrompts?: string[];
   };

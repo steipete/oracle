@@ -30,6 +30,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
       options: {
         heartbeatIntervalMs: options.heartbeatIntervalMs,
         verbose: options.verbose,
+        maxFileSizeBytes: options.maxFileSizeBytes,
         sessionId: options.sessionId,
         followUpPrompts: options.followUpPrompts,
       },

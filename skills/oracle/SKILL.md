@@ -64,7 +64,7 @@ Recommended defaults:
   - Honors `.gitignore` when expanding globs.
   - Does not follow symlinks (glob expansion uses `followSymbolicLinks: false`).
   - Dotfiles are filtered unless you explicitly opt in with a pattern that includes a dot-segment (e.g. `--file ".github/**"`).
-  - Default cap: files > 1 MB are rejected unless you raise `ORACLE_MAX_FILE_SIZE_BYTES` or `maxFileSizeBytes` in `~/.oracle/config.json`.
+  - Default cap: files > 500 MB are rejected unless you raise `ORACLE_MAX_FILE_SIZE_BYTES` or `maxFileSizeBytes` in `~/.oracle/config.json`.
 
 ## Budget + observability
 

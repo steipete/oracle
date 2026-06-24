@@ -40,6 +40,7 @@ describe("remote browser service", () => {
           runBrowser: async (options) => {
             runLog.push(options.prompt);
             expect(options.sessionId).toBe("remote-session-id");
+            expect(options.maxFileSizeBytes).toBe(123_456_789);
             expect(options.followUpPrompts).toEqual(["follow up"]);
             expect(options.attachments).toHaveLength(1);
             const attachment = options.attachments?.[0];
@@ -84,6 +85,7 @@ describe("remote browser service", () => {
           ],
         },
         config: {},
+        maxFileSizeBytes: 123_456_789,
         sessionId: "remote-session-id",
         followUpPrompts: ["follow up"],
         log: (message?: string) => {

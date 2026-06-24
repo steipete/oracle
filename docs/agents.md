@@ -104,7 +104,7 @@ For the most reliable shared setup: run one signed-in Chrome with remote debuggi
 ## Cost / safety hygiene
 
 - **Always preview Pro runs.** `--dry-run summary --files-report` before a Pro API call on a large bundle. Token counts are a close-enough proxy for dollars.
-- **Cap file size.** `~/.oracle/config.json` → `maxFileSizeBytes`, or `ORACLE_MAX_FILE_SIZE_BYTES`. Default is 1 MB per file.
+- **Cap file size.** `~/.oracle/config.json` → `maxFileSizeBytes`, or `ORACLE_MAX_FILE_SIZE_BYTES`. Default is 500 MB per file.
 - **Excludes are your friend.** `--file "src/**" --file "!**/*.test.ts" --file "!**/*.snap"` cuts most fixtures.
 - **API mode runs cost real money.** If your agent runs Oracle autonomously, scope it: pin `--model`, set `--timeout`, and review the session log. Many users gate API mode behind explicit user consent and let browser mode run free.
 

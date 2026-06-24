@@ -5,6 +5,7 @@
 ### Fixed
 
 - Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!
+- CLI/Browser/MCP: raise the default per-file attachment guard from 1 MB to 500 MB, keep lower config/env/CLI overrides enforced, and preserve the effective limit through remote browser execution.
 
 ## 0.15.0 — 2026-06-19
 

@@ -138,7 +138,7 @@ See [Browser Mode](browser-mode.md) for usage.
 | `ANTHROPIC_API_KEY`                 | Enables Claude API mode.                                |
 | `OPENROUTER_API_KEY`                | Enables OpenRouter ids.                                 |
 | `ORACLE_HOME_DIR`                   | Override `~/.oracle/` root.                             |
-| `ORACLE_MAX_FILE_SIZE_BYTES`        | Per-file size cap (default 1 MB).                       |
+| `ORACLE_MAX_FILE_SIZE_BYTES`        | Per-file size cap (default 500 MB).                     |
 | `ORACLE_BROWSER_COOKIES_JSON`       | Inline ChatGPT cookies (JSON / base64).                 |
 | `ORACLE_BROWSER_COOKIES_FILE`       | Path to cookies JSON.                                   |
 | `ORACLE_BROWSER_ATTACHMENT_TIMEOUT` | Attachment upload/readiness timeout for browser mode.   |

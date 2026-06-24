@@ -132,6 +132,8 @@ export interface BrowserRunOptions {
   log?: BrowserLogger;
   heartbeatIntervalMs?: number;
   verbose?: boolean;
+  /** Effective per-file attachment guard in bytes, propagated for remote/browser execution metadata. */
+  maxFileSizeBytes?: number;
   /** Session id used for cross-process browser slot diagnostics. */
   sessionId?: string;
   /** Browser-only image generation output path. */

@@ -1,5 +1,5 @@
 import type { UserConfig } from "../config.js";
-import { normalizeMaxFileSizeBytes } from "../oracle/files.js";
+import { DEFAULT_MAX_FILE_SIZE_BYTES, normalizeMaxFileSizeBytes } from "../oracle/files.js";
 
 export function resolveConfiguredMaxFileSizeBytes(
   userConfig?: UserConfig,
@@ -12,5 +12,5 @@ export function resolveConfiguredMaxFileSizeBytes(
   if (userConfig?.maxFileSizeBytes !== undefined) {
     return normalizeMaxFileSizeBytes(userConfig.maxFileSizeBytes, "config.maxFileSizeBytes");
   }
-  return undefined;
+  return DEFAULT_MAX_FILE_SIZE_BYTES;
 }

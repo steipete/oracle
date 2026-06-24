@@ -10,6 +10,7 @@ import {
   TOKENIZER_OPTIONS,
   formatFileSections,
 } from "../oracle.js";
+import { DEFAULT_MAX_FILE_SIZE_BYTES } from "../oracle/files.js";
 import { isKnownModel } from "../oracle/modelResolver.js";
 import { buildPromptMarkdown } from "../oracle/promptAssembly.js";
 import type { BrowserAttachment } from "./types.js";
@@ -265,7 +266,7 @@ export async function assembleBrowserPrompt(
     .filter((file) => !isRawUploadFile(file.path))
     .map((file) => file.path);
   const rawUploadFiles = discoveredFiles.filter((file) => isRawUploadFile(file.path));
-  const maxFileSizeBytes = runOptions.maxFileSizeBytes;
+  const maxFileSizeBytes = runOptions.maxFileSizeBytes ?? DEFAULT_MAX_FILE_SIZE_BYTES;
 
   const rawUploadAttachments: BrowserAttachment[] = await Promise.all(
     rawUploadFiles.map(async ({ path: filePath }) => {

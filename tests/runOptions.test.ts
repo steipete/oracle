@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveRunOptionsFromConfig } from "../src/cli/runOptions.js";
 import { estimateRequestTokens } from "../src/oracle/tokenEstimate.js";
 import { DEFAULT_MODEL, MODEL_CONFIGS } from "../src/oracle/config.js";
+import { DEFAULT_MAX_FILE_SIZE_BYTES } from "../src/oracle/files.js";
 
 describe("resolveRunOptionsFromConfig", () => {
   const basePrompt = "This prompt is comfortably above twenty characters.";
@@ -85,6 +86,14 @@ describe("resolveRunOptionsFromConfig", () => {
       userConfig: { heartbeatSeconds: 5 },
     });
     expect(runOptions.heartbeatIntervalMs).toBe(5000);
+  });
+
+  it("defaults maxFileSizeBytes to the browser attachment guard", () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      env: {},
+    });
+    expect(runOptions.maxFileSizeBytes).toBe(DEFAULT_MAX_FILE_SIZE_BYTES);
   });
 
   it("uses maxFileSizeBytes from config", () => {
