@@ -1,4 +1,4 @@
-import type { RunOracleOptions, ModelName, AzureOptions } from "../oracle.js";
+import type { RunOracleOptions, ModelName, AzureOptions, ModelOverridesConfig } from "../oracle.js";
 import { DEFAULT_MODEL, MODEL_CONFIGS } from "../oracle.js";
 import type { UserConfig } from "../config.js";
 import type { EngineMode } from "./engine.js";
@@ -10,6 +10,7 @@ import {
   normalizeBaseUrl,
 } from "./options.js";
 import { resolveGeminiModelId } from "../oracle/gemini.js";
+import { resolveOverriddenApiModel } from "../oracle/modelResolver.js";
 import { PromptValidationError } from "../oracle/errors.js";
 import { normalizeChatGptModelForBrowser } from "./browserConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "./fileSize.js";
@@ -117,7 +118,7 @@ export function resolveRunOptionsFromConfig({
   }
 
   const chosenModel: ModelName = uniqueMultiModels[0] ?? resolvedModel;
-  const effectiveModelId = resolveEffectiveModelId(chosenModel);
+  const effectiveModelId = resolveEffectiveModelId(chosenModel, userConfig?.modelOverrides);
 
   const runOptions: RunOracleOptions = {
     prompt: promptWithSuffix,
@@ -132,6 +133,7 @@ export function resolveRunOptionsFromConfig({
     baseUrl,
     azure,
     effectiveModelId,
+    modelOverrides: userConfig?.modelOverrides,
   };
 
   return { runOptions, resolvedEngine: fixedEngine, engineCoercedToApi };
@@ -152,7 +154,16 @@ function resolveAzureOptions(
   };
 }
 
-function resolveEffectiveModelId(model: ModelName): string {
+function resolveEffectiveModelId(
+  model: ModelName,
+  modelOverrides?: ModelOverridesConfig,
+): string {
+  // A user-config override of a known model's apiModel must win, since this id
+  // becomes the on-wire request model id in run.ts (including for Gemini aliases).
+  const overridden = resolveOverriddenApiModel(model, modelOverrides);
+  if (overridden) {
+    return overridden;
+  }
   if (typeof model === "string" && model.startsWith("gemini")) {
     return resolveGeminiModelId(model);
   }

@@ -40,7 +40,7 @@ import { createMarkdownStreamer } from "markdansi";
 import { executeBackgroundResponse } from "./background.js";
 import { formatTokenEstimate, formatTokenValue, resolvePreviewMode } from "./runUtils.js";
 import { estimateUsdCost } from "tokentally";
-import { isOpenRouterBaseUrl, isProModel, resolveModelConfig } from "./modelResolver.js";
+import { isOpenRouterBaseUrl, isProModel, resolveModelConfig, resolveOverriddenApiModel } from "./modelResolver.js";
 import { validateProviderRouting } from "./providerRouting.js";
 import {
   formatRouteTargetForLog,
@@ -204,6 +204,7 @@ export async function runOracle(
   const modelConfig = await resolveModelConfig(options.model, {
     baseUrl,
     openRouterApiKey: resolverOpenRouterApiKey,
+    modelOverrides: options.modelOverrides,
   });
   const isLongRunningModel = isProTierModel;
   const supportsBackground = modelConfig.supportsBackground !== false;
@@ -269,6 +270,8 @@ export async function runOracle(
   const effectiveModelId =
     azureDeploymentName ??
     options.effectiveModelId ??
+    // A user-config apiModel override (known models only) wins over Gemini alias remapping.
+    resolveOverriddenApiModel(options.model, options.modelOverrides) ??
     (options.model.startsWith("gemini")
       ? resolveGeminiModelId(options.model)
       : (modelConfig.apiModel ?? modelConfig.model));

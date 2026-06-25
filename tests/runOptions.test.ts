@@ -63,6 +63,34 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(runOptions.model).toBe("gpt-5.1");
   });
 
+  it("threads modelOverrides and sets effectiveModelId from the override apiModel", () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      engine: "api",
+      model: "gpt-5.5",
+      userConfig: {
+        modelOverrides: {
+          "gpt-5.5": { apiModel: "gpt-5.5-mygateway", reasoning: { effort: "xhigh" } },
+        },
+      },
+    });
+    // The override apiModel must become the on-wire model id (run.ts sets requestBody.model = effectiveModelId).
+    expect(runOptions.effectiveModelId).toBe("gpt-5.5-mygateway");
+    expect(runOptions.modelOverrides?.["gpt-5.5"]?.apiModel).toBe("gpt-5.5-mygateway");
+  });
+
+  it("lets modelOverrides.apiModel win over Gemini alias remapping", () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      engine: "api",
+      model: "gemini-3-pro",
+      userConfig: {
+        modelOverrides: { "gemini-3-pro": { apiModel: "gemini-3-pro-mygateway" } },
+      },
+    });
+    expect(runOptions.effectiveModelId).toBe("gemini-3-pro-mygateway");
+  });
+
   it("appends prompt suffix from config", () => {
     const { runOptions } = resolveRunOptionsFromConfig({
       prompt: "Hi there, this exceeds twenty characters.",

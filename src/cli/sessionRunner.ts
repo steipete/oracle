@@ -175,6 +175,7 @@ export async function performSessionRun({
       const modelConfig = await resolveModelConfig(primaryModel, {
         baseUrl: runOptions.baseUrl,
         openRouterApiKey: process.env.OPENROUTER_API_KEY,
+        modelOverrides: runOptions.modelOverrides,
       });
       const files = await readFiles(runOptions.file ?? [], {
         cwd,

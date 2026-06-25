@@ -2,6 +2,10 @@
 
 ## 0.15.1 — Unreleased
 
+### Added
+
+- Config: add user-only `modelOverrides` in `~/.oracle/config.json` to override a known model's on-wire `apiModel`, reasoning effort, input limit, and pricing — for custom OpenAI-compatible `--base-url` gateways (e.g. a LiteLLM proxy) that rename model ids or need a non-default effort. Overrides apply to known models only (tokenizer inherited), support `reasoning: null` to clear effort, and are ignored from project configs so they cannot reroute model traffic. Fixes #273.
+
 ### Fixed
 
 - Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!

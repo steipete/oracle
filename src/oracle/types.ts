@@ -78,6 +78,30 @@ export interface ModelConfig {
   searchToolType?: ToolConfig["type"];
 }
 
+/**
+ * User-config override for a single known model entry. Lets users running against
+ * custom OpenAI-compatible gateways (e.g. a LiteLLM proxy) remap the on-wire model
+ * id and reasoning effort without editing bundled model configs. Applied on top of
+ * an existing {@link MODEL_CONFIGS} entry, so the tokenizer and other fields are
+ * inherited from the known model.
+ */
+export interface ModelConfigOverride {
+  /** On-wire model id sent to the API (overrides the known entry's apiModel/model). */
+  apiModel?: string;
+  /** Reasoning effort override; `null` explicitly clears the known model's reasoning. */
+  reasoning?: { effort: ReasoningEffort } | null;
+  /** Context window override (positive integer). */
+  inputLimit?: number;
+  /** Pricing override; `null` clears the known entry's pricing. */
+  pricing?: {
+    inputPerToken: number;
+    outputPerToken: number;
+  } | null;
+}
+
+/** Map of known model name -> override, sourced from user config only. */
+export type ModelOverridesConfig = Record<string, ModelConfigOverride>;
+
 export interface FileContent {
   path: string;
   content: string;
@@ -169,6 +193,8 @@ export interface RunOracleOptions {
   baseUrl?: string;
   azure?: AzureOptions;
   sessionId?: string;
+  /** User-config per-model overrides (apiModel/reasoning/inputLimit/pricing) applied over known model configs. */
+  modelOverrides?: ModelOverridesConfig;
   effectiveModelId?: string;
   verbose?: boolean;
   heartbeatIntervalMs?: number;
