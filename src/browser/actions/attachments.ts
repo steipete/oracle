@@ -1335,7 +1335,14 @@ export async function waitForAttachmentCompletion(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   const expectedNormalized = expectedNames.map((name) => name.toLowerCase());
+  const expectedInputBasenames = expectedNormalized
+    .map((name) => name.split("/").pop()?.split("\\").pop() ?? name)
+    .map((name) => name.toLowerCase().replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const expectedInputSignature = expectedInputBasenames.slice().sort().join("\0");
   let inputMatchSince: number | null = null;
+  let inputOnlyReadySince: number | null = null;
+  let inputOnlySignature = "";
   let sawInputMatch = false;
   let attachmentMatchSince: number | null = null;
   let lastVerboseLog = 0;
@@ -1640,6 +1647,28 @@ export async function waitForAttachmentCompletion(
         attachmentMatchSince = null;
       }
 
+      const inputOnlySignatureNow = inputNames.slice().sort().join("\0");
+      const inputOnlyNamesSatisfied =
+        expectedInputBasenames.length > 0 && inputOnlySignatureNow === expectedInputSignature;
+      const inputOnlyReady =
+        inputOnlyNamesSatisfied &&
+        value.state === "ready" &&
+        value.uploading === false &&
+        !value.filesAttached &&
+        fileCount === 0;
+      if (inputOnlyReady) {
+        if (inputOnlyReadySince === null || inputOnlySignature !== inputOnlySignatureNow) {
+          inputOnlyReadySince = Date.now();
+          inputOnlySignature = inputOnlySignatureNow;
+        }
+        if (Date.now() - inputOnlyReadySince > 1500) {
+          return;
+        }
+      } else {
+        inputOnlyReadySince = null;
+        inputOnlySignature = "";
+      }
+
       // Fallback: if the file input has the expected names, allow progress once that condition is stable.
       // Some ChatGPT surfaces only render the filename after sending the message.
       const inputMissing = expectedNormalized.filter((expected) => {
@@ -1655,8 +1684,7 @@ export async function waitForAttachmentCompletion(
       // Don't include 'disabled' - a disabled button likely means upload is still in progress.
       const inputStateOk = value.state === "ready" || value.state === "missing";
       const inputSeenNow = inputMissing.length === 0 || fileCountSatisfied;
-      const inputEvidenceOk =
-        Boolean(value.filesAttached) || Boolean(value.uploading) || fileCountSatisfied;
+      const inputEvidenceOk = Boolean(value.filesAttached) || fileCountSatisfied;
       const stableThresholdMs = value.uploading ? 3000 : 1500;
       if (inputSeenNow && inputStateOk && inputEvidenceOk) {
         if (inputMatchSince === null) {

@@ -15,7 +15,7 @@ const useRealTime = () => {
 };
 
 describe("attachment completion fallbacks", () => {
-  test("waitForAttachmentCompletion resolves when file input contains expected name (no UI chip)", async () => {
+  test("waitForAttachmentCompletion resolves when ready file input contains expected name (no UI chip)", async () => {
     useFakeTime();
 
     const runtime = {
@@ -24,9 +24,10 @@ describe("attachment completion fallbacks", () => {
           value: {
             state: "ready",
             uploading: false,
-            filesAttached: true,
+            filesAttached: false,
             attachedNames: [],
             inputNames: ["oracle-attach-verify.txt"],
+            fileCount: 0,
           },
         },
       }),
@@ -38,7 +39,7 @@ describe("attachment completion fallbacks", () => {
     useRealTime();
   });
 
-  test("waitForAttachmentCompletion resolves even when uploading is flagged, once input match is stable", async () => {
+  test("waitForAttachmentCompletion does not resolve input-only match while upload is still flagged", async () => {
     useFakeTime();
 
     const runtime = {
@@ -50,14 +51,90 @@ describe("attachment completion fallbacks", () => {
             filesAttached: false,
             attachedNames: [],
             inputNames: ["oracle-attach-verify.txt"],
+            fileCount: 0,
           },
         },
       }),
     } as unknown as ChromeClient["Runtime"];
 
-    const promise = waitForAttachmentCompletion(runtime, 10_000, ["oracle-attach-verify.txt"]);
-    await vi.advanceTimersByTimeAsync(5_000);
+    const promise = waitForAttachmentCompletion(runtime, 800, ["oracle-attach-verify.txt"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+    useRealTime();
+  });
+
+  test("waitForAttachmentCompletion resolves when all ready file input names match", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: false,
+            attachedNames: [],
+            inputNames: ["a.txt", "b.txt"],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 10_000, ["a.txt", "b.txt"]);
+    await vi.advanceTimersByTimeAsync(2_000);
     await expect(promise).resolves.toBeUndefined();
+    useRealTime();
+  });
+
+  test("waitForAttachmentCompletion times out when ready file input misses an expected name", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: false,
+            attachedNames: [],
+            inputNames: ["a.txt"],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 800, ["a.txt", "b.txt"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+    useRealTime();
+  });
+
+  test("waitForAttachmentCompletion times out when ready file input has an unexpected extra name", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: false,
+            attachedNames: [],
+            inputNames: ["oracle-attach-verify.txt", "unexpected-extra.txt"],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 2_000, ["oracle-attach-verify.txt"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await assertion;
     useRealTime();
   });
 
