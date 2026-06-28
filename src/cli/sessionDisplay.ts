@@ -412,7 +412,14 @@ export async function attachSession(
       for (const artifact of metadata.artifacts) {
         const label = artifact.label ?? artifact.kind;
         const size = artifact.sizeBytes ? ` (${formatBytes(artifact.sizeBytes)})` : "";
-        console.log(`- ${chalk.cyan(label)} — ${artifact.path}${size}`);
+        const checksum = artifact.sha256 ? ` sha256=${artifact.sha256.slice(0, 12)}…` : "";
+        const validation = artifact.validation
+          ? ` validation=${artifact.validation.ok ? "ok" : (artifact.validation.error ?? "failed")}`
+          : "";
+        const transfer = artifact.transfer?.status ? ` transfer=${artifact.transfer.status}` : "";
+        console.log(
+          `- ${chalk.cyan(label)} — ${artifact.path}${size}${checksum}${validation}${transfer}`,
+        );
       }
     }
     const responseSummary = formatResponseMetadata(metadata.response);

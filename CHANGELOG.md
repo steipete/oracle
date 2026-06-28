@@ -4,8 +4,8 @@
 
 ### Added
 
+- Bridge/Browser: transfer ChatGPT-generated files from the browser host back to the client over a token-protected artifact endpoint, with capability discovery, safe filenames, byte counts, SHA-256 metadata, ZIP validation, and manual fallback guidance for mixed-version bridge deployments. Thanks @DK625!
 - API: add user-only `modelOverrides` for remapping known models and their metadata on custom OpenAI-compatible gateways. Fixes #273. Thanks @wangwllu!
-
 ### Fixed
 
 - API: forward configured reasoning effort through custom OpenAI-compatible chat-completions gateways.

@@ -1,6 +1,7 @@
 import http from "node:http";
 import net from "node:net";
 import { parseHostPort } from "../bridge/connection.js";
+import type { RemoteArtifactCapabilities } from "./types.js";
 
 export interface RemoteHealthResult {
   ok: boolean;
@@ -8,6 +9,7 @@ export interface RemoteHealthResult {
   error?: string;
   version?: string;
   uptimeSeconds?: number;
+  capabilities?: RemoteArtifactCapabilities;
 }
 
 export async function checkTcpConnection(
@@ -68,11 +70,15 @@ export async function checkRemoteHealth({
       const ok = (response.json as { ok?: unknown }).ok === true;
       const version = (response.json as { version?: unknown }).version;
       const uptimeSeconds = (response.json as { uptimeSeconds?: unknown }).uptimeSeconds;
+      const capabilities = parseCapabilities(
+        (response.json as { capabilities?: unknown }).capabilities,
+      );
       return {
         ok,
         statusCode: response.statusCode,
         version: typeof version === "string" ? version : undefined,
         uptimeSeconds: typeof uptimeSeconds === "number" ? uptimeSeconds : undefined,
+        capabilities,
       };
     }
     if (response.statusCode === 404) {
@@ -88,6 +94,24 @@ export async function checkRemoteHealth({
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function parseCapabilities(value: unknown): RemoteArtifactCapabilities | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as {
+    artifactTransfer?: unknown;
+    artifactProtocolVersion?: unknown;
+    maxArtifactBytes?: unknown;
+  };
+  if (raw.artifactTransfer !== true) {
+    return undefined;
+  }
+  const artifactProtocolVersion =
+    typeof raw.artifactProtocolVersion === "number" ? raw.artifactProtocolVersion : 0;
+  const maxArtifactBytes = typeof raw.maxArtifactBytes === "number" ? raw.maxArtifactBytes : 0;
+  return { artifactTransfer: true, artifactProtocolVersion, maxArtifactBytes };
 }
 
 function extractErrorMessage(json: unknown, bodyText: string): string | null {

@@ -7,7 +7,12 @@ import type {
   SavedBrowserFile,
 } from "./types.js";
 import { ASSISTANT_ROLE_SELECTOR, CONVERSATION_TURN_SELECTOR } from "./constants.js";
-import { resolveSessionArtifactsDir, writeBinaryBrowserArtifact } from "./artifacts.js";
+import {
+  computeFileSha256,
+  resolveSessionArtifactsDir,
+  validateArtifactFile,
+  writeBinaryBrowserArtifact,
+} from "./artifacts.js";
 
 const CHATGPT_DOWNLOAD_BASE_URL = "https://chatgpt.com/";
 const DOWNLOAD_BUTTON_WAIT_MS = 15_000;
@@ -465,6 +470,7 @@ async function configureBrowserDownloadPath(params: {
       await params.Client.send("Browser.setDownloadBehavior", {
         behavior: "allow",
         downloadPath: params.downloadPath,
+        eventsEnabled: true,
       });
       return true;
     } catch (error) {
@@ -700,13 +706,19 @@ async function clickAssistantDownloadButtons(params: {
 async function savedBrowserFileFromPath(filePath: string): Promise<SavedBrowserFile> {
   const filename = path.basename(filePath);
   const stat = await fs.stat(filePath);
+  const mimeType = mimeTypeFromFilename(filename);
+  const validation = await validateArtifactFile({ path: filePath, filename, mimeType });
   return {
     kind: "file",
     path: filePath,
     label: filename,
-    mimeType: mimeTypeFromFilename(filename),
+    mimeType,
     sizeBytes: stat.size,
     sourceUrl: "browser-download",
+    sha256: await computeFileSha256(filePath),
+    validation,
+    transfer: { status: "not-needed" },
+    origin: { mode: "local" },
     url: "browser-download",
     finalUrl: "browser-download",
     filename,
@@ -1024,7 +1036,7 @@ export async function saveChatGptDownloadableFiles(params: {
         contents: downloaded.buffer,
         label: file.label || filename,
         mimeType: contentType ?? file.mimeType,
-        sourceUrl: file.sandboxUrl ?? downloadUrl,
+        sourceUrl: file.sandboxUrl ?? "chatgpt-file-endpoint",
         logger,
       });
       if (artifact) {

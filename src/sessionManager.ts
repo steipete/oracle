@@ -150,6 +150,32 @@ export interface BrowserMetadata {
   warnings?: BrowserRunWarning[];
 }
 
+export type SessionArtifactValidationType = "generic" | "zip";
+export type SessionArtifactTransferStatus =
+  | "not-needed"
+  | "ready"
+  | "streaming"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export interface SessionArtifactValidation {
+  type: SessionArtifactValidationType;
+  ok: boolean;
+  error?: string;
+}
+
+export interface SessionArtifactTransfer {
+  status: SessionArtifactTransferStatus;
+  bytes?: number;
+  error?: string;
+}
+
+export interface SessionArtifactOrigin {
+  mode: "local" | "bridge";
+  host?: string;
+}
+
 export interface SessionArtifact {
   kind: "transcript" | "deep-research-report" | "image" | "file";
   path: string;
@@ -157,6 +183,10 @@ export interface SessionArtifact {
   mimeType?: string;
   sizeBytes?: number;
   sourceUrl?: string;
+  sha256?: string;
+  validation?: SessionArtifactValidation;
+  transfer?: SessionArtifactTransfer;
+  origin?: SessionArtifactOrigin;
 }
 
 export interface SessionResponseMetadata {

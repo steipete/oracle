@@ -7,6 +7,7 @@ import {
   resolveSessionArtifactsDir,
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
+  validateZipBuffer,
   writeBinaryBrowserArtifact,
   __test__,
 } from "../../src/browser/artifacts.js";
@@ -113,11 +114,29 @@ describe("browser session artifacts", () => {
       mimeType: "application/zip",
       sourceUrl: "sandbox:/mnt/data/Build Output.zip",
       sizeBytes: 3,
+      validation: { type: "zip", ok: false, error: "zip-too-small" },
+      transfer: { status: "not-needed" },
+      origin: { mode: "local" },
     });
+    expect(artifact?.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(artifact?.path).toBe(
       path.join(tmpHome, "sessions", "browser-files", "artifacts", "build-output.zip"),
     );
     await expect(fs.readFile(artifact!.path)).resolves.toEqual(Buffer.from([1, 2, 3]));
+  });
+
+  test("validates empty ZIP central directory metadata", () => {
+    const emptyZip = Buffer.from([
+      0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+
+    expect(validateZipBuffer(emptyZip)).toEqual({ type: "zip", ok: true });
+    expect(validateZipBuffer(Buffer.from([1, 2, 3]))).toEqual({
+      type: "zip",
+      ok: false,
+      error: "zip-too-small",
+    });
   });
 
   test("dedupes artifact lists by kind and path", () => {

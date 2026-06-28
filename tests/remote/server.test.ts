@@ -3,10 +3,11 @@ import http from "node:http";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { createRemoteServer } from "../../src/remote/server.js";
 import { createRemoteBrowserExecutor } from "../../src/remote/client.js";
 import type { BrowserRunResult } from "../../src/browserMode.js";
+import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 
 const CAN_LISTEN_LOCALHOST =
   spawnSync(
@@ -111,9 +112,102 @@ describe("remote browser service", () => {
       expect(healthOk.statusCode).toBe(200);
       expect(healthOk.json?.ok).toBe(true);
       expect(typeof healthOk.json?.version).toBe("string");
+      expect(healthOk.json?.capabilities).toMatchObject({
+        artifactTransfer: true,
+        artifactProtocolVersion: 1,
+      });
 
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "transfers saved browser file artifacts to the client session directory",
+    async () => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-artifact-test-"));
+      const clientHome = path.join(tmpDir, "client-home");
+      setOracleHomeDirOverrideForTest(clientHome);
+      const hostArtifactPath = path.join(tmpDir, "host-result.zip");
+      const emptyZip = Buffer.from([
+        0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      ]);
+      await writeFile(hostArtifactPath, emptyZip);
+
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async () => {
+            const result: BrowserRunResult = {
+              answerText: "done",
+              answerMarkdown: "done",
+              tookMs: 1000,
+              answerTokens: 1,
+              answerChars: 4,
+              savedFiles: [
+                {
+                  kind: "file",
+                  path: hostArtifactPath,
+                  label: "result.zip",
+                  mimeType: "application/zip",
+                  sizeBytes: emptyZip.length,
+                  sourceUrl: "sandbox:/mnt/data/result.zip",
+                  url: "browser-download",
+                  finalUrl: "browser-download",
+                  filename: "result.zip",
+                },
+              ],
+              artifacts: [
+                {
+                  kind: "file",
+                  path: hostArtifactPath,
+                  label: "result.zip",
+                  mimeType: "application/zip",
+                  sizeBytes: emptyZip.length,
+                  sourceUrl: "sandbox:/mnt/data/result.zip",
+                },
+              ],
+            };
+            return result;
+          },
+        },
+      );
+
+      const executor = createRemoteBrowserExecutor({
+        host: `127.0.0.1:${server.port}`,
+        token: "secret",
+      });
+      const result = await executor({
+        prompt: "remote",
+        config: {},
+        sessionId: "remote-artifact-session",
+      });
+
+      expect(result.answerText).toBe("done");
+      expect(result.artifacts).toHaveLength(1);
+      const artifact = result.artifacts?.[0];
+      expect(artifact?.path).toBe(
+        path.join(clientHome, "sessions", "remote-artifact-session", "artifacts", "result.zip"),
+      );
+      expect(artifact?.path).not.toBe(hostArtifactPath);
+      expect(artifact).toMatchObject({
+        kind: "file",
+        label: "result.zip",
+        mimeType: "application/zip",
+        sizeBytes: emptyZip.length,
+        sourceUrl: "bridge-artifact",
+        validation: { type: "zip", ok: true },
+        transfer: { status: "completed", bytes: emptyZip.length },
+        origin: { mode: "bridge" },
+      });
+      expect(artifact?.sha256).toMatch(/^[a-f0-9]{64}$/);
+      await expect(readFile(artifact!.path)).resolves.toEqual(emptyZip);
+      await expect(stat(hostArtifactPath)).resolves.toMatchObject({ size: emptyZip.length });
+
+      await server.close();
+      await rm(tmpDir, { recursive: true, force: true });
+      setOracleHomeDirOverrideForTest(null);
     },
   );
 });

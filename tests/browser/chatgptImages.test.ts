@@ -431,6 +431,7 @@ describe("collectGeneratedImageArtifacts", () => {
       expect(client.send).toHaveBeenCalledWith("Browser.setDownloadBehavior", {
         behavior: "allow",
         downloadPath: tmpDir,
+        eventsEnabled: true,
       });
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });

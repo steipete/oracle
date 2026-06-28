@@ -42,9 +42,12 @@ export async function runBridgeClient(options: BridgeClientCliOptions): Promise<
         `Remote service health check failed: ${health.error ?? "unknown error"}${suffix}`,
       );
     }
+    const artifactTransfer = health.capabilities?.artifactTransfer
+      ? ` — artifacts bridge v${health.capabilities.artifactProtocolVersion}`
+      : " — artifact transfer unavailable; file downloads require manual copy";
     console.log(
       chalk.green(
-        `Remote service OK (${remoteHost})${health.version ? ` — oracle ${health.version}` : ""}`,
+        `Remote service OK (${remoteHost})${health.version ? ` — oracle ${health.version}` : ""}${artifactTransfer}`,
       ),
     );
   }
