@@ -5,6 +5,7 @@ import {
   CONVERSATION_TURN_SELECTOR,
   COPY_BUTTON_SELECTOR,
   FINISHED_ACTIONS_SELECTOR,
+  MIN_TRUSTWORTHY_ANSWER_CHARS,
   STOP_BUTTON_SELECTOR,
 } from "../constants.js";
 import { delay } from "../utils.js";
@@ -232,19 +233,36 @@ export async function waitForAssistantResponse(
       isStopButtonVisible(Runtime),
       isCompletionVisible(Runtime),
     ]);
-    if (stopVisible) {
-      logger("Assistant still generating; waiting for completion");
+    // Guard against the evaluation path racing ahead and capturing only the first
+    // tokens of the real answer. At the thinking->answer transition, ChatGPT Pro /
+    // Pro Extended briefly drops the stop button AND surfaces the finished-action
+    // (copy/share) buttons on the turn while only the first 1-13 tokens have rendered.
+    // The evaluation path then fires on those finished-action buttons and breaks early
+    // while stopVisible is momentarily false. So when the completion UI is showing but
+    // the captured answer is trivially short, treat it as a mid-stream race and fall
+    // back to the robust watchdog poller, which requires the stop button gone AND the
+    // text to stay unchanged for several seconds before it trusts completion. We never
+    // return something shorter than what we already captured.
+    const candidateText = String(candidate?.text ?? "").trim();
+    const suspiciousRace = completionVisible && candidateText.length < MIN_TRUSTWORTHY_ANSWER_CHARS;
+    if (stopVisible || suspiciousRace) {
+      logger(
+        stopVisible
+          ? "Assistant still generating; waiting for completion"
+          : "Captured suspiciously short answer at completion; re-polling for completion",
+      );
       const completed = await pollAssistantCompletion(
         Runtime,
         remainingMs,
         minTurnIndex,
         expectedConversationId,
       );
-      if (completed) {
+      if (completed && String(completed.text ?? "").trim().length >= candidateText.length) {
         return completed;
       }
     } else if (completionVisible) {
-      // No-op: completion UI surfaced and stop button is gone.
+      // No-op: completion UI surfaced, stop button is gone, and the captured answer is
+      // long enough to trust.
     }
   }
 
