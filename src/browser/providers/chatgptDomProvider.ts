@@ -1,7 +1,11 @@
 import type { BrowserLogger, ChromeClient } from "../types.js";
 import type { ProviderDomAdapter, ProviderDomFlowContext } from "../providerDomFlow.js";
 import { ensurePromptReady } from "../actions/navigation.js";
-import { submitPrompt, type AttachmentReadyExpectation } from "../actions/promptComposer.js";
+import {
+  submitPrompt,
+  type AttachmentReadyExpectation,
+  type PromptDeliveryProof,
+} from "../actions/promptComposer.js";
 import { waitForAssistantResponse } from "../actions/assistantResponse.js";
 
 interface ChatgptDomProviderState {
@@ -14,7 +18,7 @@ interface ChatgptDomProviderState {
   baselineTurns?: number | null;
   attachmentNames?: AttachmentReadyExpectation[];
   committedTurns?: number | null;
-  onPromptSubmitted?: () => Promise<void> | void;
+  onPromptSubmitted?: (proof: PromptDeliveryProof) => Promise<void> | void;
 }
 
 function requireState(ctx: ProviderDomFlowContext): ChatgptDomProviderState {

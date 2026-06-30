@@ -18,6 +18,7 @@ import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
+  writeTextBrowserArtifact,
 } from "./artifacts.js";
 
 export interface BrowserExecutionResult {
@@ -51,6 +52,78 @@ export interface BrowserSessionRunnerDeps {
 
 const LARGE_PRO_FAST_INPUT_TOKEN_THRESHOLD = 25_000;
 const LARGE_PRO_FAST_ELAPSED_MS_THRESHOLD = 120_000;
+
+type DeepResearchFallbackResponseDetails = {
+  text: string;
+  html?: string;
+  meta?: { turnId?: string | null; messageId?: string | null };
+  chars?: number;
+};
+
+function readDeepResearchFallbackResponse(
+  error: BrowserAutomationError,
+): DeepResearchFallbackResponseDetails | null {
+  const details = error.details;
+  if (!details || details.stage !== "deep-research-not-started") return null;
+  const response = details.fallbackResponse;
+  if (!response || typeof response !== "object" || Array.isArray(response)) return null;
+  const text = (response as { text?: unknown }).text;
+  if (typeof text !== "string" || !text.trim()) return null;
+  const html = (response as { html?: unknown }).html;
+  const meta = (response as { meta?: unknown }).meta;
+  const chars = (response as { chars?: unknown }).chars;
+  return {
+    text,
+    html: typeof html === "string" ? html : undefined,
+    meta:
+      meta && typeof meta === "object" && !Array.isArray(meta)
+        ? (meta as DeepResearchFallbackResponseDetails["meta"])
+        : undefined,
+    chars: typeof chars === "number" && Number.isFinite(chars) ? chars : text.length,
+  };
+}
+
+async function saveDeepResearchFallbackErrorArtifacts(params: {
+  error: BrowserAutomationError;
+  sessionId?: string;
+  prompt: string;
+  logger: BrowserLogger;
+}): Promise<BrowserAutomationError> {
+  const fallback = readDeepResearchFallbackResponse(params.error);
+  if (!fallback || !params.sessionId) return params.error;
+
+  const responseArtifact = await writeTextBrowserArtifact({
+    sessionId: params.sessionId,
+    kind: "file",
+    filename: "deep-research-fallback-normal-response.md",
+    contents: fallback.text,
+    label: "Deep Research fallback normal response",
+    mimeType: "text/markdown",
+    logger: params.logger,
+  }).catch(() => null);
+  const transcriptArtifact = await saveBrowserTranscriptArtifact({
+    sessionId: params.sessionId,
+    prompt: params.prompt,
+    answerMarkdown: fallback.text,
+    artifacts: appendArtifacts(undefined, [responseArtifact]),
+    logger: params.logger,
+  }).catch(() => null);
+  const fallbackArtifacts = appendArtifacts(undefined, [responseArtifact, transcriptArtifact]);
+  if (!fallbackArtifacts?.length) return params.error;
+
+  return new BrowserAutomationError(
+    params.error.message,
+    {
+      ...params.error.details,
+      fallbackResponse: {
+        ...fallback,
+        artifactPath: responseArtifact?.path ?? null,
+      },
+      fallbackArtifacts,
+    },
+    params.error,
+  );
+}
 
 function buildUnavailableModelSelectionEvidence(
   browserConfig: BrowserSessionConfig,
@@ -224,7 +297,12 @@ export async function runBrowserSessionExecution(
     });
   } catch (error) {
     if (error instanceof BrowserAutomationError) {
-      throw error;
+      throw await saveDeepResearchFallbackErrorArtifacts({
+        error,
+        sessionId: runOptions.sessionId,
+        prompt: promptArtifacts.composerText,
+        logger: automationLogger,
+      });
     }
     const message = error instanceof Error ? error.message : "Browser automation failed.";
     throw new BrowserAutomationError(message, { stage: "execute-browser" }, error);
@@ -305,6 +383,7 @@ export async function runBrowserSessionExecution(
       tabUrl: browserResult.tabUrl,
       conversationId: browserResult.conversationId,
       promptSubmitted: browserResult.promptSubmitted,
+      promptDelivery: browserResult.promptDelivery,
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     archive: browserResult.archive,

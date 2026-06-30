@@ -53,7 +53,6 @@ export function buildConversationUrl(
     if (runtime.tabUrl.includes("/c/")) {
       return runtime.tabUrl;
     }
-    return null;
   }
   const conversationId = runtime.conversationId;
   if (!conversationId) {

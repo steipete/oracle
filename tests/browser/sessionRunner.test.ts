@@ -1,10 +1,15 @@
-import { describe, expect, test, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { RunOracleOptions } from "../../src/oracle.js";
 import type { BrowserSessionConfig } from "../../src/sessionStore.js";
 import {
   buildBrowserRunWarningsForTest,
   runBrowserSessionExecution,
 } from "../../src/browser/sessionRunner.js";
+import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
+import { BrowserAutomationError } from "../../src/oracle/errors.js";
 
 const baseRunOptions: RunOracleOptions = {
   prompt: "Hello world",
@@ -16,6 +21,10 @@ const baseRunOptions: RunOracleOptions = {
 const baseConfig: BrowserSessionConfig = {};
 
 describe("runBrowserSessionExecution", () => {
+  afterEach(() => {
+    setOracleHomeDirOverrideForTest(null);
+  });
+
   test("logs stats and returns usage/runtime", async () => {
     const log = vi.fn();
     const persistRuntimeHint = vi.fn();
@@ -72,6 +81,76 @@ describe("runBrowserSessionExecution", () => {
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
     );
     expect(log).toHaveBeenCalled();
+  });
+
+  test("saves normal-response artifacts when Deep Research silently falls back", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-fallback-"));
+    setOracleHomeDirOverrideForTest(tmpHome);
+    const fallbackError = new BrowserAutomationError(
+      "ChatGPT returned a completed response without starting Deep Research.",
+      {
+        stage: "deep-research-not-started",
+        code: "deep-research-not-started",
+        fallbackResponseKind: "normal-chatgpt-response",
+        fallbackResponse: {
+          text: "Normal Pro answer preserved after Deep Research fallback.",
+          meta: { turnId: "turn-1", messageId: "message-1" },
+          chars: 57,
+        },
+      },
+    );
+
+    let thrown: unknown;
+    try {
+      await runBrowserSessionExecution(
+        {
+          runOptions: { ...baseRunOptions, sessionId: "deep-fallback-session" },
+          browserConfig: { researchMode: "deep" },
+          cwd: "/repo",
+          log: vi.fn(),
+        },
+        {
+          assemblePrompt: async () => ({
+            markdown: "prompt",
+            composerText: "Prompt that requested Deep Research",
+            estimatedInputTokens: 42,
+            attachments: [],
+            inlineFileCount: 0,
+            tokenEstimateIncludesInlineFiles: false,
+            attachmentsPolicy: "auto",
+            attachmentMode: "inline",
+            fallback: null,
+          }),
+          executeBrowser: vi.fn(async () => {
+            throw fallbackError;
+          }),
+        },
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(BrowserAutomationError);
+    const details = (thrown as BrowserAutomationError).details as {
+      fallbackResponse?: { artifactPath?: string | null };
+      fallbackArtifacts?: Array<{ kind: string; path: string; label?: string }>;
+    };
+    expect(details.fallbackResponse?.artifactPath).toBeTruthy();
+    expect(details.fallbackArtifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "file",
+          label: "Deep Research fallback normal response",
+        }),
+        expect.objectContaining({
+          kind: "transcript",
+          label: "Browser transcript",
+        }),
+      ]),
+    );
+    await expect(fs.readFile(details.fallbackResponse!.artifactPath!, "utf8")).resolves.toContain(
+      "Normal Pro answer preserved after Deep Research fallback.",
+    );
   });
 
   test("passes browser resume conversation URL to executeBrowser", async () => {

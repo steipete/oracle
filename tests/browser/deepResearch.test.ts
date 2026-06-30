@@ -13,6 +13,7 @@ vi.mock("../../src/browser/utils.js", async (importOriginal) => {
 import {
   activateDeepResearch,
   buildActivateDeepResearchExpressionForTest,
+  buildDeepResearchActivationCheckExpressionForTest,
   buildDeepResearchCompletionPollExpressionForTest,
   buildDeepResearchFrameStatusExpressionForTest,
   buildDeepResearchStatusExpressionForTest,
@@ -27,6 +28,7 @@ import {
   checkDeepResearchStatus,
 } from "../../src/browser/actions/deepResearch.js";
 import type { BrowserLogger } from "../../src/browser/types.js";
+import { BrowserAutomationError } from "../../src/oracle/errors.js";
 
 function createMockRuntime() {
   return {
@@ -100,13 +102,31 @@ describe("activateDeepResearch", () => {
     expect(mockLogger).toHaveBeenCalledWith("Deep Research mode already active");
   });
 
+  it("waits for activation after the sidebar Deep Research route is selected", async () => {
+    mockRuntime.evaluate
+      .mockResolvedValueOnce({
+        result: { value: { status: "sidebar-navigation-started" } },
+      })
+      .mockResolvedValueOnce({
+        result: { value: { active: true } },
+      });
+
+    await expect(
+      activateDeepResearch(mockRuntime as never, mockInput as never, mockLogger),
+    ).resolves.toBeUndefined();
+    expect(mockLogger).toHaveBeenCalledWith(
+      "Deep Research sidebar route selected; waiting for activation",
+    );
+    expect(mockLogger).toHaveBeenCalledWith("Deep Research mode activated");
+  });
+
   it("throws when plus button is missing", async () => {
     mockRuntime.evaluate.mockResolvedValueOnce({
       result: { value: { status: "plus-button-missing" } },
     });
     await expect(
       activateDeepResearch(mockRuntime as never, mockInput as never, mockLogger),
-    ).rejects.toThrow(/composer plus button/);
+    ).rejects.toThrow(/composer tools or plus button/);
   });
 
   it("throws with available options when Deep Research item missing", async () => {
@@ -115,12 +135,35 @@ describe("activateDeepResearch", () => {
         value: {
           status: "dropdown-item-missing",
           available: ["Create image", "Web search"],
+          attempts: [
+            {
+              surface: "tools-menu",
+              opened: true,
+              available: ["Create image", "Web search"],
+            },
+          ],
         },
       },
     });
     await expect(
       activateDeepResearch(mockRuntime as never, mockInput as never, mockLogger),
-    ).rejects.toThrow(/not found.*Create image/);
+    ).rejects.toThrow(/not visible.*tools-menu.*Create image/s);
+  });
+
+  it("throws when Deep Research is visible but disabled", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          status: "dropdown-item-disabled",
+          label: "Deep research",
+          surface: "tools-menu",
+          available: ["Deep research"],
+        },
+      },
+    });
+    await expect(
+      activateDeepResearch(mockRuntime as never, mockInput as never, mockLogger),
+    ).rejects.toThrow(/visible but disabled/);
   });
 
   it("throws when pill does not confirm", async () => {
@@ -143,16 +186,209 @@ describe("activateDeepResearch", () => {
 });
 
 describe("Deep Research activation expression", () => {
+  function makeActivationElement(options: {
+    text?: string;
+    ariaLabel?: string;
+    rect?: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      width: number;
+      height: number;
+    };
+    display?: string;
+    visibility?: string;
+    root?: { contains: (node: unknown) => boolean } | null;
+  }) {
+    return {
+      textContent: options.text ?? "",
+      innerText: options.text ?? "",
+      getAttribute: (name: string) => {
+        if (name === "aria-label") return options.ariaLabel ?? null;
+        if (name === "title") return null;
+        return null;
+      },
+      getBoundingClientRect: () =>
+        options.rect ?? { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 },
+      querySelector: () => null,
+      closest: () => options.root ?? null,
+      __style: {
+        display: options.display ?? "block",
+        visibility: options.visibility ?? "visible",
+      },
+    };
+  }
+
+  function runActivationCheckExpression(params: {
+    pills?: unknown[];
+    textboxes?: unknown[];
+    app?: unknown | null;
+    path?: string;
+  }) {
+    const expression = buildDeepResearchActivationCheckExpressionForTest();
+    return new vm.Script(expression).runInNewContext({
+      document: {
+        querySelector: (selector: string) => {
+          if (selector === ".deep-research-app") return params.app ?? null;
+          return null;
+        },
+        querySelectorAll: (selector: string) => {
+          if (selector.includes("composer-pill")) return params.pills ?? [];
+          if (selector.includes('[role="textbox"]')) return params.textboxes ?? [];
+          return [];
+        },
+      },
+      getComputedStyle: (element: { __style?: { display?: string; visibility?: string } }) =>
+        element.__style ?? { display: "block", visibility: "visible" },
+      location: { pathname: params.path ?? "/" },
+    }) as { active?: boolean; pillActive?: boolean; textboxActive?: boolean; pathActive?: boolean };
+  }
+
   it("prefers the slash command and keeps the plus-menu fallback", () => {
     const expression = buildActivateDeepResearchExpressionForTest();
 
     expect(expression).toContain("/Deepresearch");
+    expect(expression).toContain("/deep research");
+    expect(expression).toContain("/deepresearch");
     expect(expression).toContain("findDeepResearchItem");
+    expect(expression).toContain("composer-tools-button");
     expect(expression).toContain("composer-plus-btn");
+    expect(expression).toContain("deep-research-sidebar-item");
+    expect(expression).toContain("sidebar-more-menu");
     expect(expression).toContain('role="menuitemradio"');
+    expect(expression).toContain("aria-disabled");
     expect(expression).toContain('[class*="composer-pill"]');
+    expect(expression).toContain("isCurrentComposerPill");
+    expect(expression).toContain("deepresearch");
     expect(expression).toContain("deep research");
     expect(expression).toContain("already-active");
+    expect(expression).not.toContain('text.toLowerCase() === "deep research"');
+    expect(expression).not.toContain("trim().toLowerCase() === target");
+  });
+
+  it("does not let Deep Research route text count as active without the composer pill", () => {
+    const expression = buildDeepResearchActivationCheckExpressionForTest();
+
+    expect(expression).toContain("deep-research");
+    expect(expression).toContain('[role="textbox"]');
+    expect(expression).toContain("active: pillActive || appActive");
+    expect(expression).toContain("pathActive");
+    expect(expression).toContain("isCurrentComposerPill");
+    expect(expression).not.toContain("pathActive && textboxActive");
+  });
+
+  it("does not accept a hidden Deep Research pill as activation proof", () => {
+    const rootMembers = new Set<unknown>();
+    const root = { contains: (node: unknown) => rootMembers.has(node) };
+    const pill = makeActivationElement({
+      text: "Deep Research",
+      rect: { left: 20, top: 520, right: 160, bottom: 548, width: 140, height: 28 },
+      display: "none",
+      root,
+    });
+    const textbox = makeActivationElement({
+      rect: { left: 20, top: 560, right: 720, bottom: 620, width: 700, height: 60 },
+      root,
+    });
+    rootMembers.add(pill);
+    rootMembers.add(textbox);
+
+    const result = runActivationCheckExpression({
+      pills: [pill],
+      textboxes: [textbox],
+      path: "/deep-research",
+    });
+
+    expect(result.pathActive).toBe(true);
+    expect(result.pillActive).toBe(false);
+    expect(result.active).toBe(false);
+  });
+
+  it("does not accept an off-composer Deep Research pill as activation proof", () => {
+    const pill = makeActivationElement({
+      text: "Deep Research",
+      rect: { left: 20, top: 20, right: 160, bottom: 48, width: 140, height: 28 },
+    });
+    const textbox = makeActivationElement({
+      rect: { left: 20, top: 560, right: 720, bottom: 620, width: 700, height: 60 },
+    });
+
+    const result = runActivationCheckExpression({
+      pills: [pill],
+      textboxes: [textbox],
+      path: "/deep-research",
+    });
+
+    expect(result.pathActive).toBe(true);
+    expect(result.pillActive).toBe(false);
+    expect(result.active).toBe(false);
+  });
+
+  it("accepts the current Deep Research app composer without a composer pill", () => {
+    const textbox = makeActivationElement({
+      text: "Deep research",
+      rect: { left: 757, top: 278, right: 1230, bottom: 320, width: 473, height: 42 },
+    });
+    const app = {
+      ...makeActivationElement({
+        text: "Ready when you are. Ask a complex question. Get a full report, with sources. Deep research",
+        rect: { left: 275, top: 52, right: 1905, bottom: 961, width: 1630, height: 909 },
+      }),
+      contains: (node: unknown) => node === textbox,
+    };
+
+    const result = runActivationCheckExpression({
+      pills: [],
+      textboxes: [textbox],
+      app,
+      path: "/deep-research",
+    });
+
+    expect(result.pillActive).toBe(false);
+    expect(result.active).toBe(true);
+  });
+
+  it("does not accept route and textbox text without the Deep Research app root", () => {
+    const textbox = makeActivationElement({
+      text: "Deep research",
+      rect: { left: 757, top: 278, right: 1230, bottom: 320, width: 473, height: 42 },
+    });
+
+    const result = runActivationCheckExpression({
+      pills: [],
+      textboxes: [textbox],
+      path: "/deep-research",
+    });
+
+    expect(result.pathActive).toBe(true);
+    expect(result.textboxActive).toBe(true);
+    expect(result.active).toBe(false);
+  });
+
+  it("accepts a visible Deep Research pill in the current composer", () => {
+    const rootMembers = new Set<unknown>();
+    const root = { contains: (node: unknown) => rootMembers.has(node) };
+    const pill = makeActivationElement({
+      text: "Deep Research",
+      rect: { left: 20, top: 520, right: 160, bottom: 548, width: 140, height: 28 },
+      root,
+    });
+    const textbox = makeActivationElement({
+      rect: { left: 20, top: 560, right: 720, bottom: 620, width: 700, height: 60 },
+      root,
+    });
+    rootMembers.add(pill);
+    rootMembers.add(textbox);
+
+    const result = runActivationCheckExpression({
+      pills: [pill],
+      textboxes: [textbox],
+      path: "/deep-research",
+    });
+
+    expect(result.pillActive).toBe(true);
+    expect(result.active).toBe(true);
   });
 });
 
@@ -536,6 +772,50 @@ describe("waitForDeepResearchCompletion", () => {
     await expect(
       waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000),
     ).rejects.toThrow(/without starting Deep Research/);
+  });
+
+  it("includes the fallback normal response when Deep Research silently downgrades", async () => {
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: { finished: true, stopVisible: false, textLength: 100, hasIframe: false },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          text: "Normal Pro response that should be recoverable",
+          html: "<p>Normal Pro response that should be recoverable</p>",
+          turnId: "turn-1",
+          messageId: "message-1",
+        },
+      },
+    });
+    mockRuntime.evaluate.mockResolvedValueOnce({
+      result: {
+        value: {
+          success: true,
+          markdown: "Normal Pro response that should be recoverable",
+        },
+      },
+    });
+
+    try {
+      await waitForDeepResearchCompletion(mockRuntime as never, mockLogger, 60_000);
+      throw new Error("Expected Deep Research fallback error");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BrowserAutomationError);
+      const details = (error as BrowserAutomationError).details as {
+        fallbackResponseKind?: string;
+        fallbackResponse?: { text?: string; chars?: number; meta?: Record<string, unknown> };
+      };
+      expect(details.fallbackResponseKind).toBe("normal-chatgpt-response");
+      expect(details.fallbackResponse?.text).toBe("Normal Pro response that should be recoverable");
+      expect(details.fallbackResponse?.chars).toBe(46);
+      expect(details.fallbackResponse?.meta).toMatchObject({
+        turnId: "turn-1",
+        messageId: "message-1",
+      });
+    }
   });
 
   it("does not treat an unscoped page iframe as evidence for a normal response", async () => {
@@ -1784,6 +2064,56 @@ describe("waitForDeepResearchCompletion", () => {
     expect(mockPage.createIsolatedWorld).toHaveBeenCalledWith(
       expect.objectContaining({ frameId: "fresh-deep-frame" }),
     );
+  });
+
+  it("detects a completed outer assistant turn when nested assistant fragments follow it", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(0);
+    const finalReport =
+      "Selection verdict. The best first benchmark front is Sawin-style explicit unit-distance certificate verification with enough report text to be complete.";
+    const outerTurn = {
+      textContent: finalReport,
+      innerText: finalReport,
+      dataset: {},
+      contains: (node: unknown) => node === nestedIntro || node === nestedReport,
+      getAttribute: (name: string) => (name === "data-turn" ? "assistant" : null),
+      querySelector: (selector: string) =>
+        selector.includes("copy-turn-action-button") ? {} : null,
+      querySelectorAll: () => [],
+    };
+    const nestedIntro = {
+      textContent: "I’ve now pruned key traps.",
+      innerText: "I’ve now pruned key traps.",
+      dataset: {},
+      contains: () => false,
+      getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    const nestedReport = {
+      textContent: finalReport,
+      innerText: finalReport,
+      dataset: {},
+      contains: () => false,
+      getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    const turns = [outerTurn, nestedIntro, nestedReport];
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: finalReport },
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === "iframe") return [];
+          if (selector.includes("conversation-turn")) return turns;
+          if (selector.includes("data-message-author-role")) return turns;
+          return [];
+        },
+      },
+    }) as { finished?: boolean; textLength?: number };
+
+    expect(result.finished).toBe(true);
+    expect(result.textLength).toBe(finalReport.length);
   });
 
   it("does not fall back to an older completed turn when scoped to new turns", () => {

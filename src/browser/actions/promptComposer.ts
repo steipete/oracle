@@ -28,6 +28,27 @@ export interface AttachmentReadyExpectation {
 
 type AttachmentReadyInput = string | AttachmentReadyExpectation;
 
+export interface PromptDeliveryProof {
+  status: "verified";
+  promptChars: number;
+  normalizedPromptChars: number;
+  composerChars: number;
+  committedTurnCount: number | null;
+  commitMatchKind: "full" | "prefix_tail";
+  verifiedAt: string;
+}
+
+interface ComposerDeliveryProof {
+  promptChars: number;
+  normalizedPromptChars: number;
+  composerChars: number;
+}
+
+interface PromptCommitProof {
+  committedTurnCount: number | null;
+  matchKind: "full" | "prefix_tail";
+}
+
 export async function submitPrompt(
   deps: {
     runtime: ChromeClient["Runtime"];
@@ -36,7 +57,7 @@ export async function submitPrompt(
     baselineTurns?: number | null;
     inputTimeoutMs?: number | null;
     attachmentTimeoutMs?: number | null;
-    onPromptSubmitted?: () => Promise<void> | void;
+    onPromptSubmitted?: (proof: PromptDeliveryProof) => Promise<void> | void;
   },
   prompt: string,
   logger: BrowserLogger,
@@ -191,6 +212,11 @@ export async function submitPrompt(
   const observedEditor = postVerification.result?.value?.editorText ?? "";
   const observedFallback = postVerification.result?.value?.fallbackValue ?? "";
   const observedActive = postVerification.result?.value?.activeValue ?? "";
+  const composerProof = verifyComposerDelivery(prompt, [
+    observedActive,
+    observedEditor,
+    observedFallback,
+  ]);
   const observedLength = Math.max(
     observedEditor.length,
     observedFallback.length,
@@ -231,17 +257,26 @@ export async function submitPrompt(
   } else {
     logger("Clicked send button");
   }
-  await deps.onPromptSubmitted?.();
 
   const commitTimeoutMs = Math.max(60_000, deps.inputTimeoutMs ?? 0);
   // Learned: the send button can succeed but the turn doesn't appear immediately; verify commit via turns/stop button.
-  return await verifyPromptCommitted(
+  const commitProof = await verifyPromptCommitted(
     runtime,
     prompt,
     commitTimeoutMs,
     logger,
     deps.baselineTurns ?? undefined,
   );
+  await deps.onPromptSubmitted?.({
+    status: "verified",
+    promptChars: prompt.length,
+    normalizedPromptChars: composerProof.normalizedPromptChars,
+    composerChars: composerProof.composerChars,
+    committedTurnCount: commitProof.committedTurnCount,
+    commitMatchKind: commitProof.matchKind,
+    verifiedAt: new Date().toISOString(),
+  });
+  return commitProof.committedTurnCount;
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
@@ -740,7 +775,7 @@ async function verifyPromptCommitted(
   timeoutMs: number,
   logger?: BrowserLogger,
   baselineTurns?: number,
-): Promise<number | null> {
+): Promise<PromptCommitProof> {
   const deadline = Date.now() + timeoutMs;
   const encodedPrompt = JSON.stringify(prompt.trim());
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
@@ -782,7 +817,8 @@ async function verifyPromptCommitted(
 	      return text.replace(/\\s+/g, ' ').trim();
 	    };
 	    const normalizedPrompt = normalize(${encodedPrompt});
-	    const normalizedPromptPrefix = normalizedPrompt.slice(0, 120);
+	    const normalizedPromptPrefix = normalizedPrompt.slice(0, 160);
+	    const normalizedPromptTail = normalizedPrompt.slice(-160);
 	    const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
 	    const articles = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
 	    const normalizedTurns = articles.map((node) => normalize(node?.innerText));
@@ -803,14 +839,24 @@ async function verifyPromptCommitted(
 	    const activeInputs = visibleInputs.length > 0 ? visibleInputs : inputs;
 	    const userMatched =
 	      normalizedPrompt.length > 0 && normalizedTurns.some((text) => text.includes(normalizedPrompt));
-	    const prefixMatched =
+	    const prefixTailMatched =
 	      normalizedPromptPrefix.length > 30 &&
-	      normalizedTurns.some((text) => text.includes(normalizedPromptPrefix));
+	      normalizedPromptTail.length > 30 &&
+	      normalizedTurns.some((text) =>
+	        text.includes(normalizedPromptPrefix) &&
+	        text.includes(normalizedPromptTail) &&
+	        text.length >= Math.floor(normalizedPrompt.length * 0.7)
+	      );
 		    const lastTurn = normalizedTurns[normalizedTurns.length - 1] ?? '';
-		    const lastMatched =
+		    const lastFullMatched =
 		      normalizedPrompt.length > 0 &&
-		      (lastTurn.includes(normalizedPrompt) ||
-		        (normalizedPromptPrefix.length > 30 && lastTurn.includes(normalizedPromptPrefix)));
+		      lastTurn.includes(normalizedPrompt);
+		    const lastPrefixTailMatched =
+		      normalizedPromptPrefix.length > 30 &&
+		      normalizedPromptTail.length > 30 &&
+		      lastTurn.includes(normalizedPromptPrefix) &&
+		      lastTurn.includes(normalizedPromptTail) &&
+		      lastTurn.length >= Math.floor(normalizedPrompt.length * 0.7);
 		    const baseline = ${baselineLiteral};
 		    const hasNewTurn = baseline < 0 ? false : normalizedTurns.length > baseline;
 		    const stopVisible = Boolean(document.querySelector(${stopSelectorLiteral}));
@@ -829,8 +875,9 @@ async function verifyPromptCommitted(
 		    return {
         baseline,
 	      userMatched,
-	      prefixMatched,
-	      lastMatched,
+	      prefixTailMatched,
+	      lastFullMatched,
+	      lastPrefixTailMatched,
 	      hasNewTurn,
 	      stopVisible,
       assistantVisible,
@@ -849,8 +896,9 @@ async function verifyPromptCommitted(
     const info = result.value as {
       baseline?: number;
       userMatched?: boolean;
-      prefixMatched?: boolean;
-      lastMatched?: boolean;
+      prefixTailMatched?: boolean;
+      lastFullMatched?: boolean;
+      lastPrefixTailMatched?: boolean;
       hasNewTurn?: boolean;
       stopVisible?: boolean;
       assistantVisible?: boolean;
@@ -859,18 +907,20 @@ async function verifyPromptCommitted(
       turnsCount?: number;
     };
     const turnsCount = (result.value as { turnsCount?: number } | undefined)?.turnsCount;
-    const matchesPrompt = Boolean(info?.lastMatched || info?.userMatched || info?.prefixMatched);
+    const matchKind =
+      info?.lastFullMatched || info?.userMatched
+        ? "full"
+        : info?.lastPrefixTailMatched || info?.prefixTailMatched
+          ? "prefix_tail"
+          : null;
     const baselineUnknown =
       typeof info?.baseline === "number" ? info.baseline < 0 : baselineLiteral < 0;
-    if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
-      return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
-    }
-    const fallbackCommit =
-      info?.composerCleared &&
-      Boolean(info?.hasNewTurn) &&
-      ((info?.stopVisible ?? false) || info?.assistantVisible || info?.inConversation);
-    if (fallbackCommit) {
-      return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
+    if (matchKind && (baselineUnknown || info?.hasNewTurn)) {
+      return {
+        committedTurnCount:
+          typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null,
+        matchKind,
+      };
     }
     await delay(100);
   }
@@ -896,7 +946,61 @@ async function verifyPromptCommitted(
       },
     );
   }
-  throw new Error("Prompt did not appear in conversation before timeout (send may have failed)");
+  throw new BrowserAutomationError(
+    "Prompt did not appear in conversation before timeout (delivery could not be verified)",
+    {
+      stage: "submit-prompt",
+      code: "prompt-delivery-unverified",
+      promptLength: prompt.trim().length,
+      timeoutMs,
+    },
+  );
+}
+
+function normalizeForDelivery(value: string): string {
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function verifyComposerDelivery(prompt: string, observedValues: string[]): ComposerDeliveryProof {
+  const normalizedPrompt = normalizeForDelivery(prompt);
+  const candidates = observedValues.map((value) => ({
+    rawLength: String(value || "").length,
+    normalized: normalizeForDelivery(value),
+  }));
+  const best = candidates.reduce(
+    (current, candidate) =>
+      candidate.normalized.length > current.normalized.length ? candidate : current,
+    { rawLength: 0, normalized: "" },
+  );
+  if (
+    normalizedPrompt &&
+    candidates.some((candidate) => candidate.normalized === normalizedPrompt)
+  ) {
+    return {
+      promptChars: prompt.length,
+      normalizedPromptChars: normalizedPrompt.length,
+      composerChars: Math.max(...candidates.map((candidate) => candidate.rawLength), 0),
+    };
+  }
+  throw new BrowserAutomationError(
+    "Prompt delivery verification failed before submit; refusing to click send.",
+    {
+      stage: "submit-prompt",
+      code: "prompt-delivery-mismatch",
+      promptLength: prompt.length,
+      normalizedPromptLength: normalizedPrompt.length,
+      observedComposerLength: best.rawLength,
+      observedNormalizedLength: best.normalized.length,
+      expectedPrefix: normalizedPrompt.slice(0, 120),
+      expectedTail: normalizedPrompt.slice(-120),
+      observedPrefix: best.normalized.slice(0, 120),
+      observedTail: best.normalized.slice(-120),
+    },
+  );
 }
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite

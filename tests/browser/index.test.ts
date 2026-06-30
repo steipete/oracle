@@ -9,6 +9,7 @@ import {
   isLocalChromeHostForTest,
   maybeArchiveCompletedConversationForTest,
   redactBrowserConfigForDebugLogForTest,
+  resolvePostSubmissionBaselineTurnsForTest,
   resolveRemoteTabLeaseProfileDirForTest,
   runBrowserMode,
   runSubmissionWithRecoveryForTest,
@@ -606,6 +607,30 @@ describe("shouldPreferSystemTmpDirForTest", () => {
     expect(shouldPreferSystemTmpDirForTest("linux", "/home/openclaw2/.tmp", "/home/openclaw")).toBe(
       false,
     );
+  });
+});
+
+describe("resolvePostSubmissionBaselineTurnsForTest", () => {
+  test("keeps the pre-submit boundary for Deep Research completion", () => {
+    expect(
+      resolvePostSubmissionBaselineTurnsForTest({
+        deepResearch: true,
+        preSubmitBaselineTurns: 1,
+        providerBaselineTurns: 4,
+        fallbackBaselineTurns: 1,
+      }),
+    ).toBe(1);
+  });
+
+  test("uses provider committed-turn baseline for normal chat", () => {
+    expect(
+      resolvePostSubmissionBaselineTurnsForTest({
+        deepResearch: false,
+        preSubmitBaselineTurns: 1,
+        providerBaselineTurns: 4,
+        fallbackBaselineTurns: 1,
+      }),
+    ).toBe(4);
   });
 });
 

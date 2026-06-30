@@ -328,6 +328,12 @@ describe("reattach helpers", () => {
     expect(buildConversationUrl({ conversationId: "abc" }, "https://chatgpt.com/")).toBe(
       "https://chatgpt.com/c/abc",
     );
+    expect(
+      buildConversationUrl(
+        { tabUrl: "https://chatgpt.com/", conversationId: "abc" },
+        "https://chatgpt.com/",
+      ),
+    ).toBe("https://chatgpt.com/c/abc");
   });
 
   test("pickTarget prefers chromeTargetId, then tabUrl, then first page", () => {

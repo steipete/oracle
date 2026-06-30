@@ -41,9 +41,11 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
   readAssistantSnapshot,
+  type PromptDeliveryProof,
 } from "./pageActions.js";
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
+import { readConversationUrl } from "./actions/conversationUrl.js";
 import { ensureThinkingTime } from "./actions/thinkingTime.js";
 import { startThinkingStatusMonitor } from "./actions/thinkingStatus.js";
 import {
@@ -883,6 +885,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let promptDelivery: PromptDeliveryProof | null = null;
   let tabLease: BrowserTabLease | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
@@ -897,6 +900,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tabUrl: lastUrl,
       conversationId,
       promptSubmitted,
+      promptDelivery,
       userDataDir,
       controllerPid: process.pid,
     };
@@ -913,10 +917,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       logger(`Failed to persist runtime hint: ${message}`);
     }
   };
-  const markPromptSubmitted = async (): Promise<void> => {
+  const markPromptSubmitted = async (proof: PromptDeliveryProof): Promise<void> => {
     if (promptSubmitted) {
       return;
     }
+    promptDelivery = proof;
     promptSubmitted = true;
     await emitRuntimeHint();
   };
@@ -1328,19 +1333,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
-        try {
-          const { result } = await Runtime.evaluate({
-            expression: "location.href",
-            returnByValue: true,
-          });
-          if (typeof result?.value === "string" && result.value.includes("/c/")) {
-            lastUrl = result.value;
-            logger(`[browser] conversation url (${label}) = ${lastUrl}`);
-            await emitRuntimeHint();
-            return true;
-          }
-        } catch {
-          // ignore; keep polling until timeout
+        const conversationUrl = await readConversationUrl(Runtime).catch(() => null);
+        if (conversationUrl) {
+          lastUrl = conversationUrl;
+          logger(`[browser] conversation url (${label}) = ${lastUrl}`);
+          await emitRuntimeHint();
+          return true;
         }
         await delay(250);
       }
@@ -1497,6 +1495,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         logger("All attachments uploaded");
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
+      const preSubmitBaselineTurns = baselineTurns;
       // Learned: return baselineTurns so assistant polling can ignore earlier content.
       const providerState: Record<string, unknown> = {
         runtime: Runtime,
@@ -1520,11 +1519,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         log: logger,
         state: providerState,
       });
-      await markPromptSubmitted();
-      const providerBaselineTurns = providerState.baselineTurns;
-      if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
-        baselineTurns = providerBaselineTurns;
-      }
+      baselineTurns = resolvePostSubmissionBaselineTurns({
+        deepResearch,
+        preSubmitBaselineTurns,
+        providerBaselineTurns: providerState.baselineTurns,
+        fallbackBaselineTurns: baselineTurns,
+      });
       if (attachmentNames.length > 0) {
         if (inputOnlyAttachments) {
           logger(
@@ -1662,6 +1662,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        promptDelivery,
         controllerPid: process.pid,
       };
     }
@@ -1757,6 +1758,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              promptDelivery,
               controllerPid: process.pid,
             },
           },
@@ -1846,6 +1848,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              promptDelivery,
               controllerPid: process.pid,
             };
             throw await createAssistantTimeoutError({
@@ -2101,6 +2104,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
             promptSubmitted,
+            promptDelivery,
             controllerPid: process.pid,
           },
         }),
@@ -2172,6 +2176,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       promptSubmitted,
+      promptDelivery,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -2199,6 +2204,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
         promptSubmitted,
+        promptDelivery,
         controllerPid: process.pid,
       };
       const reuseProfileHint =
@@ -2257,6 +2263,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           chromeTargetId: lastTargetId,
           tabUrl: lastUrl,
           promptSubmitted,
+          promptDelivery,
           controllerPid: process.pid,
         },
       },
@@ -2728,6 +2735,7 @@ async function runRemoteBrowserMode(
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let promptDelivery: PromptDeliveryProof | null = null;
   let attachedExistingTab = false;
   let ownsTarget = true;
   const runtimeHintCb = options.runtimeHintCb;
@@ -2743,6 +2751,7 @@ async function runRemoteBrowserMode(
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        promptDelivery,
         controllerPid: process.pid,
       });
       await tabLease?.update({
@@ -2756,10 +2765,11 @@ async function runRemoteBrowserMode(
       logger(`Failed to persist runtime hint: ${message}`);
     }
   };
-  const markPromptSubmitted = async (): Promise<void> => {
+  const markPromptSubmitted = async (proof: PromptDeliveryProof): Promise<void> => {
     if (promptSubmitted) {
       return;
     }
+    promptDelivery = proof;
     promptSubmitted = true;
     await emitRuntimeHint();
   };
@@ -2968,6 +2978,7 @@ async function runRemoteBrowserMode(
         logger("All attachments uploaded");
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
+      const preSubmitBaselineTurns = baselineTurns;
       const providerState: Record<string, unknown> = {
         runtime: Runtime,
         input: Input,
@@ -2990,11 +3001,12 @@ async function runRemoteBrowserMode(
         log: logger,
         state: providerState,
       });
-      await markPromptSubmitted();
-      const providerBaselineTurns = providerState.baselineTurns;
-      if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
-        baselineTurns = providerBaselineTurns;
-      }
+      baselineTurns = resolvePostSubmissionBaselineTurns({
+        deepResearch,
+        preSubmitBaselineTurns,
+        providerBaselineTurns: providerState.baselineTurns,
+        fallbackBaselineTurns: baselineTurns,
+      });
       return {
         baselineTurns,
         baselineAssistantText,
@@ -3094,6 +3106,7 @@ async function runRemoteBrowserMode(
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        promptDelivery,
         controllerPid: process.pid,
       };
     }
@@ -3188,6 +3201,7 @@ async function runRemoteBrowserMode(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              promptDelivery,
               controllerPid: process.pid,
             },
           },
@@ -3285,6 +3299,7 @@ async function runRemoteBrowserMode(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              promptDelivery,
               controllerPid: process.pid,
             };
             throw await createAssistantTimeoutError({
@@ -3419,6 +3434,11 @@ async function runRemoteBrowserMode(
           turnAnswerMarkdown = bestText;
         }
       }
+      const conversationUrl = await readConversationUrl(Runtime).catch(() => null);
+      if (conversationUrl && isConversationUrl(conversationUrl)) {
+        lastUrl = conversationUrl;
+        await emitRuntimeHint();
+      }
       return {
         label,
         answerText: turnAnswerText,
@@ -3495,6 +3515,7 @@ async function runRemoteBrowserMode(
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
             promptSubmitted,
+            promptDelivery,
             controllerPid: process.pid,
           },
         }),
@@ -3563,6 +3584,7 @@ async function runRemoteBrowserMode(
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       promptSubmitted,
+      promptDelivery,
       artifacts: savedArtifacts,
       generatedImages: imageArtifacts.generatedImages,
       savedImages: imageArtifacts.savedImages,
@@ -3595,6 +3617,7 @@ async function runRemoteBrowserMode(
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: lastUrl,
         promptSubmitted,
+        promptDelivery,
         controllerPid: process.pid,
       },
     });
@@ -3754,15 +3777,6 @@ function isAssistantResponseTimeoutError(error: unknown): boolean {
     message.includes("watchdog") ||
     message.includes("capture assistant response")
   );
-}
-
-async function readConversationUrl(Runtime: ChromeClient["Runtime"]): Promise<string | null> {
-  try {
-    const currentUrl = await Runtime.evaluate({ expression: "location.href", returnByValue: true });
-    return typeof currentUrl.result?.value === "string" ? currentUrl.result.value : null;
-  } catch {
-    return null;
-  }
 }
 
 interface SessionValidationResult {
@@ -3927,6 +3941,35 @@ async function readConversationTurnCount(
 
 function isConversationUrl(url: string): boolean {
   return /\/c\/[a-z0-9-]+/i.test(url);
+}
+
+function resolvePostSubmissionBaselineTurns({
+  deepResearch,
+  preSubmitBaselineTurns,
+  providerBaselineTurns,
+  fallbackBaselineTurns,
+}: {
+  deepResearch: boolean;
+  preSubmitBaselineTurns: number | null;
+  providerBaselineTurns: unknown;
+  fallbackBaselineTurns: number | null;
+}): number | null {
+  if (deepResearch) {
+    return preSubmitBaselineTurns;
+  }
+  if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
+    return Math.max(0, Math.floor(providerBaselineTurns));
+  }
+  return fallbackBaselineTurns;
+}
+
+export function resolvePostSubmissionBaselineTurnsForTest(options: {
+  deepResearch: boolean;
+  preSubmitBaselineTurns: number | null;
+  providerBaselineTurns: unknown;
+  fallbackBaselineTurns: number | null;
+}): number | null {
+  return resolvePostSubmissionBaselineTurns(options);
 }
 
 function describeDevtoolsFirewallHint(host: string, port: number): string | null {

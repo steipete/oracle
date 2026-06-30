@@ -5,6 +5,7 @@
 ### Fixed
 
 - Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!
+- Browser: recognize ChatGPT's current Deep Research app-root composer, reject stale or off-composer activation signals, preserve normal-response fallbacks when Deep Research does not start, and keep report harvesting scoped to the pre-submit turn boundary.
 
 ## 0.15.0 — 2026-06-19
 

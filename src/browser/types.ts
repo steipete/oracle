@@ -179,7 +179,18 @@ export interface BrowserRunResult {
   tabUrl?: string;
   conversationId?: string;
   promptSubmitted?: boolean;
+  promptDelivery?: BrowserPromptDeliveryMetadata | null;
   controllerPid?: number;
+}
+
+export interface BrowserPromptDeliveryMetadata {
+  status: "verified";
+  promptChars: number;
+  normalizedPromptChars: number;
+  composerChars: number;
+  committedTurnCount: number | null;
+  commitMatchKind: "full" | "prefix_tail";
+  verifiedAt: string;
 }
 
 export type ResolvedBrowserConfig = Required<

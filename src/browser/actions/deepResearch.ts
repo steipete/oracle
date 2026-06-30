@@ -1,7 +1,6 @@
 import type { ChromeClient, BrowserLogger } from "../types.js";
 import {
   DEEP_RESEARCH_PLUS_BUTTON,
-  DEEP_RESEARCH_DROPDOWN_ITEM_TEXT,
   DEEP_RESEARCH_PILL_LABEL,
   DEEP_RESEARCH_POLL_INTERVAL_MS,
   DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS,
@@ -19,9 +18,37 @@ import { BrowserAutomationError } from "../../oracle/errors.js";
 type ActivateOutcome =
   | { status: "activated" }
   | { status: "already-active" }
+  | { status: "sidebar-navigation-started"; attempts?: DeepResearchAttempt[] }
   | { status: "plus-button-missing" }
-  | { status: "dropdown-item-missing"; available?: string[] }
-  | { status: "pill-not-confirmed" };
+  | { status: "dropdown-item-missing"; available?: string[]; attempts?: DeepResearchAttempt[] }
+  | {
+      status: "dropdown-item-disabled";
+      label?: string;
+      surface?: string;
+      available?: string[];
+      attempts?: DeepResearchAttempt[];
+    }
+  | {
+      status: "pill-not-confirmed";
+      label?: string;
+      surface?: string;
+      available?: string[];
+      attempts?: DeepResearchAttempt[];
+    };
+
+type DeepResearchAttempt = {
+  surface: string;
+  opened?: boolean;
+  available?: string[];
+  error?: string;
+};
+
+type DeepResearchFallbackResponse = {
+  text: string;
+  html?: string;
+  meta: { turnId?: string | null; messageId?: string | null };
+  chars: number;
+};
 
 /**
  * Activates Deep Research mode through ChatGPT's slash command, with the
@@ -47,21 +74,40 @@ export async function activateDeepResearch(
     case "already-active":
       logger("Deep Research mode already active");
       return;
+    case "sidebar-navigation-started":
+      logger("Deep Research sidebar route selected; waiting for activation");
+      if (await waitForDeepResearchActivation(Runtime)) {
+        logger("Deep Research mode activated");
+        return;
+      }
+      throw new BrowserAutomationError(
+        "Deep Research sidebar route was selected, but the Deep Research composer did not become active.",
+        { stage: "deep-research-activate", code: "sidebar-navigation-not-confirmed" },
+      );
     case "plus-button-missing":
       throw new BrowserAutomationError(
-        "Could not find the composer plus button to activate Deep Research.",
+        "Could not find a composer tools or plus button to activate Deep Research.",
         { stage: "deep-research-activate", code: "plus-button-missing" },
       );
     case "dropdown-item-missing": {
+      const tried = result.attempts?.length
+        ? ` Tried: ${result.attempts.map((attempt) => attempt.surface).join(", ")}.`
+        : "";
       const hint = result.available?.length
-        ? ` Available options: ${result.available.join(", ")}`
+        ? ` Visible options: ${result.available.join(", ")}.`
         : "";
       throw new BrowserAutomationError(
-        `"Deep research" option not found in composer dropdown.${hint} ` +
-          "This feature may require a ChatGPT Plus or Pro subscription.",
-        { stage: "deep-research-activate", code: "dropdown-item-missing" },
+        `Deep Research is not visible in the ChatGPT composer for this browser profile/model.${tried}${hint} ` +
+          "No prompt was submitted. This usually means the capability is unavailable for this account/model, or the ChatGPT UI moved again.",
+        { stage: "deep-research-activate", code: "deep-research-unavailable" },
       );
     }
+    case "dropdown-item-disabled":
+      throw new BrowserAutomationError(
+        `Deep Research is visible but disabled in the ChatGPT composer for this browser profile/model. ` +
+          "No prompt was submitted. Check account entitlement, quota, workspace policy, and selected model.",
+        { stage: "deep-research-activate", code: "deep-research-disabled" },
+      );
     case "pill-not-confirmed":
       throw new BrowserAutomationError(
         "Deep Research pill did not appear after selection. The UI may have changed.",
@@ -72,6 +118,23 @@ export async function activateDeepResearch(
         stage: "deep-research-activate",
       });
   }
+}
+
+async function waitForDeepResearchActivation(
+  Runtime: ChromeClient["Runtime"],
+  timeoutMs = 15_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { result } = await Runtime.evaluate({
+      expression: buildDeepResearchActivationCheckExpression(),
+      returnByValue: true,
+    });
+    const value = result?.value as { active?: boolean } | undefined;
+    if (value?.active) return true;
+    await delay(300);
+  }
+  return false;
 }
 
 /**
@@ -271,9 +334,19 @@ export async function waitForDeepResearchCompletion(
     // Completion detected
     if (val?.finished) {
       if (!observedResearchEvidence) {
+        const fallbackResponse = await extractFallbackNormalResponse(
+          Runtime,
+          logger,
+          minTurnIndex ?? undefined,
+        );
         throw new BrowserAutomationError(
           "ChatGPT returned a completed response without starting Deep Research. The Deep Research selection may have silently fallen back to a normal response.",
-          { stage: "deep-research-not-started", code: "deep-research-not-started" },
+          {
+            stage: "deep-research-not-started",
+            code: "deep-research-not-started",
+            fallbackResponseKind: fallbackResponse ? "normal-chatgpt-response" : null,
+            fallbackResponse,
+          },
         );
       }
       logger(`Deep Research completed (${Math.round((Date.now() - start) / 1000)}s elapsed)`);
@@ -320,6 +393,21 @@ export async function waitForDeepResearchCompletion(
       lastTextLength,
     },
   );
+}
+
+async function extractFallbackNormalResponse(
+  Runtime: ChromeClient["Runtime"],
+  logger: BrowserLogger,
+  minTurnIndex?: number,
+): Promise<DeepResearchFallbackResponse | null> {
+  const result = await extractDeepResearchResult(Runtime, logger, minTurnIndex).catch(() => null);
+  if (!result?.text?.trim()) return null;
+  return {
+    text: result.text,
+    html: result.html,
+    meta: result.meta,
+    chars: result.text.length,
+  };
 }
 
 /**
@@ -988,8 +1076,23 @@ function buildDeepResearchStatusExpression(): string {
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
     });
+    const selectLatestAssistantTurn = (turns) => {
+      const candidates = Array.from(turns);
+      const latest = candidates[candidates.length - 1] || null;
+      if (!latest) return null;
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        const candidate = candidates[i];
+        const containsLatest =
+          candidate === latest ||
+          (typeof candidate?.contains === 'function' && candidate.contains(latest));
+        if (containsLatest && candidate?.querySelector?.(${finishedSelector})) {
+          return candidate;
+        }
+      }
+      return latest;
+    };
     const turns = document.querySelectorAll('[data-message-author-role="assistant"]');
-    const lastTurn = turns[turns.length - 1];
+    const lastTurn = selectLatestAssistantTurn(turns);
     const finished = Boolean(lastTurn?.querySelector?.(${finishedSelector}));
     const text = (lastTurn?.textContent || '').trim();
     const normalized = text.toLowerCase().replace(/\\s+/g, ' ').trim();
@@ -1029,7 +1132,31 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
     const scopedTurns = scopedToNewTurns
       ? conversationTurns.slice(MIN_TURN_INDEX).filter(isAssistantTurn)
       : allAssistantTurns;
-    const lastTurn = scopedTurns[scopedTurns.length - 1] || (scopedToNewTurns ? null : allAssistantTurns[allAssistantTurns.length - 1]);
+    const hasDeepResearchIframe = (node) => Array.from(node?.querySelectorAll?.('iframe') || []).some(f => {
+      const rect = f.getBoundingClientRect();
+      const descriptor = String(f.getAttribute('src') || '') + ' ' + String(f.getAttribute('name') || '');
+      return rect.width > 200 && rect.height > 200 &&
+        /connector_openai_deep_research|deep-research/i.test(descriptor);
+    });
+    const selectLatestAssistantTurn = (turns) => {
+      const candidates = Array.from(turns);
+      const latest = candidates[candidates.length - 1] || null;
+      if (!latest) return null;
+      for (let i = candidates.length - 1; i >= 0; i--) {
+        const candidate = candidates[i];
+        const containsLatest =
+          candidate === latest ||
+          (typeof candidate?.contains === 'function' && candidate.contains(latest));
+        if (
+          containsLatest &&
+          (candidate?.querySelector?.(${finishedSelector}) || hasDeepResearchIframe(candidate))
+        ) {
+          return candidate;
+        }
+      }
+      return latest;
+    };
+    const lastTurn = selectLatestAssistantTurn(scopedTurns) || (scopedToNewTurns ? null : selectLatestAssistantTurn(allAssistantTurns));
     const text = (lastTurn?.textContent || '').trim();
     const normalized = text.toLowerCase().replace(/\\s+/g, ' ').trim();
     const textLength = text.length;
@@ -1058,12 +1185,7 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
     });
-    const hasScopedDeepResearchIframe = Array.from(lastTurn?.querySelectorAll?.('iframe') || []).some(f => {
-      const rect = f.getBoundingClientRect();
-      const descriptor = String(f.getAttribute('src') || '') + ' ' + String(f.getAttribute('name') || '');
-      return rect.width > 200 && rect.height > 200 &&
-        /connector_openai_deep_research|deep-research/i.test(descriptor);
-    });
+    const hasScopedDeepResearchIframe = hasDeepResearchIframe(lastTurn);
     const hasActiveScopedResearch = scopedToNewTurns && Boolean(lastTurn) &&
       hasScopedDeepResearchIframe &&
       (textLength < 40 || isToolStub || tailIsPlanningPanel || /chatgpt\\s+said:?$/i.test(text));
@@ -1079,9 +1201,76 @@ export function buildDeepResearchCompletionPollExpressionForTest(minTurnIndex = 
   return buildDeepResearchCompletionPollExpression(minTurnIndex);
 }
 
+function buildDeepResearchActivationCheckExpression(): string {
+  return `(() => {
+    const normalizeDeepResearchText = (value) => String(value || '')
+      .normalize('NFKC')
+      .replace(/\\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+    const candidateLabel = (element) => normalizeDeepResearchText([
+      element?.getAttribute?.('aria-label'),
+      element?.getAttribute?.('title'),
+      element?.innerText,
+      element?.textContent,
+      'value' in (element || {}) ? element.value : '',
+    ].filter(Boolean).join(' '));
+	    const isDeepResearchLabel = (value) => {
+	      const normalized = normalizeDeepResearchText(value);
+	      const compact = normalized.replace(/[^a-z0-9]+/g, '');
+	      return /\\bdeep\\s+research\\b/.test(normalized) || compact.includes('deepresearch');
+	    };
+	    const isVisible = (element) => {
+	      if (!element?.getBoundingClientRect) return false;
+	      const rect = element.getBoundingClientRect();
+	      const style = getComputedStyle(element);
+	      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+	    };
+	    const findComposerRoot = (element) => element?.closest?.('form, [data-testid*="composer" i], [class*="composer" i]');
+	    const textboxes = Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea'))
+	      .filter(isVisible);
+	    const deepResearchApp = document.querySelector('.deep-research-app');
+	    const appText = normalizeDeepResearchText(deepResearchApp?.innerText || deepResearchApp?.textContent || '');
+	    const appActive = Boolean(
+	      deepResearchApp &&
+	      isVisible(deepResearchApp) &&
+	      /(^|\\/)deep-research(\\/|$)/i.test(location.pathname) &&
+	      textboxes.some((textbox) => deepResearchApp.contains?.(textbox)) &&
+	      appText.includes('ask a complex question') &&
+	      appText.includes('full report')
+	    );
+	    const isCurrentComposerPill = (pill) => {
+	      if (!isVisible(pill) || textboxes.length === 0) return false;
+	      const pillRoot = findComposerRoot(pill);
+	      const pillRect = pill.getBoundingClientRect();
+	      return textboxes.some((textbox) => {
+	        const textboxRoot = findComposerRoot(textbox);
+	        if (pillRoot && textboxRoot && pillRoot === textboxRoot) return true;
+	        if (pillRoot?.contains?.(textbox) || textboxRoot?.contains?.(pill)) return true;
+	        const textboxRect = textbox.getBoundingClientRect();
+	        const verticalNear = pillRect.bottom >= textboxRect.top - 96 && pillRect.top <= textboxRect.bottom + 32;
+	        const horizontalOverlap = pillRect.left <= textboxRect.right && pillRect.right >= textboxRect.left;
+	        return verticalNear && horizontalOverlap;
+	      });
+	    };
+	    const pills = Array.from(document.querySelectorAll('.__composer-pill-composite, .__composer-pill, [class*="composer-pill"]'));
+	    const pillActive = pills.some((pill) =>
+	      isCurrentComposerPill(pill) &&
+	      (isDeepResearchLabel(candidateLabel(pill)) ||
+	        isDeepResearchLabel(pill.querySelector('button')?.getAttribute('aria-label')))
+	    );
+	    const textboxActive = textboxes.some((textbox) => isDeepResearchLabel(candidateLabel(textbox)));
+	    const pathActive = /(^|\\/)deep-research(\\/|$)/i.test(location.pathname);
+	    return { active: pillActive || appActive, pillActive, appActive, textboxActive, pathActive, path: location.pathname };
+	  })()`;
+}
+
+export function buildDeepResearchActivationCheckExpressionForTest(): string {
+  return buildDeepResearchActivationCheckExpression();
+}
+
 function buildActivateDeepResearchExpression(): string {
   const plusBtnSelector = JSON.stringify(DEEP_RESEARCH_PLUS_BUTTON);
-  const targetText = JSON.stringify(DEEP_RESEARCH_DROPDOWN_ITEM_TEXT);
   const pillLabel = JSON.stringify(DEEP_RESEARCH_PILL_LABEL);
 
   // pillLabel is used inside the expression for verification
@@ -1090,20 +1279,109 @@ function buildActivateDeepResearchExpression(): string {
   return `(async () => {
     ${buildClickDispatcher()}
 
-    const findDeepResearchPill = () => {
-      const pills = document.querySelectorAll('.__composer-pill-composite, .__composer-pill, [class*="composer-pill"]');
-      for (const pill of pills) {
-        const text = pill.textContent?.trim() || '';
-        const aria = pill.getAttribute('aria-label') ||
-          pill.querySelector('button')?.getAttribute('aria-label') ||
-          '';
-        if (text.toLowerCase().includes('deep research') ||
-            aria.toLowerCase().includes('deep research')) {
-          return pill;
-        }
-      }
-      return null;
+    const normalizeDeepResearchText = (value) => String(value || '')
+      .normalize('NFKC')
+      .replace(/\\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+    const candidateLabel = (element) => normalizeDeepResearchText([
+      element?.getAttribute?.('aria-label'),
+      element?.getAttribute?.('title'),
+      element?.innerText,
+      element?.textContent,
+    ].filter(Boolean).join(' '));
+
+    const isDeepResearchLabel = (value) => {
+      const normalized = normalizeDeepResearchText(value);
+      const compact = normalized.replace(/[^a-z0-9]+/g, '');
+      return /\\bdeep\\s+research\\b/.test(normalized) || compact.includes('deepresearch');
     };
+
+    const isDisabledItem = (element) => Boolean(
+      element?.disabled ||
+      element?.getAttribute?.('aria-disabled') === 'true' ||
+      element?.hasAttribute?.('data-disabled') ||
+      element?.closest?.('[aria-disabled="true"], [data-disabled]')
+    );
+
+    const clickElement = (element) => {
+      dispatchClickSequence(element);
+      element?.click?.();
+    };
+
+	    const isVisible = (element) => {
+	      if (!element?.getBoundingClientRect) return false;
+	      const rect = element.getBoundingClientRect();
+	      const style = getComputedStyle(element);
+	      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+	    };
+
+		    const findComposerRoot = (element) => element?.closest?.('form, [data-testid*="composer" i], [class*="composer" i]');
+
+		    const getVisibleTextboxes = () => Array.from(document.querySelectorAll('[role="textbox"], [contenteditable="true"], textarea'))
+		      .filter(isVisible);
+
+		    const isCurrentComposerPill = (pill) => {
+	      if (!isVisible(pill)) return false;
+	      const textboxes = getVisibleTextboxes();
+	      if (textboxes.length === 0) return false;
+	      const pillRoot = findComposerRoot(pill);
+	      const pillRect = pill.getBoundingClientRect();
+	      return textboxes.some((textbox) => {
+	        const textboxRoot = findComposerRoot(textbox);
+	        if (pillRoot && textboxRoot && pillRoot === textboxRoot) return true;
+	        if (pillRoot?.contains?.(textbox) || textboxRoot?.contains?.(pill)) return true;
+	        const textboxRect = textbox.getBoundingClientRect();
+	        const verticalNear = pillRect.bottom >= textboxRect.top - 96 && pillRect.top <= textboxRect.bottom + 32;
+	        const horizontalOverlap = pillRect.left <= textboxRect.right && pillRect.right >= textboxRect.left;
+	        return verticalNear && horizontalOverlap;
+	      });
+	    };
+
+	    const collectItems = () => Array.from(document.querySelectorAll('[data-testid="deep-research-sidebar-item"], [data-radix-collection-item], [role="menuitem"], [role="menuitemradio"], [role="option"], [cmdk-item], button, a'));
+
+    const visibleLabel = (element) => (element?.innerText || element?.textContent || element?.getAttribute?.('aria-label') || '').replace(/\\s+/g, ' ').trim();
+
+    const findDeepResearchItem = () => {
+      const items = collectItems();
+      const available = [];
+      let disabled = null;
+      for (const item of items) {
+        const label = visibleLabel(item);
+        if (label) available.push(label);
+        if (!isDeepResearchLabel(candidateLabel(item))) continue;
+        if (isDisabledItem(item)) {
+          disabled = disabled || { element: item, label: label || 'Deep Research' };
+          continue;
+        }
+        return { match: item, available };
+      }
+      return { match: null, disabled, available };
+    };
+
+	    const findDeepResearchPill = () => {
+	      const pills = document.querySelectorAll('.__composer-pill-composite, .__composer-pill, [class*="composer-pill"]');
+	      for (const pill of pills) {
+	        if (isCurrentComposerPill(pill) &&
+	            (isDeepResearchLabel(candidateLabel(pill)) ||
+	              isDeepResearchLabel(pill.querySelector('button')?.getAttribute('aria-label')))) {
+	          return pill;
+	        }
+	      }
+	      return null;
+	    };
+
+	    const isDeepResearchPageActive = () => {
+	      if (!/(^|\\/)deep-research(\\/|$)/i.test(location.pathname)) return false;
+	      const app = document.querySelector('.deep-research-app');
+	      if (!app || !isVisible(app)) return false;
+	      const appText = normalizeDeepResearchText(app.innerText || app.textContent || '');
+	      const hasComposer = getVisibleTextboxes().some((textbox) => app.contains?.(textbox));
+	      return hasComposer &&
+	        appText.includes('ask a complex question') &&
+	        appText.includes('full report');
+	    };
 
     const waitForPill = () => new Promise((resolve) => {
       let elapsed = 0;
@@ -1132,43 +1410,10 @@ function buildActivateDeepResearchExpression(): string {
       composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
     };
 
-    const findDeepResearchItem = () => {
-      const target = ${targetText}.toLowerCase();
-      const candidates = Array.from(document.querySelectorAll('[data-radix-collection-item], [role="option"], [cmdk-item], button, [role="menuitem"], [role="menuitemradio"]'));
-      return candidates.find(item => (item.textContent || '').trim().toLowerCase() === target) || null;
-    };
-
-    // Step 0: Check if already active
-    if (findDeepResearchPill()) {
-      return { status: 'already-active' };
-    }
-
-    // Step 1: Prefer the official slash command flow.
-    const composer = document.querySelector('[contenteditable="true"], textarea');
-    if (composer) {
-      setComposerText(composer, '/Deepresearch');
-      await new Promise(resolve => setTimeout(resolve, 600));
-      const slashItem = findDeepResearchItem();
-      if (slashItem) {
-        dispatchClickSequence(slashItem);
-        if (await waitForPill()) return { status: 'activated' };
-      }
-      clearComposer(composer);
-    }
-
-    // Step 2: Fall back to the composer tools menu.
-    const plusBtn = document.querySelector(${plusBtnSelector}) ||
-      Array.from(document.querySelectorAll('button')).find(
-        b => (b.getAttribute('aria-label') || '').toLowerCase().includes('add files')
-      );
-    if (!plusBtn) return { status: 'plus-button-missing' };
-    dispatchClickSequence(plusBtn);
-
-    // Step 3: Wait for dropdown
     const waitForDropdown = () => new Promise((resolve) => {
       let elapsed = 0;
       const tick = () => {
-        const items = document.querySelectorAll('[data-radix-collection-item], [role="menuitem"], [role="menuitemradio"], [role="option"], [cmdk-item]');
+        const items = document.querySelectorAll('[data-testid="deep-research-sidebar-item"], [data-radix-collection-item], [role="menuitem"], [role="menuitemradio"], [role="option"], [cmdk-item]');
         if (items.length > 0) { resolve(items); return; }
         elapsed += 150;
         if (elapsed > 3000) { resolve(null); return; }
@@ -1176,28 +1421,115 @@ function buildActivateDeepResearchExpression(): string {
       };
       setTimeout(tick, 150);
     });
-    const items = await waitForDropdown();
-    if (!items) return { status: 'dropdown-item-missing', available: [] };
 
-    // Step 4: Find "Deep research" item
-    const target = ${targetText}.toLowerCase();
-    let match = null;
-    const available = [];
-    for (const item of items) {
-      const text = (item.textContent || '').trim();
-      available.push(text);
-      if (text.toLowerCase() === target) {
-        match = item;
+    const attempts = [];
+
+    // Step 0: Check if already active
+    if (findDeepResearchPill() || isDeepResearchPageActive()) {
+      return { status: 'already-active' };
+    }
+
+    // Step 1: Prefer the official slash command flow.
+    const composer = document.querySelector('[contenteditable="true"], textarea');
+    if (composer) {
+      const slashCommands = ['/deep research', '/Deep research', '/deepresearch', '/Deepresearch'];
+      for (const command of slashCommands) {
+        setComposerText(composer, command);
+        await new Promise(resolve => setTimeout(resolve, 700));
+        const probe = findDeepResearchItem();
+        attempts.push({ surface: 'slash-command:' + command, opened: true, available: probe.available });
+        if (probe.disabled) {
+          clearComposer(composer);
+          return { status: 'dropdown-item-disabled', label: probe.disabled.label, surface: 'slash-command', available: probe.available, attempts };
+        }
+        if (probe.match) {
+          clickElement(probe.match);
+          if (await waitForPill()) return { status: 'activated' };
+          return { status: 'pill-not-confirmed', label: visibleLabel(probe.match), surface: 'slash-command', available: probe.available, attempts };
+        }
+        clearComposer(composer);
       }
     }
-    if (!match) return { status: 'dropdown-item-missing', available };
 
-    // Step 5: Click it
-    dispatchClickSequence(match);
+    // Step 2: Current ChatGPT exposes Deep Research under sidebar More.
+    const sidebarMoreCandidates = Array.from(document.querySelectorAll('button, a, [role="button"], [role="menuitem"], div')).filter((element) => {
+      if (!isVisible(element)) return false;
+      if (normalizeDeepResearchText(visibleLabel(element)) !== 'more') return false;
+      const rect = element.getBoundingClientRect();
+      return rect.x < 280 && rect.width >= 80 && rect.height >= 20;
+    });
+    const sidebarMore = sidebarMoreCandidates.find((element) => String(element.className || '').includes('__menu-item')) ||
+      sidebarMoreCandidates.find((element) => element.getBoundingClientRect().height <= 40) ||
+      sidebarMoreCandidates[0];
+    if (sidebarMore) {
+      clickElement(sidebarMore);
+      const items = await waitForDropdown();
+      const probe = findDeepResearchItem();
+      attempts.push({ surface: 'sidebar-more-menu', opened: Boolean(items), available: probe.available });
+      if (probe.disabled) {
+        return { status: 'dropdown-item-disabled', label: probe.disabled.label, surface: 'sidebar-more-menu', available: probe.available, attempts };
+      }
+      if (probe.match) {
+        clickElement(probe.match);
+        return { status: 'sidebar-navigation-started', attempts };
+      }
+    } else {
+      attempts.push({ surface: 'sidebar-more-menu', opened: false, available: [] });
+    }
 
-    // Step 6: Verify pill appeared
-    const pillConfirmed = await waitForPill();
-    return pillConfirmed ? { status: 'activated' } : { status: 'pill-not-confirmed' };
+    // Step 3: Fall back to current and older composer menus.
+    const menus = [
+      {
+        surface: 'tools-menu',
+        selectors: ['[data-testid="composer-tools-button"]', 'button[aria-label*="tools" i]'],
+        labelIncludes: ['tools'],
+      },
+      {
+        surface: 'plus-menu',
+        selectors: [${plusBtnSelector}],
+        labelIncludes: ['add files'],
+      },
+    ];
+    let foundAnyMenuOpener = false;
+    for (const menu of menus) {
+      let opener = null;
+      for (const selector of menu.selectors) {
+        opener = document.querySelector(selector);
+        if (opener) break;
+      }
+      opener = opener || Array.from(document.querySelectorAll('button')).find((button) => {
+        const label = candidateLabel(button);
+        return menu.labelIncludes.some((fragment) => label.includes(fragment));
+      });
+      if (!opener) {
+        attempts.push({ surface: menu.surface, opened: false, available: [] });
+        continue;
+      }
+      foundAnyMenuOpener = true;
+      clickElement(opener);
+      const items = await waitForDropdown();
+      if (!items) {
+        attempts.push({ surface: menu.surface, opened: true, available: [] });
+        continue;
+      }
+      const probe = findDeepResearchItem();
+      attempts.push({ surface: menu.surface, opened: true, available: probe.available });
+      if (probe.disabled) {
+        return { status: 'dropdown-item-disabled', label: probe.disabled.label, surface: menu.surface, available: probe.available, attempts };
+      }
+      if (!probe.match) {
+        continue;
+      }
+      clickElement(probe.match);
+      const pillConfirmed = await waitForPill();
+      return pillConfirmed
+        ? { status: 'activated' }
+        : { status: 'pill-not-confirmed', label: visibleLabel(probe.match), surface: menu.surface, available: probe.available, attempts };
+    }
+
+    if (!foundAnyMenuOpener) return { status: 'plus-button-missing' };
+    const available = Array.from(new Set(attempts.flatMap((attempt) => attempt.available || []).filter(Boolean)));
+    return { status: 'dropdown-item-missing', available, attempts };
   })()`;
 }
 

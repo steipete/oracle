@@ -94,10 +94,21 @@ export interface BrowserRuntimeMetadata {
   chromeTargetId?: string;
   tabUrl?: string;
   conversationId?: string;
-  /** True after Oracle has submitted the prompt to ChatGPT. */
+  /** True only after Oracle verified the sent user turn contains the intended prompt. */
   promptSubmitted?: boolean;
+  promptDelivery?: BrowserPromptDeliveryMetadata | null;
   /** PID of the controller process that launched this browser run. Helps detect orphaned sessions. */
   controllerPid?: number;
+}
+
+export interface BrowserPromptDeliveryMetadata {
+  status: "verified";
+  promptChars: number;
+  normalizedPromptChars: number;
+  composerChars: number;
+  committedTurnCount: number | null;
+  commitMatchKind: "full" | "prefix_tail";
+  verifiedAt: string;
 }
 
 export type BrowserHarvestState = "running" | "completed" | "stalled" | "detached";
