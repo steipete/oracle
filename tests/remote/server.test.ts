@@ -161,12 +161,20 @@ describe("remote browser service", () => {
         "host-result.zip",
       );
       const hostPrivatePath = path.join(tmpDir, "host-private.zip");
+      const secondHostArtifactPath = path.join(
+        clientHome,
+        "sessions",
+        "host-session",
+        "artifacts",
+        "second-host-result.zip",
+      );
       const emptyZip = Buffer.from([
         0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       ]);
       await mkdir(path.dirname(hostArtifactPath), { recursive: true });
       await writeFile(hostArtifactPath, emptyZip);
+      await writeFile(secondHostArtifactPath, emptyZip);
       await writeFile(hostPrivatePath, emptyZip);
 
       const server = await createRemoteServer(
@@ -183,6 +191,17 @@ describe("remote browser service", () => {
                 {
                   kind: "file",
                   path: hostArtifactPath,
+                  label: "result.zip",
+                  mimeType: "application/zip",
+                  sizeBytes: emptyZip.length,
+                  sourceUrl: "sandbox:/mnt/data/result.zip",
+                  url: "browser-download",
+                  finalUrl: "browser-download",
+                  filename: "result.zip",
+                },
+                {
+                  kind: "file",
+                  path: secondHostArtifactPath,
                   label: "result.zip",
                   mimeType: "application/zip",
                   sizeBytes: emptyZip.length,
@@ -238,7 +257,7 @@ describe("remote browser service", () => {
 
       expect(result.answerText).toBe("done");
       expect(result.warnings).toBeUndefined();
-      expect(result.artifacts).toHaveLength(1);
+      expect(result.artifacts).toHaveLength(2);
       const artifact = result.artifacts?.[0];
       expect(artifact?.path).toBe(
         path.join(clientHome, "sessions", "remote-artifact-session", "artifacts", "result.zip"),
@@ -256,7 +275,24 @@ describe("remote browser service", () => {
       });
       expect(artifact?.sha256).toMatch(/^[a-f0-9]{64}$/);
       await expect(readFile(artifact!.path)).resolves.toEqual(emptyZip);
+      const duplicate = result.artifacts?.[1];
+      expect(duplicate).toMatchObject({
+        kind: "file",
+        path: path.join(
+          clientHome,
+          "sessions",
+          "remote-artifact-session",
+          "artifacts",
+          "result-2.zip",
+        ),
+        label: "result-2.zip",
+        filename: "result-2.zip",
+      });
+      await expect(readFile(duplicate!.path)).resolves.toEqual(emptyZip);
       await expect(stat(hostArtifactPath)).resolves.toMatchObject({ size: emptyZip.length });
+      await expect(stat(secondHostArtifactPath)).resolves.toMatchObject({
+        size: emptyZip.length,
+      });
       await expect(stat(hostPrivatePath)).resolves.toMatchObject({ size: emptyZip.length });
       await expect(
         stat(

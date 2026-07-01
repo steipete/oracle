@@ -60,6 +60,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
       const transferredFiles: SavedBrowserFile[] = [];
       const transferFailures: string[] = [];
       const transferPromises: Promise<void>[] = [];
+      let artifactTransferQueue = Promise.resolve();
       let settled = false;
       let resolved: BrowserRunResult | null = null;
 
@@ -111,6 +112,11 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
                   },
                   onArtifactFailure: (message) => {
                     transferFailures.push(message);
+                  },
+                  enqueueArtifactTransfer: (transfer) => {
+                    const queued = artifactTransferQueue.then(transfer);
+                    artifactTransferQueue = queued.catch(() => undefined);
+                    return queued;
                   },
                   onError: fail,
                 });
@@ -179,6 +185,7 @@ function handleEvent(params: {
   onResult: (result: BrowserRunResult) => void;
   onArtifact: (artifact: SavedBrowserFile) => void;
   onArtifactFailure: (message: string) => void;
+  enqueueArtifactTransfer: (transfer: () => Promise<void>) => Promise<void>;
   onError: (error: Error) => void;
 }): Promise<void> | null {
   let event: RemoteRunEvent;
@@ -217,23 +224,25 @@ function handleEvent(params: {
       String(event.artifact?.filename ?? ""),
       "artifact.bin",
     );
-    const transfer = transferRemoteArtifact({
-      hostname: params.hostname,
-      port: params.port,
-      token: params.token,
-      descriptor: event.artifact,
-      sessionId: params.options.sessionId,
-      log: params.options.log,
-    })
-      .then((artifact) => {
-        params.onArtifact(artifact);
+    const transfer = params.enqueueArtifactTransfer(() =>
+      transferRemoteArtifact({
+        hostname: params.hostname,
+        port: params.port,
+        token: params.token,
+        descriptor: event.artifact,
+        sessionId: params.options.sessionId,
+        log: params.options.log,
       })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        const fallback = `Oracle captured the browser text response, but bridge artifact transfer failed for ${displayFilename}. Open the ChatGPT browser on the bridge host, download the ZIP/file shown in the current response, and copy it to a cloud-readable path. Reason: ${message}`;
-        params.options.log?.(`[browser] ${fallback}`);
-        params.onArtifactFailure(fallback);
-      });
+        .then((artifact) => {
+          params.onArtifact(artifact);
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          const fallback = `Oracle captured the browser text response, but bridge artifact transfer failed for ${displayFilename}. Open the ChatGPT browser on the bridge host, download the ZIP/file shown in the current response, and copy it to a cloud-readable path. Reason: ${message}`;
+          params.options.log?.(`[browser] ${fallback}`);
+          params.onArtifactFailure(fallback);
+        }),
+    );
     return transfer;
   }
   if (event.type === "result") {
@@ -299,10 +308,11 @@ async function transferRemoteArtifact(params: {
 
   await rename(partPath, finalPath);
   params.log?.(`[browser] Transferred artifact to ${finalPath}`);
+  const publishedFilename = path.basename(finalPath);
   return {
     kind: "file",
     path: finalPath,
-    label: filename,
+    label: publishedFilename,
     mimeType: sanitizeArtifactMimeType(params.descriptor.mimeType),
     sizeBytes: fileStat.size,
     sourceUrl: "bridge-artifact",
@@ -312,7 +322,7 @@ async function transferRemoteArtifact(params: {
     origin: { mode: "bridge" },
     url: "bridge-artifact",
     finalUrl: "bridge-artifact",
-    filename,
+    filename: publishedFilename,
   };
 }
 
