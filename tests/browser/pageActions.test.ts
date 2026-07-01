@@ -883,6 +883,85 @@ describe("waitForAssistantResponse", () => {
     }
   });
 
+  test("re-polls a short completion capture until the full answer is stable", async () => {
+    vi.useFakeTimers();
+    try {
+      const short = { text: "The first line.", messageId: "mid", turnId: "tid" };
+      const complete = {
+        text: "The first line. This is the rest of the answer after the thinking transition finished.",
+        messageId: "mid",
+        turnId: "tid",
+      };
+      let snapshotCalls = 0;
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return { result: { type: "object", value: short } };
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            snapshotCalls += 1;
+            if (snapshotCalls === 1) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return { result: { value: snapshotCalls <= 5 ? short : complete } };
+          }
+          if (expression.includes("Find the LAST assistant turn")) {
+            return { result: { value: true } };
+          }
+          return { result: { value: false } };
+        });
+
+      const promise = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+      );
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      await expect(promise).resolves.toMatchObject({ text: complete.text });
+      expect(logger).toHaveBeenCalledWith(
+        "Captured suspiciously short answer at completion; re-polling for completion",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("keeps a legitimate short completion after watchdog confirmation", async () => {
+    vi.useFakeTimers();
+    try {
+      const answer = { text: "Yes.", messageId: "mid", turnId: "tid" };
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return { result: { type: "object", value: answer } };
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            return { result: { value: answer } };
+          }
+          if (expression.includes("Find the LAST assistant turn")) {
+            return { result: { value: true } };
+          }
+          return { result: { value: false } };
+        });
+
+      const promise = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+      );
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      await expect(promise).resolves.toMatchObject({ text: "Yes." });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("response observer watches character data mutations", async () => {
     let capturedExpression = "";
     const runtime = {

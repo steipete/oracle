@@ -233,16 +233,8 @@ export async function waitForAssistantResponse(
       isStopButtonVisible(Runtime),
       isCompletionVisible(Runtime),
     ]);
-    // Guard against the evaluation path racing ahead and capturing only the first
-    // tokens of the real answer. At the thinking->answer transition, ChatGPT Pro /
-    // Pro Extended briefly drops the stop button AND surfaces the finished-action
-    // (copy/share) buttons on the turn while only the first 1-13 tokens have rendered.
-    // The evaluation path then fires on those finished-action buttons and breaks early
-    // while stopVisible is momentarily false. So when the completion UI is showing but
-    // the captured answer is trivially short, treat it as a mid-stream race and fall
-    // back to the robust watchdog poller, which requires the stop button gone AND the
-    // text to stay unchanged for several seconds before it trusts completion. We never
-    // return something shorter than what we already captured.
+    // Completion controls can appear briefly while Pro is still replacing its thinking UI.
+    // Confirm short captures with the stability-based watchdog before trusting them.
     const candidateText = String(candidate?.text ?? "").trim();
     const suspiciousRace = completionVisible && candidateText.length < MIN_TRUSTWORTHY_ANSWER_CHARS;
     if (stopVisible || suspiciousRace) {
