@@ -132,6 +132,29 @@ describe("activateDeepResearch", () => {
     ).rejects.toThrow(/pill did not appear/);
   });
 
+  it("falls back to a trusted point click when the menu row ignores synthetic clicks", async () => {
+    const dispatchMouseEvent = vi.fn(async () => undefined);
+    mockInput = { dispatchMouseEvent };
+    mockRuntime.evaluate
+      .mockResolvedValueOnce({
+        result: { value: { status: "pill-not-confirmed", clickPoint: { x: 12, y: 34 } } },
+      })
+      .mockResolvedValueOnce({ result: { value: true } });
+
+    await expect(
+      activateDeepResearch(mockRuntime as never, mockInput as never, mockLogger),
+    ).resolves.toBeUndefined();
+    expect(dispatchMouseEvent).toHaveBeenCalledTimes(3);
+    expect(dispatchMouseEvent).toHaveBeenCalledWith({
+      type: "mousePressed",
+      x: 12,
+      y: 34,
+      button: "left",
+      clickCount: 1,
+    });
+    expect(mockLogger).toHaveBeenCalledWith("Deep Research mode activated");
+  });
+
   it("throws on unexpected result", async () => {
     mockRuntime.evaluate.mockResolvedValueOnce({
       result: { value: { status: "unknown-status" } },
@@ -143,13 +166,17 @@ describe("activateDeepResearch", () => {
 });
 
 describe("Deep Research activation expression", () => {
-  it("prefers the slash command and keeps the plus-menu fallback", () => {
+  it("uses the composer tools menu without mutating the queued prompt", () => {
     const expression = buildActivateDeepResearchExpressionForTest();
 
-    expect(expression).toContain("/Deepresearch");
+    expect(expression).not.toContain("/Deepresearch");
     expect(expression).toContain("findDeepResearchItem");
+    expect(expression).toContain("findPopoverSearchInput");
     expect(expression).toContain("composer-plus-btn");
     expect(expression).toContain('role="menuitemradio"');
+    expect(expression).toContain(".__menu-item");
+    expect(expression).toContain("popover");
+    expect(expression).toContain("detailed report");
     expect(expression).toContain('[class*="composer-pill"]');
     expect(expression).toContain("deep research");
     expect(expression).toContain("already-active");

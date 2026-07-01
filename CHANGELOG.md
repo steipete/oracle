@@ -10,6 +10,7 @@
 
 - API: forward configured reasoning effort through custom OpenAI-compatible chat-completions gateways.
 - Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!
+- Browser: activate ChatGPT Deep Research after the final composer reset, select the current tools-menu row shape, and use trusted mouse clicks for Deep Research and send actions so the request reaches the real research-plan flow instead of being submitted as an ordinary Pro prompt.
 
 ## 0.15.0 — 2026-06-19
 

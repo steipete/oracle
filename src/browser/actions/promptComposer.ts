@@ -212,6 +212,7 @@ export async function submitPrompt(
 
   const clicked = await attemptSendButton(
     runtime,
+    input,
     logger,
     deps?.attachmentNames,
     deps?.attachmentTimeoutMs,
@@ -643,6 +644,7 @@ export function buildAttachmentReadyExpressionForTest(attachmentNames: Attachmen
 
 async function attemptSendButton(
   Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
   _logger?: BrowserLogger,
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
@@ -675,10 +677,15 @@ async function attemptSendButton(
       candidates.push(...Array.from(document.querySelectorAll(selector)));
     }
     const button = candidates.find((node) => isVisible(node) && isEnabled(node)) || null;
-    if (!button) return 'missing';
-    // Use unified pointer/mouse sequence to satisfy React handlers.
+    if (!button) return { status: 'missing' };
+    button.scrollIntoView({ block: 'center', inline: 'center' });
+    const rect = button.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      return { status: 'point', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    // Last-resort fallback for unusual DOMs where the button is visible but has no useful rect.
     dispatchClickSequence(button);
-    return 'clicked';
+    return { status: 'clicked' };
   })()`;
 
   // Give attachment-bearing submissions more headroom. ChatGPT's chip render can
@@ -698,10 +705,24 @@ async function attemptSendButton(
       }
     }
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
-    if (result.value === "clicked") {
+    const value = result.value as
+      | { status?: "clicked" | "missing" | "point"; x?: number; y?: number }
+      | string
+      | undefined;
+    const status = typeof value === "string" ? value : value?.status;
+    if (
+      status === "point" &&
+      typeof value === "object" &&
+      typeof value.x === "number" &&
+      typeof value.y === "number"
+    ) {
+      await clickTrustedPoint(Runtime, Input, value.x, value.y);
       return true;
     }
-    if (result.value === "missing") {
+    if (status === "clicked") {
+      return true;
+    }
+    if (status === "missing") {
       break;
     }
     await delay(100);
@@ -720,6 +741,29 @@ async function attemptSendButton(
     );
   }
   return false;
+}
+
+async function clickTrustedPoint(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  x: number,
+  y: number,
+): Promise<void> {
+  if (Input && typeof Input.dispatchMouseEvent === "function") {
+    await Input.dispatchMouseEvent({ type: "mouseMoved", x, y });
+    await Input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await Input.dispatchMouseEvent({ type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    return;
+  }
+  await Runtime.evaluate({
+    expression: `(() => {
+      const el = document.elementFromPoint(${JSON.stringify(x)}, ${JSON.stringify(y)});
+      if (!(el instanceof HTMLElement)) return false;
+      el.click();
+      return true;
+    })()`,
+    returnByValue: true,
+  });
 }
 
 function sendButtonTimeoutMs(

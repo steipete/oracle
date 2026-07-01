@@ -21,7 +21,7 @@ type ActivateOutcome =
   | { status: "already-active" }
   | { status: "plus-button-missing" }
   | { status: "dropdown-item-missing"; available?: string[] }
-  | { status: "pill-not-confirmed" };
+  | { status: "pill-not-confirmed"; clickPoint?: { x?: number; y?: number } };
 
 /**
  * Activates Deep Research mode through ChatGPT's slash command, with the
@@ -29,7 +29,7 @@ type ActivateOutcome =
  */
 export async function activateDeepResearch(
   Runtime: ChromeClient["Runtime"],
-  _Input: ChromeClient["Input"],
+  Input: ChromeClient["Input"],
   logger: BrowserLogger,
 ): Promise<void> {
   const expression = buildActivateDeepResearchExpression();
@@ -62,16 +62,60 @@ export async function activateDeepResearch(
         { stage: "deep-research-activate", code: "dropdown-item-missing" },
       );
     }
-    case "pill-not-confirmed":
+    case "pill-not-confirmed": {
+      const point = result.clickPoint;
+      if (typeof point?.x === "number" && typeof point.y === "number") {
+        await clickTrustedPoint(Runtime, Input, point.x, point.y);
+        if (await waitForDeepResearchPill(Runtime)) {
+          logger("Deep Research mode activated");
+          return;
+        }
+      }
       throw new BrowserAutomationError(
         "Deep Research pill did not appear after selection. The UI may have changed.",
         { stage: "deep-research-activate", code: "pill-not-confirmed" },
       );
+    }
     default:
       throw new BrowserAutomationError("Unexpected result from Deep Research activation.", {
         stage: "deep-research-activate",
       });
   }
+}
+
+async function clickTrustedPoint(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  x: number,
+  y: number,
+): Promise<void> {
+  if (Input && typeof Input.dispatchMouseEvent === "function") {
+    await Input.dispatchMouseEvent({ type: "mouseMoved", x, y });
+    await Input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await Input.dispatchMouseEvent({ type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    return;
+  }
+  await Runtime.evaluate({
+    expression: `(() => {
+      const el = document.elementFromPoint(${JSON.stringify(x)}, ${JSON.stringify(y)});
+      if (!(el instanceof HTMLElement)) return false;
+      el.click();
+      return true;
+    })()`,
+    returnByValue: true,
+  });
+}
+
+async function waitForDeepResearchPill(
+  Runtime: ChromeClient["Runtime"],
+  timeoutMs = 5000,
+): Promise<boolean> {
+  const { result } = await Runtime.evaluate({
+    expression: buildWaitForDeepResearchPillExpression(timeoutMs),
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  return Boolean(result?.value);
 }
 
 /**
@@ -1079,31 +1123,60 @@ export function buildDeepResearchCompletionPollExpressionForTest(minTurnIndex = 
   return buildDeepResearchCompletionPollExpression(minTurnIndex);
 }
 
-function buildActivateDeepResearchExpression(): string {
-  const plusBtnSelector = JSON.stringify(DEEP_RESEARCH_PLUS_BUTTON);
-  const targetText = JSON.stringify(DEEP_RESEARCH_DROPDOWN_ITEM_TEXT);
+function buildFindDeepResearchPillExpression(functionName = "findDeepResearchPill"): string {
   const pillLabel = JSON.stringify(DEEP_RESEARCH_PILL_LABEL);
-
-  // pillLabel is used inside the expression for verification
-  void pillLabel;
-
-  return `(async () => {
-    ${buildClickDispatcher()}
-
-    const findDeepResearchPill = () => {
-      const pills = document.querySelectorAll('.__composer-pill-composite, .__composer-pill, [class*="composer-pill"]');
-      for (const pill of pills) {
-        const text = pill.textContent?.trim() || '';
-        const aria = pill.getAttribute('aria-label') ||
+  return `const ${functionName} = () => {
+      const label = ${pillLabel}.toLowerCase();
+      const selectors = [
+        '.__composer-pill-composite',
+        '.__composer-pill',
+        '[class*="composer-pill"]',
+        '[class*="pill"]',
+      ].join(',');
+      const candidates = Array.from(document.querySelectorAll(selectors));
+      const composerRoots = Array.from(document.querySelectorAll('[data-testid="composer"], form, [class*="composer"]'));
+      for (const root of composerRoots) {
+        candidates.push(...Array.from(root.querySelectorAll('button, [role="button"], [class*="pill"], [class*="composer-pill"]')));
+      }
+      const seen = new Set();
+      for (const pill of candidates) {
+        if (!(pill instanceof Element) || seen.has(pill)) continue;
+        seen.add(pill);
+        const rect = pill.getBoundingClientRect?.();
+        if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+        const text = (pill.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const aria = (
+          pill.getAttribute('aria-label') ||
           pill.querySelector('button')?.getAttribute('aria-label') ||
-          '';
-        if (text.toLowerCase().includes('deep research') ||
-            aria.toLowerCase().includes('deep research')) {
+          ''
+        ).toLowerCase();
+        if (text.includes(label) || aria.includes(label)) {
           return pill;
         }
       }
       return null;
-    };
+    };`;
+}
+
+function buildWaitForDeepResearchPillExpression(timeoutMs: number): string {
+  return `(async () => {
+    ${buildFindDeepResearchPillExpression()}
+    const deadline = Date.now() + ${JSON.stringify(Math.max(timeoutMs, 0))};
+    while (Date.now() < deadline) {
+      if (findDeepResearchPill()) return true;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    return Boolean(findDeepResearchPill());
+  })()`;
+}
+
+function buildActivateDeepResearchExpression(): string {
+  const plusBtnSelector = JSON.stringify(DEEP_RESEARCH_PLUS_BUTTON);
+  const targetText = JSON.stringify(DEEP_RESEARCH_DROPDOWN_ITEM_TEXT);
+
+  return `(async () => {
+    ${buildClickDispatcher()}
+    ${buildFindDeepResearchPillExpression()}
 
     const waitForPill = () => new Promise((resolve) => {
       let elapsed = 0;
@@ -1118,24 +1191,102 @@ function buildActivateDeepResearchExpression(): string {
       setTimeout(tick, 200);
     });
 
-    const clearComposer = (composer) => {
-      if (!composer) return;
-      if ('value' in composer) composer.value = '';
-      else composer.textContent = '';
-      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward', data: null }));
+    const menuItemSelector = [
+      '[data-radix-collection-item]',
+      '[role="option"]',
+      '[cmdk-item]',
+      'button',
+      '[role="menuitem"]',
+      '[role="menuitemradio"]',
+      '.__menu-item',
+      '[class*="__menu-item"]',
+      '[class*="menu-item"]',
+    ].join(',');
+    const dropdownItemSelector = [
+      '[data-radix-collection-item]',
+      '[role="menuitem"]',
+      '[role="menuitemradio"]',
+      '[role="option"]',
+      '[cmdk-item]',
+      '.__menu-item',
+      '[class*="__menu-item"]',
+      '[class*="menu-item"]',
+    ].join(',');
+    const popoverSelector = [
+      '.popover',
+      '[class*="popover"]',
+      '[data-radix-popper-content-wrapper]',
+      '[data-floating-ui-portal]',
+    ].join(',');
+    const target = ${targetText}.toLowerCase();
+    const normalizeText = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const getText = (item) => normalizeText(item.textContent || item.getAttribute?.('aria-label') || '');
+    const isInPopover = (item) => Boolean(item.closest?.(popoverSelector));
+    const isVisible = (item) => {
+      const rect = item.getBoundingClientRect?.();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const style = window.getComputedStyle?.(item);
+      return !style || (style.visibility !== 'hidden' && style.display !== 'none');
     };
-
-    const setComposerText = (composer, text) => {
-      composer.focus?.();
-      if ('value' in composer) composer.value = text;
-      else composer.textContent = text;
-      composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+    const findPopoverSearchInput = () => Array.from(
+      document.querySelectorAll('input, textarea, [contenteditable="true"]')
+    ).find(item => {
+      const type = (item.getAttribute?.('type') || '').toLowerCase();
+      const testId = (item.getAttribute?.('data-testid') || '').toLowerCase();
+      return isInPopover(item) &&
+        isVisible(item) &&
+        type !== 'file' &&
+        testId !== 'upload-photos-input';
+    }) || null;
+    const setSearchText = (input, text) => {
+      input.focus?.();
+      if ('value' in input) input.value = text;
+      else input.textContent = text;
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
     };
-
-    const findDeepResearchItem = () => {
-      const target = ${targetText}.toLowerCase();
-      const candidates = Array.from(document.querySelectorAll('[data-radix-collection-item], [role="option"], [cmdk-item], button, [role="menuitem"], [role="menuitemradio"]'));
-      return candidates.find(item => (item.textContent || '').trim().toLowerCase() === target) || null;
+    const isDeepResearchText = (text) => (
+      text === target ||
+      text.startsWith(target + ' ') ||
+      (text.includes(target) && text.includes('detailed report')) ||
+      text.replace(/\\s+/g, '').startsWith('deepresearch')
+    );
+    const getClickableItem = (item) => item.closest?.(
+      '[data-radix-collection-item], [role="option"], [cmdk-item], button, [role="menuitem"], [role="menuitemradio"], .__menu-item, [class*="__menu-item"], [class*="menu-item"]'
+    ) || item;
+    const findDeepResearchItem = (options = {}) => {
+      const matches = Array.from(document.querySelectorAll(menuItemSelector))
+        .filter(item => {
+          const text = getText(item);
+          return text &&
+            text.length <= 180 &&
+            isVisible(item) &&
+            (!options.requirePopover || isInPopover(item)) &&
+            isDeepResearchText(text);
+        })
+        .map(item => {
+          const text = getText(item);
+          const clickable = getClickableItem(item);
+          const exact = text === target ? 0 : 1;
+          const menuRow = /(^|\\s)__menu-item(\\s|$)/.test(clickable.className || '') ? 0 : 1;
+          return { item: clickable, score: exact + menuRow, textLength: text.length };
+        })
+        .sort((a, b) => a.score - b.score || a.textLength - b.textLength);
+      return matches[0]?.item || null;
+    };
+    const collectAvailableItems = (options = {}) => {
+      const seen = new Set();
+      return Array.from(document.querySelectorAll(dropdownItemSelector))
+        .filter(item => !options.requirePopover || isInPopover(item))
+        .filter(item => isVisible(item))
+        .map(item => (item.textContent || '').replace(/\\s+/g, ' ').trim())
+        .filter(text => text && text.length <= 180)
+        .filter(text => {
+          const key = text.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
     };
 
     // Step 0: Check if already active
@@ -1143,20 +1294,8 @@ function buildActivateDeepResearchExpression(): string {
       return { status: 'already-active' };
     }
 
-    // Step 1: Prefer the official slash command flow.
-    const composer = document.querySelector('[contenteditable="true"], textarea');
-    if (composer) {
-      setComposerText(composer, '/Deepresearch');
-      await new Promise(resolve => setTimeout(resolve, 600));
-      const slashItem = findDeepResearchItem();
-      if (slashItem) {
-        dispatchClickSequence(slashItem);
-        if (await waitForPill()) return { status: 'activated' };
-      }
-      clearComposer(composer);
-    }
-
-    // Step 2: Fall back to the composer tools menu.
+    // Step 1: Open the composer tools menu. Avoid slash commands because they
+    // mutate the main composer and can be submitted as normal prompt text.
     const plusBtn = document.querySelector(${plusBtnSelector}) ||
       Array.from(document.querySelectorAll('button')).find(
         b => (b.getAttribute('aria-label') || '').toLowerCase().includes('add files')
@@ -1164,14 +1303,21 @@ function buildActivateDeepResearchExpression(): string {
     if (!plusBtn) return { status: 'plus-button-missing' };
     dispatchClickSequence(plusBtn);
 
-    // Step 3: Wait for dropdown
+    // Step 2: Wait for dropdown
     const waitForDropdown = () => new Promise((resolve) => {
       let elapsed = 0;
       const tick = () => {
-        const items = document.querySelectorAll('[data-radix-collection-item], [role="menuitem"], [role="menuitemradio"], [role="option"], [cmdk-item]');
-        if (items.length > 0) { resolve(items); return; }
+        const items = collectAvailableItems({ requirePopover: true });
+        if (findDeepResearchItem({ requirePopover: true }) || items.some(text => {
+          const normalized = normalizeText(text);
+          return normalized.includes('add photos') ||
+            normalized.includes('create image') ||
+            normalized.includes('web search') ||
+            normalized.includes('deep research') ||
+            normalized.includes('get a detailed report');
+        })) { resolve(items); return; }
         elapsed += 150;
-        if (elapsed > 3000) { resolve(null); return; }
+        if (elapsed > 3000) { resolve(items.length ? items : null); return; }
         setTimeout(tick, 150);
       };
       setTimeout(tick, 150);
@@ -1179,25 +1325,33 @@ function buildActivateDeepResearchExpression(): string {
     const items = await waitForDropdown();
     if (!items) return { status: 'dropdown-item-missing', available: [] };
 
-    // Step 4: Find "Deep research" item
-    const target = ${targetText}.toLowerCase();
-    let match = null;
-    const available = [];
-    for (const item of items) {
-      const text = (item.textContent || '').trim();
-      available.push(text);
-      if (text.toLowerCase() === target) {
-        match = item;
+    // Step 3: Find "Deep research" item. Some ChatGPT variants only reveal it
+    // after typing in the tools menu search field.
+    let match = findDeepResearchItem({ requirePopover: true });
+    let available = Array.isArray(items) ? items : collectAvailableItems({ requirePopover: true });
+    if (!match) {
+      const searchInput = findPopoverSearchInput();
+      if (searchInput) {
+        setSearchText(searchInput, ${targetText});
+        await new Promise(resolve => setTimeout(resolve, 600));
+        match = findDeepResearchItem({ requirePopover: true });
+        available = collectAvailableItems({ requirePopover: true });
       }
     }
     if (!match) return { status: 'dropdown-item-missing', available };
 
-    // Step 5: Click it
+    // Step 4: Click it
+    match.scrollIntoView?.({ block: 'center', inline: 'center' });
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const rect = match.getBoundingClientRect();
+    const clickPoint = rect && rect.width > 0 && rect.height > 0
+      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      : undefined;
     dispatchClickSequence(match);
 
-    // Step 6: Verify pill appeared
+    // Step 5: Verify pill appeared
     const pillConfirmed = await waitForPill();
-    return pillConfirmed ? { status: 'activated' } : { status: 'pill-not-confirmed' };
+    return pillConfirmed ? { status: 'activated' } : { status: 'pill-not-confirmed', clickPoint };
   })()`;
 }
 

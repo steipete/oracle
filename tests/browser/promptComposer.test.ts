@@ -98,7 +98,7 @@ describe("promptComposer", () => {
       const runtime = {
         evaluate: vi.fn(async ({ expression }: { expression: string }) => {
           if (expression.includes("dispatchClickSequence")) {
-            return { result: { value: "disabled" } };
+            return { result: { value: { status: "disabled" } } };
           }
           return { result: { value: true } };
         }),
@@ -109,6 +109,7 @@ describe("promptComposer", () => {
       const promise = promptComposer.attemptSendButton(
         runtime as never,
         (() => undefined) as never,
+        undefined,
         ["oracle-attach-verify.txt"],
       );
       const assertion = expect(promise).rejects.toThrow(/after 45s/i);
@@ -141,8 +142,8 @@ describe("promptComposer", () => {
             result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
           };
         }
-        if (expression.includes("dispatchClickSequence(button)")) {
-          return { result: { value: "clicked" } };
+        if (expression.includes("button.scrollIntoView")) {
+          return { result: { value: { status: "clicked" } } };
         }
         return {
           result: {

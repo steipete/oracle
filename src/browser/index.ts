@@ -1418,25 +1418,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         }),
       );
     }
-    if (deepResearch) {
-      await raceWithDisconnect(
-        withRetries(() => activateDeepResearch(Runtime, Input, logger), {
-          retries: 2,
-          delayMs: 500,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
-          },
-        }),
-      );
-      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
-      logger(
-        `Prompt textarea ready (after Deep Research activation, ${promptText.length.toLocaleString()} chars queued)`,
-      );
-    }
     const profileLockTimeoutMs = manualLogin ? (config.profileLockTimeoutMs ?? 0) : 0;
     let profileLock: ProfileRunLock | null = null;
     const acquireProfileLockIfNeeded = async () => {
@@ -1495,6 +1476,25 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         const attachmentWaitBudget = Math.max(config.attachmentTimeoutMs ?? 0, waitBudget);
         await waitForAttachmentCompletion(Runtime, attachmentWaitBudget, attachmentNames, logger);
         logger("All attachments uploaded");
+      }
+      if (deepResearch) {
+        await raceWithDisconnect(
+          withRetries(() => activateDeepResearch(Runtime, Input, logger), {
+            retries: 2,
+            delayMs: 500,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
+          }),
+        );
+        await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+        logger(
+          `Prompt textarea ready (after Deep Research activation, ${prompt.length.toLocaleString()} chars queued)`,
+        );
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
       // Learned: return baselineTurns so assistant polling can ignore earlier content.
@@ -2918,24 +2918,6 @@ async function runRemoteBrowserMode(
         },
       );
     }
-    if (deepResearch) {
-      await withRetries(() => activateDeepResearch(Runtime, Input, logger), {
-        retries: 2,
-        delayMs: 500,
-        onRetry: (attempt, error) => {
-          if (options.verbose) {
-            logger(
-              `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-            );
-          }
-        },
-      });
-      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
-      logger(
-        `Prompt textarea ready (after Deep Research activation, ${promptText.length.toLocaleString()} chars queued)`,
-      );
-    }
-
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
       const baselineAssistantText =
@@ -2966,6 +2948,23 @@ async function runRemoteBrowserMode(
         const attachmentWaitBudget = Math.max(config.attachmentTimeoutMs ?? 0, waitBudget);
         await waitForAttachmentCompletion(Runtime, attachmentWaitBudget, attachmentNames, logger);
         logger("All attachments uploaded");
+      }
+      if (deepResearch) {
+        await withRetries(() => activateDeepResearch(Runtime, Input, logger), {
+          retries: 2,
+          delayMs: 500,
+          onRetry: (attempt, error) => {
+            if (options.verbose) {
+              logger(
+                `[retry] Deep Research activation attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+              );
+            }
+          },
+        });
+        await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+        logger(
+          `Prompt textarea ready (after Deep Research activation, ${prompt.length.toLocaleString()} chars queued)`,
+        );
       }
       let baselineTurns = await readConversationTurnCount(Runtime, logger);
       const providerState: Record<string, unknown> = {
