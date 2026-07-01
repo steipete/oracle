@@ -36,7 +36,7 @@ import {
   sanitizeArtifactMimeType,
   validateArtifactFile,
 } from "../browser/artifacts.js";
-import type { SessionArtifact } from "../sessionManager.js";
+import type { BrowserRunWarning, SessionArtifact } from "../sessionManager.js";
 
 export interface RemoteServerOptions {
   host?: string;
@@ -301,12 +301,13 @@ export async function createRemoteServer(
         followUpPrompts: payload.options.followUpPrompts,
       });
 
-      const artifactDescriptors = await registerRemoteArtifacts({
+      const artifactRegistration = await registerRemoteArtifacts({
         runId,
         result,
         artifactRegistry,
         logger,
       });
+      const artifactDescriptors = artifactRegistration.descriptors;
       if (artifactDescriptors.length > 0) {
         sendEvent({
           type: "log",
@@ -318,7 +319,10 @@ export async function createRemoteServer(
       for (const artifact of artifactDescriptors) {
         sendEvent({ type: "artifact-ready", runId, artifact });
       }
-      sendEvent({ type: "result", result: sanitizeResult(result) });
+      sendEvent({
+        type: "result",
+        result: sanitizeResult(result, artifactRegistration.warnings),
+      });
       logger(
         `[serve] Run ${runId} completed in ${Date.now() - runStartedAt}ms${
           artifactDescriptors.length > 0
@@ -573,7 +577,7 @@ async function registerRemoteArtifacts(params: {
   result: BrowserRunResult;
   artifactRegistry: Map<string, RegisteredRemoteArtifact>;
   logger: (message: string) => void;
-}): Promise<RemoteArtifactDescriptor[]> {
+}): Promise<{ descriptors: RemoteArtifactDescriptor[]; warnings: BrowserRunWarning[] }> {
   pruneExpiredArtifacts(params.artifactRegistry);
   const seen = new Set<string>();
   const fileArtifacts: SessionArtifact[] = [
@@ -581,6 +585,7 @@ async function registerRemoteArtifacts(params: {
     ...(params.result.artifacts ?? []).filter((artifact) => artifact.kind === "file"),
   ];
   const descriptors: RemoteArtifactDescriptor[] = [];
+  const warnings: BrowserRunWarning[] = [];
   for (const artifact of fileArtifacts) {
     if (!artifact?.path || seen.has(artifact.path)) {
       continue;
@@ -588,9 +593,20 @@ async function registerRemoteArtifacts(params: {
     seen.add(artifact.path);
     const registration = await buildRemoteArtifactRegistration(params.runId, artifact).catch(
       (error) => {
+        const filename = sanitizeArtifactFilename(
+          artifact.label ?? path.basename(artifact.path),
+          "artifact.bin",
+        );
         params.logger(
           `[serve] Skipping remote artifact descriptor: ${error instanceof Error ? error.message : String(error)}`,
         );
+        warnings.push({
+          code: "remote-artifact-registration-failed",
+          severity: "warning",
+          message:
+            `Oracle captured the browser text response, but the bridge host could not prepare ${filename} for transfer. ` +
+            "Open the ChatGPT browser on the bridge host, download the ZIP/file shown in the current response, and copy it to a cloud-readable path.",
+        });
         return null;
       },
     );
@@ -607,7 +623,7 @@ async function registerRemoteArtifacts(params: {
     );
     descriptors.push(registration.descriptor);
   }
-  return descriptors;
+  return { descriptors, warnings };
 }
 
 async function buildRemoteArtifactRegistration(
@@ -696,7 +712,10 @@ function sanitizeName(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-function sanitizeResult(result: BrowserRunResult): BrowserRunResult {
+function sanitizeResult(
+  result: BrowserRunResult,
+  warnings: BrowserRunWarning[] = [],
+): BrowserRunResult {
   return {
     answerText: result.answerText,
     answerMarkdown: result.answerMarkdown,
@@ -704,6 +723,7 @@ function sanitizeResult(result: BrowserRunResult): BrowserRunResult {
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,
+    warnings: warnings.length > 0 ? warnings : undefined,
     chromePid: undefined,
     chromePort: undefined,
     userDataDir: undefined,

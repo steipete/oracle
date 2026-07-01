@@ -256,7 +256,15 @@ describe("remote browser service", () => {
       });
 
       expect(result.answerText).toBe("done");
-      expect(result.warnings).toBeUndefined();
+      expect(result.warnings).toEqual([
+        {
+          code: "remote-artifact-registration-failed",
+          severity: "warning",
+          message: expect.stringContaining("could not prepare private.zip for transfer"),
+        },
+      ]);
+      expect(JSON.stringify(result)).not.toContain(hostPrivatePath);
+      expect(JSON.stringify(result)).not.toContain("host-only warning /Users/private/profile");
       expect(result.artifacts).toHaveLength(2);
       const artifact = result.artifacts?.[0];
       expect(artifact?.path).toBe(
