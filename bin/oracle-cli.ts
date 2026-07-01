@@ -1635,6 +1635,7 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     previousResponseId: stored.previousResponseId,
     browserResumeConversationUrl: stored.browserResumeConversationUrl,
     effectiveModelId: stored.effectiveModelId ?? stored.model,
+    modelOverrides: stored.modelOverrides,
     file: stored.file ?? [],
     maxFileSizeBytes: stored.maxFileSizeBytes,
     slug: stored.slug,

@@ -963,6 +963,72 @@ module.exports = () => ({
   );
 
   test(
+    "persists model overrides for detached --exec-session runs",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-model-overrides-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+      };
+      await writeFile(
+        path.join(oracleHome, "config.json"),
+        JSON.stringify({
+          modelOverrides: {
+            "gpt-5.5": { apiModel: "gateway-model", reasoning: { effort: "xhigh" } },
+          },
+        }),
+      );
+
+      await execFileAsync(
+        process.execPath,
+        ["--import", "tsx", CLI_ENTRY, "--prompt", "Persist model override", "--model", "gpt-5.5"],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      const metadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(metadata.options?.modelOverrides?.["gpt-5.5"]).toEqual({
+        apiModel: "gateway-model",
+        reasoning: { effort: "xhigh" },
+      });
+
+      await rm(path.join(oracleHome, "config.json"));
+      await execFileAsync(
+        process.execPath,
+        ["--import", "tsx", CLI_ENTRY, "--exec-session", sessionId],
+        {
+          env: {
+            ...env,
+            // biome-ignore lint/style/useNamingConvention: env var name
+            ORACLE_TEST_REQUIRE_MODEL: "gateway-model",
+            // biome-ignore lint/style/useNamingConvention: env var name
+            ORACLE_TEST_REQUIRE_REASONING_EFFORT: "xhigh",
+          },
+        },
+      );
+      const rerunMetadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(rerunMetadata.status).toBe("completed");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "accepts direct response ids in --followup and persists chain metadata",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-followup-resp-"));
