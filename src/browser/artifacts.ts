@@ -39,6 +39,21 @@ export function sanitizeArtifactFilename(value: string, fallback = "artifact.bin
     : sanitized;
 }
 
+export function sanitizeArtifactMimeType(value?: string): string | undefined {
+  const mime = String(value ?? "")
+    .split(";", 1)[0]
+    ?.trim()
+    .toLowerCase();
+  if (
+    !mime ||
+    mime.length > 127 ||
+    !/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/.test(mime)
+  ) {
+    return undefined;
+  }
+  return mime;
+}
+
 function normalizeSessionId(sessionId: string): string {
   return sanitizePathSegment(path.basename(sessionId), "session");
 }

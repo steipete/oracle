@@ -1,7 +1,7 @@
 import http from "node:http";
 import net from "node:net";
 import { parseHostPort } from "../bridge/connection.js";
-import type { RemoteArtifactCapabilities } from "./types.js";
+import { MAX_REMOTE_ARTIFACT_BYTES, type RemoteArtifactCapabilities } from "./types.js";
 
 export interface RemoteHealthResult {
   ok: boolean;
@@ -108,10 +108,23 @@ function parseCapabilities(value: unknown): RemoteArtifactCapabilities | undefin
   if (raw.artifactTransfer !== true) {
     return undefined;
   }
-  const artifactProtocolVersion =
-    typeof raw.artifactProtocolVersion === "number" ? raw.artifactProtocolVersion : 0;
-  const maxArtifactBytes = typeof raw.maxArtifactBytes === "number" ? raw.maxArtifactBytes : 0;
-  return { artifactTransfer: true, artifactProtocolVersion, maxArtifactBytes };
+  const artifactProtocolVersion = raw.artifactProtocolVersion;
+  const maxArtifactBytes = raw.maxArtifactBytes;
+  if (
+    typeof artifactProtocolVersion !== "number" ||
+    !Number.isSafeInteger(artifactProtocolVersion) ||
+    artifactProtocolVersion <= 0 ||
+    typeof maxArtifactBytes !== "number" ||
+    !Number.isSafeInteger(maxArtifactBytes) ||
+    maxArtifactBytes <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    artifactTransfer: true,
+    artifactProtocolVersion,
+    maxArtifactBytes: Math.min(maxArtifactBytes, MAX_REMOTE_ARTIFACT_BYTES),
+  };
 }
 
 function extractErrorMessage(json: unknown, bodyText: string): string | null {

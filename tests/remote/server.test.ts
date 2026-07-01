@@ -1,12 +1,14 @@
 import { describe, expect, test } from "vitest";
 import http from "node:http";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { createRemoteServer } from "../../src/remote/server.js";
 import { createRemoteBrowserExecutor } from "../../src/remote/client.js";
 import type { BrowserRunResult } from "../../src/browserMode.js";
+import type { RemoteArtifactDescriptor } from "../../src/remote/types.js";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 
 const CAN_LISTEN_LOCALHOST =
@@ -117,6 +119,29 @@ describe("remote browser service", () => {
         artifactProtocolVersion: 1,
       });
 
+      const artifactUnauthorized = await httpGetJson({
+        hostname: "127.0.0.1",
+        port: server.port,
+        path: "/runs/run-id/artifacts/artifact-id",
+      });
+      expect(artifactUnauthorized.statusCode).toBe(401);
+
+      const malformedArtifactPath = await httpGetJson({
+        hostname: "127.0.0.1",
+        port: server.port,
+        path: "/runs/%E0%A4%A/artifacts/artifact-id",
+        token: "secret",
+      });
+      expect(malformedArtifactPath.statusCode).toBe(404);
+
+      const healthAfterMalformedPath = await httpGetJson({
+        hostname: "127.0.0.1",
+        port: server.port,
+        path: "/health",
+        token: "secret",
+      });
+      expect(healthAfterMalformedPath.statusCode).toBe(200);
+
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
     },
@@ -128,12 +153,21 @@ describe("remote browser service", () => {
       const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-artifact-test-"));
       const clientHome = path.join(tmpDir, "client-home");
       setOracleHomeDirOverrideForTest(clientHome);
-      const hostArtifactPath = path.join(tmpDir, "host-result.zip");
+      const hostArtifactPath = path.join(
+        clientHome,
+        "sessions",
+        "host-session",
+        "artifacts",
+        "host-result.zip",
+      );
+      const hostPrivatePath = path.join(tmpDir, "host-private.zip");
       const emptyZip = Buffer.from([
         0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       ]);
+      await mkdir(path.dirname(hostArtifactPath), { recursive: true });
       await writeFile(hostArtifactPath, emptyZip);
+      await writeFile(hostPrivatePath, emptyZip);
 
       const server = await createRemoteServer(
         { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
@@ -157,6 +191,17 @@ describe("remote browser service", () => {
                   finalUrl: "browser-download",
                   filename: "result.zip",
                 },
+                {
+                  kind: "file",
+                  path: hostPrivatePath,
+                  label: "private.zip",
+                  mimeType: "application/zip",
+                  sizeBytes: emptyZip.length,
+                  sourceUrl: "sandbox:/mnt/data/private.zip",
+                  url: "browser-download",
+                  finalUrl: "browser-download",
+                  filename: "private.zip",
+                },
               ],
               artifacts: [
                 {
@@ -166,6 +211,13 @@ describe("remote browser service", () => {
                   mimeType: "application/zip",
                   sizeBytes: emptyZip.length,
                   sourceUrl: "sandbox:/mnt/data/result.zip",
+                },
+              ],
+              warnings: [
+                {
+                  code: "chatgpt-ui-warning",
+                  severity: "warning",
+                  message: "host-only warning /Users/private/profile",
                 },
               ],
             };
@@ -185,6 +237,7 @@ describe("remote browser service", () => {
       });
 
       expect(result.answerText).toBe("done");
+      expect(result.warnings).toBeUndefined();
       expect(result.artifacts).toHaveLength(1);
       const artifact = result.artifacts?.[0];
       expect(artifact?.path).toBe(
@@ -204,13 +257,175 @@ describe("remote browser service", () => {
       expect(artifact?.sha256).toMatch(/^[a-f0-9]{64}$/);
       await expect(readFile(artifact!.path)).resolves.toEqual(emptyZip);
       await expect(stat(hostArtifactPath)).resolves.toMatchObject({ size: emptyZip.length });
+      await expect(stat(hostPrivatePath)).resolves.toMatchObject({ size: emptyZip.length });
+      await expect(
+        stat(
+          path.join(clientHome, "sessions", "remote-artifact-session", "artifacts", "private.zip"),
+        ),
+      ).rejects.toMatchObject({ code: "ENOENT" });
 
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
       setOracleHomeDirOverrideForTest(null);
     },
   );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "rejects untrusted artifact identifiers before creating local paths",
+    async () => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-invalid-artifact-"));
+      setOracleHomeDirOverrideForTest(tmpDir);
+      const payload = Buffer.from("zip");
+      const bridge = await createFakeArtifactBridge({
+        descriptor: createArtifactDescriptor(payload, { artifactId: "../../escape" }),
+        payload,
+      });
+
+      try {
+        const result = await createRemoteBrowserExecutor({
+          host: `127.0.0.1:${bridge.port}`,
+          token: "secret",
+        })({ prompt: "remote", config: {}, sessionId: "invalid-artifact-session" });
+
+        expect(result.savedFiles).toBeUndefined();
+        expect(result.warnings).toEqual([
+          expect.objectContaining({
+            code: "remote-artifact-transfer-failed",
+            message: expect.stringContaining("invalid bridge artifact descriptor"),
+          }),
+        ]);
+        expect(bridge.artifactRequests()).toBe(0);
+      } finally {
+        await bridge.close();
+        await rm(tmpDir, { recursive: true, force: true });
+        setOracleHomeDirOverrideForTest(null);
+      }
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "stops chunked artifact downloads that exceed the declared size",
+    async () => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-oversize-artifact-"));
+      setOracleHomeDirOverrideForTest(tmpDir);
+      const declared = Buffer.from("zip");
+      const bridge = await createFakeArtifactBridge({
+        descriptor: createArtifactDescriptor(declared),
+        payload: Buffer.from("zip plus undeclared bytes"),
+      });
+
+      try {
+        const result = await createRemoteBrowserExecutor({
+          host: `127.0.0.1:${bridge.port}`,
+          token: "secret",
+        })({ prompt: "remote", config: {}, sessionId: "oversize-artifact-session" });
+
+        expect(result.savedFiles).toBeUndefined();
+        expect(result.warnings).toEqual([
+          expect.objectContaining({
+            code: "remote-artifact-transfer-failed",
+            message: expect.stringContaining("artifact exceeded declared size"),
+          }),
+        ]);
+        expect(bridge.artifactRequests()).toBe(1);
+        const artifactDir = path.join(tmpDir, "sessions", "oversize-artifact-session", "artifacts");
+        expect(await readdir(artifactDir).catch(() => [])).toEqual([]);
+      } finally {
+        await bridge.close();
+        await rm(tmpDir, { recursive: true, force: true });
+        setOracleHomeDirOverrideForTest(null);
+      }
+    },
+  );
 });
+
+function createArtifactDescriptor(
+  payload: Buffer,
+  overrides: Partial<RemoteArtifactDescriptor> = {},
+): RemoteArtifactDescriptor {
+  return {
+    artifactId: "artifact-id",
+    runId: "run-id",
+    kind: "file",
+    filename: "result.zip",
+    label: "result.zip",
+    mimeType: "application/zip",
+    byteSize: payload.length,
+    sha256: createHash("sha256").update(payload).digest("hex"),
+    sourceUrlKind: "sandbox",
+    transferStatus: "ready",
+    ...overrides,
+  };
+}
+
+async function createFakeArtifactBridge({
+  descriptor,
+  payload,
+}: {
+  descriptor: RemoteArtifactDescriptor;
+  payload: Buffer;
+}): Promise<{
+  port: number;
+  artifactRequests(): number;
+  close(): Promise<void>;
+}> {
+  let artifactRequestCount = 0;
+  const server = http.createServer((req, res) => {
+    if (req.method === "POST" && req.url === "/runs") {
+      req.resume();
+      res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+      res.write(
+        `${JSON.stringify({ type: "artifact-ready", runId: descriptor.runId, artifact: descriptor })}\n`,
+      );
+      res.end(
+        `${JSON.stringify({
+          type: "result",
+          result: {
+            answerText: "done",
+            answerMarkdown: "done",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 4,
+          },
+        })}\n`,
+      );
+      return;
+    }
+    if (
+      req.method === "GET" &&
+      req.url ===
+        `/runs/${encodeURIComponent(descriptor.runId)}/artifacts/${encodeURIComponent(descriptor.artifactId)}`
+    ) {
+      artifactRequestCount += 1;
+      res.writeHead(200, {
+        "Content-Type": "application/zip",
+        "X-Oracle-Artifact-Sha256": descriptor.sha256,
+      });
+      res.write(payload);
+      res.end();
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("fake artifact bridge did not bind a TCP port");
+  }
+  return {
+    port: address.port,
+    artifactRequests: () => artifactRequestCount,
+    close: async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    },
+  };
+}
 
 async function httpGetJson({
   hostname,

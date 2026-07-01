@@ -1,5 +1,7 @@
 import http from "node:http";
 import { createWriteStream } from "node:fs";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import type { BrowserRunOptions } from "../browserMode.js";
@@ -11,13 +13,15 @@ import {
   resolveSessionArtifactsDir,
   resolveUniqueArtifactPath,
   sanitizeArtifactFilename,
+  sanitizeArtifactMimeType,
   validateArtifactFile,
 } from "../browser/artifacts.js";
-import type {
-  RemoteArtifactDescriptor,
-  RemoteRunPayload,
-  RemoteRunEvent,
-  RemoteAttachmentPayload,
+import {
+  MAX_REMOTE_ARTIFACT_BYTES,
+  type RemoteArtifactDescriptor,
+  type RemoteRunPayload,
+  type RemoteRunEvent,
+  type RemoteAttachmentPayload,
 } from "./types.js";
 import { parseHostPort } from "../bridge/connection.js";
 
@@ -209,6 +213,10 @@ function handleEvent(params: {
     return null;
   }
   if (event.type === "artifact-ready") {
+    const displayFilename = sanitizeArtifactFilename(
+      String(event.artifact?.filename ?? ""),
+      "artifact.bin",
+    );
     const transfer = transferRemoteArtifact({
       hostname: params.hostname,
       port: params.port,
@@ -222,7 +230,7 @@ function handleEvent(params: {
       })
       .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
-        const fallback = `Oracle captured the browser text response, but bridge artifact transfer failed for ${event.artifact.filename}. Open the ChatGPT browser on the bridge host, download the ZIP/file shown in the current response, and copy it to a cloud-readable path. Reason: ${message}`;
+        const fallback = `Oracle captured the browser text response, but bridge artifact transfer failed for ${displayFilename}. Open the ChatGPT browser on the bridge host, download the ZIP/file shown in the current response, and copy it to a cloud-readable path. Reason: ${message}`;
         params.options.log?.(`[browser] ${fallback}`);
         params.onArtifactFailure(fallback);
       });
@@ -242,6 +250,7 @@ async function transferRemoteArtifact(params: {
   sessionId?: string;
   log?: BrowserRunOptions["log"];
 }): Promise<SavedBrowserFile> {
+  validateRemoteArtifactDescriptor(params.descriptor);
   const sessionId = params.sessionId ?? params.descriptor.runId;
   const artifactsDir = resolveSessionArtifactsDir(sessionId);
   await mkdir(artifactsDir, { recursive: true });
@@ -281,7 +290,7 @@ async function transferRemoteArtifact(params: {
   const validation = await validateArtifactFile({
     path: partPath,
     filename,
-    mimeType: params.descriptor.mimeType,
+    mimeType: sanitizeArtifactMimeType(params.descriptor.mimeType),
   });
   if (!validation.ok) {
     await rm(partPath, { force: true }).catch(() => undefined);
@@ -293,8 +302,8 @@ async function transferRemoteArtifact(params: {
   return {
     kind: "file",
     path: finalPath,
-    label: params.descriptor.label ?? filename,
-    mimeType: params.descriptor.mimeType,
+    label: filename,
+    mimeType: sanitizeArtifactMimeType(params.descriptor.mimeType),
     sizeBytes: fileStat.size,
     sourceUrl: "bridge-artifact",
     sha256,
@@ -337,22 +346,61 @@ async function downloadArtifactToFile(params: {
           reject(new Error("artifact sha256 header mismatch"));
           return;
         }
-        const contentLength = Number(res.headers["content-length"] ?? 0);
-        if (contentLength && contentLength !== params.descriptor.byteSize) {
+        const contentLengthHeader = res.headers["content-length"];
+        const contentLength =
+          typeof contentLengthHeader === "string" ? Number(contentLengthHeader) : undefined;
+        if (
+          contentLength !== undefined &&
+          (!Number.isSafeInteger(contentLength) ||
+            contentLength <= 0 ||
+            contentLength > MAX_REMOTE_ARTIFACT_BYTES ||
+            contentLength !== params.descriptor.byteSize)
+        ) {
           res.resume();
           reject(new Error("artifact content-length mismatch"));
           return;
         }
         const output = createWriteStream(params.targetPath, { flags: "wx" });
-        output.on("error", reject);
-        res.on("error", reject);
-        output.on("finish", () => resolve());
-        res.pipe(output);
+        let receivedBytes = 0;
+        const limiter = new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            receivedBytes += chunk.length;
+            if (
+              receivedBytes > params.descriptor.byteSize ||
+              receivedBytes > MAX_REMOTE_ARTIFACT_BYTES
+            ) {
+              callback(new Error("artifact exceeded declared size"));
+              return;
+            }
+            callback(null, chunk);
+          },
+        });
+        void pipeline(res, limiter, output).then(() => resolve(), reject);
       },
     );
     req.on("error", reject);
     req.end();
   });
+}
+
+function validateRemoteArtifactDescriptor(descriptor: RemoteArtifactDescriptor): void {
+  if (
+    !descriptor ||
+    typeof descriptor !== "object" ||
+    descriptor.kind !== "file" ||
+    typeof descriptor.runId !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(descriptor.runId) ||
+    typeof descriptor.artifactId !== "string" ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(descriptor.artifactId) ||
+    typeof descriptor.filename !== "string" ||
+    !Number.isSafeInteger(descriptor.byteSize) ||
+    descriptor.byteSize <= 0 ||
+    descriptor.byteSize > MAX_REMOTE_ARTIFACT_BYTES ||
+    typeof descriptor.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/.test(descriptor.sha256)
+  ) {
+    throw new Error("invalid bridge artifact descriptor");
+  }
 }
 
 function mergeTransferredArtifacts(

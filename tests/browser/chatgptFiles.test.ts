@@ -40,9 +40,15 @@ class FakeElement {
   }
 
   querySelectorAll(selector: string): FakeElement[] {
-    return selector.includes("button") || selector.includes("a[") || selector.includes("[role=")
-      ? this.children
-      : [];
+    if (!selector.includes("button") && !selector.includes("a[") && !selector.includes("[role=")) {
+      return [];
+    }
+    return this.children.filter(
+      (child) =>
+        child.tagName === "BUTTON" ||
+        child.tagName === "A" ||
+        child.getAttribute("role") === "button",
+    );
   }
 
   setAttribute(name: string, value: string): void {
@@ -528,6 +534,7 @@ describe("collectChatGptFileArtifacts", () => {
       .join("\n");
     expect(logText).not.toContain("secret-token");
     expect(logText).not.toContain("sig=secret");
+    expect(logText).not.toContain("abc123");
   });
 
   test("falls back to assistant download buttons when sandbox download URL is not fetchable", async () => {
@@ -1020,6 +1027,23 @@ describe("collectChatGptFileArtifacts", () => {
     ]);
     expect(behaviorGeneric.clickCount).toBe(1);
     expect(exactFallback.clickCount).toBe(1);
+  });
+
+  test("click expression ignores non-interactive elements with download metadata", () => {
+    const metadata = new FakeElement(
+      "Download private.zip",
+      { "data-testid": "download-files-turn-action-button" },
+      "",
+      [],
+      "DIV",
+    );
+    const expression = __test__.buildClickAssistantDownloadButtonsExpression(undefined, [], true);
+
+    expect(evaluateClickExpression(expression, [assistantTurn([metadata])])).toEqual([]);
+    expect(metadata.clickCount).toBe(0);
+    expect(expression).not.toContain("'[data-testid]'");
+    expect(expression).not.toContain("'[aria-label]'");
+    expect(expression).not.toContain("'[title]'");
   });
 
   test("click expression can use a latest-turn sandbox anchor as a fallback control", () => {

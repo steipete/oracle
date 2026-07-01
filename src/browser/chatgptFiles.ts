@@ -59,6 +59,10 @@ function safeDiagnosticText(value: string, maxLength = DIAGNOSTIC_BODY_SNIPPET_B
       /("?(?:access_token|authorization|bearer|cookie|id_token|key|secret|session|signature|sig|token)"?\s*[:=]\s*)"?[^,"'\s}]+"?/gi,
       "$1[redacted]",
     )
+    .replace(
+      /\b(access[_ -]?token|authorization|bearer|cookie|id[_ -]?token|api[_ -]?key|secret|session|signature|sig|token)\b\s+["']?[a-z0-9._~+/=-]{4,}/gi,
+      "$1 [redacted]",
+    )
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -94,11 +98,31 @@ async function readDiagnosticResponseBody(
   response: Response,
   contentType?: string | null,
 ): Promise<{ bodyKind: string; bodySnippet?: string }> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return { bodyKind: classifyResponseBodyKind(contentType) };
+  }
+  const limit = DIAGNOSTIC_BODY_SNIPPET_BYTES * 4;
+  const chunks: Buffer[] = [];
+  let total = 0;
   try {
-    const body = Buffer.from(await response.arrayBuffer());
-    return decodeDiagnosticBodySnippet(body, contentType);
+    while (total < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const remaining = limit - total;
+      const chunk = Buffer.from(value.subarray(0, remaining));
+      chunks.push(chunk);
+      total += chunk.length;
+      if (total >= limit) {
+        await reader.cancel().catch(() => undefined);
+        break;
+      }
+    }
+    return decodeDiagnosticBodySnippet(Buffer.concat(chunks), contentType);
   } catch {
     return { bodyKind: classifyResponseBodyKind(contentType) };
+  } finally {
+    reader.releaseLock();
   }
 }
 
@@ -815,9 +839,6 @@ function buildClickAssistantDownloadButtonsExpression(
         'a[href]',
         'a[download]',
         '[role="button"]',
-        '[data-testid]',
-        '[aria-label]',
-        '[title]',
       ].join(',')))
         .filter((control) => control instanceof HTMLElement)
         .filter((control) => !(MARK_CLICKED && control.getAttribute(CLICKED_ATTRIBUTE) === 'true'))

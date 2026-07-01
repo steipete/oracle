@@ -1,11 +1,12 @@
 import http from "node:http";
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, writeFile, stat } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, stat, realpath } from "node:fs/promises";
 import chalk from "chalk";
 import type { BrowserAttachment, BrowserLogger, CookieParam } from "../browser/types.js";
 import { runBrowserMode } from "../browserMode.js";
@@ -16,9 +17,11 @@ import type {
   RemoteRunPayload,
   RemoteRunEvent,
 } from "./types.js";
+import { MAX_REMOTE_ARTIFACT_BYTES } from "./types.js";
 import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
+import { getOracleHomeDir } from "../oracleHome.js";
 import {
   cleanupStaleProfileState,
   readDevToolsPort,
@@ -30,6 +33,7 @@ import { normalizeChatgptUrl } from "../browser/utils.js";
 import {
   computeFileSha256,
   sanitizeArtifactFilename,
+  sanitizeArtifactMimeType,
   validateArtifactFile,
 } from "../browser/artifacts.js";
 import type { SessionArtifact } from "../sessionManager.js";
@@ -60,7 +64,6 @@ interface RegisteredRemoteArtifact {
 }
 
 const ARTIFACT_PROTOCOL_VERSION = 1;
-const MAX_REMOTE_ARTIFACT_BYTES = 512 * 1024 * 1024;
 const REMOTE_ARTIFACT_TTL_MS = 30 * 60 * 1000;
 
 const ARTIFACT_CAPABILITIES: RemoteArtifactCapabilities = {
@@ -472,10 +475,14 @@ function matchArtifactRequest(
   if (!match) {
     return null;
   }
-  return {
-    runId: decodeURIComponent(match[1] ?? ""),
-    artifactId: decodeURIComponent(match[2] ?? ""),
-  };
+  try {
+    return {
+      runId: decodeURIComponent(match[1] ?? ""),
+      artifactId: decodeURIComponent(match[2] ?? ""),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function serveRemoteArtifact(params: {
@@ -529,20 +536,17 @@ async function serveRemoteArtifact(params: {
 
   const filename = sanitizeArtifactFilename(artifact.descriptor.filename, "artifact.bin");
   params.res.writeHead(200, {
-    "Content-Type": artifact.descriptor.mimeType ?? "application/octet-stream",
+    "Content-Type":
+      sanitizeArtifactMimeType(artifact.descriptor.mimeType) ?? "application/octet-stream",
     "Content-Length": fileStat.size,
     "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"`,
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
     "X-Oracle-Artifact-Id": artifact.descriptor.artifactId,
     "X-Oracle-Artifact-Sha256": artifact.descriptor.sha256,
   });
 
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(artifact.filePath);
-    stream.on("error", reject);
-    params.res.on("error", reject);
-    params.res.on("close", () => resolve());
-    stream.pipe(params.res);
-  }).catch((error) => {
+  await pipeline(createReadStream(artifact.filePath), params.res).catch((error) => {
     params.logger(
       `[serve] Artifact transfer failed for ${artifact.descriptor.artifactId}: ${
         error instanceof Error ? error.message : String(error)
@@ -582,7 +586,7 @@ async function registerRemoteArtifacts(params: {
       continue;
     }
     seen.add(artifact.path);
-    const descriptor = await buildRemoteArtifactDescriptor(params.runId, artifact).catch(
+    const registration = await buildRemoteArtifactRegistration(params.runId, artifact).catch(
       (error) => {
         params.logger(
           `[serve] Skipping remote artifact descriptor: ${error instanceof Error ? error.message : String(error)}`,
@@ -590,27 +594,31 @@ async function registerRemoteArtifacts(params: {
         return null;
       },
     );
-    if (!descriptor) {
+    if (!registration) {
       continue;
     }
-    params.artifactRegistry.set(remoteArtifactKey(params.runId, descriptor.artifactId), {
-      descriptor,
-      filePath: artifact.path,
-      expiresAt: Date.now() + REMOTE_ARTIFACT_TTL_MS,
-    });
-    descriptors.push(descriptor);
+    params.artifactRegistry.set(
+      remoteArtifactKey(params.runId, registration.descriptor.artifactId),
+      {
+        descriptor: registration.descriptor,
+        filePath: registration.filePath,
+        expiresAt: Date.now() + REMOTE_ARTIFACT_TTL_MS,
+      },
+    );
+    descriptors.push(registration.descriptor);
   }
   return descriptors;
 }
 
-async function buildRemoteArtifactDescriptor(
+async function buildRemoteArtifactRegistration(
   runId: string,
   artifact: SessionArtifact,
-): Promise<RemoteArtifactDescriptor> {
+): Promise<{ descriptor: RemoteArtifactDescriptor; filePath: string }> {
   if (artifact.path.endsWith(".crdownload")) {
     throw new Error("artifact is still a Chrome partial download");
   }
-  const fileStat = await stat(artifact.path);
+  const filePath = await resolveRegisteredArtifactPath(artifact.path);
+  const fileStat = await stat(filePath);
   if (!fileStat.isFile() || fileStat.size <= 0) {
     throw new Error("artifact is not a completed non-empty file");
   }
@@ -621,28 +629,49 @@ async function buildRemoteArtifactDescriptor(
     artifact.label ?? path.basename(artifact.path),
     "artifact.bin",
   );
-  const mimeType = artifact.mimeType;
-  const validation =
-    artifact.validation ??
-    (await validateArtifactFile({
-      path: artifact.path,
-      filename,
-      mimeType,
-    }));
-  const sha256 = artifact.sha256 ?? (await computeFileSha256(artifact.path));
-  return {
-    artifactId: randomUUID(),
-    runId,
-    kind: "file",
+  const mimeType = sanitizeArtifactMimeType(artifact.mimeType);
+  // Recompute security metadata from the exact file registered for transfer.
+  const validation = await validateArtifactFile({
+    path: filePath,
     filename,
-    label: artifact.label,
     mimeType,
-    byteSize: fileStat.size,
-    sha256,
-    validation,
-    sourceUrlKind: classifySourceUrlKind(artifact.sourceUrl),
-    transferStatus: "ready",
+  });
+  const sha256 = await computeFileSha256(filePath);
+  return {
+    filePath,
+    descriptor: {
+      artifactId: randomUUID(),
+      runId,
+      kind: "file",
+      filename,
+      label: filename,
+      mimeType,
+      byteSize: fileStat.size,
+      sha256,
+      validation,
+      sourceUrlKind: classifySourceUrlKind(artifact.sourceUrl),
+      transferStatus: "ready",
+    },
   };
+}
+
+async function resolveRegisteredArtifactPath(filePath: string): Promise<string> {
+  const [resolvedFile, sessionsRoot] = await Promise.all([
+    realpath(filePath),
+    realpath(path.join(getOracleHomeDir(), "sessions")),
+  ]);
+  const relative = path.relative(sessionsRoot, resolvedFile);
+  const segments = relative.split(path.sep);
+  if (
+    !relative ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative) ||
+    segments.length < 3 ||
+    segments[1] !== "artifacts"
+  ) {
+    throw new Error("artifact is outside Oracle's session artifact boundary");
+  }
+  return resolvedFile;
 }
 
 function classifySourceUrlKind(sourceUrl?: string): RemoteArtifactDescriptor["sourceUrlKind"] {
@@ -675,7 +704,6 @@ function sanitizeResult(result: BrowserRunResult): BrowserRunResult {
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,
-    warnings: result.warnings,
     chromePid: undefined,
     chromePort: undefined,
     userDataDir: undefined,

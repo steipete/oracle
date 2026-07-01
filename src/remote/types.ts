@@ -3,6 +3,8 @@ import type { BrowserRunResult } from "../browserMode.js";
 import type { BrowserAttachment } from "../browser/types.js";
 import type { SessionArtifactValidation } from "../sessionManager.js";
 
+export const MAX_REMOTE_ARTIFACT_BYTES = 512 * 1024 * 1024;
+
 export interface RemoteAttachmentPayload {
   fileName: string;
   displayPath: string;
