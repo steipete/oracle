@@ -593,10 +593,7 @@ async function registerRemoteArtifacts(params: {
     seen.add(artifact.path);
     const registration = await buildRemoteArtifactRegistration(params.runId, artifact).catch(
       (error) => {
-        const filename = sanitizeArtifactFilename(
-          artifact.label ?? path.basename(artifact.path),
-          "artifact.bin",
-        );
+        const filename = sanitizeArtifactFilename(path.basename(artifact.path), "artifact.bin");
         params.logger(
           `[serve] Skipping remote artifact descriptor: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -641,10 +638,7 @@ async function buildRemoteArtifactRegistration(
   if (fileStat.size > MAX_REMOTE_ARTIFACT_BYTES) {
     throw new Error("artifact exceeds bridge transfer size limit");
   }
-  const filename = sanitizeArtifactFilename(
-    artifact.label ?? path.basename(artifact.path),
-    "artifact.bin",
-  );
+  const filename = sanitizeArtifactFilename(path.basename(filePath), "artifact.bin");
   const mimeType = sanitizeArtifactMimeType(artifact.mimeType);
   // Recompute security metadata from the exact file registered for transfer.
   const validation = await validateArtifactFile({
@@ -660,7 +654,7 @@ async function buildRemoteArtifactRegistration(
       runId,
       kind: "file",
       filename,
-      label: filename,
+      label: artifact.label ?? filename,
       mimeType,
       byteSize: fileStat.size,
       sha256,

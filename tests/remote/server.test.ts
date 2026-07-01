@@ -164,15 +164,16 @@ describe("remote browser service", () => {
       const secondHostArtifactPath = path.join(
         clientHome,
         "sessions",
-        "host-session",
+        "second-host-session",
         "artifacts",
-        "second-host-result.zip",
+        "host-result.zip",
       );
       const emptyZip = Buffer.from([
         0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       ]);
       await mkdir(path.dirname(hostArtifactPath), { recursive: true });
+      await mkdir(path.dirname(secondHostArtifactPath), { recursive: true });
       await writeFile(hostArtifactPath, emptyZip);
       await writeFile(secondHostArtifactPath, emptyZip);
       await writeFile(hostPrivatePath, emptyZip);
@@ -191,8 +192,8 @@ describe("remote browser service", () => {
                 {
                   kind: "file",
                   path: hostArtifactPath,
-                  label: "result.zip",
-                  mimeType: "application/zip",
+                  label: "Download",
+                  mimeType: "application/octet-stream",
                   sizeBytes: emptyZip.length,
                   sourceUrl: "sandbox:/mnt/data/result.zip",
                   url: "browser-download",
@@ -202,7 +203,7 @@ describe("remote browser service", () => {
                 {
                   kind: "file",
                   path: secondHostArtifactPath,
-                  label: "result.zip",
+                  label: "Download another result",
                   mimeType: "application/zip",
                   sizeBytes: emptyZip.length,
                   sourceUrl: "sandbox:/mnt/data/result.zip",
@@ -213,7 +214,7 @@ describe("remote browser service", () => {
                 {
                   kind: "file",
                   path: hostPrivatePath,
-                  label: "private.zip",
+                  label: "Private download",
                   mimeType: "application/zip",
                   sizeBytes: emptyZip.length,
                   sourceUrl: "sandbox:/mnt/data/private.zip",
@@ -260,7 +261,7 @@ describe("remote browser service", () => {
         {
           code: "remote-artifact-registration-failed",
           severity: "warning",
-          message: expect.stringContaining("could not prepare private.zip for transfer"),
+          message: expect.stringContaining("could not prepare host-private.zip for transfer"),
         },
       ]);
       expect(JSON.stringify(result)).not.toContain(hostPrivatePath);
@@ -268,13 +269,19 @@ describe("remote browser service", () => {
       expect(result.artifacts).toHaveLength(2);
       const artifact = result.artifacts?.[0];
       expect(artifact?.path).toBe(
-        path.join(clientHome, "sessions", "remote-artifact-session", "artifacts", "result.zip"),
+        path.join(
+          clientHome,
+          "sessions",
+          "remote-artifact-session",
+          "artifacts",
+          "host-result.zip",
+        ),
       );
       expect(artifact?.path).not.toBe(hostArtifactPath);
       expect(artifact).toMatchObject({
         kind: "file",
-        label: "result.zip",
-        mimeType: "application/zip",
+        label: "host-result.zip",
+        mimeType: "application/octet-stream",
         sizeBytes: emptyZip.length,
         sourceUrl: "bridge-artifact",
         validation: { type: "zip", ok: true },
@@ -291,10 +298,10 @@ describe("remote browser service", () => {
           "sessions",
           "remote-artifact-session",
           "artifacts",
-          "result-2.zip",
+          "host-result-2.zip",
         ),
-        label: "result-2.zip",
-        filename: "result-2.zip",
+        label: "host-result-2.zip",
+        filename: "host-result-2.zip",
       });
       await expect(readFile(duplicate!.path)).resolves.toEqual(emptyZip);
       await expect(stat(hostArtifactPath)).resolves.toMatchObject({ size: emptyZip.length });
