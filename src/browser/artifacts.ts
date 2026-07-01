@@ -115,7 +115,12 @@ export async function computeFileSha256(targetPath: string): Promise<string> {
 export function isZipArtifact(filename?: string, mimeType?: string): boolean {
   const ext = path.extname(String(filename ?? "")).toLowerCase();
   const mime = String(mimeType ?? "").toLowerCase();
-  return ext === ".zip" || mime.includes("zip");
+  return (
+    ext === ".zip" ||
+    mime === "application/zip" ||
+    mime === "application/x-zip-compressed" ||
+    mime.endsWith("+zip")
+  );
 }
 
 export function validateZipBuffer(contents: Buffer): ArtifactValidation {

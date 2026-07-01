@@ -230,6 +230,7 @@ describe("saveChatGptDownloadableFiles", () => {
       filename: "source.tar.gz",
       sourceUrl: "sandbox:/mnt/data/source.tar.gz",
       sandboxUrl: "sandbox:/mnt/data/source.tar.gz",
+      validation: { type: "generic", ok: true },
     });
     expect(result.savedFiles[0]?.path).toBe(
       path.join(tmpHome, "sessions", "file-session", "artifacts", "source.tar.gz"),
@@ -1064,6 +1065,38 @@ describe("collectChatGptFileArtifacts", () => {
     ]);
     expect(anchor.clickCount).toBe(1);
     expect(anchor.getAttribute("data-oracle-download-clicked")).toBe("true");
+  });
+
+  test("click expression ignores external download anchors", () => {
+    const externalAnchor = anchorControl("Download result.zip", {
+      href: "https://evil.example/download/result.zip",
+      download: "result.zip",
+    });
+    const expression = __test__.buildClickAssistantDownloadButtonsExpression(
+      undefined,
+      ["result.zip"],
+      true,
+    );
+
+    expect(evaluateClickExpression(expression, [assistantTurn([externalAnchor])])).toEqual([]);
+    expect(externalAnchor.clickCount).toBe(0);
+  });
+
+  test("click expression allows ChatGPT file download anchors", () => {
+    const chatGptAnchor = anchorControl("Download result.zip", {
+      href: "https://chatgpt.com/backend-api/files/file_123/download",
+      download: "result.zip",
+    });
+    const expression = __test__.buildClickAssistantDownloadButtonsExpression(
+      undefined,
+      ["result.zip"],
+      false,
+    );
+
+    expect(evaluateClickExpression(expression, [assistantTurn([chatGptAnchor])])).toEqual([
+      { text: "Download result.zip", ariaLabel: "", testId: "" },
+    ]);
+    expect(chatGptAnchor.clickCount).toBe(1);
   });
 
   test("click expression falls back to generic buttons and skips already-clicked ones", () => {

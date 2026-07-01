@@ -767,6 +767,43 @@ function buildClickAssistantDownloadButtonsExpression(
         return part;
       }
     };
+    const isSafeSandboxUrl = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw.startsWith('sandbox:/mnt/data/')) return false;
+      try {
+        const pathName = decodeURI(new URL(raw).pathname);
+        return pathName.startsWith('/mnt/data/') &&
+          !pathName.includes('\\\\') &&
+          !pathName.includes('\\0') &&
+          !pathName.split('/').includes('..');
+      } catch {
+        return false;
+      }
+    };
+    const isChatGptDownloadUrl = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw || raw.startsWith('sandbox:') || raw.startsWith('blob:')) return false;
+      const isSafeSandboxPath = (pathName) => {
+        const normalized = String(pathName || '');
+        return normalized.startsWith('/mnt/data/') &&
+          !normalized.includes('\\\\') &&
+          !normalized.includes('\\0') &&
+          !normalized.split('/').includes('..');
+      };
+      try {
+        const url = new URL(raw, 'https://chatgpt.com');
+        const host = url.hostname.toLowerCase();
+        const allowedHost = host === 'chatgpt.com' || host === 'chat.openai.com';
+        const pathName = url.pathname.toLowerCase();
+        const isKnownFileDownload =
+          (pathName === '/backend-api/sandbox/download' && isSafeSandboxPath(url.searchParams.get('path') || '')) ||
+          /^\\/backend-api\\/files\\/[^/]+\\/(?:download|content)\\/?$/.test(pathName) ||
+          (pathName === '/backend-api/estuary/content' && String(url.searchParams.get('id') || '').startsWith('file_'));
+        return allowedHost && url.protocol === 'https:' && !url.port && isKnownFileDownload;
+      } catch {
+        return false;
+      }
+    };
     const safeLower = (value) => String(value || '').trim().toLowerCase();
     const controlInfo = (control) => {
       const href = String(control.tagName || '').toLowerCase() === 'a' ? (control.getAttribute('href') || control.href || '') : '';
@@ -795,6 +832,8 @@ function buildClickAssistantDownloadButtonsExpression(
           .filter(Boolean),
       };
     };
+    const safeClickableControl = (info) =>
+      safeLower(info.tagName) !== 'a' || isSafeSandboxUrl(info.href) || isChatGptDownloadUrl(info.href);
     const expectedFileControl = (info) => {
       return EXPECTED_LABELS.some((rawLabel) => {
         const label = safeLower(rawLabel);
@@ -842,7 +881,8 @@ function buildClickAssistantDownloadButtonsExpression(
       ].join(',')))
         .filter((control) => control instanceof HTMLElement)
         .filter((control) => !(MARK_CLICKED && control.getAttribute(CLICKED_ATTRIBUTE) === 'true'))
-        .map(controlInfo);
+        .map(controlInfo)
+        .filter(safeClickableControl);
       inspectedCount += controls.length;
       controls.filter(expectedFileControl).forEach((info) => expectedMatches.add(info));
       const genericBehavior = controls.filter(genericBehaviorButton);

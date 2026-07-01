@@ -7,6 +7,7 @@ import {
   resolveSessionArtifactsDir,
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
+  isZipArtifact,
   validateZipBuffer,
   writeBinaryBrowserArtifact,
   __test__,
@@ -137,6 +138,14 @@ describe("browser session artifacts", () => {
       ok: false,
       error: "zip-too-small",
     });
+  });
+
+  test("does not classify gzip archives as ZIP files", () => {
+    expect(isZipArtifact("source.tar.gz", "application/gzip")).toBe(false);
+    expect(isZipArtifact("source.gz", "application/x-gzip")).toBe(false);
+    expect(isZipArtifact("source.zip", "application/octet-stream")).toBe(true);
+    expect(isZipArtifact("source.bin", "application/zip")).toBe(true);
+    expect(isZipArtifact("source.bin", "application/example+zip")).toBe(true);
   });
 
   test("dedupes artifact lists by kind and path", () => {
