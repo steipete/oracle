@@ -68,6 +68,15 @@ JSON5 parsing, so trailing commas and comments are allowed.
   sessionRetentionHours: 72, // prune cached sessions older than 72h before each run (0 disables)
   promptSuffix: "// signed-off by me", // appended to every prompt
   apiBaseUrl: "https://api.openai.com/v1", // override for LiteLLM / custom gateways
+  // API-only, user-config-only overrides for known model keys.
+  modelOverrides: {
+    "gpt-5.5": {
+      apiModel: "gateway-model", // on-wire id exposed by the gateway
+      reasoning: { effort: "xhigh" }, // or null to clear the bundled effort
+      inputLimit: 1050000,
+      pricing: { inputPerToken: 0.000005, outputPerToken: 0.00003 },
+    },
+  },
 }
 ```
 
@@ -94,7 +103,7 @@ values. This lets a parent folder set broad defaults and override a specific
 ChatGPT Project URL in a package subdirectory.
 
 Project configs intentionally support only workflow defaults. They cannot set
-provider routing or secret/executable fields such as `apiBaseUrl`, `azure`,
+provider routing or secret/executable fields such as `apiBaseUrl`, `modelOverrides`, `azure`,
 `browser.remoteHost`, `browser.remoteToken`, `browser.chromePath`, or
 `browser.chromeCookiePath`. Keep tokens and machine-local executable/profile
 paths in `~/.oracle/config.json`, environment variables, or explicit CLI flags.
@@ -105,11 +114,12 @@ CLI flags and explicit override environment variables → effective config (proj
 
 - The effective config starts with `~/.oracle/config.json`, then layers project `.oracle/config.json` files from parent to child. `engine`, `model`, `search`, `filesReport`, `heartbeatSeconds`, `maxFileSizeBytes`, and `apiBaseUrl` in the effective config override auto-detected values unless explicitly set on the CLI or through a supported override environment variable.
 - Project `.oracle/config.json` files can override safe workflow defaults such as `engine`, `model`, `search`, `filesReport`, `heartbeatSeconds`, `maxFileSizeBytes`, `promptSuffix`, and allowed `browser.*` workflow settings.
-- Provider routing and machine-local fields (`apiBaseUrl`, `azure`, remote browser host/token defaults, Chrome binary/profile paths, cookie DB paths, and session retention cleanup) are ignored in project configs and are read only from the user config, environment variables, or explicit CLI flags.
+- Provider routing and machine-local fields (`apiBaseUrl`, `modelOverrides`, `azure`, remote browser host/token defaults, Chrome binary/profile paths, cookie DB paths, and session retention cleanup) are ignored in project configs and are read only from the user config, environment variables, or explicit CLI flags.
 - `ORACLE_ENGINE=api|browser` is a global override for engine selection (useful for MCP/Codex setups); it wins over `config.json`.
 - If `azure.endpoint` (or `--azure-endpoint`) is set, Oracle reads `AZURE_OPENAI_API_KEY` first and falls back to `OPENAI_API_KEY` for GPT models.
 - Remote browser defaults follow the same order: `--remote-host/--remote-token` win, then `browser.remoteHost` / `browser.remoteToken` in the config, then `ORACLE_REMOTE_HOST` / `ORACLE_REMOTE_TOKEN` if still unset.
 - `OPENAI_API_KEY` only influences engine selection when neither the CLI nor `config.json` specify an engine (API when present, otherwise browser).
+- `modelOverrides` applies only to API runs and existing built-in model keys. It can replace the on-wire `apiModel`, reasoning effort, input limit, and per-token pricing; unspecified fields and the bundled tokenizer remain unchanged. Invalid override values are ignored. Project configs cannot set this field.
 - `ORACLE_NOTIFY*` env vars still layer on top of the config’s `notify` block.
 - `sessionRetentionHours` controls the default value for `--retain-hours`. When unset, `ORACLE_RETAIN_HOURS` (if present) becomes the fallback, and the CLI flag still wins over both.
 - `ORACLE_MAX_FILE_SIZE_BYTES` overrides `maxFileSizeBytes` when set. Oracle validates it as a positive integer number of bytes before reading any `--file` inputs.

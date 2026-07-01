@@ -1956,7 +1956,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
   // A user-config apiModel override (known models only) wins over Gemini alias
   // remapping and the bundled apiModel, so it becomes the on-wire request id.
-  const overriddenApiModel = resolveOverriddenApiModel(resolvedModel, userConfig.modelOverrides);
+  const apiModelOverrides = engine === "api" ? userConfig.modelOverrides : undefined;
+  const overriddenApiModel = resolveOverriddenApiModel(resolvedModel, apiModelOverrides);
   const effectiveModelId =
     overriddenApiModel ??
     (resolvedModel.startsWith("gemini")
@@ -1976,7 +1977,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   resolvedOptions.baseUrl = resolvedBaseUrl;
   resolvedOptions.effectiveModelId = effectiveModelId;
-  resolvedOptions.modelOverrides = userConfig.modelOverrides;
+  resolvedOptions.modelOverrides = apiModelOverrides;
   resolvedOptions.provider = providerMode;
   resolvedOptions.writeOutputPath = resolveOutputPath(options.writeOutput, process.cwd());
 

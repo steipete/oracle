@@ -177,18 +177,15 @@ function buildOpenRouterCompletionClient(instance: OpenAI): ClientLike {
         content: textParts,
       });
     }
-    const base = {
+    const base: Omit<ChatCompletionCreateParamsNonStreaming, "stream"> = {
       model: body.model,
       messages,
       max_tokens: body.max_output_tokens,
-      // Forward reasoning effort for OpenAI-compatible chat/completions gateways
-      // (OpenAI, OpenRouter, LiteLLM, vLLM, etc.). Without this, a `reasoning`
-      // override or a known reasoning model silently loses its effort on any
-      // custom base URL, since this adapter is the only request path for them.
+      // Custom gateways use Chat Completions, whose effort field differs from Responses.
       ...(body.reasoning?.effort ? { reasoning_effort: body.reasoning.effort } : {}),
     };
-    const streaming = { ...base, stream: true } as ChatCompletionCreateParamsStreaming;
-    const nonStreaming = { ...base, stream: false } as ChatCompletionCreateParamsNonStreaming;
+    const streaming: ChatCompletionCreateParamsStreaming = { ...base, stream: true };
+    const nonStreaming: ChatCompletionCreateParamsNonStreaming = { ...base, stream: false };
     return { streaming, nonStreaming };
   };
 

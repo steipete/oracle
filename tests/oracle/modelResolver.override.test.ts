@@ -17,15 +17,15 @@ describe("applyModelOverride", () => {
 
   it("overrides apiModel + reasoning effort while inheriting tokenizer", () => {
     const result = applyModelOverride(baseConfig, KNOWN_MODEL, {
-      [KNOWN_MODEL]: { apiModel: "gpt-5.5-mygateway", reasoning: { effort: "high" } },
+      [KNOWN_MODEL]: { apiModel: "gateway-model", reasoning: { effort: "high" } },
     });
-    expect(result.apiModel).toBe("gpt-5.5-mygateway");
+    expect(result.apiModel).toBe("gateway-model");
     expect(result.reasoning).toEqual({ effort: "high" });
     // Tokenizer and other fields inherited from the known config.
     expect(result.tokenizer).toBe(baseConfig.tokenizer);
     expect(result.inputLimit).toBe(baseConfig.inputLimit);
     // Base config is not mutated.
-    expect(baseConfig.apiModel).not.toBe("gpt-5.5-mygateway");
+    expect(baseConfig.apiModel).not.toBe("gateway-model");
   });
 
   it("clears reasoning when override sets reasoning: null", () => {
@@ -102,10 +102,10 @@ describe("resolveModelConfig with modelOverrides", () => {
     const config = await resolveModelConfig(KNOWN_MODEL, {
       baseUrl: "https://my-gateway.example/v1",
       modelOverrides: {
-        [KNOWN_MODEL]: { apiModel: "gpt-5.5-mygateway", reasoning: { effort: "xhigh" } },
+        [KNOWN_MODEL]: { apiModel: "gateway-model", reasoning: { effort: "xhigh" } },
       },
     });
-    expect(config.apiModel).toBe("gpt-5.5-mygateway");
+    expect(config.apiModel).toBe("gateway-model");
     expect(config.reasoning).toEqual({ effort: "xhigh" });
   });
 
@@ -122,9 +122,9 @@ describe("resolveOverriddenApiModel", () => {
   it("returns the override apiModel for a known model", () => {
     expect(
       resolveOverriddenApiModel(KNOWN_MODEL, {
-        [KNOWN_MODEL]: { apiModel: "gpt-5.5-mygateway" },
+        [KNOWN_MODEL]: { apiModel: "gateway-model" },
       }),
-    ).toBe("gpt-5.5-mygateway");
+    ).toBe("gateway-model");
   });
 
   it("returns undefined for unknown models, empty apiModel, or no overrides", () => {
@@ -137,6 +137,8 @@ describe("resolveOverriddenApiModel", () => {
     expect(
       resolveOverriddenApiModel(KNOWN_MODEL, { [KNOWN_MODEL]: { apiModel: "   " } }),
     ).toBeUndefined();
-    expect(resolveOverriddenApiModel(KNOWN_MODEL, { [KNOWN_MODEL]: { reasoning: null } })).toBeUndefined();
+    expect(
+      resolveOverriddenApiModel(KNOWN_MODEL, { [KNOWN_MODEL]: { reasoning: null } }),
+    ).toBeUndefined();
   });
 });

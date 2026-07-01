@@ -118,7 +118,8 @@ export function resolveRunOptionsFromConfig({
   }
 
   const chosenModel: ModelName = uniqueMultiModels[0] ?? resolvedModel;
-  const effectiveModelId = resolveEffectiveModelId(chosenModel, userConfig?.modelOverrides);
+  const apiModelOverrides = fixedEngine === "api" ? userConfig?.modelOverrides : undefined;
+  const effectiveModelId = resolveEffectiveModelId(chosenModel, apiModelOverrides);
 
   const runOptions: RunOracleOptions = {
     prompt: promptWithSuffix,
@@ -133,7 +134,7 @@ export function resolveRunOptionsFromConfig({
     baseUrl,
     azure,
     effectiveModelId,
-    modelOverrides: userConfig?.modelOverrides,
+    modelOverrides: apiModelOverrides,
   };
 
   return { runOptions, resolvedEngine: fixedEngine, engineCoercedToApi };
@@ -154,10 +155,7 @@ function resolveAzureOptions(
   };
 }
 
-function resolveEffectiveModelId(
-  model: ModelName,
-  modelOverrides?: ModelOverridesConfig,
-): string {
+function resolveEffectiveModelId(model: ModelName, modelOverrides?: ModelOverridesConfig): string {
   // A user-config override of a known model's apiModel must win, since this id
   // becomes the on-wire request model id in run.ts (including for Gemini aliases).
   const overridden = resolveOverriddenApiModel(model, modelOverrides);

@@ -83,6 +83,23 @@ Or via `config.json`:
 }
 ```
 
+If a gateway exposes a different on-wire model id, add an API-only override to the user config at `~/.oracle/config.json`:
+
+```json5
+{
+  apiBaseUrl: "http://localhost:4000",
+  model: "gpt-5.5",
+  modelOverrides: {
+    "gpt-5.5": {
+      apiModel: "gateway-model",
+      reasoning: { effort: "high" },
+    },
+  },
+}
+```
+
+Overrides accept existing built-in model keys only and are ignored in project `.oracle/config.json` files. See [Local configuration](configuration.md) for the full field list and precedence.
+
 ## Model aliases
 
 Oracle keeps a stable CLI-facing model set, but some names are aliases for the concrete API model ids it sends:

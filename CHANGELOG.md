@@ -4,11 +4,11 @@
 
 ### Added
 
-- Config: add user-only `modelOverrides` in `~/.oracle/config.json` to override a known model's on-wire `apiModel`, reasoning effort, input limit, and pricing — for custom OpenAI-compatible `--base-url` gateways (e.g. a LiteLLM proxy) that rename model ids or need a non-default effort. Overrides apply to known models only (tokenizer inherited), support `reasoning: null` to clear effort, and are ignored from project configs so they cannot reroute model traffic. Fixes #273.
-- API: forward reasoning effort as `reasoning_effort` through the OpenAI-compatible chat/completions adapter used for custom/proxy base URLs (OpenRouter, LiteLLM, vLLM, etc.). Previously the adapter only sent `model`, `messages`, and `max_tokens`, so a reasoning model's effort was silently dropped on any custom `--base-url`.
+- API: add user-only `modelOverrides` for remapping known models and their metadata on custom OpenAI-compatible gateways. Fixes #273. Thanks @wangwllu!
 
 ### Fixed
 
+- API: forward configured reasoning effort through custom OpenAI-compatible chat-completions gateways.
 - Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!
 
 ## 0.15.0 — 2026-06-19

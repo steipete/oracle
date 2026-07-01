@@ -40,7 +40,12 @@ import { createMarkdownStreamer } from "markdansi";
 import { executeBackgroundResponse } from "./background.js";
 import { formatTokenEstimate, formatTokenValue, resolvePreviewMode } from "./runUtils.js";
 import { estimateUsdCost } from "tokentally";
-import { isOpenRouterBaseUrl, isProModel, resolveModelConfig, resolveOverriddenApiModel } from "./modelResolver.js";
+import {
+  isOpenRouterBaseUrl,
+  isProModel,
+  resolveModelConfig,
+  resolveOverriddenApiModel,
+} from "./modelResolver.js";
 import { validateProviderRouting } from "./providerRouting.js";
 import {
   formatRouteTargetForLog,

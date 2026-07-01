@@ -98,8 +98,8 @@ export interface UserConfig {
   azure?: AzureConfig;
   sessionRetentionHours?: number;
   /**
-   * Per-model overrides merged over known model configs (apiModel, reasoning,
-   * inputLimit, pricing). User-config only: intentionally excluded from
+   * API-only per-model overrides merged over known model configs (apiModel,
+   * reasoning, inputLimit, pricing). User-config only: intentionally excluded from
    * {@link sanitizeProjectConfig} so untrusted project configs cannot reroute
    * model traffic.
    */

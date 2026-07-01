@@ -79,7 +79,7 @@ export interface ModelConfig {
 }
 
 /**
- * User-config override for a single known model entry. Lets users running against
+ * API-only user-config override for a single known model entry. Lets users running against
  * custom OpenAI-compatible gateways (e.g. a LiteLLM proxy) remap the on-wire model
  * id and reasoning effort without editing bundled model configs. Applied on top of
  * an existing {@link MODEL_CONFIGS} entry, so the tokenizer and other fields are

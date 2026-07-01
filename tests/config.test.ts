@@ -272,7 +272,7 @@ describe("loadUserConfig", () => {
         model: "gpt-5.5",
         modelOverrides: {
           "gpt-5.5": {
-            apiModel: "gpt-5.5-mygateway",
+            apiModel: "gateway-model",
             reasoning: { effort: "xhigh" },
             inputLimit: 1050000,
           },
@@ -284,18 +284,14 @@ describe("loadUserConfig", () => {
     const result = await loadUserConfig();
     expect(result.loaded).toBe(true);
     expect(result.config.modelOverrides?.["gpt-5.5"]).toEqual({
-      apiModel: "gpt-5.5-mygateway",
+      apiModel: "gateway-model",
       reasoning: { effort: "xhigh" },
       inputLimit: 1050000,
     });
   });
 
   it("does not let project configs set modelOverrides", async () => {
-    await fs.writeFile(
-      path.join(tempDir, "config.json"),
-      `{ model: "gpt-5.5" }`,
-      "utf8",
-    );
+    await fs.writeFile(path.join(tempDir, "config.json"), `{ model: "gpt-5.5" }`, "utf8");
     const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-repo-"));
     await fs.mkdir(path.join(repoDir, ".oracle"), { recursive: true });
     await fs.writeFile(
@@ -319,7 +315,7 @@ describe("loadUserConfig", () => {
       `{
         model: "gpt-5.5",
         modelOverrides: {
-          "gpt-5.5": { apiModel: "gpt-5.5-mygateway" },
+          "gpt-5.5": { apiModel: "gateway-model" },
         },
       }`,
       "utf8",
@@ -337,7 +333,7 @@ describe("loadUserConfig", () => {
     // Project config can change the allowed `model` setting...
     expect(result.config.model).toBe("gpt-5.4");
     // ...but the user's modelOverrides must survive intact.
-    expect(result.config.modelOverrides?.["gpt-5.5"]?.apiModel).toBe("gpt-5.5-mygateway");
+    expect(result.config.modelOverrides?.["gpt-5.5"]?.apiModel).toBe("gateway-model");
   });
 
   afterAll(() => {

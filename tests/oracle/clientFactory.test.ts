@@ -156,7 +156,7 @@ describe("createDefaultClientFactory", () => {
               choices: [{ message: { role: "assistant", content: "42" } }],
               usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
               created: 0,
-              model: "gpt-5.5-mygateway",
+              model: "gateway-model",
               object: "chat.completion",
             };
           },
@@ -171,7 +171,7 @@ describe("createDefaultClientFactory", () => {
     const client = factory("key", { model: "gpt-5.5", baseUrl: "https://litellm.test/v1" });
 
     await client.responses.create({
-      model: "gpt-5.5-mygateway",
+      model: "gateway-model",
       instructions: "sys",
       input: [{ role: "user", content: [{ type: "input_text", text: "2+2?" }] }],
       reasoning: { effort: "xhigh" },
@@ -180,7 +180,7 @@ describe("createDefaultClientFactory", () => {
 
     expect(captured).toHaveLength(1);
     expect(captured[0]).toMatchObject({
-      model: "gpt-5.5-mygateway",
+      model: "gateway-model",
       reasoning_effort: "xhigh",
       max_tokens: 64,
       stream: false,
