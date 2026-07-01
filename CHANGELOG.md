@@ -2,8 +2,13 @@
 
 ## 0.15.1 — Unreleased
 
+### Added
+
+- API: add user-only `modelOverrides` for remapping known models and their metadata on custom OpenAI-compatible gateways. Fixes #273. Thanks @wangwllu!
+
 ### Fixed
 
+- API: forward configured reasoning effort through custom OpenAI-compatible chat-completions gateways.
 - Browser: wait up to eight seconds for the ChatGPT model/effort composer pill to mount before failing explicit selection, while leaving `option-not-found` failures immediate. Thanks @gustavosmendes!
 
 ## 0.15.0 — 2026-06-19

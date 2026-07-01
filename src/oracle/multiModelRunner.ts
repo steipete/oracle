@@ -13,6 +13,7 @@ import {
 } from "../oracle.js";
 import type { SessionStore } from "../sessionStore.js";
 import { sessionStore } from "../sessionStore.js";
+import { resolveOverriddenApiModel } from "./modelResolver.js";
 import { findOscProgressSequences, OSC_PROGRESS_PREFIX } from "osc-progress";
 
 export interface MultiModelRunParams {
@@ -154,7 +155,9 @@ function startModelExecution({
     const result = await runOracleImpl(
       {
         ...perModelOptions,
-        effectiveModelId: model,
+        // Respect a user-config apiModel override for this known model; falls back
+        // to the canonical model id (unchanged behavior) when no override applies.
+        effectiveModelId: resolveOverriddenApiModel(model, runOptions.modelOverrides) ?? model,
         // Drop per-model preamble; the aggregate runner prints the shared header and tips once.
         suppressHeader: true,
         suppressAnswerHeader: true,

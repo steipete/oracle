@@ -8,7 +8,7 @@ import type {
   BrowserModelStrategy,
   BrowserResearchMode,
 } from "./browser/types.js";
-import type { ThinkingTimeLevel } from "./oracle/types.js";
+import type { ThinkingTimeLevel, ModelOverridesConfig } from "./oracle/types.js";
 
 export type EnginePreference = "api" | "browser";
 
@@ -97,6 +97,13 @@ export interface UserConfig {
   apiBaseUrl?: string;
   azure?: AzureConfig;
   sessionRetentionHours?: number;
+  /**
+   * API-only per-model overrides merged over known model configs (apiModel,
+   * reasoning, inputLimit, pricing). User-config only: intentionally excluded from
+   * {@link sanitizeProjectConfig} so untrusted project configs cannot reroute
+   * model traffic.
+   */
+  modelOverrides?: ModelOverridesConfig;
 }
 
 export const PROJECT_CONFIG_RELATIVE_PATH = path.join(".oracle", "config.json");
@@ -262,6 +269,9 @@ function sanitizeProjectConfig(config: UserConfig): UserConfig {
   if (config.filesReport !== undefined) sanitized.filesReport = config.filesReport;
   if (config.background !== undefined) sanitized.background = config.background;
   if (config.promptSuffix !== undefined) sanitized.promptSuffix = config.promptSuffix;
+  // NOTE: `modelOverrides` is intentionally NOT copied here. Model routing
+  // overrides are user-config only; allowing them from project configs would let
+  // an untrusted repository silently redirect API calls (apiModel) or reasoning.
 
   if (config.browser) {
     sanitized.browser = {};

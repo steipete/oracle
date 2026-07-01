@@ -63,6 +63,47 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(runOptions.model).toBe("gpt-5.1");
   });
 
+  it("threads modelOverrides and sets effectiveModelId from the override apiModel", () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      engine: "api",
+      model: "gpt-5.5",
+      userConfig: {
+        modelOverrides: {
+          "gpt-5.5": { apiModel: "gateway-model", reasoning: { effort: "xhigh" } },
+        },
+      },
+    });
+    // The override apiModel must become the on-wire model id (run.ts sets requestBody.model = effectiveModelId).
+    expect(runOptions.effectiveModelId).toBe("gateway-model");
+    expect(runOptions.modelOverrides?.["gpt-5.5"]?.apiModel).toBe("gateway-model");
+  });
+
+  it("lets modelOverrides.apiModel win over Gemini alias remapping", () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      engine: "api",
+      model: "gemini-3-pro",
+      userConfig: {
+        modelOverrides: { "gemini-3-pro": { apiModel: "gateway-model" } },
+      },
+    });
+    expect(runOptions.effectiveModelId).toBe("gateway-model");
+  });
+
+  it("ignores API model overrides in browser mode", () => {
+    const { runOptions } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      engine: "browser",
+      model: "gpt-5.5",
+      userConfig: {
+        modelOverrides: { "gpt-5.5": { apiModel: "gateway-model" } },
+      },
+    });
+    expect(runOptions.effectiveModelId).toBe("gpt-5.5");
+    expect(runOptions.modelOverrides).toBeUndefined();
+  });
+
   it("appends prompt suffix from config", () => {
     const { runOptions } = resolveRunOptionsFromConfig({
       prompt: "Hi there, this exceeds twenty characters.",

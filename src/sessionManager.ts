@@ -16,6 +16,7 @@ import type {
   AzureOptions,
   BrowserBundleFormat,
   ModelName,
+  ModelOverridesConfig,
   PartialMode,
   ThinkingTimeLevel,
 } from "./oracle.js";
@@ -207,6 +208,7 @@ export interface StoredRunOptions {
   baseUrl?: string;
   azure?: AzureOptions;
   effectiveModelId?: string;
+  modelOverrides?: ModelOverridesConfig;
   renderPlain?: boolean;
   writeOutputPath?: string;
   partialMode?: PartialMode;
@@ -533,6 +535,7 @@ export async function initializeSession(
       followupSessionId: options.followupSessionId,
       followupModel: options.followupModel,
       effectiveModelId: options.effectiveModelId,
+      modelOverrides: options.modelOverrides,
       maxInput: options.maxInput,
       system: options.system,
       maxOutput: options.maxOutput,

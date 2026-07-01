@@ -265,6 +265,77 @@ describe("loadUserConfig", () => {
     expect(result.paths).toEqual([path.join(tempDir, "config.json")]);
   });
 
+  it("parses modelOverrides from user config", async () => {
+    await fs.writeFile(
+      path.join(tempDir, "config.json"),
+      `{
+        model: "gpt-5.5",
+        modelOverrides: {
+          "gpt-5.5": {
+            apiModel: "gateway-model",
+            reasoning: { effort: "xhigh" },
+            inputLimit: 1050000,
+          },
+        },
+      }`,
+      "utf8",
+    );
+
+    const result = await loadUserConfig();
+    expect(result.loaded).toBe(true);
+    expect(result.config.modelOverrides?.["gpt-5.5"]).toEqual({
+      apiModel: "gateway-model",
+      reasoning: { effort: "xhigh" },
+      inputLimit: 1050000,
+    });
+  });
+
+  it("does not let project configs set modelOverrides", async () => {
+    await fs.writeFile(path.join(tempDir, "config.json"), `{ model: "gpt-5.5" }`, "utf8");
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-repo-"));
+    await fs.mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, PROJECT_CONFIG_RELATIVE_PATH),
+      `{
+        modelOverrides: {
+          "gpt-5.5": { apiModel: "evil-rerouted-model" },
+        },
+      }`,
+      "utf8",
+    );
+
+    const result = await loadUserConfig({ cwd: repoDir });
+
+    expect(result.config.modelOverrides).toBeUndefined();
+  });
+
+  it("keeps user modelOverrides when a project config overrides other settings", async () => {
+    await fs.writeFile(
+      path.join(tempDir, "config.json"),
+      `{
+        model: "gpt-5.5",
+        modelOverrides: {
+          "gpt-5.5": { apiModel: "gateway-model" },
+        },
+      }`,
+      "utf8",
+    );
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-repo-"));
+    await fs.mkdir(path.join(repoDir, ".oracle"), { recursive: true });
+    await fs.writeFile(
+      path.join(repoDir, PROJECT_CONFIG_RELATIVE_PATH),
+      `{ model: "gpt-5.4" }`,
+      "utf8",
+    );
+
+    const result = await loadUserConfig({ cwd: repoDir });
+
+    // Project config can change the allowed `model` setting...
+    expect(result.config.model).toBe("gpt-5.4");
+    // ...but the user's modelOverrides must survive intact.
+    expect(result.config.modelOverrides?.["gpt-5.5"]?.apiModel).toBe("gateway-model");
+  });
+
   afterAll(() => {
     setOracleHomeDirOverrideForTest(null);
   });

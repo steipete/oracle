@@ -130,6 +130,113 @@ describe("createDefaultClientFactory", () => {
     });
   });
 
+  test("forwards reasoning effort through the custom-gateway chat/completions adapter", async () => {
+    process.env.ORACLE_CLIENT_FACTORY = "";
+    const captured: Array<Record<string, unknown>> = [];
+
+    class MockOpenAI {
+      responses = {
+        create: async () => ({ id: "unused", status: "completed" }),
+        stream: async () => ({
+          [Symbol.asyncIterator]: () => ({
+            async next() {
+              return { done: true, value: undefined };
+            },
+          }),
+          finalResponse: async () => ({ id: "unused", status: "completed" }),
+        }),
+        retrieve: async (id: string) => ({ id, status: "completed" }),
+      };
+      chat = {
+        completions: {
+          create: async (params: Record<string, unknown>) => {
+            captured.push(params);
+            return {
+              id: "cmpl-test",
+              choices: [{ message: { role: "assistant", content: "42" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              created: 0,
+              model: "gateway-model",
+              object: "chat.completion",
+            };
+          },
+        },
+      };
+    }
+
+    vi.doMock("openai", () => ({ __esModule: true, default: MockOpenAI }));
+
+    const { createDefaultClientFactory } = await import("../../src/oracle/client.js");
+    const factory = createDefaultClientFactory();
+    const client = factory("key", { model: "gpt-5.5", baseUrl: "https://litellm.test/v1" });
+
+    await client.responses.create({
+      model: "gateway-model",
+      instructions: "sys",
+      input: [{ role: "user", content: [{ type: "input_text", text: "2+2?" }] }],
+      reasoning: { effort: "xhigh" },
+      max_output_tokens: 64,
+    });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toMatchObject({
+      model: "gateway-model",
+      reasoning_effort: "xhigh",
+      max_tokens: 64,
+      stream: false,
+    });
+  });
+
+  test("omits reasoning_effort when the request has no reasoning", async () => {
+    process.env.ORACLE_CLIENT_FACTORY = "";
+    const captured: Array<Record<string, unknown>> = [];
+
+    class MockOpenAI {
+      responses = {
+        create: async () => ({ id: "unused", status: "completed" }),
+        stream: async () => ({
+          [Symbol.asyncIterator]: () => ({
+            async next() {
+              return { done: true, value: undefined };
+            },
+          }),
+          finalResponse: async () => ({ id: "unused", status: "completed" }),
+        }),
+        retrieve: async (id: string) => ({ id, status: "completed" }),
+      };
+      chat = {
+        completions: {
+          create: async (params: Record<string, unknown>) => {
+            captured.push(params);
+            return {
+              id: "cmpl-test",
+              choices: [{ message: { role: "assistant", content: "ok" } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              created: 0,
+              model: "m",
+              object: "chat.completion",
+            };
+          },
+        },
+      };
+    }
+
+    vi.doMock("openai", () => ({ __esModule: true, default: MockOpenAI }));
+
+    const { createDefaultClientFactory } = await import("../../src/oracle/client.js");
+    const factory = createDefaultClientFactory();
+    const client = factory("key", { model: "gpt-5.1", baseUrl: "https://litellm.test/v1" });
+
+    await client.responses.create({
+      model: "gpt-5.1",
+      instructions: "sys",
+      input: [{ role: "user", content: [{ type: "input_text", text: "hi" }] }],
+    });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).not.toHaveProperty("reasoning_effort");
+  });
+
   test("creates OpenAI clients for default and Azure paths", async () => {
     process.env.ORACLE_CLIENT_FACTORY = "";
     const { createDefaultClientFactory } = await import("../../src/oracle/client.js");
