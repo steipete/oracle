@@ -8,6 +8,7 @@ import {
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
   isZipArtifact,
+  validateArtifactFile,
   validateZipBuffer,
   writeBinaryBrowserArtifact,
   __test__,
@@ -137,6 +138,32 @@ describe("browser session artifacts", () => {
       type: "zip",
       ok: false,
       error: "zip-too-small",
+    });
+  });
+
+  test("validates ZIP files from bounded file windows", async () => {
+    const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-zip-file-validation-"));
+    const emptyZip = Buffer.from([
+      0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    const validPath = path.join(tmpHome, "valid.zip");
+    const invalidPath = path.join(tmpHome, "invalid.zip");
+    await fs.writeFile(validPath, emptyZip);
+    await fs.writeFile(invalidPath, Buffer.concat([emptyZip, Buffer.from("trailing")]));
+
+    await expect(validateArtifactFile({ path: validPath, filename: "valid.zip" })).resolves.toEqual(
+      {
+        type: "zip",
+        ok: true,
+      },
+    );
+    await expect(
+      validateArtifactFile({ path: invalidPath, filename: "invalid.zip" }),
+    ).resolves.toEqual({
+      type: "zip",
+      ok: false,
+      error: "zip-eocd-size-mismatch",
     });
   });
 

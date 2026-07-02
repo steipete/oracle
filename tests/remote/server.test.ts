@@ -399,7 +399,6 @@ function createArtifactDescriptor(
     runId: "run-id",
     kind: "file",
     filename: "result.zip",
-    label: "result.zip",
     mimeType: "application/zip",
     byteSize: payload.length,
     sha256: createHash("sha256").update(payload).digest("hex"),

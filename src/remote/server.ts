@@ -654,7 +654,6 @@ async function buildRemoteArtifactRegistration(
       runId,
       kind: "file",
       filename,
-      label: artifact.label ?? filename,
       mimeType,
       byteSize: fileStat.size,
       sha256,

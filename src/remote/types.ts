@@ -39,7 +39,6 @@ export interface RemoteArtifactDescriptor {
   runId: string;
   kind: "file";
   filename: string;
-  label?: string;
   mimeType?: string;
   byteSize: number;
   sha256: string;
