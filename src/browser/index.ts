@@ -23,7 +23,7 @@ import {
   closeRemoteChromeTarget,
   closeBlankChromeTabs,
 } from "./chromeLifecycle.js";
-import { syncCookies } from "./cookies.js";
+import { clearChatGptConversationCookies, syncCookies } from "./cookies.js";
 import {
   navigateToChatGPT,
   navigateToPromptReadyWithFallback,
@@ -1201,6 +1201,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           : "Skipping Chrome cookie sync (--browser-no-cookie-sync)",
       );
     }
+    await clearChatGptConversationCookies(Network, logger);
 
     if (cookieSyncEnabled && !manualLogin && (appliedCookies ?? 0) === 0 && !config.inlineCookies) {
       // Learned: if the profile has no ChatGPT cookies, browser mode will just bounce to login.
@@ -2849,6 +2850,7 @@ async function runRemoteBrowserMode(
 
     // Skip cookie sync for remote Chrome - it already has cookies
     logger("Skipping cookie sync for remote Chrome (using existing session)");
+    await clearChatGptConversationCookies(Network, logger);
 
     if (config.resumeConversationUrl) {
       await navigateToChatGPT(Page, Runtime, config.resumeConversationUrl, logger);

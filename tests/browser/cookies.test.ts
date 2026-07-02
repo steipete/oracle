@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { syncCookies, ChromeCookieSyncError } from "../../src/browser/cookies.js";
+import {
+  clearChatGptConversationCookies,
+  syncCookies,
+  ChromeCookieSyncError,
+} from "../../src/browser/cookies.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
 const getCookies = vi.hoisted(() => vi.fn());
@@ -10,6 +14,78 @@ const logger = vi.fn();
 beforeEach(() => {
   getCookies.mockReset();
   logger.mockReset();
+});
+
+describe("clearChatGptConversationCookies", () => {
+  test("deletes only ChatGPT conv cookies", async () => {
+    const deleteCookies = vi.fn().mockResolvedValue(undefined);
+    const Network = {
+      getAllCookies: vi.fn().mockResolvedValue({
+        cookies: [
+          { name: "conv_key_123", domain: "chatgpt.com", path: "/" },
+          { name: "conv_key_456", domain: ".chat.openai.com", path: "/" },
+          { name: "__Secure-next-auth.session-token", domain: "chatgpt.com", path: "/" },
+          { name: "Conversion", domain: "www.googleadservices.com", path: "/" },
+          { name: "conv_tracking", domain: "example.com", path: "/" },
+        ],
+      }),
+      deleteCookies,
+    } as unknown as ChromeClient["Network"];
+
+    const deleted = await clearChatGptConversationCookies(Network, logger);
+
+    expect(deleted).toBe(2);
+    expect(deleteCookies).toHaveBeenCalledTimes(2);
+    expect(deleteCookies).toHaveBeenCalledWith({
+      name: "conv_key_123",
+      domain: "chatgpt.com",
+      path: "/",
+    });
+    expect(deleteCookies).toHaveBeenCalledWith({
+      name: "conv_key_456",
+      domain: ".chat.openai.com",
+      path: "/",
+    });
+    expect(logger).toHaveBeenCalledWith("[cookies] Cleared 2 stale ChatGPT conversation cookies.");
+  });
+
+  test("continues when individual stale cookie deletion fails", async () => {
+    const deleteCookies = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("locked"))
+      .mockResolvedValueOnce(undefined);
+    const Network = {
+      getAllCookies: vi.fn().mockResolvedValue({
+        cookies: [
+          { name: "conv_key_failed", domain: "chatgpt.com", path: "/" },
+          { name: "conv_key_ok", domain: "chatgpt.com", path: "/" },
+        ],
+      }),
+      deleteCookies,
+    } as unknown as ChromeClient["Network"];
+
+    const deleted = await clearChatGptConversationCookies(Network, logger);
+
+    expect(deleted).toBe(1);
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to clear stale ChatGPT conversation cookie conv_key_failed"),
+    );
+    expect(logger).toHaveBeenCalledWith("[cookies] Cleared 1 stale ChatGPT conversation cookie.");
+  });
+
+  test("does not fail browser runs when cookies cannot be inspected", async () => {
+    const Network = {
+      getAllCookies: vi.fn().mockRejectedValue(new Error("devtools unavailable")),
+      deleteCookies: vi.fn(),
+    } as unknown as ChromeClient["Network"];
+
+    const deleted = await clearChatGptConversationCookies(Network, logger);
+
+    expect(deleted).toBe(0);
+    expect(logger).toHaveBeenCalledWith(
+      "[cookies] Failed to inspect ChatGPT conversation cookies: devtools unavailable",
+    );
+  });
 });
 
 describe("syncCookies", () => {

@@ -5,6 +5,47 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 
 export class ChromeCookieSyncError extends Error {}
 
+export async function clearChatGptConversationCookies(
+  Network: ChromeClient["Network"],
+  logger: BrowserLogger,
+): Promise<number> {
+  try {
+    const { cookies = [] } = await Network.getAllCookies();
+    const targets = cookies.filter((cookie) => isChatGptConversationCookie(cookie));
+    if (targets.length === 0) {
+      return 0;
+    }
+
+    let deleted = 0;
+    for (const cookie of targets) {
+      try {
+        await Network.deleteCookies({
+          name: cookie.name,
+          domain: cookie.domain,
+          path: cookie.path ?? "/",
+        });
+        deleted += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger(
+          `[cookies] Failed to clear stale ChatGPT conversation cookie ${cookie.name}: ${message}`,
+        );
+      }
+    }
+
+    if (deleted > 0) {
+      logger(
+        `[cookies] Cleared ${deleted} stale ChatGPT conversation cookie${deleted === 1 ? "" : "s"}.`,
+      );
+    }
+    return deleted;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`[cookies] Failed to inspect ChatGPT conversation cookies: ${message}`);
+    return 0;
+  }
+}
+
 export async function syncCookies(
   Network: ChromeClient["Network"],
   url: string,
@@ -130,6 +171,16 @@ async function readChromeCookies(
   }
 
   return Array.from(merged.values());
+}
+
+function isChatGptConversationCookie(cookie: { name?: string; domain?: string }): boolean {
+  if (!cookie.name?.startsWith("conv")) {
+    return false;
+  }
+  const domain = String(cookie.domain ?? "")
+    .replace(/^\./, "")
+    .toLowerCase();
+  return domain === "chatgpt.com" || domain === "chat.openai.com";
 }
 
 function normalizeInlineCookies(rawCookies: CookieParam[], fallbackHost: string): CookieParam[] {
