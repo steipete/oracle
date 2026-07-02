@@ -166,6 +166,23 @@ export function validateZipBuffer(contents: Buffer): ArtifactValidation {
   return { type: "zip", ok: true };
 }
 
+async function readFileWindow(
+  handle: Awaited<ReturnType<typeof fs.open>>,
+  length: number,
+  position: number,
+): Promise<Buffer | null> {
+  const buffer = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    const result = await handle.read(buffer, offset, length - offset, position + offset);
+    if (result.bytesRead === 0) {
+      return null;
+    }
+    offset += result.bytesRead;
+  }
+  return buffer;
+}
+
 export async function validateZipFile(targetPath: string): Promise<ArtifactValidation> {
   const handle = await fs.open(targetPath, "r");
   try {
@@ -174,9 +191,8 @@ export async function validateZipFile(targetPath: string): Promise<ArtifactValid
       return { type: "zip", ok: false, error: "zip-too-small" };
     }
 
-    const first = Buffer.alloc(4);
-    const firstRead = await handle.read(first, 0, first.length, 0);
-    if (firstRead.bytesRead !== first.length) {
+    const first = await readFileWindow(handle, 4, 0);
+    if (!first) {
       return { type: "zip", ok: false, error: "zip-too-small" };
     }
     const firstSignature = first.readUInt32LE(0);
@@ -192,9 +208,8 @@ export async function validateZipFile(targetPath: string): Promise<ArtifactValid
       ZIP_EMPTY_ARCHIVE_LENGTH + ZIP_MAX_EOCD_COMMENT_BYTES,
     );
     const tailStart = fileStat.size - tailLength;
-    const tail = Buffer.alloc(tailLength);
-    const tailRead = await handle.read(tail, 0, tail.length, tailStart);
-    if (tailRead.bytesRead !== tail.length) {
+    const tail = await readFileWindow(handle, tailLength, tailStart);
+    if (!tail) {
       return { type: "zip", ok: false, error: "zip-central-directory-missing" };
     }
 
