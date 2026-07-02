@@ -1248,6 +1248,8 @@ function buildActivateDeepResearchExpression(): string {
     const isDeepResearchText = (text) => (
       text === target ||
       text.startsWith(target + ' ') ||
+      text === 'get a detailed report' ||
+      text.startsWith('get a detailed report ') ||
       (text.includes(target) && text.includes('detailed report')) ||
       text.replace(/\\s+/g, '').startsWith('deepresearch')
     );

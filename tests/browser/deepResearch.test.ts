@@ -177,6 +177,8 @@ describe("Deep Research activation expression", () => {
     expect(expression).toContain(".__menu-item");
     expect(expression).toContain("popover");
     expect(expression).toContain("detailed report");
+    expect(expression).toContain("text === 'get a detailed report'");
+    expect(expression).toContain("text.startsWith('get a detailed report ')");
     expect(expression).toContain('[class*="composer-pill"]');
     expect(expression).toContain("deep research");
     expect(expression).toContain("already-active");
