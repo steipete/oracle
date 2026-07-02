@@ -93,5 +93,3 @@ export const DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS = 70_000;
 export const DEEP_RESEARCH_DEFAULT_TIMEOUT_MS = 2_400_000;
 export const FINISHED_ACTIONS_SELECTOR =
   'button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';
-// Shorter completion-UI captures need watchdog stability confirmation.
-export const MIN_TRUSTWORTHY_ANSWER_CHARS = 80;

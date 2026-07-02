@@ -883,12 +883,14 @@ describe("waitForAssistantResponse", () => {
     }
   });
 
-  test("re-polls a short completion capture until the full answer is stable", async () => {
+  test("re-polls a completion capture longer than 80 characters until the full answer is stable", async () => {
     vi.useFakeTimers();
     try {
-      const short = { text: "The first line.", messageId: "mid", turnId: "tid" };
+      const partialText =
+        "The first paragraph already exceeds eighty characters, but the answer is still rendering during the transition.";
+      const partial = { text: partialText, messageId: "mid", turnId: "tid" };
       const complete = {
-        text: "The first line. This is the rest of the answer after the thinking transition finished.",
+        text: `${partialText} This is the rest of the answer after the thinking transition finished.`,
         messageId: "mid",
         turnId: "tid",
       };
@@ -897,7 +899,7 @@ describe("waitForAssistantResponse", () => {
         .fn()
         .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
           if (params.awaitPromise) {
-            return { result: { type: "object", value: short } };
+            return { result: { type: "object", value: partial } };
           }
           const expression = String(params.expression ?? "");
           if (expression.includes("extractAssistantTurn")) {
@@ -905,7 +907,7 @@ describe("waitForAssistantResponse", () => {
             if (snapshotCalls === 1) {
               await new Promise((resolve) => setTimeout(resolve, 50));
             }
-            return { result: { value: snapshotCalls <= 5 ? short : complete } };
+            return { result: { value: snapshotCalls <= 5 ? partial : complete } };
           }
           if (expression.includes("Find the LAST assistant turn")) {
             return { result: { value: true } };
@@ -922,7 +924,7 @@ describe("waitForAssistantResponse", () => {
 
       await expect(promise).resolves.toMatchObject({ text: complete.text });
       expect(logger).toHaveBeenCalledWith(
-        "Captured suspiciously short answer at completion; re-polling for completion",
+        "Completion controls surfaced; confirming stable assistant response",
       );
     } finally {
       vi.useRealTimers();
@@ -957,6 +959,9 @@ describe("waitForAssistantResponse", () => {
       await vi.advanceTimersByTimeAsync(15_000);
 
       await expect(promise).resolves.toMatchObject({ text: "Yes." });
+      expect(logger).toHaveBeenCalledWith(
+        "Completion controls surfaced; confirming stable assistant response",
+      );
     } finally {
       vi.useRealTimers();
     }

@@ -5,7 +5,6 @@ import {
   CONVERSATION_TURN_SELECTOR,
   COPY_BUTTON_SELECTOR,
   FINISHED_ACTIONS_SELECTOR,
-  MIN_TRUSTWORTHY_ANSWER_CHARS,
   STOP_BUTTON_SELECTOR,
 } from "../constants.js";
 import { delay } from "../utils.js";
@@ -234,14 +233,14 @@ export async function waitForAssistantResponse(
       isCompletionVisible(Runtime),
     ]);
     // Completion controls can appear briefly while Pro is still replacing its thinking UI.
-    // Confirm short captures with the stability-based watchdog before trusting them.
+    // Confirm every capture from that transition with the stability-based watchdog; a
+    // partial first paragraph can be arbitrarily long.
     const candidateText = String(candidate?.text ?? "").trim();
-    const suspiciousRace = completionVisible && candidateText.length < MIN_TRUSTWORTHY_ANSWER_CHARS;
-    if (stopVisible || suspiciousRace) {
+    if (stopVisible || completionVisible) {
       logger(
         stopVisible
           ? "Assistant still generating; waiting for completion"
-          : "Captured suspiciously short answer at completion; re-polling for completion",
+          : "Completion controls surfaced; confirming stable assistant response",
       );
       const completed = await pollAssistantCompletion(
         Runtime,
@@ -252,9 +251,6 @@ export async function waitForAssistantResponse(
       if (completed && String(completed.text ?? "").trim().length >= candidateText.length) {
         return completed;
       }
-    } else if (completionVisible) {
-      // No-op: completion UI surfaced, stop button is gone, and the captured answer is
-      // long enough to trust.
     }
   }
 
