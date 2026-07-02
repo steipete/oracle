@@ -24,8 +24,8 @@ type ActivateOutcome =
   | { status: "pill-not-confirmed"; clickPoint?: { x?: number; y?: number } };
 
 /**
- * Activates Deep Research mode through ChatGPT's slash command, with the
- * composer tools menu as a fallback for older UI variants.
+ * Activates Deep Research mode through ChatGPT's composer tools menu and
+ * verifies the selected tool pill before prompt submission.
  */
 export async function activateDeepResearch(
   Runtime: ChromeClient["Runtime"],
@@ -1131,7 +1131,6 @@ function buildFindDeepResearchPillExpression(functionName = "findDeepResearchPil
         '.__composer-pill-composite',
         '.__composer-pill',
         '[class*="composer-pill"]',
-        '[class*="pill"]',
       ].join(',');
       const candidates = Array.from(document.querySelectorAll(selectors));
       const composerRoots = Array.from(document.querySelectorAll('[data-testid="composer"], form, [class*="composer"]'));
@@ -1208,6 +1207,7 @@ function buildActivateDeepResearchExpression(): string {
       '[role="menuitemradio"]',
       '[role="option"]',
       '[cmdk-item]',
+      'button',
       '.__menu-item',
       '[class*="__menu-item"]',
       '[class*="menu-item"]',

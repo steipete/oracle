@@ -163,7 +163,7 @@ oracle --engine browser \
   -p "Research the current browser support for WebGPU in enterprise-managed Chrome and cite sources."
 ```
 
-Oracle activates ChatGPT Deep Research through the composer `/Deepresearch` command and falls back to the composer tools menu when the slash flow is not available. It waits for the research plan to auto-confirm, logs high-level progress, then captures the final report from the Deep Research report surface instead of trusting the assistant tool-call wrapper.
+Oracle activates ChatGPT Deep Research through the composer tools menu, recognizing both the `Deep research` label and current `Get a detailed report` menu variants. It waits for the research plan to auto-confirm, logs high-level progress, then captures the final report from the Deep Research report surface instead of trusting the assistant tool-call wrapper.
 
 If ChatGPT initially exposes only `Called tool` / `Used tool`, Oracle treats that as an incomplete capture for Deep Research rather than a final answer. Reattach the existing session with `oracle session <id> --render` so Oracle can recover the lazy-loaded report from the existing Chrome tab; do not rerun the research unless the browser session is unrecoverable.
 
