@@ -20,13 +20,24 @@ describe("runBrowserSessionExecution", () => {
     const log = vi.fn();
     const persistRuntimeHint = vi.fn();
     const executeBrowser = vi.fn(async (options) => {
-      await options.runtimeHintCb?.({
-        chromePort: 9999,
-        chromeHost: "127.0.0.1",
-        chromeTargetId: "t-1",
-        tabUrl: "https://chatgpt.com/c/foo",
-        conversationId: "foo",
-      });
+      await options.runtimeHintCb?.(
+        {
+          chromePort: 9999,
+          chromeHost: "127.0.0.1",
+          chromeTargetId: "t-1",
+          tabUrl: "https://chatgpt.com/c/foo",
+          conversationId: "foo",
+        },
+        {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-03T00:00:00.000Z",
+        },
+      );
       return {
         answerText: "ok",
         answerMarkdown: "ok",
@@ -70,6 +81,7 @@ describe("runBrowserSessionExecution", () => {
     expect(result.artifacts).toEqual([{ kind: "transcript", path: "/tmp/transcript.md" }]);
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
+      expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
     );
     expect(log).toHaveBeenCalled();
   });

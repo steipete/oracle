@@ -6,6 +6,7 @@ import type {
   SessionMode,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
+  BrowserModelSelectionEvidence,
   SessionArtifact,
   SessionModelRun,
 } from "../sessionStore.js";
@@ -87,6 +88,9 @@ export async function performSessionRun({
     write(chunk);
     return muteStdout ? true : process.stdout.write(chunk);
   };
+  let currentBrowser: SessionMetadata["browser"] = browserConfig
+    ? { config: browserConfig }
+    : sessionMeta.browser;
   await sessionStore.updateSession(sessionMeta.id, {
     status: "running",
     startedAt: new Date().toISOString(),
@@ -109,14 +113,22 @@ export async function performSessionRun({
       }
       const runnerDeps = {
         ...browserDeps,
-        persistRuntimeHint: async (runtime: BrowserRuntimeMetadata) => {
+        persistRuntimeHint: async (
+          runtime: BrowserRuntimeMetadata,
+          modelSelection?: BrowserModelSelectionEvidence,
+        ) => {
+          const browser = {
+            config: browserConfig,
+            runtime,
+            ...(modelSelection ? { modelSelection } : {}),
+          };
           await sessionStore.updateSession(sessionMeta.id, {
             status: "running",
-            browser: { config: browserConfig, runtime },
+            browser,
           });
-          // Keep the in-memory copy fresh so error paths fall back to the
-          // latest persisted runtime instead of clobbering it with undefined.
-          sessionMeta.browser = { config: browserConfig, runtime };
+          // Keep this attempt's copy fresh so error paths fall back to the
+          // latest persisted browser evidence instead of stale session input.
+          currentBrowser = browser;
         },
       };
       const result = await runBrowserSessionExecution(
@@ -525,7 +537,7 @@ export async function performSessionRun({
     if (connectionLost && mode === "browser" && browserCanReattach) {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
-      const recoverableRuntime = runtime ?? sessionMeta.browser?.runtime;
+      const recoverableRuntime = runtime ?? currentBrowser?.runtime;
       if (
         !hasRecoverableChatGptConversation(recoverableRuntime) &&
         recoverableRuntime?.promptSubmitted !== true
@@ -553,6 +565,7 @@ export async function performSessionRun({
           errorMessage: message,
           mode,
           browser: {
+            ...currentBrowser,
             config: browserConfig,
             runtime: recoverableRuntime,
           },
@@ -577,8 +590,9 @@ export async function performSessionRun({
         errorMessage: message,
         mode,
         browser: {
+          ...currentBrowser,
           config: browserConfig,
-          runtime: runtime ?? sessionMeta.browser?.runtime,
+          runtime: runtime ?? currentBrowser?.runtime,
         },
         response: { status: "running", incompleteReason: "chrome-disconnected" },
       });
@@ -607,8 +621,9 @@ export async function performSessionRun({
         errorMessage: message,
         mode,
         browser: {
+          ...currentBrowser,
           config: browserConfig,
-          runtime: runtime ?? sessionMeta.browser?.runtime,
+          runtime: runtime ?? currentBrowser?.runtime,
         },
         response: { status: "incomplete", incompleteReason: "incomplete-capture" },
         error: {
@@ -619,11 +634,12 @@ export async function performSessionRun({
       });
       const autoReattachIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
       if (autoReattachIntervalMs > 0) {
-        const autoRuntime = runtime ?? sessionMeta.browser?.runtime;
+        const autoRuntime = runtime ?? currentBrowser?.runtime;
         const success = await autoReattachUntilComplete({
           sessionMeta,
           runtime: autoRuntime ?? undefined,
           browserConfig,
+          browserMetadata: currentBrowser,
           runOptions,
           modelForStatus,
           notificationSettings,
@@ -633,7 +649,7 @@ export async function performSessionRun({
           return;
         }
       }
-      logBrowserReattachGuidance(runtime ?? sessionMeta.browser?.runtime);
+      logBrowserReattachGuidance(runtime ?? currentBrowser?.runtime);
       return;
     }
     if (cloudflareChallenge && mode === "browser") {
@@ -668,7 +684,7 @@ export async function performSessionRun({
         ? (userError?.details as { runtime?: BrowserRuntimeMetadata } | undefined)?.runtime
         : undefined;
     if (!cloudflareChallenge && browserCanReattach) {
-      logBrowserReattachGuidance(browserRuntime ?? sessionMeta.browser?.runtime);
+      logBrowserReattachGuidance(browserRuntime ?? currentBrowser?.runtime);
     }
     await sessionStore.updateSession(sessionMeta.id, {
       status: "error",
@@ -677,8 +693,9 @@ export async function performSessionRun({
       mode,
       browser: browserConfig
         ? {
+            ...currentBrowser,
             config: browserConfig,
-            runtime: browserRuntime ?? sessionMeta.browser?.runtime,
+            runtime: browserRuntime ?? currentBrowser?.runtime,
           }
         : undefined,
       response: responseMetadata,
@@ -1062,6 +1079,7 @@ async function autoReattachUntilComplete({
   sessionMeta,
   runtime,
   browserConfig,
+  browserMetadata,
   runOptions,
   modelForStatus,
   notificationSettings,
@@ -1070,6 +1088,7 @@ async function autoReattachUntilComplete({
   sessionMeta: SessionMetadata;
   runtime?: BrowserRuntimeMetadata;
   browserConfig?: BrowserSessionConfig;
+  browserMetadata?: SessionMetadata["browser"];
   runOptions: RunOracleOptions;
   modelForStatus?: string;
   notificationSettings: NotificationSettings;
@@ -1164,6 +1183,7 @@ async function autoReattachUntilComplete({
         },
         errorMessage: undefined,
         browser: {
+          ...browserMetadata,
           config: browserConfig,
           runtime,
         },

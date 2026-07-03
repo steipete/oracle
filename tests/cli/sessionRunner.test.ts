@@ -1190,10 +1190,26 @@ describe("performSessionRun", () => {
       stage: "execute-browser",
     });
     vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+    const staleSessionMeta = {
+      ...baseSessionMeta,
+      browser: {
+        config: { desiredModel: "Old Pro" },
+        runtime: { promptSubmitted: true, tabUrl: "https://chatgpt.com/c/old" },
+        modelSelection: {
+          requestedModel: "Old Pro",
+          resolvedLabel: "Old Pro",
+          strategy: "select" as const,
+          status: "already-selected" as const,
+          verified: true,
+          source: "chatgpt-model-picker" as const,
+          capturedAt: "2026-07-02T00:00:00.000Z",
+        },
+      },
+    };
 
     await expect(
       performSessionRun({
-        sessionMeta: baseSessionMeta,
+        sessionMeta: staleSessionMeta,
         runOptions: baseRunOptions,
         mode: "browser",
         browserConfig: { chromePath: null },
@@ -1210,6 +1226,8 @@ describe("performSessionRun", () => {
       errorMessage: "automation failed",
       browser: expect.objectContaining({ config: expect.any(Object) }),
     });
+    expect(finalUpdate?.browser?.runtime).toBeUndefined();
+    expect(finalUpdate?.browser).not.toHaveProperty("modelSelection");
     expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
       baseSessionMeta.id,
       "gpt-5.2-pro",
@@ -1230,13 +1248,29 @@ describe("performSessionRun", () => {
       // Simulate the runtime hint emitted right after the send click,
       // before commit verification fails.
       await (
-        deps as { persistRuntimeHint?: (runtime: Record<string, unknown>) => Promise<void> }
-      ).persistRuntimeHint?.({
-        chromePort: 9222,
-        chromeHost: "127.0.0.1",
-        tabUrl: "https://chatgpt.com/c/demo",
-        promptSubmitted: true,
-      });
+        deps as {
+          persistRuntimeHint?: (
+            runtime: Record<string, unknown>,
+            modelSelection?: Record<string, unknown>,
+          ) => Promise<void>;
+        }
+      ).persistRuntimeHint?.(
+        {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+        {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-03T00:00:00.000Z",
+        },
+      );
       throw automationError;
     });
 
@@ -1262,6 +1296,7 @@ describe("performSessionRun", () => {
           promptSubmitted: true,
           tabUrl: "https://chatgpt.com/c/demo",
         }),
+        modelSelection: expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
       }),
       error: expect.objectContaining({
         details: expect.objectContaining({ code: "prompt-commit-timeout" }),
@@ -1281,7 +1316,26 @@ describe("performSessionRun", () => {
         },
       },
     );
-    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async (_args, deps) => {
+      await deps?.persistRuntimeHint?.(
+        {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+        {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-03T00:00:00.000Z",
+        },
+      );
+      throw automationError;
+    });
 
     await performSessionRun({
       sessionMeta: baseSessionMeta,
@@ -1298,7 +1352,10 @@ describe("performSessionRun", () => {
     expect(finalUpdate).toMatchObject({
       status: "running",
       response: { status: "running", incompleteReason: "chrome-disconnected" },
-      browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePort: 9222 }) }),
+      browser: expect.objectContaining({
+        runtime: expect.objectContaining({ chromePort: 9222 }),
+        modelSelection: expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
+      }),
     });
     expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
       baseSessionMeta.id,
@@ -1421,7 +1478,26 @@ describe("performSessionRun", () => {
         },
       },
     );
-    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async (_args, deps) => {
+      await deps?.persistRuntimeHint?.(
+        {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+        {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-03T00:00:00.000Z",
+        },
+      );
+      throw automationError;
+    });
 
     await performSessionRun({
       sessionMeta: baseSessionMeta,
@@ -1438,7 +1514,10 @@ describe("performSessionRun", () => {
     expect(finalUpdate).toMatchObject({
       status: "error",
       response: { status: "incomplete", incompleteReason: "incomplete-capture" },
-      browser: expect.objectContaining({ runtime: expect.objectContaining({ chromePort: 9222 }) }),
+      browser: expect.objectContaining({
+        runtime: expect.objectContaining({ chromePort: 9222 }),
+        modelSelection: expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
+      }),
       error: expect.objectContaining({
         details: expect.objectContaining({
           code: "chatgpt-ui-warning",
@@ -1601,7 +1680,26 @@ describe("performSessionRun", () => {
       stage: "assistant-timeout",
       runtime: { chromePort: 9222, chromeHost: "127.0.0.1", tabUrl: "https://chatgpt.com/c/demo" },
     });
-    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async (_args, deps) => {
+      await deps?.persistRuntimeHint?.(
+        {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+        {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-03T00:00:00.000Z",
+        },
+      );
+      throw automationError;
+    });
     vi.mocked(resumeBrowserSession).mockResolvedValue({
       answerText: "ok text",
       answerMarkdown: "ok markdown",
@@ -1644,6 +1742,9 @@ describe("performSessionRun", () => {
         { kind: "deep-research-report", path: "/tmp/deep-research-report.md" },
       ],
       response: { status: "completed" },
+      browser: expect.objectContaining({
+        modelSelection: expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
+      }),
     });
     expect(vi.mocked(sendSessionNotification)).toHaveBeenCalled();
   });

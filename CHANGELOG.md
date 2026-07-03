@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Browser: retain runtime, model-selection, and redacted prompt-commit diagnostics in failed session metadata when ChatGPT submission verification times out. Fixes #286. Thanks @LeoLin990405!
 - API: forward configured reasoning effort through custom OpenAI-compatible chat-completions gateways.
 - Browser: accept a stable, exact file-input name match when ChatGPT marks the composer ready but exposes no attachment chip or count, while still waiting through active uploads and rejecting missing or extra files. Fixes #275. Thanks @wangwllu!
 - Browser: avoid returning truncated Pro answers when completion controls appear during the thinking-to-answer transition. Thanks @xuan-wei!
