@@ -114,6 +114,9 @@ export async function performSessionRun({
             status: "running",
             browser: { config: browserConfig, runtime },
           });
+          // Keep the in-memory copy fresh so error paths fall back to the
+          // latest persisted runtime instead of clobbering it with undefined.
+          sessionMeta.browser = { config: browserConfig, runtime };
         },
       };
       const result = await runBrowserSessionExecution(
@@ -675,7 +678,7 @@ export async function performSessionRun({
       browser: browserConfig
         ? {
             config: browserConfig,
-            runtime: browserRuntime ?? undefined,
+            runtime: browserRuntime ?? sessionMeta.browser?.runtime,
           }
         : undefined,
       response: responseMetadata,

@@ -1221,6 +1221,54 @@ describe("performSessionRun", () => {
     expect(logLines).not.toContain("This run did not return cleanly");
   });
 
+  test("preserves persisted runtime hints when browser automation fails without runtime details", async () => {
+    const automationError = new BrowserAutomationError(
+      "Prompt did not appear in conversation before timeout (send may have failed)",
+      { stage: "submit-prompt", code: "prompt-commit-timeout" },
+    );
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async (_args, deps) => {
+      // Simulate the runtime hint emitted right after the send click,
+      // before commit verification fails.
+      await (
+        deps as { persistRuntimeHint?: (runtime: Record<string, unknown>) => Promise<void> }
+      ).persistRuntimeHint?.({
+        chromePort: 9222,
+        chromeHost: "127.0.0.1",
+        tabUrl: "https://chatgpt.com/c/demo",
+        promptSubmitted: true,
+      });
+      throw automationError;
+    });
+
+    await expect(
+      performSessionRun({
+        sessionMeta: { ...baseSessionMeta },
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow(/prompt did not appear/i);
+
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "error",
+      browser: expect.objectContaining({
+        config: expect.any(Object),
+        runtime: expect.objectContaining({
+          promptSubmitted: true,
+          tabUrl: "https://chatgpt.com/c/demo",
+        }),
+      }),
+      error: expect.objectContaining({
+        details: expect.objectContaining({ code: "prompt-commit-timeout" }),
+      }),
+    });
+  });
+
   test("keeps session running when browser connection is lost", async () => {
     const automationError = new BrowserAutomationError(
       "Chrome window closed before oracle finished.",

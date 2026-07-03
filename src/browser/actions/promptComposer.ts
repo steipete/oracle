@@ -888,20 +888,13 @@ async function verifyPromptCommitted(
     };
   })()`;
 
+  let lastProbe: CommitProbeState | undefined;
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
-    const info = result.value as {
-      baseline?: number;
-      userMatched?: boolean;
-      prefixMatched?: boolean;
-      lastMatched?: boolean;
-      hasNewTurn?: boolean;
-      stopVisible?: boolean;
-      assistantVisible?: boolean;
-      composerCleared?: boolean;
-      inConversation?: boolean;
-      turnsCount?: number;
-    };
+    const info = result.value as CommitProbeState | undefined;
+    if (info && typeof info === "object") {
+      lastProbe = info;
+    }
     const turnsCount = (result.value as { turnsCount?: number } | undefined)?.turnsCount;
     const matchesPrompt = Boolean(info?.lastMatched || info?.userMatched || info?.prefixMatched);
     const baselineUnknown =
@@ -918,14 +911,13 @@ async function verifyPromptCommitted(
     }
     await delay(100);
   }
+  const finalProbe = await Runtime.evaluate({ expression: script, returnByValue: true })
+    .then((res) => res?.result?.value as CommitProbeState | undefined)
+    .catch(() => undefined);
+  const probe = finalProbe && typeof finalProbe === "object" ? finalProbe : lastProbe;
   if (logger) {
     logger(
-      `Prompt commit check failed; latest state: ${await Runtime.evaluate({
-        expression: script,
-        returnByValue: true,
-      })
-        .then((res) => JSON.stringify(res?.result?.value))
-        .catch(() => "unavailable")}`,
+      `Prompt commit check failed; latest state: ${probe ? JSON.stringify(probe) : "unavailable"}`,
     );
     await logDomFailure(Runtime, logger, "prompt-commit");
   }
@@ -940,7 +932,51 @@ async function verifyPromptCommitted(
       },
     );
   }
-  throw new Error("Prompt did not appear in conversation before timeout (send may have failed)");
+  throw new BrowserAutomationError(
+    "Prompt did not appear in conversation before timeout (send may have failed)",
+    {
+      stage: "submit-prompt",
+      code: "prompt-commit-timeout",
+      promptLength: prompt.trim().length,
+      timeoutMs,
+      commitProbe: probe ? summarizeCommitProbe(probe) : undefined,
+    },
+  );
+}
+
+interface CommitProbeState {
+  baseline?: number;
+  userMatched?: boolean;
+  prefixMatched?: boolean;
+  lastMatched?: boolean;
+  hasNewTurn?: boolean;
+  stopVisible?: boolean;
+  assistantVisible?: boolean;
+  composerCleared?: boolean;
+  inConversation?: boolean;
+  turnsCount?: number;
+  href?: string;
+  editorValue?: string;
+  fallbackValue?: string;
+  lastTurn?: string;
+}
+
+// Keep booleans/counts but replace free text with lengths so session metadata stays lean.
+function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> {
+  return {
+    baseline: probe.baseline,
+    turnsCount: probe.turnsCount,
+    userMatched: probe.userMatched,
+    prefixMatched: probe.prefixMatched,
+    lastMatched: probe.lastMatched,
+    hasNewTurn: probe.hasNewTurn,
+    stopVisible: probe.stopVisible,
+    assistantVisible: probe.assistantVisible,
+    composerCleared: probe.composerCleared,
+    inConversation: probe.inConversation,
+    editorLength: typeof probe.editorValue === "string" ? probe.editorValue.length : undefined,
+    lastTurnLength: typeof probe.lastTurn === "string" ? probe.lastTurn.length : undefined,
+  };
 }
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite

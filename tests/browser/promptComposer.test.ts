@@ -60,6 +60,68 @@ describe("promptComposer", () => {
     }
   });
 
+  test("commit timeout throws a structured error with probe diagnostics", async () => {
+    vi.useFakeTimers();
+    try {
+      const probe = {
+        baseline: 10,
+        turnsCount: 10,
+        userMatched: false,
+        prefixMatched: false,
+        lastMatched: false,
+        hasNewTurn: false,
+        stopVisible: false,
+        assistantVisible: false,
+        composerCleared: true,
+        inConversation: false,
+        editorValue: "",
+        lastTurn: "previous turn text",
+      };
+      const runtime = {
+        evaluate: vi
+          .fn()
+          // Baseline read (turn count)
+          .mockResolvedValueOnce({ result: { value: 10 } })
+          // Polls + final diagnostic probe
+          .mockResolvedValue({ result: { value: probe } }),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.verifyPromptCommitted(runtime as never, "hello", 150);
+      const assertion = promise.then(
+        () => {
+          throw new Error("expected verifyPromptCommitted to reject");
+        },
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(250);
+      const error = (await assertion) as {
+        name?: string;
+        details?: Record<string, unknown>;
+        message?: string;
+      };
+      expect(error.message).toMatch(/prompt did not appear/i);
+      expect(error.name).toBe("BrowserAutomationError");
+      expect(error.details).toMatchObject({
+        stage: "submit-prompt",
+        code: "prompt-commit-timeout",
+        commitProbe: expect.objectContaining({
+          hasNewTurn: false,
+          composerCleared: true,
+          turnsCount: 10,
+          lastTurnLength: "previous turn text".length,
+        }),
+      });
+      // Free text must not leak into the structured details.
+      const commitProbe = error.details?.commitProbe as Record<string, unknown>;
+      expect(commitProbe).not.toHaveProperty("lastTurn");
+      expect(commitProbe).not.toHaveProperty("editorValue");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("allows prompt match even if baseline turn count cannot be read", async () => {
     const runtime = {
       evaluate: vi
