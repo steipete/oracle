@@ -46,7 +46,10 @@ interface RunBrowserSessionArgs {
 export interface BrowserSessionRunnerDeps {
   assemblePrompt?: typeof assembleBrowserPrompt;
   executeBrowser?: typeof runBrowserMode;
-  persistRuntimeHint?: (runtime: BrowserRuntimeMetadata) => Promise<void> | void;
+  persistRuntimeHint?: (
+    runtime: BrowserRuntimeMetadata,
+    modelSelection?: BrowserModelSelectionEvidence,
+  ) => Promise<void> | void;
 }
 
 const LARGE_PRO_FAST_INPUT_TOKEN_THRESHOLD = 25_000;
@@ -215,11 +218,16 @@ export async function runBrowserSessionExecution(
       generateImagePath: runOptions.generateImage,
       outputPath: runOptions.outputPath,
       followUpPrompts: runOptions.browserFollowUps,
-      runtimeHintCb: async (runtime) => {
-        await persistRuntimeHint({
+      runtimeHintCb: async (runtime, modelSelection) => {
+        const runtimeWithController = {
           ...runtime,
           controllerPid: runtime.controllerPid ?? process.pid,
-        });
+        };
+        if (modelSelection) {
+          await persistRuntimeHint(runtimeWithController, modelSelection);
+        } else {
+          await persistRuntimeHint(runtimeWithController);
+        }
       },
     });
   } catch (error) {

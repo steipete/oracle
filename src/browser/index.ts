@@ -883,6 +883,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let tabLease: BrowserTabLease | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
@@ -901,7 +902,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       controllerPid: process.pid,
     };
     try {
-      await runtimeHintCb?.(hint);
+      await runtimeHintCb?.(hint, modelSelectionEvidence);
       await tabLease?.update({
         chromeHost,
         chromePort: chrome.port,
@@ -1073,7 +1074,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let answerMarkdown = "";
   let answerHtml = "";
   let runStatus: "attempted" | "complete" = "attempted";
-  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let connectionClosedUnexpectedly = false;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
@@ -2728,23 +2728,27 @@ async function runRemoteBrowserMode(
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let attachedExistingTab = false;
   let ownsTarget = true;
   const runtimeHintCb = options.runtimeHintCb;
   const emitRuntimeHint = async () => {
     if (!runtimeHintCb) return;
     try {
-      await runtimeHintCb({
-        chromePort: port,
-        chromeHost: host,
-        chromeBrowserWSEndpoint: browserWSEndpoint,
-        chromeProfileRoot,
-        chromeTargetId: remoteTargetId ?? undefined,
-        tabUrl: lastUrl,
-        conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-        promptSubmitted,
-        controllerPid: process.pid,
-      });
+      await runtimeHintCb(
+        {
+          chromePort: port,
+          chromeHost: host,
+          chromeBrowserWSEndpoint: browserWSEndpoint,
+          chromeProfileRoot,
+          chromeTargetId: remoteTargetId ?? undefined,
+          tabUrl: lastUrl,
+          conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+          promptSubmitted,
+          controllerPid: process.pid,
+        },
+        modelSelectionEvidence,
+      );
       await tabLease?.update({
         chromeHost: host,
         chromePort: port,
@@ -2769,7 +2773,6 @@ async function runRemoteBrowserMode(
   let answerHtml = "";
   let connectionClosedUnexpectedly = false;
   let runStatus: "attempted" | "complete" = "attempted";
-  let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
   let connection: Awaited<ReturnType<typeof connectToRemoteChrome>> | null = null;
