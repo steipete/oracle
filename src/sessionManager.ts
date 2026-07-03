@@ -337,6 +337,16 @@ interface InitializeSessionOptions extends StoredRunOptions {
   model: string;
 }
 
+interface InitializeImportedBrowserSessionOptions {
+  conversationUrl: string;
+  conversationId: string;
+  model: ModelName;
+  slug?: string;
+  force?: boolean;
+  cwd?: string;
+  browserConfig: BrowserSessionConfig;
+}
+
 export function getSessionsDir(): string {
   return path.join(getOracleHomeDir(), "sessions");
 }
@@ -621,6 +631,67 @@ export async function initializeSession(
   );
   await fs.writeFile(logPath(sessionId), "", "utf8");
   return metadata;
+}
+
+export async function initializeImportedBrowserSession(
+  options: InitializeImportedBrowserSessionOptions,
+): Promise<SessionMetadata> {
+  await ensureSessionStorage();
+  const promptPreview = "Imported ChatGPT conversation";
+  const sessionId = createSessionId(`${promptPreview} ${options.conversationId}`, options.slug);
+  const dir = sessionDir(sessionId);
+  if (await fileExists(dir)) {
+    if (!options.force) {
+      throw new Error(
+        `Session "${sessionId}" already exists. Re-run with --force to overwrite it.`,
+      );
+    }
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+
+  await initializeSession(
+    {
+      prompt: promptPreview,
+      model: options.model,
+      mode: "browser",
+      browserConfig: options.browserConfig,
+      slug: sessionId,
+    },
+    options.cwd ?? process.cwd(),
+    undefined,
+    sessionId,
+  );
+  const completedAt = new Date().toISOString();
+  const modelRun: SessionModelRun = {
+    model: options.model,
+    status: "completed",
+    completedAt,
+    log: {
+      path: path.relative(sessionDir(sessionId), modelLogPath(sessionId, options.model)),
+    },
+  };
+  await updateModelRunMetadata(sessionId, options.model, modelRun);
+  return await updateSessionMetadata(sessionId, {
+    status: "completed",
+    completedAt,
+    promptPreview,
+    mode: "browser",
+    model: options.model,
+    models: [modelRun],
+    browser: {
+      config: options.browserConfig,
+      runtime: {
+        tabUrl: options.conversationUrl,
+        conversationId: options.conversationId,
+      },
+      harvest: {
+        url: options.conversationUrl,
+        conversationId: options.conversationId,
+        harvestedAt: completedAt,
+        state: "completed",
+      },
+    },
+  });
 }
 
 export async function readSessionMetadata(sessionId: string): Promise<SessionMetadata | null> {
