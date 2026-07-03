@@ -1,6 +1,10 @@
 import type { BrowserLogger, ChromeClient } from "../types.js";
 import { formatElapsed } from "../../oracle/format.js";
-import { ASSISTANT_ROLE_SELECTOR, CONVERSATION_TURN_SELECTOR } from "../constants.js";
+import {
+  ASSISTANT_ROLE_SELECTOR,
+  CONVERSATION_TURN_SELECTOR,
+  STOP_BUTTON_SELECTOR,
+} from "../constants.js";
 
 const THINKING_STALE_HINT_MS = 10 * 60_000;
 
@@ -162,6 +166,7 @@ async function readThinkingStatus(
 
 const SAFE_THINKING_STATUS_MESSAGES = new Set([
   "active",
+  "response streaming",
   "thinking sidecar active",
   "thinking sidecar opened",
 ]);
@@ -194,13 +199,20 @@ function buildThinkingStatusExpression(): string {
     '[aria-live="polite"]',
   ];
   const keywords = ["pro thinking", "thinking", "reasoning"];
+  const stopSelectors = [
+    STOP_BUTTON_SELECTOR,
+    '[data-testid="composer-stop-button"]',
+    'button[aria-label*="stop" i]',
+  ];
   const selectorLiteral = JSON.stringify(selectors);
   const keywordsLiteral = JSON.stringify(keywords);
+  const stopSelectorsLiteral = JSON.stringify(stopSelectors);
   return `(async () => {
     const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const selectors = ${selectorLiteral};
     const keywords = ${keywordsLiteral};
+    const stopSelectors = ${stopSelectorsLiteral};
     const normalize = (value) =>
       String(value || '')
         .normalize('NFD')
@@ -419,6 +431,20 @@ function buildThinkingStatusExpression(): string {
           source: 'inline',
         };
       }
+    }
+    // Last-resort liveness fallback: selector drift can hide every thinking
+    // indicator while a response is still generating, and returning null here
+    // reads as "dead" downstream. The stop/interrupt control is a stable,
+    // language-independent signal that generation is active; it lives in the
+    // composer, so isComposerAdjacent must not filter it.
+    const stopVisible = stopSelectors.some((selector) =>
+      Array.from(document.querySelectorAll(selector)).some((node) => isVisible(node)),
+    );
+    if (stopVisible) {
+      return {
+        message: 'response streaming',
+        source: 'inline',
+      };
     }
     return null;
   })()`;

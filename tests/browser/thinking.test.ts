@@ -304,6 +304,10 @@ describe("formatThinkingLog", () => {
     expect(sanitizeThinkingText("Thinking: check auth before tests")).toBe("active");
   });
 
+  test("preserves the response streaming liveness message", () => {
+    expect(sanitizeThinkingText("response streaming")).toBe("response streaming");
+  });
+
   test("normalizes sidecar progress snapshots from the browser", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
@@ -484,5 +488,32 @@ describe("thinking status browser expression", () => {
 
     expect(clicked).toBe(false);
     expect(result).toBeNull();
+  });
+
+  test("falls back to the visible stop control when no thinking indicator matches", async () => {
+    const document = new FakeDocument();
+    const composer = new FakeElement("div", "", { "data-testid": "composer-footer-actions" });
+    composer.append(
+      new FakeElement("button", "", {
+        "data-testid": "stop-button",
+        "aria-label": "Stop streaming",
+      }),
+    );
+    document.append(composer);
+
+    const result = await runThinkingStatusExpression(document);
+
+    expect(result).toEqual({ message: "response streaming", source: "inline" });
+  });
+
+  test("prefers a thinking indicator over the stop control fallback", async () => {
+    const document = new FakeDocument();
+    const composer = new FakeElement("div", "", { "data-testid": "composer-footer-actions" });
+    composer.append(new FakeElement("button", "", { "data-testid": "stop-button" }));
+    document.append(new FakeElement("span", "Thinking", { class: "loading-shimmer" }), composer);
+
+    const result = await runThinkingStatusExpression(document);
+
+    expect(result).toEqual({ message: "active", source: "inline" });
   });
 });
