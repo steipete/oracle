@@ -2,6 +2,10 @@
 
 ## 0.15.2 — Unreleased
 
+### Changed
+
+- Dependencies: update Google GenAI, OpenAI, Markdansi, osc-progress, Shiki, TokenTally, Vitest, Puppeteer, TypeScript native preview, Oxc tooling, and related packages.
+
 ### Fixed
 
 - Browser: persist late `/c/<id>` URLs during remote Chrome runs and prefer saved conversation targets over stale target IDs during reattach. Fixes #284. Thanks @LeoLin990405 and @StartupBros!

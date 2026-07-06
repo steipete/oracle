@@ -9,7 +9,7 @@ export type OscProgressOptions = OscProgressOptionsShared;
 
 export function supportsOscProgress(
   env: NodeJS.ProcessEnv = process.env,
-  isTty: boolean = process.stdout.isTTY,
+  isTty: boolean = process.stdout.isTTY === true,
 ): boolean {
   if (env.CODEX_MANAGED_BY_NPM === "1" && env.ORACLE_FORCE_OSC_PROGRESS !== "1") {
     return false;
@@ -27,8 +27,9 @@ export function startOscProgress(options: OscProgressOptions = {}): () => void {
   }
   return startOscProgressShared({
     ...options,
-    // Preserve Oracle's previous default: progress emits to stdout.
+    // Preserve Oracle's previous defaults: progress emits to and checks stdout.
     write: options.write ?? ((text) => process.stdout.write(text)),
+    isTty: options.isTty ?? process.stdout.isTTY === true,
     disableEnvVar: "ORACLE_NO_OSC_PROGRESS",
     forceEnvVar: "ORACLE_FORCE_OSC_PROGRESS",
   });

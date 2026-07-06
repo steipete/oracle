@@ -32,6 +32,37 @@ describe("supportsOscProgress", () => {
 });
 
 describe("startOscProgress", () => {
+  test("uses stdout TTY detection with the default stdout writer", () => {
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    const stderrDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    Object.defineProperty(process.stdout, "isTTY", { value: undefined, configurable: true });
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+
+    try {
+      const writes: string[] = [];
+      const stop = startOscProgress({
+        // biome-ignore lint/style/useNamingConvention: env keys mirror real process env.
+        env: { ...process.env, ORACLE_FORCE_OSC_PROGRESS: "1" },
+        write: (chunk) => writes.push(chunk),
+      });
+
+      expect(writes).toEqual([]);
+      stop();
+      expect(writes).toEqual([]);
+    } finally {
+      if (stdoutDescriptor) {
+        Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      } else {
+        Reflect.deleteProperty(process.stdout, "isTTY");
+      }
+      if (stderrDescriptor) {
+        Object.defineProperty(process.stderr, "isTTY", stderrDescriptor);
+      } else {
+        Reflect.deleteProperty(process.stderr, "isTTY");
+      }
+    }
+  });
+
   test("emits OSC 9;4 sequences and clears on stop", () => {
     vi.useFakeTimers();
     const writes: string[] = [];
