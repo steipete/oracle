@@ -18,6 +18,28 @@ import { buildClickDispatcher } from "./domEvents.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
 const STOP_CONTROL_SELECTOR = STOP_BUTTON_SELECTORS.join(", ");
+// Captures shorter than this are treated as not-yet-confident: a legitimate
+// short reply survives the stability watchdog unchanged, but a mid-stream
+// snapshot grabbed during thinking-UI flapping (e.g. a single "I") does not.
+const MIN_CONFIDENT_ANSWER_LENGTH = 16;
+
+// Decide whether a fast-path capture must be reconfirmed by the stability
+// watchdog before it is trusted as the final answer. The fast evaluation path
+// can win the race mid-stream while ChatGPT is swapping its thinking UI for the
+// answer — in that window the stop button is already gone and completion
+// controls have not appeared yet, so a partial capture looks "done". Confirm
+// when the stop button or completion controls are visible, and also when the
+// capture is implausibly short (the flapping case that returns a stub answer).
+export function shouldConfirmAssistantCompletion(args: {
+  candidateLength: number;
+  stopVisible: boolean;
+  completionVisible: boolean;
+}): boolean {
+  if (args.stopVisible || args.completionVisible) {
+    return true;
+  }
+  return args.candidateLength > 0 && args.candidateLength < MIN_CONFIDENT_ANSWER_LENGTH;
+}
 const THINKING_STATUS_LABELS = [
   "thinking",
   "pro thinking",
@@ -238,11 +260,21 @@ export async function waitForAssistantResponse(
     // Confirm every capture from that transition with the stability-based watchdog; a
     // partial first paragraph can be arbitrarily long.
     const candidateText = String(candidate?.text ?? "").trim();
-    if (stopVisible || completionVisible) {
+    const suspiciouslyShort =
+      candidateText.length > 0 && candidateText.length < MIN_CONFIDENT_ANSWER_LENGTH;
+    if (
+      shouldConfirmAssistantCompletion({
+        candidateLength: candidateText.length,
+        stopVisible,
+        completionVisible,
+      })
+    ) {
       logger(
         stopVisible
           ? "Assistant still generating; waiting for completion"
-          : "Completion controls surfaced; confirming stable assistant response",
+          : completionVisible
+            ? "Completion controls surfaced; confirming stable assistant response"
+            : "Captured an implausibly short response; confirming it is not a mid-stream capture",
       );
       const completed = await pollAssistantCompletion(
         Runtime,
@@ -252,6 +284,11 @@ export async function waitForAssistantResponse(
       );
       if (completed && String(completed.text ?? "").trim().length >= candidateText.length) {
         return completed;
+      }
+      if (suspiciouslyShort) {
+        logger(
+          "[browser] Short response did not grow under the stability watchdog; treating as final.",
+        );
       }
     }
   }

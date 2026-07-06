@@ -837,12 +837,17 @@ describe("waitForAssistantResponse", () => {
       evaluate: vi.fn().mockResolvedValue({
         result: {
           type: "object",
-          value: { text: "Answer", html: "<p>Answer</p>", messageId: "mid", turnId: "tid" },
+          value: {
+            text: "Answer to the question.",
+            html: "<p>Answer to the question.</p>",
+            messageId: "mid",
+            turnId: "tid",
+          },
         },
       }),
     } as unknown as ChromeClient["Runtime"];
     const result = await waitForAssistantResponse(runtime, 1000, logger);
-    expect(result.text).toBe("Answer");
+    expect(result.text).toBe("Answer to the question.");
     expect(result.meta).toEqual({ messageId: "mid", turnId: "tid" });
   });
 
@@ -850,7 +855,16 @@ describe("waitForAssistantResponse", () => {
     vi.useFakeTimers();
     try {
       let snapshotCalls = 0;
-      const payload = { text: "Answer", html: "<p>Answer</p>", messageId: "mid", turnId: "tid" };
+      // Use a confident-length answer so the fast path returns directly; a
+      // sub-16-char capture would (intentionally) trigger the short-response
+      // confirmation watchdog, which this test is not exercising.
+      const answerText = "Answer to the question.";
+      const payload = {
+        text: answerText,
+        html: `<p>${answerText}</p>`,
+        messageId: "mid",
+        turnId: "tid",
+      };
       const evaluate = vi
         .fn()
         .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
@@ -873,7 +887,7 @@ describe("waitForAssistantResponse", () => {
       const promise = waitForAssistantResponse(runtime, 30_000, logger);
       await vi.advanceTimersByTimeAsync(2_000);
       const result = await promise;
-      expect(result.text).toBe("Answer");
+      expect(result.text).toBe(answerText);
 
       const callsAtReturn = evaluate.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);

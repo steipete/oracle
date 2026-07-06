@@ -5,6 +5,7 @@ import {
   buildAssistantSnapshotExpressionForTest,
   buildStopButtonVisibilityExpressionForTest,
   matchesThinkingStatusLabelForTest,
+  shouldConfirmAssistantCompletion,
 } from "../../src/browser/actions/assistantResponse.js";
 import { STOP_BUTTON_SELECTORS } from "../../src/browser/constants.js";
 
@@ -128,5 +129,76 @@ describe("assistant thinking-status capture", () => {
       }),
     );
     expect(result).toBe(fixture.expected);
+  });
+});
+
+describe("shouldConfirmAssistantCompletion", () => {
+  test("confirms while the stop button is visible", () => {
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 500,
+        stopVisible: true,
+        completionVisible: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("confirms while completion controls are visible", () => {
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 500,
+        stopVisible: false,
+        completionVisible: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("confirms an implausibly short capture even when no controls are visible", () => {
+    // The thinking-UI flapping case: stop button already gone, completion
+    // controls not yet shown, a stub answer ("I") captured mid-stream.
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 1,
+        stopVisible: false,
+        completionVisible: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("trusts a long capture once controls have cleared", () => {
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 500,
+        stopVisible: false,
+        completionVisible: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("does not force confirmation for an empty capture (handled elsewhere)", () => {
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 0,
+        stopVisible: false,
+        completionVisible: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("uses length 16 as the confidence boundary", () => {
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 15,
+        stopVisible: false,
+        completionVisible: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldConfirmAssistantCompletion({
+        candidateLength: 16,
+        stopVisible: false,
+        completionVisible: false,
+      }),
+    ).toBe(false);
   });
 });
