@@ -20,7 +20,7 @@ import {
   listRemoteChromeTargets,
 } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
-import { syncCookies } from "./cookies.js";
+import { clearStaleChatGptConversationCookies, syncCookies } from "./cookies.js";
 import { CHATGPT_URL } from "./constants.js";
 import { buildConversationTurnListExpression } from "./conversationTurns.js";
 import { cleanupStaleProfileState } from "./profileState.js";
@@ -271,7 +271,7 @@ async function resumeBrowserSessionViaNewChrome(
   const chrome = await launchChrome(resolved, userDataDir, logger);
   const chromeHost = (chrome as unknown as { host?: string }).host ?? "127.0.0.1";
   const client = await connectToChrome(chrome.port, logger, chromeHost);
-  const { Network, Page, Runtime, DOM } = client;
+  const { Network, Page, Runtime, DOM, Target } = client;
 
   if (Runtime?.enable) {
     await Runtime.enable();
@@ -293,6 +293,14 @@ async function resumeBrowserSessionViaNewChrome(
       waitMs: resolved.cookieSyncWaitMs ?? 0,
     });
   }
+
+  await clearStaleChatGptConversationCookies(Network, Target, logger, {
+    preserveConversationIds: [
+      runtime.conversationId,
+      extractConversationIdFromUrl(runtime.tabUrl ?? ""),
+      extractConversationIdFromUrl(resolved.url),
+    ],
+  });
 
   await navigateToChatGPT(Page, Runtime, CHATGPT_URL, logger);
   await ensureNotBlocked(Runtime, resolved.headless, logger);

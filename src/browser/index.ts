@@ -23,7 +23,7 @@ import {
   closeRemoteChromeTarget,
   closeBlankChromeTabs,
 } from "./chromeLifecycle.js";
-import { clearChatGptConversationCookies, syncCookies } from "./cookies.js";
+import { clearStaleChatGptConversationCookies, syncCookies } from "./cookies.js";
 import {
   navigateToChatGPT,
   navigateToPromptReadyWithFallback,
@@ -1106,7 +1106,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       } else {
         const strictTabIsolation = Boolean(manualLogin && reusedChrome);
         const devtoolsRetries = manualLogin ? 6 : 0;
-        const connection = await connectWithNewTab(chrome.port, logger, config.url, chromeHost, {
+        const connection = await connectWithNewTab(chrome.port, logger, "about:blank", chromeHost, {
           fallbackToDefault: !strictTabIsolation,
           retries: devtoolsRetries,
           retryDelayMs: 500,
@@ -1142,7 +1142,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     });
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
       Promise.race([promise, disconnectPromise]);
-    const { Network, Page, Runtime, Input, DOM } = client;
+    const { Network, Page, Runtime, Input, DOM, Target } = client;
 
     if (!config.headless && config.hideWindow) {
       await hideChromeWindow(chrome, logger);
@@ -1201,7 +1201,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           : "Skipping Chrome cookie sync (--browser-no-cookie-sync)",
       );
     }
-    await clearChatGptConversationCookies(Network, logger);
+    await clearStaleChatGptConversationCookies(Network, Target, logger, {
+      preserveConversationIds: [
+        extractConversationIdFromUrl(config.resumeConversationUrl ?? ""),
+        extractConversationIdFromUrl(lastUrl ?? ""),
+      ],
+    });
 
     if (cookieSyncEnabled && !manualLogin && (appliedCookies ?? 0) === 0 && !config.inlineCookies) {
       // Learned: if the profile has no ChatGPT cookies, browser mode will just bounce to login.
@@ -2797,9 +2802,16 @@ async function runRemoteBrowserMode(
         `Attached to existing remote ChatGPT tab ${attached.targetId}${attached.tab.url ? ` (${attached.tab.url})` : ""}`,
       );
     } else {
-      connection = await connectToRemoteChrome(host, port, logger, config.url, browserWSEndpoint, {
-        approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
-      });
+      connection = await connectToRemoteChrome(
+        host,
+        port,
+        logger,
+        "about:blank",
+        browserWSEndpoint,
+        {
+          approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
+        },
+      );
       client = connection.client;
       remoteTargetId = connection.targetId ?? null;
       ownsTarget = true;
@@ -2816,7 +2828,7 @@ async function runRemoteBrowserMode(
       connectionClosedUnexpectedly = true;
     };
     client.on("disconnect", markConnectionLost);
-    const { Network, Page, Runtime, Input, DOM } = client;
+    const { Network, Page, Runtime, Input, DOM, Target } = client;
 
     const domainEnablers = [Network.enable({}), Page.enable(), Runtime.enable()];
     if (DOM && typeof DOM.enable === "function") {
@@ -2850,7 +2862,12 @@ async function runRemoteBrowserMode(
 
     // Skip cookie sync for remote Chrome - it already has cookies
     logger("Skipping cookie sync for remote Chrome (using existing session)");
-    await clearChatGptConversationCookies(Network, logger);
+    await clearStaleChatGptConversationCookies(Network, Target, logger, {
+      preserveConversationIds: [
+        extractConversationIdFromUrl(config.resumeConversationUrl ?? ""),
+        extractConversationIdFromUrl(lastUrl ?? ""),
+      ],
+    });
 
     if (config.resumeConversationUrl) {
       await navigateToChatGPT(Page, Runtime, config.resumeConversationUrl, logger);

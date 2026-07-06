@@ -5,13 +5,39 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 
 export class ChromeCookieSyncError extends Error {}
 
-export async function clearChatGptConversationCookies(
+export async function clearStaleChatGptConversationCookies(
   Network: ChromeClient["Network"],
+  Target: ChromeClient["Target"],
   logger: BrowserLogger,
+  options: { preserveConversationIds?: readonly (string | null | undefined)[] } = {},
 ): Promise<number> {
   try {
+    const preservedNames = new Set(
+      (options.preserveConversationIds ?? [])
+        .filter((id): id is string => Boolean(id))
+        .map((id) => `conv_key_${id}`),
+    );
+    try {
+      const { targetInfos = [] } = await Target.getTargets();
+      for (const target of targetInfos) {
+        const conversationId = extractChatGptConversationId(target.url ?? "");
+        if (conversationId) {
+          preservedNames.add(`conv_key_${conversationId}`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger(
+        `[cookies] Failed to inspect active ChatGPT conversations; skipping stale cookie cleanup: ${message}`,
+      );
+      return 0;
+    }
+
     const { cookies = [] } = await Network.getAllCookies();
-    const targets = cookies.filter((cookie) => isChatGptConversationCookie(cookie));
+    const targets = cookies.filter(
+      (cookie) =>
+        isChatGptConversationCookie(cookie) && !preservedNames.has(String(cookie.name ?? "")),
+    );
     if (targets.length === 0) {
       return 0;
     }
@@ -27,9 +53,7 @@ export async function clearChatGptConversationCookies(
         deleted += 1;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        logger(
-          `[cookies] Failed to clear stale ChatGPT conversation cookie ${cookie.name}: ${message}`,
-        );
+        logger(`[cookies] Failed to clear a stale ChatGPT conversation cookie: ${message}`);
       }
     }
 
@@ -174,13 +198,26 @@ async function readChromeCookies(
 }
 
 function isChatGptConversationCookie(cookie: { name?: string; domain?: string }): boolean {
-  if (!cookie.name?.startsWith("conv")) {
+  if (!cookie.name?.startsWith("conv_key_")) {
     return false;
   }
   const domain = String(cookie.domain ?? "")
     .replace(/^\./, "")
     .toLowerCase();
   return domain === "chatgpt.com" || domain === "chat.openai.com";
+}
+
+function extractChatGptConversationId(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    const domain = parsed.hostname.toLowerCase();
+    if (domain !== "chatgpt.com" && domain !== "chat.openai.com") {
+      return undefined;
+    }
+    return parsed.pathname.match(/\/c\/([a-zA-Z0-9-]+)/)?.[1];
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeInlineCookies(rawCookies: CookieParam[], fallbackHost: string): CookieParam[] {
