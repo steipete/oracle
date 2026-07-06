@@ -897,6 +897,114 @@ describe("waitForAssistantResponse", () => {
     }
   });
 
+  test("reconfirms a short no-control capture and returns the grown answer", async () => {
+    vi.useFakeTimers();
+    try {
+      const startedAt = Date.now();
+      const partial = { text: "I", messageId: "mid", turnId: "tid" };
+      const complete = {
+        text: "I finished the answer after the thinking transition.",
+        messageId: "mid",
+        turnId: "tid",
+      };
+      let snapshotCalls = 0;
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return { result: { type: "object", value: partial } };
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            snapshotCalls += 1;
+            if (snapshotCalls === 1) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return {
+              result: { value: Date.now() - startedAt < 3_500 ? partial : complete },
+            };
+          }
+          return { result: { value: false } };
+        });
+
+      const promise = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+      );
+      await vi.advanceTimersByTimeAsync(12_000);
+
+      await expect(promise).resolves.toMatchObject({ text: complete.text });
+      expect(logger).toHaveBeenCalledWith(
+        "Captured an implausibly short response; confirming it is not a mid-stream capture",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects a stable short capture without a completion signal", async () => {
+    vi.useFakeTimers();
+    try {
+      const partial = { text: "I", messageId: "mid", turnId: "tid" };
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return { result: { type: "object", value: partial } };
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            return { result: { value: partial } };
+          }
+          return { result: { value: false } };
+        });
+
+      const promise = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        15_000,
+        logger,
+      );
+      const assertion = expect(promise).rejects.toThrow(/refusing to finalize/i);
+      await vi.advanceTimersByTimeAsync(16_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects a stable short watchdog capture when the observer hangs", async () => {
+    vi.useFakeTimers();
+    try {
+      const partial = { text: "I", messageId: "mid", turnId: "tid" };
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return new Promise(() => undefined);
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            return { result: { value: partial } };
+          }
+          return { result: { value: false } };
+        });
+      const terminateExecution = vi.fn().mockResolvedValue(undefined);
+
+      const promise = waitForAssistantResponse(
+        { evaluate, terminateExecution } as unknown as ChromeClient["Runtime"],
+        15_000,
+        logger,
+      );
+      const assertion = expect(promise).rejects.toThrow(/watchdog-timeout/i);
+      await vi.advanceTimersByTimeAsync(16_000);
+      await assertion;
+      expect(terminateExecution).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("re-polls a completion capture longer than 80 characters until the full answer is stable", async () => {
     vi.useFakeTimers();
     try {
@@ -1018,8 +1126,8 @@ describe("waitForAssistantResponse", () => {
           return {
             result: {
               value: {
-                text: "Recovered",
-                html: "<p>Recovered</p>",
+                text: "Recovered assistant response.",
+                html: "<p>Recovered assistant response.</p>",
                 messageId: "mid",
                 turnId: "tid",
               },
@@ -1030,7 +1138,7 @@ describe("waitForAssistantResponse", () => {
       });
     const runtime = { evaluate } as unknown as ChromeClient["Runtime"];
     const result = await waitForAssistantResponse(runtime, 200, logger);
-    expect(result.text).toBe("Recovered");
+    expect(result.text).toBe("Recovered assistant response.");
     expect(evaluate).toHaveBeenCalled();
   });
 });

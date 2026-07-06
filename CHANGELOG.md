@@ -6,6 +6,7 @@
 
 - Browser: persist late `/c/<id>` URLs during remote Chrome runs and prefer saved conversation targets over stale target IDs during reattach. Fixes #284. Thanks @LeoLin990405 and @StartupBros!
 - Browser: keep prompt baselines, assistant snapshots, and artifact capture on one top-level ChatGPT turn index so nested message nodes cannot hide a new response. Thanks @cp7553479!
+- Browser: reconfirm implausibly short ChatGPT captures after thinking-UI transitions, and fail closed rather than archiving when the response cannot be confirmed. Fixes #284. Thanks @LeoLin990405!
 
 ## 0.15.1 — 2026-07-03
 

@@ -18,18 +18,12 @@ import { buildClickDispatcher } from "./domEvents.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
 const STOP_CONTROL_SELECTOR = STOP_BUTTON_SELECTORS.join(", ");
-// Captures shorter than this are treated as not-yet-confident: a legitimate
-// short reply survives the stability watchdog unchanged, but a mid-stream
-// snapshot grabbed during thinking-UI flapping (e.g. a single "I") does not.
 const MIN_CONFIDENT_ANSWER_LENGTH = 16;
 
-// Decide whether a fast-path capture must be reconfirmed by the stability
-// watchdog before it is trusted as the final answer. The fast evaluation path
-// can win the race mid-stream while ChatGPT is swapping its thinking UI for the
-// answer — in that window the stop button is already gone and completion
-// controls have not appeared yet, so a partial capture looks "done". Confirm
-// when the stop button or completion controls are visible, and also when the
-// capture is implausibly short (the flapping case that returns a stub answer).
+function isImplausiblyShortAnswer(candidateLength: number): boolean {
+  return candidateLength > 0 && candidateLength < MIN_CONFIDENT_ANSWER_LENGTH;
+}
+
 export function shouldConfirmAssistantCompletion(args: {
   candidateLength: number;
   stopVisible: boolean;
@@ -38,7 +32,7 @@ export function shouldConfirmAssistantCompletion(args: {
   if (args.stopVisible || args.completionVisible) {
     return true;
   }
-  return args.candidateLength > 0 && args.candidateLength < MIN_CONFIDENT_ANSWER_LENGTH;
+  return isImplausiblyShortAnswer(args.candidateLength);
 }
 const THINKING_STATUS_LABELS = [
   "thinking",
@@ -180,7 +174,9 @@ export async function waitForAssistantResponse(
         error instanceof Error &&
         error.message === ASSISTANT_POLL_TIMEOUT_ERROR
       ) {
-        evaluation = await evaluationPromise;
+        evaluationPromise.catch(() => undefined);
+        await terminateRuntimeExecution(Runtime);
+        throw error;
       } else if (source === "poll") {
         throw error;
       } else if (source === "evaluation") {
@@ -251,6 +247,8 @@ export async function waitForAssistantResponse(
   // The evaluation path can race ahead of completion. If ChatGPT is still streaming, wait for the watchdog poller.
   const elapsedMs = Date.now() - start;
   const remainingMs = Math.max(0, timeoutMs - elapsedMs);
+  const candidateText = String(candidate?.text ?? "").trim();
+  const suspiciouslyShort = isImplausiblyShortAnswer(candidateText.length);
   if (remainingMs > 0) {
     const [stopVisible, completionVisible] = await Promise.all([
       isStopButtonVisible(Runtime),
@@ -259,9 +257,6 @@ export async function waitForAssistantResponse(
     // Completion controls can appear briefly while Pro is still replacing its thinking UI.
     // Confirm every capture from that transition with the stability-based watchdog; a
     // partial first paragraph can be arbitrarily long.
-    const candidateText = String(candidate?.text ?? "").trim();
-    const suspiciouslyShort =
-      candidateText.length > 0 && candidateText.length < MIN_CONFIDENT_ANSWER_LENGTH;
     if (
       shouldConfirmAssistantCompletion({
         candidateLength: candidateText.length,
@@ -285,12 +280,13 @@ export async function waitForAssistantResponse(
       if (completed && String(completed.text ?? "").trim().length >= candidateText.length) {
         return completed;
       }
-      if (suspiciouslyShort) {
-        logger(
-          "[browser] Short response did not grow under the stability watchdog; treating as final.",
-        );
-      }
     }
+  }
+
+  if (suspiciouslyShort) {
+    throw new Error(
+      "assistant-response short capture could not be confirmed before timeout; refusing to finalize it",
+    );
   }
 
   return candidate;
@@ -386,6 +382,7 @@ async function recoverAssistantResponse(
   if (recoveryTimeoutMs === 0) {
     return null;
   }
+  const recoveryStartedAt = Date.now();
   const recovered = await waitForCondition(
     async () => {
       const snapshot = await readAssistantSnapshot(Runtime, minTurnIndex, expectedConversationId);
@@ -395,6 +392,11 @@ async function recoverAssistantResponse(
     400,
   );
   if (recovered) {
+    if (isImplausiblyShortAnswer(recovered.text.length)) {
+      logger("Recovered an implausibly short response; waiting for completion proof");
+      const remainingMs = Math.max(0, recoveryTimeoutMs - (Date.now() - recoveryStartedAt));
+      return pollAssistantCompletion(Runtime, remainingMs, minTurnIndex, expectedConversationId);
+    }
     logger("Recovered assistant response via polling fallback");
     return recovered;
   }
@@ -560,8 +562,8 @@ async function pollAssistantCompletion(
       if (isGeneratedImageAssistantAnswer(normalized)) {
         return normalized;
       }
-      const shortAnswer = currentLength > 0 && currentLength < 16;
-      const mediumAnswer = currentLength >= 16 && currentLength < 40;
+      const shortAnswer = isImplausiblyShortAnswer(currentLength);
+      const mediumAnswer = currentLength >= MIN_CONFIDENT_ANSWER_LENGTH && currentLength < 40;
       const longAnswer = currentLength >= 40 && currentLength < 500;
       // Learned: short answers need a longer stability window or they truncate.
       // Learned: long streaming responses (esp. thinking models) can pause mid-stream;
@@ -575,7 +577,7 @@ async function pollAssistantCompletion(
         const stableEnough = stableCycles >= requiredStableCycles && stableMs >= minStableMs;
         const completionEnough =
           completionVisible && stableCycles >= completionStableTarget && stableMs >= minStableMs;
-        if (completionEnough || stableEnough) {
+        if (completionEnough || (!shortAnswer && stableEnough)) {
           return normalized;
         }
       }
@@ -938,8 +940,8 @@ function buildResponseObserverExpression(
       // Learned: long streaming responses (esp. thinking models) can pause mid-stream;
       // use progressively longer windows to avoid truncation (#71).
       const initialLength = snapshot?.text?.length ?? 0;
-      const shortAnswer = initialLength > 0 && initialLength < 16;
-      const mediumAnswer = initialLength >= 16 && initialLength < 40;
+      const shortAnswer = initialLength > 0 && initialLength < ${MIN_CONFIDENT_ANSWER_LENGTH};
+      const mediumAnswer = initialLength >= ${MIN_CONFIDENT_ANSWER_LENGTH} && initialLength < 40;
       const longAnswer = initialLength >= 40 && initialLength < 500;
       const settleWindowMs = shortAnswer ? 12_000 : mediumAnswer ? 5_000 : longAnswer ? 8_000 : 10_000;
       const settleIntervalMs = 400;
