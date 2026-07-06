@@ -55,15 +55,11 @@ import {
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
 import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
-import {
-  CHATGPT_URL,
-  CONVERSATION_TURN_CONTAINER_SELECTOR,
-  CONVERSATION_TURN_SELECTOR,
-  DEFAULT_MODEL_STRATEGY,
-} from "./constants.js";
+import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
 import { BrowserAutomationError } from "../oracle/errors.js";
 import { alignPromptEchoPair, buildPromptEchoMatcher } from "./reattachHelpers.js";
+import { buildConversationTurnCountExpression } from "./conversationTurns.js";
 import type { ProfileRunLock } from "./profileState.js";
 import {
   cleanupStaleProfileState,
@@ -3904,15 +3900,7 @@ async function readConversationTurnCount(
   Runtime: ChromeClient["Runtime"],
   logger?: BrowserLogger,
 ): Promise<number | null> {
-  // Prefer the precise testid-based turn-container selector to avoid the broad
-  // selector double-counting nested message divs (which inflates the baseline
-  // and wrongly suppresses assistant snapshots via the minTurnIndex gate).
-  const containerLiteral = JSON.stringify(CONVERSATION_TURN_CONTAINER_SELECTOR);
-  const fallbackLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
-  const expression = `(() => {
-    const precise = document.querySelectorAll(${containerLiteral}).length;
-    return precise > 0 ? precise : document.querySelectorAll(${fallbackLiteral}).length;
-  })()`;
+  const expression = buildConversationTurnCountExpression();
   const attempts = 4;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {

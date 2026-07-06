@@ -4,10 +4,13 @@ import {
   PROMPT_PRIMARY_SELECTOR,
   PROMPT_FALLBACK_SELECTOR,
   SEND_BUTTON_SELECTORS,
-  CONVERSATION_TURN_SELECTOR,
   STOP_BUTTON_SELECTOR,
   ASSISTANT_ROLE_SELECTOR,
 } from "../constants.js";
+import {
+  buildConversationTurnCountExpression,
+  buildConversationTurnListExpression,
+} from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
@@ -792,7 +795,6 @@ async function verifyPromptCommitted(
   const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   const stopSelectorLiteral = JSON.stringify(STOP_BUTTON_SELECTOR);
   const assistantSelectorLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
-  const turnSelectorLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   let baseline: number | null =
     typeof baselineTurns === "number" && Number.isFinite(baselineTurns) && baselineTurns >= 0
       ? Math.floor(baselineTurns)
@@ -800,7 +802,7 @@ async function verifyPromptCommitted(
   if (baseline === null) {
     try {
       const { result } = await Runtime.evaluate({
-        expression: `document.querySelectorAll(${turnSelectorLiteral}).length`,
+        expression: buildConversationTurnCountExpression(),
         returnByValue: true,
       });
       const raw = typeof result?.value === "number" ? result.value : Number(result?.value);
@@ -827,8 +829,7 @@ async function verifyPromptCommitted(
 	    };
 	    const normalizedPrompt = normalize(${encodedPrompt});
 	    const normalizedPromptPrefix = normalizedPrompt.slice(0, 120);
-	    const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
-	    const articles = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+	    const articles = ${buildConversationTurnListExpression()};
 	    const normalizedTurns = articles.map((node) => normalize(node?.innerText));
 	    const readValue = (node) => {
 	      if (!node) return '';

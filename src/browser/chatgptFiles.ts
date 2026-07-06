@@ -6,7 +6,8 @@ import type {
   ChromeClient,
   SavedBrowserFile,
 } from "./types.js";
-import { ASSISTANT_ROLE_SELECTOR, CONVERSATION_TURN_SELECTOR } from "./constants.js";
+import { ASSISTANT_ROLE_SELECTOR } from "./constants.js";
+import { buildConversationTurnListExpression } from "./conversationTurns.js";
 import {
   computeFileSha256,
   resolveSessionArtifactsDir,
@@ -326,11 +327,9 @@ function buildAssistantDownloadableFilesExpression(minTurnIndex?: number): strin
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
       ? Math.floor(minTurnIndex)
       : -1;
-  const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   return `(() => {
     const MIN_TURN_INDEX = ${minTurnLiteral};
-    const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -439,7 +438,7 @@ function buildAssistantDownloadableFilesExpression(minTurnIndex?: number): strin
       ].join(',')))
         .map(serializeCandidate)
         .filter(Boolean);
-    const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    const turns = ${buildConversationTurnListExpression()};
     const files = [];
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       const turn = turns[index];
@@ -725,7 +724,6 @@ function buildClickAssistantDownloadButtonsExpression(
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
       ? Math.floor(minTurnIndex)
       : -1;
-  const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   const expectedLabelsLiteral = JSON.stringify(expectedLabels);
   const allowGenericDownloadLabelsLiteral = JSON.stringify(allowGenericDownloadLabels);
@@ -739,7 +737,6 @@ function buildClickAssistantDownloadButtonsExpression(
       : 0;
   return `(() => {
     const MIN_TURN_INDEX = ${minTurnLiteral};
-    const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const EXPECTED_LABELS = ${expectedLabelsLiteral};
     const ALLOW_GENERIC_DOWNLOAD_LABELS = ${allowGenericDownloadLabelsLiteral};
@@ -862,7 +859,7 @@ function buildClickAssistantDownloadButtonsExpression(
     const genericBehaviorButton = (info) =>
       ALLOW_GENERIC_DOWNLOAD_LABELS && info.className.includes('behavior-btn') && hasDownloadIntent(info);
     const genericFallbackButton = (info) => ALLOW_GENERIC_DOWNLOAD_LABELS && hasDownloadIntent(info);
-    const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    const turns = ${buildConversationTurnListExpression()};
     const expectedMatches = new Set();
     const genericBehaviorMatches = new Set();
     const genericFallbackMatches = new Set();

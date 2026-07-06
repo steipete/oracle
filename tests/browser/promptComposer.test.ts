@@ -4,6 +4,10 @@ import {
   clearPromptComposer,
   submitPrompt,
 } from "../../src/browser/actions/promptComposer.js";
+import {
+  CONVERSATION_TURN_CONTAINER_SELECTOR,
+  CONVERSATION_TURN_SELECTOR,
+} from "../../src/browser/constants.js";
 
 describe("promptComposer", () => {
   test("fails composer clearing when stale text remains", async () => {
@@ -52,6 +56,55 @@ describe("promptComposer", () => {
 
       const promise = promptComposer.verifyPromptCommitted(runtime as never, "hello", 150);
       // Attach the rejection handler before timers advance to avoid unhandled-rejection warnings.
+      const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+      await vi.advanceTimersByTimeAsync(250);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does not count nested broad-selector matches as new turns in a reused conversation", async () => {
+    vi.useFakeTimers();
+    try {
+      const topLevelTurns = [{ innerText: "old user" }, { innerText: "old assistant" }];
+      const nestedMatches = [
+        topLevelTurns[0],
+        { innerText: "old user" },
+        topLevelTurns[1],
+        { innerText: "old assistant" },
+      ];
+      const document = {
+        querySelector: () => null,
+        querySelectorAll: (selector: string) => {
+          if (selector === CONVERSATION_TURN_CONTAINER_SELECTOR) return topLevelTurns;
+          if (selector === CONVERSATION_TURN_SELECTOR) return nestedMatches;
+          return [];
+        },
+      };
+      class FakeTextArea {}
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+          result: {
+            value: Function(
+              "document",
+              "HTMLTextAreaElement",
+              "location",
+              `return ${expression};`,
+            )(document, FakeTextArea, { href: "https://chatgpt.com/c/reused" }),
+          },
+        })),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "new prompt",
+        150,
+        undefined,
+        2,
+      );
       const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
       await vi.advanceTimersByTimeAsync(250);
       await assertion;

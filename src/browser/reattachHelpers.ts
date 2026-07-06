@@ -1,5 +1,6 @@
 import type { BrowserLogger, ChromeClient } from "./types.js";
 import { CONVERSATION_TURN_SELECTOR } from "./constants.js";
+import { buildConversationTurnCountExpression } from "./conversationTurns.js";
 import { delay } from "./utils.js";
 import { readAssistantSnapshot } from "./pageActions.js";
 
@@ -308,10 +309,9 @@ export async function readConversationTurnIndex(
   Runtime: ChromeClient["Runtime"],
   logger?: BrowserLogger,
 ): Promise<number | null> {
-  const selectorLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   try {
     const { result } = await Runtime.evaluate({
-      expression: `document.querySelectorAll(${selectorLiteral}).length`,
+      expression: buildConversationTurnCountExpression(),
       returnByValue: true,
     });
     const raw = typeof result?.value === "number" ? result.value : Number(result?.value);

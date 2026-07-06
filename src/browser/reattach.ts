@@ -21,7 +21,8 @@ import {
 } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
 import { syncCookies } from "./cookies.js";
-import { CHATGPT_URL, CONVERSATION_TURN_SELECTOR } from "./constants.js";
+import { CHATGPT_URL } from "./constants.js";
+import { buildConversationTurnListExpression } from "./conversationTurns.js";
 import { cleanupStaleProfileState } from "./profileState.js";
 import { readDevToolsActivePortInfo } from "./detect.js";
 import {
@@ -408,7 +409,7 @@ async function readPromptPreviewTurnIndex(
       const needle = ${JSON.stringify(preview.toLowerCase().replace(/\s+/g, " ").slice(0, 120))};
       if (!needle) return null;
       const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-      const turns = Array.from(document.querySelectorAll(${JSON.stringify(CONVERSATION_TURN_SELECTOR)}));
+      const turns = ${buildConversationTurnListExpression()};
       let matched = null;
       for (const [index, node] of turns.entries()) {
         const attr = (node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();

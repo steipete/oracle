@@ -38,11 +38,6 @@ export const CONVERSATION_TURN_SELECTOR =
   'article[data-testid^="conversation-turn"], div[data-testid^="conversation-turn"], section[data-testid^="conversation-turn"], ' +
   "article[data-message-author-role], div[data-message-author-role], section[data-message-author-role], " +
   "article[data-turn], div[data-turn], section[data-turn]";
-// Precise selector for top-level conversation turn containers.
-// CONVERSATION_TURN_SELECTOR above is a broad fallback that can double-count a
-// turn's nested message div (e.g. a child div[data-message-author-role]) and
-// inflate baseline/turn-index counts, which blocks assistant snapshots via the
-// minTurnIndex gate. Prefer this testid-based selector when the DOM provides it.
 export const CONVERSATION_TURN_CONTAINER_SELECTOR = '[data-testid^="conversation-turn"]';
 export const ASSISTANT_ROLE_SELECTOR =
   '[data-message-author-role="assistant"], [data-turn="assistant"]';

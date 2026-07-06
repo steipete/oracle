@@ -1147,7 +1147,7 @@ describe("collectChatGptFileArtifacts", () => {
     expect(expression).toContain('"oracle_pr245_file.csv"');
     expect(expression).toContain("const downloadLabel = 'download ' + label");
     expect(expression).toContain("value === downloadLabel");
-    expect(expression).toContain("document.querySelectorAll(CONVERSATION_SELECTOR)");
+    expect(expression).toContain('[data-testid^=\\"conversation-turn\\"]');
     expect(expression).not.toContain("document.querySelectorAll('button')");
     expect(expression).toContain("const expectedMatches = new Set()");
     expect(expression).toContain("controls.filter(expectedFileControl)");

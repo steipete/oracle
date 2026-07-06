@@ -8,8 +8,8 @@ import {
   DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
   FINISHED_ACTIONS_SELECTOR,
   STOP_BUTTON_SELECTOR,
-  CONVERSATION_TURN_SELECTOR,
 } from "../constants.js";
+import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { isDeepResearchIncompleteText } from "../deepResearchResult.js";
 import { buildClickDispatcher } from "./domEvents.js";
@@ -744,9 +744,9 @@ async function readDeepResearchTargetOwnerTurnIndex(
         {
           objectId,
           functionDeclaration: `function() {
-            const selector = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
-            const turn = this.closest(selector);
-            return turn ? Array.from(document.querySelectorAll(selector)).indexOf(turn) : null;
+            const turns = ${buildConversationTurnListExpression()};
+            const index = turns.findIndex((turn) => turn === this || turn.contains?.(this));
+            return index >= 0 ? index : null;
           }`,
           returnByValue: true,
         },
@@ -1052,7 +1052,6 @@ function buildDeepResearchStatusExpression(): string {
 function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string {
   const finishedSelector = JSON.stringify(FINISHED_ACTIONS_SELECTOR);
   const stopSelector = JSON.stringify(STOP_BUTTON_SELECTOR);
-  const turnSelector = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   return `(() => {
     const MIN_TURN_INDEX = ${minTurnIndex};
     const stopVisible = Boolean(document.querySelector(${stopSelector}));
@@ -1068,7 +1067,7 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
         String(node.getAttribute('data-testid') || '').toLowerCase().includes('conversation-turn') &&
           /chatgpt\\s+said/i.test(node.innerText || node.textContent || '');
     };
-    const conversationTurns = Array.from(document.querySelectorAll(${turnSelector}));
+    const conversationTurns = ${buildConversationTurnListExpression()};
     const allAssistantTurns = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-turn="assistant"]'));
     const scopedTurns = scopedToNewTurns
       ? conversationTurns.slice(MIN_TURN_INDEX).filter(isAssistantTurn)

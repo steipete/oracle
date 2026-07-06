@@ -7,7 +7,8 @@ import type {
   ChromeClient,
   SavedBrowserImage,
 } from "./types.js";
-import { ASSISTANT_ROLE_SELECTOR, CONVERSATION_TURN_SELECTOR } from "./constants.js";
+import { ASSISTANT_ROLE_SELECTOR } from "./constants.js";
+import { buildConversationTurnListExpression } from "./conversationTurns.js";
 import { delay } from "./utils.js";
 import { readAssistantSnapshot } from "./pageActions.js";
 import { getOracleHomeDir } from "../oracleHome.js";
@@ -71,11 +72,9 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
       ? Math.floor(minTurnIndex)
       : -1;
-  const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   return `(() => {
     const MIN_TURN_INDEX = ${minTurnLiteral};
-    const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isGeneratedImage = (img) => {
       const url = new URL(img?.src || '', location.origin || 'https://chatgpt.com');
@@ -111,7 +110,7 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
       if (testId.includes('assistant')) return true;
       return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
     };
-    const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    const turns = ${buildConversationTurnListExpression()};
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       const turn = turns[index];
       if (!isAssistantTurn(turn)) continue;

@@ -7,6 +7,7 @@ import {
   FINISHED_ACTIONS_SELECTOR,
   STOP_BUTTON_SELECTORS,
 } from "../constants.js";
+import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import {
   logDomFailure,
@@ -607,8 +608,7 @@ async function isCompletionVisible(Runtime: ChromeClient["Runtime"]): Promise<bo
           return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
         };
 
-        const preciseTurns = Array.from(document.querySelectorAll('[data-testid^="conversation-turn"]'));
-        const turns = preciseTurns.length > 0 ? preciseTurns : Array.from(document.querySelectorAll('${CONVERSATION_TURN_SELECTOR}'));
+        const turns = ${buildConversationTurnListExpression()};
         let lastAssistantTurn = null;
         for (let i = turns.length - 1; i >= 0; i--) {
           if (isAssistantTurn(turns[i])) {
@@ -741,7 +741,6 @@ function buildResponseObserverExpression(
   expectedConversationId?: string,
 ): string {
   const selectorsLiteral = JSON.stringify(ANSWER_SELECTORS);
-  const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   const minTurnLiteral =
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
@@ -756,7 +755,6 @@ function buildResponseObserverExpression(
     const SELECTORS = ${selectorsLiteral};
     const STOP_SELECTOR = ${JSON.stringify(STOP_CONTROL_SELECTOR)};
     const FINISHED_SELECTOR = '${FINISHED_ACTIONS_SELECTOR}';
-    const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const EXPECTED_CONVERSATION_ID = ${expectedConversationLiteral};
     // Learned: settling avoids capturing mid-stream HTML; keep short.
@@ -879,8 +877,7 @@ function buildResponseObserverExpression(
 
     // Check if the last assistant turn has finished (scoped to avoid detecting old turns).
     const isLastAssistantTurnFinished = () => {
-      const preciseTurns = Array.from(document.querySelectorAll('[data-testid^="conversation-turn"]'));
-      const turns = preciseTurns.length > 0 ? preciseTurns : Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+      const turns = ${buildConversationTurnListExpression()};
       let lastAssistantTurn = null;
       for (let i = turns.length - 1; i >= 0; i--) {
         if (isAssistantTurn(turns[i])) {
@@ -980,11 +977,9 @@ function buildResponseObserverExpression(
 }
 
 function buildAssistantExtractor(functionName: string): string {
-  const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   return `const ${functionName} = () => {
     ${buildClickDispatcher()}
-    const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -1020,15 +1015,7 @@ function buildAssistantExtractor(functionName: string): string {
       }
     };
 
-    // Prefer the precise testid-based turn containers when present; the broad
-    // CONVERSATION_SELECTOR can double-count nested message divs and shift the
-    // assistant turnIndex out of sync with the baseline count.
-    const containerTurns = Array.from(
-      document.querySelectorAll('[data-testid^="conversation-turn"]'),
-    );
-    const turns = containerTurns.length > 0
-      ? containerTurns
-      : Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    const turns = ${buildConversationTurnListExpression()};
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       const turn = turns[index];
       if (!isAssistantTurn(turn)) {
@@ -1113,13 +1100,10 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
       }
     }
     if (!root) return null;
-    const CONVERSATION_SELECTOR = '${CONVERSATION_TURN_SELECTOR}';
-    const turnNodes = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    const turnNodes = ${buildConversationTurnListExpression()};
     const hasTurns = turnNodes.length > 0;
     const resolveTurnIndex = (node) => {
-      const turn = node?.closest?.(CONVERSATION_SELECTOR);
-      if (!turn) return null;
-      const idx = turnNodes.indexOf(turn);
+      const idx = turnNodes.findIndex((turn) => turn === node || turn.contains?.(node));
       return idx >= 0 ? idx : null;
     };
     const isAfterMinTurn = (node) => {
@@ -1248,7 +1232,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
         if (testId.includes('assistant')) return true;
         return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
       };
-      const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+      const turns = ${buildConversationTurnListExpression()};
       for (let i = turns.length - 1; i >= 0; i -= 1) {
         const turn = turns[i];
         if (!isAssistantTurn(turn)) continue;

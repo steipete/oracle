@@ -1,11 +1,7 @@
 import path from "node:path";
 import type { ChromeClient, BrowserAttachment, BrowserLogger } from "../types.js";
-import {
-  CONVERSATION_TURN_SELECTOR,
-  INPUT_SELECTORS,
-  SEND_BUTTON_SELECTORS,
-  UPLOAD_STATUS_SELECTORS,
-} from "../constants.js";
+import { INPUT_SELECTORS, SEND_BUTTON_SELECTORS, UPLOAD_STATUS_SELECTORS } from "../constants.js";
+import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
@@ -1810,14 +1806,12 @@ function buildUserTurnAttachmentExpression(options: {
   expectedPromptPrefix: string;
   expectedConversationId: string | null;
 }): string {
-  const conversationSelectorLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const minTurnLiteral = options.minTurnIndex === null ? "null" : String(options.minTurnIndex);
   const expectedPromptLiteral = JSON.stringify(options.expectedPromptPrefix);
   const expectedConversationLiteral = options.expectedConversationId
     ? JSON.stringify(options.expectedConversationId)
     : "null";
   return `(() => {
-    const CONVERSATION_SELECTOR = ${conversationSelectorLiteral};
     const MIN_TURN_INDEX = ${minTurnLiteral};
     const EXPECTED_PROMPT_PREFIX = ${expectedPromptLiteral};
     const EXPECTED_CONVERSATION_ID = ${expectedConversationLiteral};
@@ -1830,7 +1824,7 @@ function buildUserTurnAttachmentExpression(options: {
     ) {
       return { ok: false, conversationMismatch: true };
     }
-    const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
+    const turns = ${buildConversationTurnListExpression()};
     const userTurns = turns.map((node, index) => ({ node, index })).filter(({ node }) => {
       const attr = (node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (attr === 'user') return true;
