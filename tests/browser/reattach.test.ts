@@ -330,15 +330,36 @@ describe("reattach helpers", () => {
     );
   });
 
-  test("pickTarget prefers chromeTargetId, then tabUrl, then first page", () => {
+  test("pickTarget prefers a saved conversation over a stale target id", () => {
     const targets = [
       { targetId: "t-1", type: "page", url: "https://chatgpt.com/c/first" },
       { targetId: "t-2", type: "page", url: "https://chatgpt.com/c/second" },
       { targetId: "t-3", type: "page", url: "about:blank" },
     ];
     expect(pickTarget(targets, { chromeTargetId: "t-2" })).toEqual(targets[1]);
+    expect(
+      pickTarget(targets, {
+        chromeTargetId: "t-2",
+        tabUrl: "https://chatgpt.com/c/first",
+        conversationId: "first",
+      }),
+    ).toEqual(targets[0]);
     expect(pickTarget(targets, { tabUrl: "https://chatgpt.com/c/first" })).toEqual(targets[0]);
     expect(pickTarget(targets, {})).toEqual(targets[0]);
+  });
+
+  test("pickTarget keeps the saved target among duplicate conversation tabs", () => {
+    const targets = [
+      { targetId: "duplicate", type: "page", url: "https://chatgpt.com/c/same" },
+      { targetId: "submitted", type: "page", url: "https://chatgpt.com/c/same" },
+    ];
+
+    expect(
+      pickTarget(targets, {
+        chromeTargetId: "submitted",
+        conversationId: "same",
+      }),
+    ).toEqual(targets[1]);
   });
 
   test("pickTarget understands CDP list ids", () => {

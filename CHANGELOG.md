@@ -2,6 +2,10 @@
 
 ## 0.15.2 — Unreleased
 
+### Fixed
+
+- Browser: persist late `/c/<id>` URLs during remote Chrome runs and prefer saved conversation targets over stale target IDs during reattach. Fixes #284. Thanks @StartupBros!
+
 ## 0.15.1 — 2026-07-03
 
 ### Added

@@ -101,6 +101,10 @@ import {
   resolveManualLoginWaitMs,
 } from "./manualLoginProfile.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "./controlPlan.js";
+import {
+  createConversationUrlMonitor,
+  type ConversationUrlMonitor,
+} from "./conversationUrlMonitor.js";
 
 export type { BrowserAutomationConfig, BrowserRunOptions, BrowserRunResult } from "./types.js";
 export { CHATGPT_URL, DEFAULT_MODEL_STRATEGY, DEFAULT_MODEL_TARGET } from "./constants.js";
@@ -885,6 +889,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let promptSubmitted = false;
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let tabLease: BrowserTabLease | null = null;
+  let conversationUrlMonitor: ConversationUrlMonitor | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
       return;
@@ -920,6 +925,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     promptSubmitted = true;
     await emitRuntimeHint();
+    void conversationUrlMonitor?.schedule("post-submit", config.timeoutMs ?? 120_000);
   };
   if (config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") {
     logger(
@@ -1321,43 +1327,22 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         await emitRuntimeHint();
       }
     };
-    let conversationHintInFlight: Promise<boolean> | null = null;
-    const updateConversationHint = async (label: string, timeoutMs = 10_000): Promise<boolean> => {
-      if (!chrome?.port) {
-        return false;
-      }
-      const start = Date.now();
-      while (Date.now() - start < timeoutMs) {
-        try {
-          const { result } = await Runtime.evaluate({
-            expression: "location.href",
-            returnByValue: true,
-          });
-          if (typeof result?.value === "string" && result.value.includes("/c/")) {
-            lastUrl = result.value;
-            logger(`[browser] conversation url (${label}) = ${lastUrl}`);
-            await emitRuntimeHint();
-            return true;
-          }
-        } catch {
-          // ignore; keep polling until timeout
-        }
-        await delay(250);
-      }
-      return false;
-    };
-    const scheduleConversationHint = (label: string, timeoutMs?: number): void => {
-      if (conversationHintInFlight) {
-        return;
-      }
-      // Learned: the /c/ URL can update after the answer; emit hints in the background.
-      // Run in the background so prompt submission/streaming isn't blocked by slow URL updates.
-      conversationHintInFlight = updateConversationHint(label, timeoutMs)
-        .catch(() => false)
-        .finally(() => {
-          conversationHintInFlight = null;
+    const activeConversationUrlMonitor = createConversationUrlMonitor({
+      readUrl: async () => {
+        const { result } = await Runtime.evaluate({
+          expression: "location.href",
+          returnByValue: true,
         });
-    };
+        return typeof result?.value === "string" ? result.value : null;
+      },
+      persistUrl: async (url) => {
+        lastUrl = url;
+        await emitRuntimeHint();
+      },
+      logger,
+    });
+    conversationUrlMonitor = activeConversationUrlMonitor;
+    const updateConversationHint = conversationUrlMonitor.update;
     await captureRuntimeSnapshot();
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
     if (config.desiredModel && modelStrategy !== "ignore" && !isResumingConversation) {
@@ -1551,8 +1536,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           }
         }
       }
-      // Reattach needs a /c/ URL; ChatGPT can update it late, so poll in the background.
-      scheduleConversationHint("post-submit", config.timeoutMs ?? 120_000);
       return {
         baselineTurns,
         baselineAssistantText,
@@ -2263,6 +2246,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       normalizedError,
     );
   } finally {
+    await conversationUrlMonitor?.stop();
     try {
       if (!connectionClosedUnexpectedly) {
         await client?.close();
@@ -2731,6 +2715,7 @@ async function runRemoteBrowserMode(
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let attachedExistingTab = false;
   let ownsTarget = true;
+  let conversationUrlMonitor: ConversationUrlMonitor | null = null;
   const runtimeHintCb = options.runtimeHintCb;
   const emitRuntimeHint = async () => {
     if (!runtimeHintCb) return;
@@ -2766,6 +2751,7 @@ async function runRemoteBrowserMode(
     }
     promptSubmitted = true;
     await emitRuntimeHint();
+    void conversationUrlMonitor?.schedule("post-submit", config.timeoutMs ?? 120_000);
   };
   const startedAt = Date.now();
   let answerText = "";
@@ -2836,6 +2822,29 @@ async function runRemoteBrowserMode(
     }
     await Promise.all(domainEnablers);
     removeDialogHandler = installJavaScriptDialogAutoDismissal(Page, logger);
+    try {
+      await client.Emulation.setFocusEmulationEnabled({ enabled: true });
+      logger("[browser] Focus emulation enabled for remote target");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger(`[browser] Focus emulation unavailable: ${message}`);
+    }
+
+    const activeConversationUrlMonitor = createConversationUrlMonitor({
+      readUrl: async () => {
+        const { result } = await Runtime.evaluate({
+          expression: "location.href",
+          returnByValue: true,
+        });
+        return typeof result?.value === "string" ? result.value : null;
+      },
+      persistUrl: async (url) => {
+        lastUrl = url;
+        await emitRuntimeHint();
+      },
+      logger,
+    });
+    conversationUrlMonitor = activeConversationUrlMonitor;
 
     // Skip cookie sync for remote Chrome - it already has cookies
     logger("Skipping cookie sync for remote Chrome (using existing session)");
@@ -3045,7 +3054,7 @@ async function runRemoteBrowserMode(
           targetBaselineCaptured: deepResearchTargetBaselineCaptured,
         },
       );
-      await emitRuntimeHint();
+      await activeConversationUrlMonitor.update("post-deep-research", 15_000).catch(() => false);
       const durationMs = Date.now() - startedAt;
       const tokens = estimateTokenCount(researchResult.text);
       const reportArtifact = await saveOptionalArtifact(
@@ -3230,11 +3239,7 @@ async function runRemoteBrowserMode(
     ): Promise<BrowserConversationTurn & { answerHtml: string }> => {
       let turnAnswer: AssistantAnswer;
       try {
-        const conversationUrl = await readConversationUrl(Runtime).catch(() => null);
-        if (conversationUrl && isConversationUrl(conversationUrl)) {
-          lastUrl = conversationUrl;
-          await emitRuntimeHint();
-        }
+        await activeConversationUrlMonitor.update("assistant-wait", 15_000).catch(() => false);
         turnAnswer = await waitWithThinkingMonitor(() =>
           waitForAssistantOrGeneratedImageResponse({
             Runtime,
@@ -3260,15 +3265,9 @@ async function runRemoteBrowserMode(
           if (rechecked) {
             turnAnswer = rechecked;
           } else {
-            try {
-              const conversationUrl = await readConversationUrl(Runtime);
-              if (conversationUrl) {
-                lastUrl = conversationUrl;
-              }
-            } catch {
-              // ignore
-            }
-            await emitRuntimeHint();
+            await activeConversationUrlMonitor
+              .update("assistant-timeout", 15_000)
+              .catch(() => false);
             const diagnostics = await captureBrowserDiagnostics(
               Runtime,
               logger,
@@ -3301,6 +3300,7 @@ async function runRemoteBrowserMode(
           throw error;
         }
       }
+      await activeConversationUrlMonitor.update("post-response", 15_000).catch(() => false);
       const baselineNormalized = baselineAssistantText
         ? normalizeForComparison(baselineAssistantText)
         : "";
@@ -3601,6 +3601,7 @@ async function runRemoteBrowserMode(
       },
     });
   } finally {
+    await conversationUrlMonitor?.stop();
     try {
       await closeRemoteConnectionAfterRun({
         connectionClosedUnexpectedly,

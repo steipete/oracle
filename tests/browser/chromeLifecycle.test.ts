@@ -278,6 +278,7 @@ describe("closeBlankChromeTabs", () => {
       Runtime: { enable: vi.fn(async () => ({})), evaluate: vi.fn(async () => ({ result: {} })) },
       Input: { dispatchKeyEvent: vi.fn(async () => ({})) },
       DOM: { enable: vi.fn(async () => ({})) },
+      Emulation: { setFocusEmulationEnabled: vi.fn(async () => ({})) },
       on: vi.fn(),
       once: vi.fn(),
       removeListener: vi.fn(),
@@ -307,6 +308,11 @@ describe("closeBlankChromeTabs", () => {
       flatten: true,
     });
     expect(connection.targetId).toBe("target-9");
+    await connection.client.Emulation.setFocusEmulationEnabled({ enabled: true });
+    expect(browserClient.Emulation.setFocusEmulationEnabled).toHaveBeenCalledWith(
+      { enabled: true },
+      "session-9",
+    );
     await (
       connection.client as typeof connection.client & {
         send: (method: string, params: unknown, sessionId: string) => Promise<unknown>;

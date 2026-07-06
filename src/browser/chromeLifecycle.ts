@@ -505,6 +505,7 @@ function createSessionBoundChromeClient(browser: ChromeClient, sessionId: string
     Runtime: bindDomain("Runtime"),
     Input: bindDomain("Input"),
     DOM: bindDomain("DOM"),
+    Emulation: bindDomain("Emulation"),
     on: browserWithEvents.on.bind(browserWithEvents),
     once: browserWithEvents.once.bind(browserWithEvents),
     off:
