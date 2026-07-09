@@ -210,7 +210,7 @@ describe("classifyTurnTerminal", () => {
     expect(out.at(-1)).toBe(true);
   });
 
-  test("proofA still fires even if a stale thinking panel lingers", () => {
+  test("proofA fires even if a stale thinking panel lingers (bar bypasses the veto)", () => {
     const out = runGate([
       { len: 800, stopVisible: true },
       { len: 800, barVisible: true, thinkingActive: true },
@@ -218,10 +218,10 @@ describe("classifyTurnTerminal", () => {
       { len: 800, barVisible: true, thinkingActive: true },
       { len: 800, barVisible: true, thinkingActive: true },
     ]);
-    // barVisible && !stop && !thinking is required to increment; thinkingActive blocks the
-    // debounce, so proofA does NOT fire here — the veto holds. (Documents that a lingering
-    // ACTIVE panel defers to the quiet fallback; a *completed* turn reports thinking=false.)
-    expect(out.some(Boolean)).toBe(false);
+    // The debounce increments on barVisible && !stop && !grew (NOT gated on thinking), so a
+    // debounced action bar proves completion even if a false-positive or stale thinking signal
+    // lingers. This avoids hanging a finished turn whose reasoning panel is still mounted.
+    expect(out.at(-1)).toBe(true);
   });
 
   test("proofB: a bar-drifted answer finalizes after the quiet window with no thinking", () => {

@@ -87,10 +87,11 @@ export function classifyTurnTerminal(
   const lastGrowthAt = grew ? sample.now : state.lastGrowthAt;
   const disturbed = grew || sample.stopVisible || sample.thinkingActive;
   const lastDisturbanceAt = disturbed ? sample.now : state.lastDisturbanceAt;
+  // proofA debounce: intentionally NOT gated on !thinkingActive, so a debounced action bar
+  // proves completion even if a stale/false-positive thinking signal lingers (a finished turn
+  // can keep a reasoning panel mounted). Only proofB is vetoed by thinkingActive.
   const barStableCycles =
-    sample.barVisible && !sample.stopVisible && !sample.thinkingActive && !grew
-      ? state.barStableCycles + 1
-      : 0;
+    sample.barVisible && !sample.stopVisible && !grew ? state.barStableCycles + 1 : 0;
   const next: TerminalGateState = { maxLen, lastGrowthAt, lastDisturbanceAt, barStableCycles };
 
   let terminal = false;
@@ -350,7 +351,13 @@ export async function waitForAssistantResponse(
     );
   }
 
-  return candidate;
+  // Budget already exhausted before we could confirm: refuse rather than fall through and ship
+  // an unconfirmed capture. A settled preamble that arrived near the deadline must not be
+  // finalized just because there was no time left to prove it terminal.
+  await logDomFailure(Runtime, logger, "assistant-response-unconfirmed");
+  throw new Error(
+    "assistant-response could not be confirmed complete before the deadline; refusing to finalize a possibly-incomplete capture",
+  );
 }
 
 export async function readAssistantSnapshot(
@@ -473,7 +480,10 @@ async function recoverAssistantResponse(
       await logConversationSnapshot(Runtime, logger).catch(() => undefined);
       return null;
     }
-    return recovered;
+    // No confirmation time left: refuse rather than return the unconfirmed recovered snapshot
+    // (returning it raw would reopen the recovered-long-preamble leak this gate closes).
+    await logConversationSnapshot(Runtime, logger).catch(() => undefined);
+    return null;
   }
   await logConversationSnapshot(Runtime, logger).catch(() => undefined);
   return null;
