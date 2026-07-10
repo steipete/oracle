@@ -521,10 +521,16 @@ export function buildThinkingActivePredicateJs(fnName: string): string {
         .toLowerCase()
         .replace(/\\s+/g, ' ')
         .trim();
+    // Completed reasoning summary: SHORT visible text containing "thought for " (numeric or
+    // worded duration, with or without a heading prefix like "Reasoning Thought for 12s", even
+    // when fragments concatenate without whitespace). The length cap is what keeps this from
+    // vetoing a live sidecar trace: a running trace grows far past 60 chars, while a collapsed
+    // completed summary (plus optional heading) stays short.
+    const isCompletedSummary = (text) => text.length > 0 && text.length <= 60 && text.includes('thought for ');
     const isActiveLabel = (raw) => {
       const text = norm(raw);
       if (!text || text.length > 60) return false;
-      if (text.startsWith('thought for')) return false; // completed reasoning summary, NOT active
+      if (isCompletedSummary(text)) return false;
       return ACTIVE_LABELS.some((label) => text === label || text.startsWith(label + ' '));
     };
     const statusNodes = (() => {
@@ -575,12 +581,16 @@ export function buildThinkingActivePredicateJs(fnName: string): string {
     //    container that carries a live progress bar. Presence alone is NOT enough (a collapsed
     //    reasoning summary persists post-completion); require the thinking cue or live progress.
     const looksLikeThinking = (node) => {
+      // Judge completion on the panel's VISIBLE text only: data-testid values like
+      // "reasoning-panel" would otherwise taint the completed-summary check, and a live trace
+      // is judged by its full rendered length, not by fragments of it.
+      const visible = norm(node.textContent) || norm(node.getAttribute?.('aria-label'));
+      if (isCompletedSummary(visible)) return false;
       const label = norm([
         node.textContent,
         node.getAttribute?.('aria-label'),
         node.getAttribute?.('data-testid'),
       ].filter(Boolean).join(' '));
-      if (label.startsWith('thought for')) return false;
       return label.includes('thinking') || label.includes('reasoning') || label.includes('pro thinking');
     };
     let panels;

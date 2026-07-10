@@ -154,7 +154,9 @@ const THINKING_STATUS_LABELS = [
 function matchesThinkingStatusLabel(trimmed: string): boolean {
   if (!trimmed) return false;
   if (THINKING_STATUS_LABELS.includes(trimmed)) return true;
-  if (trimmed.startsWith("thought for ") && trimmed.length <= 40) return true;
+  // includes, not startsWith: the completed summary can carry a heading prefix
+  // ("Reasoning Thought for 12s"); the length cap keeps real answers out.
+  if (trimmed.includes("thought for ") && trimmed.length <= 40) return true;
   return trimmed.startsWith("pro thinking") && trimmed.length <= 40;
 }
 
@@ -184,7 +186,7 @@ function buildActiveThinkingStatusPredicateJs(fnName: string): string {
     const labels = ${labelsLiteral};
     const matches =
       labels.includes(normalized) ||
-      (normalized.startsWith('thought for ') && normalized.length <= 40) ||
+      (normalized.includes('thought for ') && normalized.length <= 40) ||
       (normalized.startsWith('pro thinking') && normalized.length <= 40);
     return matches && isStopControlVisible();
   };`;
@@ -1197,7 +1199,7 @@ function buildAssistantExtractor(functionName: string): string {
         normalizedText === 'edit' ||
         normalizedText === 'stopped thinking' ||
         normalizedText === 'stopped thinking edit' ||
-        /^thought for \\d+(?:\\.\\d+)?\\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\\s+edit$/.test(normalizedText);
+        /^(?:reasoning\\s+|pro thinking\\s+)?thought for \\d+(?:\\.\\d+)?\\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours)\\s+edit$/.test(normalizedText);
       if (generatedImages.length > 0 && imageOnlyChrome) {
         const label = generatedImages.length === 1 ? 'Generated image.' : \`Generated \${generatedImages.length} images.\`;
         return { text: label, html: messageRoot?.innerHTML ?? html, messageId, turnId, turnIndex: index };

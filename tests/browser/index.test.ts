@@ -554,6 +554,9 @@ describe("image-only assistant turn detection", () => {
   test("treats ChatGPT image-only chrome text as non-answer UI", () => {
     expect(__test__.isImageOnlyUiChromeText("Stopped thinking\nEdit")).toBe(true);
     expect(__test__.isImageOnlyUiChromeText("Edit")).toBe(true);
+    expect(__test__.isImageOnlyUiChromeText("Thought for 12s Edit")).toBe(true);
+    expect(__test__.isImageOnlyUiChromeText("Reasoning Thought for 12s Edit")).toBe(true);
+    expect(__test__.isImageOnlyUiChromeText("Pro thinking Thought for 3.5s Edit")).toBe(true);
     expect(__test__.isImageOnlyUiChromeText("PR169_IMAGE_OK")).toBe(false);
   });
 });

@@ -13,6 +13,18 @@ import {
 import { buildThinkingActivePredicateJsForTest } from "../../src/browser/actions/thinkingStatus.js";
 import { STOP_BUTTON_SELECTORS } from "../../src/browser/constants.js";
 
+// Completed-summary shapes the veto must treat as NOT active: bare, heading-prefixed
+// (the GPT-5.6 DOM renders "Reasoning Thought for 12s"), worded non-numeric durations,
+// and heading fragments that concatenate without whitespace (CSS-spaced siblings).
+const COMPLETED_SUMMARY_LABELS = [
+  "Thought for 12s",
+  "Reasoning Thought for 12s",
+  "Thought for a few seconds",
+  "Reasoning Thought for a moment",
+  "ReasoningThought for 12s",
+  "Thought for 1m 5s",
+];
+
 function evaluatePredicate(text: string, generating: boolean): boolean {
   const predicate = buildActiveThinkingStatusPredicateJsForTest("isActiveThinkingStatus");
   class FakeHtmlElement {
@@ -58,6 +70,21 @@ describe("assistant thinking-status capture", () => {
 
   test("does not suppress normal text while generation is active", () => {
     expect(evaluatePredicate("Thinking about the design, use Postgres.", true)).toBe(false);
+  });
+
+  test.each(["Reasoning Thought for 12s", "Thought for a few seconds"])(
+    "recognizes prefixed/worded completed summary %s as status chrome, not an answer",
+    (label) => {
+      expect(matchesThinkingStatusLabelForTest(label)).toBe(true);
+      expect(evaluatePredicate(label, true)).toBe(true);
+    },
+  );
+
+  test("does not treat a real answer mentioning 'thought for' as status chrome", () => {
+    // Longer than the 40-char status cap: must never be held back as a placeholder.
+    const answer = "I thought for a while about this tradeoff and Postgres still wins.";
+    expect(matchesThinkingStatusLabelForTest(answer)).toBe(false);
+    expect(evaluatePredicate(answer, true)).toBe(false);
   });
 
   test("uses the active-status predicate in snapshot capture", () => {
@@ -408,11 +435,14 @@ describe("thinking-active completion veto", () => {
     },
   );
 
-  test("does NOT fire on the persistent completed reasoning summary 'Thought for 12s'", () => {
-    // The headline hang the design must avoid: this summary lingers in the DOM on every
-    // finished Pro turn and on reattach. A presence-based veto would hang forever here.
-    expect(evalThinkingActive({ statusText: "Thought for 12s" })).toBe(false);
-  });
+  test.each(COMPLETED_SUMMARY_LABELS)(
+    "does NOT fire on the persistent completed reasoning summary %s",
+    (statusText) => {
+      // The headline hang the design must avoid: this summary lingers in the DOM on every
+      // finished Pro turn and on reattach. A presence-based veto would hang forever here.
+      expect(evalThinkingActive({ statusText })).toBe(false);
+    },
+  );
 
   test("fires on a live progress bar as the sole liveness signal (progress-only sidecar)", () => {
     expect(evalThinkingActive({ progress: true })).toBe(true);
@@ -429,10 +459,21 @@ describe("thinking-active completion veto", () => {
     expect(evalThinkingActive({ panel })).toBe(true);
   });
 
-  test("does NOT fire on a completed 'Thought for Xs' sidecar (past-tense, not active)", () => {
-    const panel = new FakeEl("Thought for 12s");
+  test.each(COMPLETED_SUMMARY_LABELS)("does NOT fire on completed sidecar summary %s", (text) => {
+    const panel = new FakeEl(text);
     panel.rect = { left: 1000, top: 100, width: 380, height: 400 };
     expect(evalThinkingActive({ panel })).toBe(false);
+  });
+
+  test("still fires on a live sidecar trace that embeds a completed sub-step summary", () => {
+    // A running trace accumulates sub-step summaries ("Thought for 2s") alongside live
+    // reasoning text. Only a SHORT summary-only panel means the turn is done; a long trace
+    // must keep vetoing completion even though it contains the completed phrase.
+    const panel = new FakeEl(
+      "Thought for 2s: Searching the web. Reasoning about the diff and enumerating candidate hunks to inspect next.",
+    );
+    panel.rect = { left: 1000, top: 100, width: 380, height: 400 };
+    expect(evalThinkingActive({ panel })).toBe(true);
   });
 
   test("does NOT fire on an idle DOM (finished, no controls)", () => {
