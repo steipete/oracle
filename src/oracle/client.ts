@@ -18,7 +18,7 @@ import type {
 } from "./types.js";
 import { createGeminiClient } from "./gemini.js";
 import { createClaudeClient } from "./claude.js";
-import { isOpenRouterBaseUrl } from "./modelResolver.js";
+import { isOpenRouterBaseUrl, isRequestyBaseUrl } from "./modelResolver.js";
 import { isCustomBaseUrl } from "./baseUrl.js";
 
 export function buildAzureResponsesBaseUrl(endpoint: string): string {
@@ -39,12 +39,13 @@ export function createDefaultClientFactory(): ClientFactory {
     },
   ): ClientLike => {
     const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
+    const requesty = isRequestyBaseUrl(options?.baseUrl);
     const customProxy = isCustomBaseUrl(options?.baseUrl);
 
-    // When using any custom/proxy base URL (OpenRouter, LiteLLM, vLLM, Together, etc.),
+    // When using any custom/proxy base URL (OpenRouter, Requesty, LiteLLM, vLLM, Together, etc.),
     // route ALL models through the OpenAI chat/completions adapter instead of native SDKs
     // which would reject the proxy's API key.
-    if (!openRouter && !customProxy) {
+    if (!openRouter && !requesty && !customProxy) {
       if (options?.model?.startsWith("gemini")) {
         // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
         return createGeminiClient(key, options.model, options.resolvedModelId);
@@ -57,7 +58,9 @@ export function createDefaultClientFactory(): ClientFactory {
     let instance: OpenAI;
     const defaultHeaders: Record<string, string> | undefined = openRouter
       ? buildOpenRouterHeaders()
-      : undefined;
+      : requesty
+        ? buildRequestyHeaders()
+        : undefined;
 
     const httpTimeoutMs =
       typeof options?.httpTimeoutMs === "number" &&
@@ -104,6 +107,22 @@ function buildOpenRouterHeaders(): Record<string, string> | undefined {
     process.env.OPENROUTER_HTTP_REFERER ??
     "https://github.com/steipete/oracle";
   const title = process.env.OPENROUTER_TITLE ?? "Oracle CLI";
+  if (referer) {
+    headers["HTTP-Referer"] = referer;
+  }
+  if (title) {
+    headers["X-Title"] = title;
+  }
+  return headers;
+}
+
+function buildRequestyHeaders(): Record<string, string> | undefined {
+  const headers: Record<string, string> = {};
+  const referer =
+    process.env.REQUESTY_REFERER ??
+    process.env.REQUESTY_HTTP_REFERER ??
+    "https://github.com/steipete/oracle";
+  const title = process.env.REQUESTY_TITLE ?? "Oracle CLI";
   if (referer) {
     headers["HTTP-Referer"] = referer;
   }

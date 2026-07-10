@@ -234,4 +234,48 @@ describe("provider route plan", () => {
     expect(plan.keySource).toBe("AZURE_OPENAI_API_KEY|OPENAI_API_KEY");
     expect(plan.error).toMatch(/--provider azure requires --azure-endpoint/);
   });
+
+  test("custom model ids fall back to Requesty when only its key is present", () => {
+    const plan = buildProviderRoutePlan({
+      model: "openai/gpt-4o-mini",
+      providerMode: "auto",
+      env: {
+        REQUESTY_API_KEY: "rqsty-sk-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("Requesty");
+    expect(plan.keySource).toBe("REQUESTY_API_KEY");
+  });
+
+  test("OpenRouter keeps precedence over Requesty when both keys are present", () => {
+    const plan = buildProviderRoutePlan({
+      model: "openai/gpt-4o-mini",
+      providerMode: "auto",
+      env: {
+        OPENROUTER_API_KEY: "or-openrouter-test-key",
+        REQUESTY_API_KEY: "rqsty-sk-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("OpenRouter");
+    expect(plan.keySource).toBe("OPENROUTER_API_KEY");
+  });
+
+  test("explicit Requesty base URL routes through Requesty", () => {
+    const plan = buildProviderRoutePlan({
+      model: "openai/gpt-4o-mini",
+      providerMode: "auto",
+      baseUrl: "https://router.requesty.ai/v1",
+      env: {
+        REQUESTY_API_KEY: "rqsty-sk-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("Requesty");
+    expect(plan.keySource).toBe("REQUESTY_API_KEY");
+  });
 });

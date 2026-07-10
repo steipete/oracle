@@ -2,8 +2,11 @@ import { isCustomBaseUrl } from "./baseUrl.js";
 import { formatBaseUrlForLog, maskApiKey } from "./logging.js";
 import {
   defaultOpenRouterBaseUrl,
+  defaultRequestyBaseUrl,
   isOpenRouterBaseUrl,
+  isRequestyBaseUrl,
   normalizeOpenRouterBaseUrl,
+  normalizeRequestyBaseUrl,
 } from "./modelResolver.js";
 import { resolveProviderRoutingState, validateProviderRouting } from "./providerRouting.js";
 import type { ApiProviderMode, AzureOptions, ModelConfig, ModelName } from "./types.js";
@@ -45,6 +48,7 @@ export interface ResolvedProviderRoute extends ProviderRoutePlan {
   baseUrl?: string;
   apiKey?: string;
   openRouterFallback: boolean;
+  requestyFallback: boolean;
   azureEndpoint?: string;
 }
 
@@ -58,6 +62,7 @@ export function buildProviderRoutePlan(input: ProviderRoutePlanInput): ProviderR
     baseUrl: _baseUrl,
     nativeProvider: _nativeProvider,
     openRouterFallback: _openRouterFallback,
+    requestyFallback: _requestyFallback,
     azureEndpoint: _azureEndpoint,
     ...plan
   } = buildResolvedProviderRoute(input);
@@ -92,6 +97,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
       isAzureOpenAI,
       baseUrl: input.baseUrl,
       openRouterFallback: false,
+      requestyFallback: false,
       apiKey: input.apiKey,
       env,
     });
@@ -110,6 +116,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
       nativeProvider: provider,
       baseUrl: input.baseUrl,
       openRouterFallback: false,
+      requestyFallback: false,
       isAzureOpenAI,
       azureEndpoint: state?.azureEndpoint ?? input.azure?.endpoint,
       azureConfigured,
@@ -172,6 +179,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
           (provider === "xai" && !nativeKey.present) ||
           provider === "other");
   const openRouterKey = readKey(["OPENROUTER_API_KEY"], env);
+  const requestyKey = readKey(["REQUESTY_API_KEY"], env);
   const openRouterFallback =
     !baseUrl &&
     (providerQualifiedOpenRouterRoute ||
@@ -179,10 +187,20 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
         providerKeyMissing &&
         (provider === "other" || openRouterKey.present)));
 
-  if (openRouterFallback) {
+  // Requesty shares OpenRouter's provider/model catalog convention. OpenRouter keeps
+  // precedence when both keys are set so existing setups are unchanged; Requesty only
+  // takes over the gateway fallback when OPENROUTER_API_KEY is absent but
+  // REQUESTY_API_KEY is present.
+  const requestyFallback = openRouterFallback && !openRouterKey.present && requestyKey.present;
+
+  if (requestyFallback) {
+    baseUrl = defaultRequestyBaseUrl();
+  } else if (openRouterFallback) {
     baseUrl = defaultOpenRouterBaseUrl();
   }
-  if (baseUrl && isOpenRouterBaseUrl(baseUrl)) {
+  if (baseUrl && isRequestyBaseUrl(baseUrl)) {
+    baseUrl = normalizeRequestyBaseUrl(baseUrl);
+  } else if (baseUrl && isOpenRouterBaseUrl(baseUrl)) {
     baseUrl = normalizeOpenRouterBaseUrl(baseUrl);
   }
 
@@ -193,6 +211,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     isAzureOpenAI,
     baseUrl,
     openRouterFallback,
+    requestyFallback,
     apiKey: input.apiKey,
     env,
   });
@@ -200,6 +219,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     provider,
     baseUrl,
     openRouterFallback,
+    requestyFallback,
     isAzureOpenAI,
   });
   const fallbackHost = DEFAULT_PROVIDER_HOSTS[provider] ?? DEFAULT_PROVIDER_HOSTS.openai;
@@ -219,6 +239,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     nativeProvider: provider,
     baseUrl,
     openRouterFallback,
+    requestyFallback,
     isAzureOpenAI,
     azureEndpoint: state.azureEndpoint,
     azureConfigured,
@@ -250,6 +271,7 @@ function getNativeKey({
     isAzureOpenAI,
     baseUrl: undefined,
     openRouterFallback: false,
+    requestyFallback: false,
     apiKey,
     env,
   });
@@ -262,6 +284,7 @@ function getKeyForRoute({
   isAzureOpenAI,
   baseUrl,
   openRouterFallback,
+  requestyFallback,
   apiKey,
   env,
 }: {
@@ -271,6 +294,7 @@ function getKeyForRoute({
   isAzureOpenAI: boolean;
   baseUrl?: string;
   openRouterFallback: boolean;
+  requestyFallback: boolean;
   apiKey?: string;
   env: NodeJS.ProcessEnv;
 }): { source: string; preview: string; present: boolean; value?: string } {
@@ -287,6 +311,9 @@ function getKeyForRoute({
   }
   if (providerMode === "openai") {
     return readKey(["OPENAI_API_KEY"], env);
+  }
+  if (isRequestyBaseUrl(baseUrl) || requestyFallback) {
+    return readKey(["REQUESTY_API_KEY"], env);
   }
   if (isOpenRouterBaseUrl(baseUrl) || openRouterFallback) {
     return readKey(["OPENROUTER_API_KEY"], env);
@@ -334,14 +361,17 @@ function routeProviderLabel({
   provider,
   baseUrl,
   openRouterFallback,
+  requestyFallback,
   isAzureOpenAI,
 }: {
   provider: NonNullable<ModelConfig["provider"]>;
   baseUrl?: string;
   openRouterFallback: boolean;
+  requestyFallback: boolean;
   isAzureOpenAI: boolean;
 }): string {
   if (isAzureOpenAI) return "Azure OpenAI";
+  if (isRequestyBaseUrl(baseUrl) || requestyFallback) return "Requesty";
   if (isOpenRouterBaseUrl(baseUrl) || openRouterFallback) return "OpenRouter";
   if (baseUrl && isCustomBaseUrl(baseUrl)) return "OpenAI-compatible";
   return providerLabel(provider);

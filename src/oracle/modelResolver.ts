@@ -13,6 +13,8 @@ import { pricingFromUsdPerToken } from "tokentally";
 
 const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 const OPENROUTER_MODELS_ENDPOINT = "https://openrouter.ai/api/v1/models";
+const REQUESTY_DEFAULT_BASE = "https://router.requesty.ai/v1";
+const REQUESTY_MODELS_ENDPOINT = "https://router.requesty.ai/v1/models";
 const require = createRequire(import.meta.url);
 let countTokensGpt5ProImpl: TokenizerFn | undefined;
 
@@ -40,11 +42,38 @@ export function isOpenRouterBaseUrl(baseUrl: string | undefined): boolean {
   }
 }
 
+export function isRequestyBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    const url = new URL(baseUrl);
+    return url.hostname.includes("requesty.ai");
+  } catch {
+    return false;
+  }
+}
+
 export function defaultOpenRouterBaseUrl(): string {
   return OPENROUTER_DEFAULT_BASE;
 }
 
+export function defaultRequestyBaseUrl(): string {
+  return REQUESTY_DEFAULT_BASE;
+}
+
 export function normalizeOpenRouterBaseUrl(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    // If user passed the responses endpoint, trim it so the client does not double-append.
+    if (url.pathname.endsWith("/responses")) {
+      url.pathname = url.pathname.replace(/\/responses\/?$/, "");
+    }
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return baseUrl;
+  }
+}
+
+export function normalizeRequestyBaseUrl(baseUrl: string): string {
   try {
     const url = new URL(baseUrl);
     // If user passed the responses endpoint, trim it so the client does not double-append.
@@ -70,6 +99,22 @@ interface OpenRouterModelInfo {
   };
 }
 
+/**
+ * Requesty's `/v1/models` payload is OpenAI-shaped but exposes capability and
+ * pricing metadata under different field names than OpenRouter. Requesty prices
+ * are USD per token (like OpenRouter) but live on flat `input_price`/`output_price`
+ * fields, and context length is reported as `context_window`.
+ */
+interface RequestyModelInfo {
+  id: string;
+  context_window?: number;
+  input_price?: string | number;
+  output_price?: string | number;
+  supports_tool_calling?: boolean;
+  supports_reasoning?: boolean;
+  supports_vision?: boolean;
+}
+
 function openRouterPricing(pricing: OpenRouterModelInfo["pricing"]): ModelConfig["pricing"] {
   const parsePrice = (value: string | number | undefined): number | null => {
     const parsed =
@@ -89,6 +134,24 @@ function openRouterPricing(pricing: OpenRouterModelInfo["pricing"]): ModelConfig
   return {
     inputPerToken: normalized.inputUsdPerToken,
     outputPerToken: normalized.outputUsdPerToken,
+  };
+}
+
+/**
+ * Adapt a Requesty catalog entry to the internal {@link OpenRouterModelInfo}
+ * shape so the shared hydration path can enrich configs regardless of gateway.
+ * Requesty reports context length as `context_window` and prices as flat
+ * per-token `input_price`/`output_price` fields (vs OpenRouter's nested
+ * `pricing.prompt`/`pricing.completion`).
+ */
+function normalizeRequestyModel(info: RequestyModelInfo): OpenRouterModelInfo {
+  return {
+    id: info.id,
+    context_length: info.context_window,
+    pricing: {
+      prompt: info.input_price,
+      completion: info.output_price,
+    },
   };
 }
 
@@ -142,6 +205,32 @@ async function fetchOpenRouterCatalog(
   return models;
 }
 
+async function fetchRequestyCatalog(
+  apiKey: string,
+  fetcher: FetchFn,
+): Promise<OpenRouterModelInfo[]> {
+  const cacheKey = `requesty:${apiKey}`;
+  const now = Date.now();
+  const cached = catalogCache.get(cacheKey);
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.models;
+  }
+  const response = await fetcher(REQUESTY_MODELS_ENDPOINT, {
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load Requesty models (${response.status})`);
+  }
+  const json = (await response.json()) as { data?: RequestyModelInfo[] };
+  const models = (json?.data ?? []).map(normalizeRequestyModel);
+  catalogCache.set(cacheKey, { fetchedAt: now, models });
+  // Prune after insert so the max-size constraint is strictly enforced.
+  pruneCatalogCache(now);
+  return models;
+}
+
 function mapToOpenRouterId(
   candidate: string,
   catalog: OpenRouterModelInfo[],
@@ -163,6 +252,7 @@ export async function resolveModelConfig(
   options: {
     baseUrl?: string;
     openRouterApiKey?: string;
+    requestyApiKey?: string;
     fetcher?: FetchFn;
     modelOverrides?: ModelOverridesConfig;
   } = {},
@@ -178,16 +268,68 @@ async function resolveBaseModelConfig(
   options: {
     baseUrl?: string;
     openRouterApiKey?: string;
+    requestyApiKey?: string;
     fetcher?: FetchFn;
   } = {},
 ): Promise<ModelConfig> {
   const known = isKnownModel(model) ? (MODEL_CONFIGS[model] as ModelConfig) : null;
   const fetcher: FetchFn = options.fetcher ?? globalThis.fetch.bind(globalThis);
+  const requestyActive = isRequestyBaseUrl(options.baseUrl) || Boolean(options.requestyApiKey);
+  // OpenRouter and Requesty share the same provider/model catalog convention. When a
+  // Requesty base URL is targeted we never treat it as OpenRouter, so first-party keys
+  // still win exactly like the OpenRouter path.
   const openRouterActive =
-    isOpenRouterBaseUrl(options.baseUrl) || Boolean(options.openRouterApiKey);
+    !requestyActive && (isOpenRouterBaseUrl(options.baseUrl) || Boolean(options.openRouterApiKey));
 
-  if (known && !openRouterActive) {
+  if (known && !openRouterActive && !requestyActive) {
     return known;
+  }
+
+  // Try to enrich from the Requesty catalog when available.
+  if (requestyActive && options.requestyApiKey) {
+    try {
+      const catalog = await fetchRequestyCatalog(options.requestyApiKey, fetcher);
+      const targetId = mapToOpenRouterId(
+        typeof model === "string" ? model : String(model),
+        catalog,
+        known?.provider,
+      );
+      const info = catalog.find((entry) => entry.id === targetId) ?? null;
+      if (info) {
+        return {
+          ...(known ?? {
+            model,
+            tokenizer: countTokensGpt5Pro as TokenizerFn,
+            inputLimit: info.context_length ?? 200_000,
+            reasoning: null,
+          }),
+          apiModel: targetId,
+          openRouterId: targetId,
+          provider: known?.provider ?? "other",
+          inputLimit: info.context_length ?? known?.inputLimit ?? 200_000,
+          pricing: openRouterPricing(info.pricing) ?? known?.pricing ?? null,
+          supportsBackground: known?.supportsBackground ?? true,
+          supportsSearch: known?.supportsSearch ?? true,
+        };
+      }
+      // No metadata hit; fall through to synthesized config.
+      return {
+        ...(known ?? {
+          model,
+          tokenizer: countTokensGpt5Pro as TokenizerFn,
+          inputLimit: 200_000,
+          reasoning: null,
+        }),
+        apiModel: targetId,
+        openRouterId: targetId,
+        provider: known?.provider ?? "other",
+        supportsBackground: known?.supportsBackground ?? true,
+        supportsSearch: known?.supportsSearch ?? true,
+        pricing: known?.pricing ?? null,
+      };
+    } catch {
+      // If catalog fetch fails, fall back to a synthesized config.
+    }
   }
 
   // Try to enrich from OpenRouter catalog when available.

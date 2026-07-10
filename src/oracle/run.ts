@@ -42,6 +42,7 @@ import { formatTokenEstimate, formatTokenValue, resolvePreviewMode } from "./run
 import { estimateUsdCost } from "tokentally";
 import {
   isOpenRouterBaseUrl,
+  isRequestyBaseUrl,
   isProModel,
   resolveModelConfig,
   resolveOverriddenApiModel,
@@ -97,6 +98,9 @@ function runtimeKeySource({
   }
   if (providerMode === "openai") {
     return "OPENAI_API_KEY";
+  }
+  if (isRequestyBaseUrl(route.baseUrl) || route.requestyFallback) {
+    return "REQUESTY_API_KEY";
   }
   if (isOpenRouterBaseUrl(route.baseUrl) || route.openRouterFallback || route.model.includes("/")) {
     return "OPENROUTER_API_KEY";
@@ -164,6 +168,7 @@ export async function runOracle(
   const { isAzureOpenAI, azureDeploymentName } = route;
   const baseUrl = route.baseUrl;
   const openRouterFallback = route.openRouterFallback;
+  const requestyFallback = route.requestyFallback;
 
   const logVerbose = (message: string): void => {
     if (options.verbose) {
@@ -177,9 +182,11 @@ export async function runOracle(
       ? "AZURE_OPENAI_API_KEY (or OPENAI_API_KEY)"
       : providerMode === "openai"
         ? "OPENAI_API_KEY"
-        : isOpenRouterBaseUrl(baseUrl) || openRouterFallback
-          ? "OPENROUTER_API_KEY"
-          : route.keySource;
+        : isRequestyBaseUrl(baseUrl) || requestyFallback
+          ? "REQUESTY_API_KEY"
+          : isOpenRouterBaseUrl(baseUrl) || openRouterFallback
+            ? "OPENROUTER_API_KEY"
+            : route.keySource;
     const browserModeHint = options.model.startsWith("gpt")
       ? ' If you have a ChatGPT Pro subscription, retry with --engine browser (or MCP engine:"browser" / preset:"chatgpt-pro-heavy"); browser mode uses your signed-in ChatGPT session instead of an API key.'
       : "";
@@ -206,9 +213,12 @@ export async function runOracle(
 
   const resolverOpenRouterApiKey =
     openRouterFallback || isOpenRouterBaseUrl(baseUrl) ? apiKey : undefined;
+  const resolverRequestyApiKey =
+    requestyFallback || isRequestyBaseUrl(baseUrl) ? apiKey : undefined;
   const modelConfig = await resolveModelConfig(options.model, {
     baseUrl,
     openRouterApiKey: resolverOpenRouterApiKey,
+    requestyApiKey: resolverRequestyApiKey,
     modelOverrides: options.modelOverrides,
   });
   const isLongRunningModel = isProTierModel;
