@@ -7,6 +7,7 @@ import {
   navigateToChatGPT,
   navigateToPromptReadyWithFallback,
   ensurePromptReady,
+  ensureChatMode,
   waitForResumedConversationHydration,
   ensureNotBlocked,
   ensureLoggedIn,
@@ -17,6 +18,7 @@ import {
   isCloudflareInterstitialForTest,
   buildLoginProbeExpressionForTest,
   buildWelcomeBackAccountPickerExpressionForTest,
+  buildChatModeProbeExpressionForTest,
 } from "../../src/browser/actions/navigation.js";
 import * as attachments from "../../src/browser/actions/attachments.js";
 import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDataTransfer.js";
@@ -167,6 +169,188 @@ describe("ensurePromptReady", () => {
       evaluate: vi.fn().mockResolvedValue({ result: { value: false } }),
     } as unknown as ChromeClient["Runtime"];
     await expect(ensurePromptReady(runtime, 0, logger)).rejects.toThrow(/textarea did not appear/i);
+  });
+});
+
+describe("ensureChatMode", () => {
+  test("uses a trusted click to switch Work to Chat and verifies the result", async () => {
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        result: { value: { status: "work-selected", chatPoint: { x: 120, y: 48 } } },
+      })
+      .mockResolvedValueOnce({ result: { value: { status: "chat-selected" } } });
+    const dispatchMouseEvent = vi.fn().mockResolvedValue(undefined);
+    const runtime = { evaluate } as unknown as ChromeClient["Runtime"];
+    const input = { dispatchMouseEvent } as unknown as ChromeClient["Input"];
+
+    await expect(ensureChatMode(runtime, input, 1_000, logger, { pollMs: 0 })).resolves.toBe(
+      "switched",
+    );
+
+    expect(dispatchMouseEvent).toHaveBeenNthCalledWith(1, {
+      type: "mouseMoved",
+      x: 120,
+      y: 48,
+    });
+    expect(dispatchMouseEvent).toHaveBeenNthCalledWith(2, {
+      type: "mousePressed",
+      x: 120,
+      y: 48,
+      button: "left",
+      clickCount: 1,
+    });
+    expect(dispatchMouseEvent).toHaveBeenNthCalledWith(3, {
+      type: "mouseReleased",
+      x: 120,
+      y: 48,
+      button: "left",
+      clickCount: 1,
+    });
+    expect(logger).toHaveBeenCalledWith("ChatGPT mode: Work; switching to Chat");
+    expect(logger).toHaveBeenCalledWith("ChatGPT mode: Chat (switched from Work)");
+    expect(String(evaluate.mock.calls[0]?.[0]?.expression)).toContain('button[role="radio"]');
+  });
+
+  test("does not click when Chat is already selected", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { status: "chat-selected" } } }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchMouseEvent: vi.fn(),
+    } as unknown as ChromeClient["Input"];
+
+    await expect(ensureChatMode(runtime, input, 0, logger)).resolves.toBe("chat");
+    expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+  });
+
+  test("keeps compatibility when the Chat/Work selector is absent", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { status: "controls-absent" } } }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchMouseEvent: vi.fn(),
+    } as unknown as ChromeClient["Input"];
+
+    await expect(ensureChatMode(runtime, input, 0, logger)).resolves.toBe("unavailable");
+    expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+  });
+
+  test("fails closed for an existing Work conversation", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { status: "work-conversation" } } }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchMouseEvent: vi.fn(),
+    } as unknown as ChromeClient["Input"];
+
+    await expect(ensureChatMode(runtime, input, 0, logger)).rejects.toThrow(
+      /existing Work conversation/i,
+    );
+    expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+  });
+
+  test("recognizes a hydrated ordinary Chat conversation", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { status: "chat-conversation" } } }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchMouseEvent: vi.fn(),
+    } as unknown as ChromeClient["Input"];
+
+    await expect(ensureChatMode(runtime, input, 0, logger)).resolves.toBe("chat");
+    expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+  });
+
+  test("waits for conversation metadata to hydrate before classifying Work", async () => {
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: { status: "conversation-unresolved" } } })
+        .mockResolvedValueOnce({ result: { value: { status: "work-conversation" } } })
+        .mockResolvedValueOnce({ result: { value: { status: "chat-selected" } } }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchMouseEvent: vi.fn(),
+    } as unknown as ChromeClient["Input"];
+    const resetWorkConversation = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      ensureChatMode(runtime, input, 1_000, logger, {
+        pollMs: 0,
+        resetWorkConversation,
+      }),
+    ).resolves.toBe("switched");
+
+    expect(resetWorkConversation).toHaveBeenCalledOnce();
+    expect(runtime.evaluate).toHaveBeenCalledTimes(3);
+  });
+
+  test("opens a new Chat when a non-resume run attaches to a Work conversation", async () => {
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: { status: "work-conversation" } } })
+        .mockResolvedValueOnce({ result: { value: { status: "chat-selected" } } }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchMouseEvent: vi.fn(),
+    } as unknown as ChromeClient["Input"];
+    const resetWorkConversation = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      ensureChatMode(runtime, input, 1_000, logger, {
+        pollMs: 0,
+        resetWorkConversation,
+      }),
+    ).resolves.toBe("switched");
+
+    expect(resetWorkConversation).toHaveBeenCalledOnce();
+    expect(logger).toHaveBeenCalledWith("ChatGPT mode: Work conversation; opening a new Chat");
+    expect(logger).toHaveBeenCalledWith("ChatGPT mode: Chat (switched from Work)");
+    expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+  });
+
+  test("classifies a Work conversation nested under a project URL by conversation id", () => {
+    const expression = buildChatModeProbeExpressionForTest();
+    const activeHistoryLink = {
+      getAttribute: (name: string) => {
+        if (name === "href") return "/c/project-work-thread";
+        if (name === "aria-label") return "Project task, Work";
+        return null;
+      },
+      querySelectorAll: () => [],
+    };
+    const document = {
+      querySelectorAll: (selector: string) =>
+        selector === 'a[href*="/c/"]' ? [activeHistoryLink] : [],
+    };
+    const evaluate = new Function("document", "location", "URL", `return ${expression};`) as (
+      document: unknown,
+      location: unknown,
+      url: typeof URL,
+    ) => { status: string };
+
+    expect(
+      evaluate(
+        document,
+        {
+          origin: "https://chatgpt.com",
+          pathname: "/g/example/project/c/project-work-thread",
+        },
+        URL,
+      ),
+    ).toEqual({ status: "work-conversation" });
+  });
+
+  test("scopes detection to exact mode radios and the active conversation metadata", () => {
+    const expression = buildChatModeProbeExpressionForTest();
+    expect(expression).toContain('button[role="radio"]');
+    expect(expression).toContain("normalize(node.textContent) === 'chat'");
+    expect(expression).toContain("normalize(node.textContent) === 'work'");
+    expect(expression).toContain('a[href*="/c/"]');
+    expect(expression).toContain("conversationIdFromPath(candidatePath) === conversationId");
+    expect(expression).not.toContain("document.body.innerText");
   });
 });
 

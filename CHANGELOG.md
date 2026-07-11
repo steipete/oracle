@@ -5,6 +5,7 @@
 ### Added
 
 - Browser: allow `ORACLE_BROWSER_MAX_CONCURRENT_TABS` to set the per-host shared-profile tab cap while preserving explicit config precedence and the default limit. Thanks @StartupBros!
+- Browser: detect ChatGPT's active Chat/Work mode before new browser runs, normalize Work pages and attached Work tabs to a new Chat with verified trusted input, and preserve explicit resume safety. Refs #315.
 
 ### Fixed
 

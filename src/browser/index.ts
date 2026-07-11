@@ -30,6 +30,7 @@ import {
   ensureNotBlocked,
   ensureLoggedIn,
   ensurePromptReady,
+  ensureChatMode,
   waitForResumedConversationHydration,
   installJavaScriptDialogAutoDismissal,
   ensureModelSelection,
@@ -1320,6 +1321,21 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           }),
         );
       }
+    }
+    const chatMode = await raceWithDisconnect(
+      ensureChatMode(Runtime, Input, config.inputTimeoutMs, logger, {
+        resetWorkConversation:
+          config.browserTabRef && !isResumingConversation
+            ? async () => {
+                await navigateToChatGPT(Page, Runtime, config.url, logger);
+                await ensureNotBlocked(Runtime, config.headless, logger);
+                await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+              }
+            : undefined,
+      }),
+    );
+    if (chatMode === "switched") {
+      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
     }
     logger(
       `Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`,
@@ -2902,6 +2918,19 @@ async function runRemoteBrowserMode(
         requirePriorTurns: true,
         expectedConversationUrl: config.resumeConversationUrl,
       });
+    }
+    const chatMode = await ensureChatMode(Runtime, Input, config.inputTimeoutMs, logger, {
+      resetWorkConversation:
+        attachedExistingTab && !config.resumeConversationUrl
+          ? async () => {
+              await navigateToChatGPT(Page, Runtime, config.url, logger);
+              await ensureNotBlocked(Runtime, config.headless, logger);
+              await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+            }
+          : undefined,
+    });
+    if (chatMode === "switched") {
+      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
     }
     logger(
       `Prompt textarea ready (initial focus, ${promptText.length.toLocaleString()} chars queued)`,
