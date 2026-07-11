@@ -261,6 +261,7 @@ describe("classifyTurnTerminal", () => {
         barVisible: partial.barVisible ?? false,
         thinkingActive: partial.thinkingActive ?? false,
         strongThinkingActive: partial.strongThinkingActive ?? false,
+        thinkingKey: partial.thinkingKey,
       };
       const result = classifyTurnTerminal(state, sample, cfg);
       state = result.state;
@@ -284,7 +285,8 @@ describe("classifyTurnTerminal", () => {
     // settle gap: stop gone, no bar, no thinking yet (the exact window the bug exploited)
     for (let i = 0; i < 2; i++) samples.push({ len: 150 });
     // thinking phase mounts (connector/reasoning)
-    for (let i = 0; i < 10; i++) samples.push({ len: 150, thinkingActive: true });
+    for (let i = 0; i < 10; i++)
+      samples.push({ len: 150, thinkingActive: true, strongThinkingActive: true });
     // real answer streams after thinking, bar appears and debounces
     samples.push({ len: 600, stopVisible: true });
     samples.push({ len: 900, stopVisible: true });
@@ -399,8 +401,29 @@ describe("classifyTurnTerminal", () => {
     const samples: Array<Partial<TerminalSample> & { len: number }> = [
       { len: 800, stopVisible: true },
     ];
-    for (let i = 0; i < 20; i++) samples.push({ len: 800, thinkingActive: true });
+    for (let i = 0; i < 20; i++)
+      samples.push({ len: 800, thinkingActive: true, strongThinkingActive: true });
     const out = runGate(samples);
+    expect(out.some(Boolean)).toBe(false);
+  });
+
+  test("proofB eventually recovers from static weak sidecar evidence", () => {
+    const samples: Array<Partial<TerminalSample> & { len: number }> = [
+      { len: 800, stopVisible: true },
+    ];
+    for (let i = 0; i < 8; i++)
+      samples.push({ len: 800, thinkingActive: true, thinkingKey: "reasoning" });
+    const out = runGate(samples, config, 10_000);
+    expect(out.at(-1)).toBe(true);
+  });
+
+  test("proofB keeps waiting while weak sidecar content changes", () => {
+    const samples: Array<Partial<TerminalSample> & { len: number }> = [
+      { len: 800, stopVisible: true },
+    ];
+    for (let i = 0; i < 8; i++)
+      samples.push({ len: 800, thinkingActive: true, thinkingKey: `trace-${i}` });
+    const out = runGate(samples, config, 10_000);
     expect(out.some(Boolean)).toBe(false);
   });
 
@@ -575,7 +598,7 @@ describe("thinking-active completion veto", () => {
   test.each(["Thinking", "Pro thinking", "Searching the web", "Reading", "Finalizing answer"])(
     "fires on active status label %j",
     (label) => {
-      expect(evalThinkingActive({ statusText: label })).toBe(true);
+      expect(evalThinkingActive({ statusText: label, statusTestId: "thinking-status" })).toBe(true);
     },
   );
 
@@ -633,7 +656,11 @@ describe("thinking-active completion veto", () => {
     const panel = new FakeEl("Reasoning");
     panel.rect = { left: 1000, top: 100, width: 380, height: 400 }; // right side, large
     expect(evalThinkingActive({ panel })).toBe(true);
-    expect(evalThinkingActivityDetails({ panel })).toEqual({ active: true, strong: false });
+    expect(evalThinkingActivityDetails({ panel })).toEqual({
+      active: true,
+      strong: false,
+      key: "reasoning",
+    });
   });
 
   test("does NOT treat progress in a generic panel as model activity", () => {

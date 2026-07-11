@@ -33,8 +33,8 @@ function readPositiveIntEnv(name: string, fallback: number): number {
 //   proofA: the finished-action bar is present for barConfirmCycles consecutive quiet cycles
 //           (debounces the transient mid-thinking action-bar flash). A debounced bar is the
 //           strongest positive signal, so it is NOT vetoed by thinking activity.
-//   proofB: a generous continuous-quiet window with NO active thinking and NO text growth —
-//           the drift-safe fallback that also recovers an answer whose action-bar selector drifted.
+//   proofB: a generous continuous-quiet window with no strong activity or changing weak sidecar
+//           evidence — the fallback that recovers an answer whose action-bar selector drifted.
 // Any text growth, a visible stop control, or active thinking resets the quiet clock, so a
 // preamble cannot reach the terminal state: it is held until the reasoning phase ends and the
 // real answer streams (then proofA/proofB fire on the real answer). Tunable via env for live
@@ -61,6 +61,8 @@ export interface TerminalGateState {
   lastChangeAt: number;
   lastDisturbanceAt: number;
   barStableCycles: number;
+  lastWeakKey: string;
+  lastWeakChangeAt: number;
   seen: boolean;
 }
 
@@ -77,6 +79,7 @@ export interface TerminalSample {
   // Strong signals prove live work (stop/shimmer/aria-busy/status/progress). Weak activity is
   // limited to a heuristic sidecar match that can linger after completion.
   strongThinkingActive: boolean;
+  thinkingKey?: string;
 }
 
 export function createTerminalGateState(now: number): TerminalGateState {
@@ -85,6 +88,8 @@ export function createTerminalGateState(now: number): TerminalGateState {
     lastChangeAt: now,
     lastDisturbanceAt: now,
     barStableCycles: 0,
+    lastWeakKey: "",
+    lastWeakChangeAt: now,
     seen: false,
   };
 }
@@ -98,7 +103,11 @@ export function classifyTurnTerminal(
 ): { state: TerminalGateState; terminal: boolean } {
   const changed = !state.seen || sample.contentKey !== state.lastKey;
   const lastChangeAt = changed ? sample.now : state.lastChangeAt;
-  const disturbed = changed || sample.stopVisible || sample.thinkingActive;
+  const weakActive = sample.thinkingActive && !sample.strongThinkingActive;
+  const weakKey = weakActive ? (sample.thinkingKey ?? "unknown-weak-activity") : "";
+  const weakChanged = weakActive && weakKey !== state.lastWeakKey;
+  const lastWeakChangeAt = weakChanged ? sample.now : state.lastWeakChangeAt;
+  const disturbed = changed || sample.stopVisible || sample.strongThinkingActive || weakChanged;
   const lastDisturbanceAt = disturbed ? sample.now : state.lastDisturbanceAt;
   // proofA debounce: weak/stale sidecar evidence may be overridden, but strong live activity
   // must reset the debounce. It also resets on ANY content change so a bar that appears while
@@ -112,6 +121,8 @@ export function classifyTurnTerminal(
     lastChangeAt,
     lastDisturbanceAt,
     barStableCycles,
+    lastWeakKey: weakKey,
+    lastWeakChangeAt,
     seen: true,
   };
 
@@ -128,10 +139,15 @@ export function classifyTurnTerminal(
       !sample.strongThinkingActive &&
       barStableCycles >= config.barConfirmCycles &&
       stableMs >= config.minStableMs;
-    // proofB — generous quiet with no active thinking; the selector-drift-safe fallback.
-    // Withheld for implausibly short captures, which must be proven by the action bar.
+    // proofB — generous quiet with no strong activity. Changing weak sidecar evidence keeps
+    // resetting the window; static weak evidence must age for at least a minute so a stale
+    // mounted panel cannot veto selector-drift recovery forever. Implausibly short captures
+    // remain action-bar-only.
+    const weakEvidenceAged =
+      !weakActive || sample.now - lastWeakChangeAt >= Math.max(config.quietMs * 5, 60_000);
     const quietProof =
-      !sample.thinkingActive &&
+      !sample.strongThinkingActive &&
+      weakEvidenceAged &&
       sample.len >= config.minAnswerLen &&
       stableMs >= config.minStableMs &&
       quietMs >= config.quietMs;
@@ -681,6 +697,7 @@ async function pollAssistantCompletion(
           barVisible,
           thinkingActive: thinkingActivity.active,
           strongThinkingActive: thinkingActivity.strong,
+          thinkingKey: thinkingActivity.key,
         },
         TERMINAL_GATE_CONFIG,
       );

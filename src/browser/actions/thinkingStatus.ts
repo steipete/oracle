@@ -484,7 +484,7 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
   const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   const strong = detailed ? "{ active: true, strong: true }" : "true";
-  const weak = detailed ? "{ active: true, strong: false }" : "true";
+  const weak = detailed ? "{ active: true, strong: false, key: sidecarText }" : "true";
   const idle = detailed ? "{ active: false, strong: false }" : "false";
   return `const ${fnName} = () => {
     const STOP_SELECTOR = ${stopLiteral};
@@ -542,15 +542,11 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       if (isCompletedSummary(text)) return false;
       return ACTIVE_LABELS.some((label) => text === label || text.startsWith(label + ' '));
     };
-    const isExactActiveLabel = (raw) => {
-      const text = norm(raw);
-      return Boolean(text) && !isCompletedSummary(text) && ACTIVE_LABELS.includes(text);
-    };
     const statusNodes = (() => {
       try {
         return Array.from(
           document.querySelectorAll(
-            '[data-testid*="thinking"], [data-testid*="reasoning"], [role="status"], [aria-live="polite"], [aria-live="assertive"]',
+            '[data-testid*="thinking"], [data-testid*="reasoning"]',
           ),
         );
       } catch {
@@ -561,9 +557,9 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       if (!(node instanceof HTMLElement) || !isVisible(node)) continue;
       const testId = norm(node.getAttribute('data-testid'));
       const verifiedThinkingChrome = testId.includes('thinking') || testId.includes('reasoning');
-      const matches = verifiedThinkingChrome
-        ? isActiveLabel(node.textContent) || isActiveLabel(node.getAttribute('aria-label'))
-        : isExactActiveLabel(node.textContent) || isExactActiveLabel(node.getAttribute('aria-label'));
+      const matches =
+        verifiedThinkingChrome &&
+        (isActiveLabel(node.textContent) || isActiveLabel(node.getAttribute('aria-label')));
       if (matches) return ${strong};
     }
     // 5) A live progress bar (determinate or indeterminate) is active generation, even when no
@@ -646,6 +642,7 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       // A text-only sidecar match is intentionally weak: completed turns can retain a mounted
       // reasoning panel whose shape/text heuristics still look active. The terminal gate may
       // override only this weak evidence after a stable, debounced finished-action bar.
+      const sidecarText = norm(node.textContent) || norm(node.getAttribute?.('aria-label'));
       if (rightSide && looksLikeThinking(node)) return ${weak};
     }
     return ${idle};
@@ -659,6 +656,7 @@ export function buildThinkingActivePredicateJs(fnName: string): string {
 export interface ThinkingActivity {
   active: boolean;
   strong: boolean;
+  key?: string;
 }
 
 export function buildThinkingActivityDetailsPredicateJs(fnName: string): string {
@@ -677,7 +675,11 @@ export async function readThinkingActivity(
       returnByValue: true,
     });
     const value = result?.value as Partial<ThinkingActivity> | undefined;
-    return { active: Boolean(value?.active), strong: Boolean(value?.strong) };
+    return {
+      active: Boolean(value?.active),
+      strong: Boolean(value?.strong),
+      key: typeof value?.key === "string" ? value.key : undefined,
+    };
   } catch {
     return { active: false, strong: false };
   }
