@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   buildActiveThinkingStatusPredicateJsForTest,
   buildAssistantSnapshotExpressionForTest,
+  buildCompletionVisibilityExpressionForTest,
   buildStopButtonVisibilityExpressionForTest,
   classifyTurnTerminal,
   createTerminalGateState,
@@ -163,6 +164,71 @@ describe("assistant thinking-status capture", () => {
       }),
     );
     expect(result).toBe(fixture.expected);
+  });
+});
+
+describe("completion action correlation", () => {
+  class FakeTurn {
+    public dataset: Record<string, string> = {};
+    constructor(
+      private attrs: Record<string, string>,
+      private finished: boolean,
+    ) {}
+    getAttribute(name: string): string | null {
+      return this.attrs[name] ?? null;
+    }
+    querySelector(): object | null {
+      return this.finished ? {} : null;
+    }
+    querySelectorAll(): FakeTurn[] {
+      return [];
+    }
+  }
+
+  function evaluateCompletionVisibility(args: {
+    messageId?: string;
+    minTurnIndex?: number;
+    turns: FakeTurn[];
+  }): boolean {
+    const expression = buildCompletionVisibilityExpressionForTest(
+      { messageId: args.messageId },
+      args.minTurnIndex,
+    );
+    const context = createContext({
+      Array,
+      Boolean,
+      HTMLElement: FakeTurn,
+      document: { querySelectorAll: () => args.turns },
+    });
+    return new Script(expression).runInContext(context) as boolean;
+  }
+
+  test("rejects a persistent action bar from before the new-turn baseline", () => {
+    const oldTurn = new FakeTurn(
+      { "data-turn": "assistant", "data-message-id": "old-message" },
+      true,
+    );
+    expect(evaluateCompletionVisibility({ minTurnIndex: 1, turns: [oldTurn] })).toBe(false);
+  });
+
+  test("accepts controls correlated to the sampled message identity", () => {
+    const currentTurn = new FakeTurn(
+      { "data-turn": "assistant", "data-message-id": "current-message" },
+      true,
+    );
+    expect(
+      evaluateCompletionVisibility({ messageId: "current-message", turns: [currentTurn] }),
+    ).toBe(true);
+  });
+
+  test("rejects controls whose assistant identity differs from the sample", () => {
+    const oldTurn = new FakeTurn(
+      { "data-turn": "assistant", "data-message-id": "old-message" },
+      true,
+    );
+    expect(evaluateCompletionVisibility({ messageId: "new-message", turns: [oldTurn] })).toBe(
+      false,
+    );
   });
 });
 

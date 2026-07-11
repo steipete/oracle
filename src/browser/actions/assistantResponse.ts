@@ -666,7 +666,7 @@ async function pollAssistantCompletion(
       }
       const [stopVisible, barVisible, thinkingActivity] = await Promise.all([
         isStopButtonVisible(Runtime),
-        isCompletionVisible(Runtime),
+        isCompletionVisible(Runtime, normalized.meta, minTurnIndex),
         readThinkingActivity(Runtime),
       ]);
       const decision = classifyTurnTerminal(
@@ -737,43 +737,77 @@ function buildStopButtonVisibilityPredicateJs(fnName: string): string {
 
 export const buildStopButtonVisibilityExpressionForTest = buildStopButtonVisibilityExpression;
 
-async function isCompletionVisible(Runtime: ChromeClient["Runtime"]): Promise<boolean> {
+function buildCompletionVisibilityExpression(
+  meta: { turnId?: string | null; messageId?: string | null },
+  minTurnIndex?: number,
+): string {
+  const expectedMessageId = meta.messageId ? JSON.stringify(meta.messageId) : "null";
+  const expectedTurnId = meta.turnId ? JSON.stringify(meta.turnId) : "null";
+  const minTurnLiteral =
+    typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
+      ? Math.floor(minTurnIndex)
+      : -1;
+  return `(() => {
+    const EXPECTED_MESSAGE_ID = ${expectedMessageId};
+    const EXPECTED_TURN_ID = ${expectedTurnId};
+    const MIN_TURN_INDEX = ${minTurnLiteral};
+    // Find the LAST assistant turn to check completion status. Must match the same logic as
+    // buildAssistantExtractor, then correlate the controls to the sampled response.
+    const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
+    const isAssistantTurn = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      if (turnAttr === 'assistant') return true;
+      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      if (role === 'assistant') return true;
+      const testId = (node.getAttribute('data-testid') || '').toLowerCase();
+      if (testId.includes('assistant')) return true;
+      return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+    };
+
+    const turns = ${buildConversationTurnListExpression()};
+    let lastAssistantTurn = null;
+    let lastAssistantIndex = -1;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      if (isAssistantTurn(turns[i])) {
+        lastAssistantTurn = turns[i];
+        lastAssistantIndex = i;
+        break;
+      }
+    }
+    if (!lastAssistantTurn) return false;
+
+    const hasExpectedIdentity = Boolean(EXPECTED_MESSAGE_ID || EXPECTED_TURN_ID);
+    if (hasExpectedIdentity) {
+      const identityNodes = [
+        lastAssistantTurn,
+        ...Array.from(lastAssistantTurn.querySelectorAll('[data-message-id], [data-testid]')),
+      ];
+      const identityMatches = identityNodes.some((node) =>
+        (EXPECTED_MESSAGE_ID && node.getAttribute?.('data-message-id') === EXPECTED_MESSAGE_ID) ||
+        (EXPECTED_TURN_ID && node.getAttribute?.('data-testid') === EXPECTED_TURN_ID),
+      );
+      if (!identityMatches) return false;
+    } else if (MIN_TURN_INDEX < 0 || lastAssistantIndex < MIN_TURN_INDEX) {
+      // Fallback/project snapshots without an identity may use the new-turn baseline, but an
+      // uncorrelated persistent action bar from an older turn must never prove completion.
+      return false;
+    }
+
+    if (lastAssistantTurn.querySelector('${FINISHED_ACTIONS_SELECTOR}')) return true;
+    const markdowns = lastAssistantTurn.querySelectorAll('.markdown');
+    return Array.from(markdowns).some((node) => (node.textContent || '').trim() === 'Done');
+  })()`;
+}
+
+async function isCompletionVisible(
+  Runtime: ChromeClient["Runtime"],
+  meta: { turnId?: string | null; messageId?: string | null },
+  minTurnIndex?: number,
+): Promise<boolean> {
   try {
     const { result } = await Runtime.evaluate({
-      expression: `(() => {
-        // Find the LAST assistant turn to check completion status
-        // Must match the same logic as buildAssistantExtractor for consistency
-        const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
-        const isAssistantTurn = (node) => {
-          if (!(node instanceof HTMLElement)) return false;
-          const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
-          if (turnAttr === 'assistant') return true;
-          const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
-          if (role === 'assistant') return true;
-          const testId = (node.getAttribute('data-testid') || '').toLowerCase();
-          if (testId.includes('assistant')) return true;
-          return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
-        };
-
-        const turns = ${buildConversationTurnListExpression()};
-        let lastAssistantTurn = null;
-        for (let i = turns.length - 1; i >= 0; i--) {
-          if (isAssistantTurn(turns[i])) {
-            lastAssistantTurn = turns[i];
-            break;
-          }
-        }
-        if (!lastAssistantTurn) {
-          return false;
-        }
-        // Check if the last assistant turn has finished action buttons (copy, thumbs up/down, share)
-        if (lastAssistantTurn.querySelector('${FINISHED_ACTIONS_SELECTOR}')) {
-          return true;
-        }
-        // Also check for "Done" text in the last assistant turn's markdown
-        const markdowns = lastAssistantTurn.querySelectorAll('.markdown');
-        return Array.from(markdowns).some((n) => (n.textContent || '').trim() === 'Done');
-      })()`,
+      expression: buildCompletionVisibilityExpression(meta, minTurnIndex),
       returnByValue: true,
     });
     return Boolean(result?.value);
@@ -781,6 +815,8 @@ async function isCompletionVisible(Runtime: ChromeClient["Runtime"]): Promise<bo
     return false;
   }
 }
+
+export const buildCompletionVisibilityExpressionForTest = buildCompletionVisibilityExpression;
 
 function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
   text: string;
