@@ -4,13 +4,13 @@ import type { SessionMetadata, BrowserHarvestState } from "../sessionStore.js";
 import {
   ANSWER_SELECTORS,
   ASSISTANT_ROLE_SELECTOR,
-  CONVERSATION_TURN_SELECTOR,
   INPUT_SELECTORS,
   MODEL_BUTTON_SELECTOR,
   SEND_BUTTON_SELECTORS,
   STOP_BUTTON_SELECTOR,
 } from "./constants.js";
 import { captureAssistantMarkdown, readAssistantSnapshot } from "./actions/assistantResponse.js";
+import { buildConversationTurnListExpression } from "./conversationTurns.js";
 import { delay } from "./utils.js";
 
 export const DEFAULT_REMOTE_CHROME_HOST = "127.0.0.1";
@@ -46,6 +46,9 @@ export interface ChatGptTabSummary {
   authenticated: boolean;
   assistantCount: number;
   lastAssistantText: string;
+  assistantFollowsLatestUser?: boolean;
+  lastAssistantTurnIndex?: number;
+  lastUserTurnIndex?: number;
   lastAssistantSnippet: string;
   lastUserText: string;
   lastUserSnippet: string;
@@ -142,7 +145,6 @@ function buildTabInspectionExpression(): string {
   const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
   const sendSelectorsLiteral = JSON.stringify(SEND_BUTTON_SELECTORS);
   const answerSelectorsLiteral = JSON.stringify(ANSWER_SELECTORS);
-  const turnSelectorLiteral = escapeLiteral(CONVERSATION_TURN_SELECTOR);
   const assistantRoleLiteral = escapeLiteral(ASSISTANT_ROLE_SELECTOR);
   const modelButtonSelectorLiteral = escapeLiteral(MODEL_BUTTON_SELECTOR);
   const stopSelectorLiteral = escapeLiteral(STOP_BUTTON_SELECTOR);
@@ -150,7 +152,6 @@ function buildTabInspectionExpression(): string {
       const INPUT_SELECTORS = ${inputSelectorsLiteral};
       const SEND_SELECTORS = ${sendSelectorsLiteral};
       const ANSWER_SELECTORS = ${answerSelectorsLiteral};
-      const TURN_SELECTOR = ${turnSelectorLiteral};
       const ASSISTANT_ROLE_SELECTOR = ${assistantRoleLiteral};
       const MODEL_BUTTON_SELECTOR = ${modelButtonSelectorLiteral};
       const STOP_BUTTON_SELECTOR = ${stopSelectorLiteral};
@@ -181,15 +182,21 @@ function buildTabInspectionExpression(): string {
       const sendExists = Boolean(sendButton);
       const promptNode = firstVisible(INPUT_SELECTORS);
       const promptReady = Boolean(promptNode);
-      const turns = Array.from(document.querySelectorAll(TURN_SELECTOR));
+      const turns = ${buildConversationTurnListExpression()};
       const assistantTurns = turns.filter((turn) => {
         const role = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
         if (role === 'assistant') return true;
         return Boolean(turn.querySelector(ASSISTANT_ROLE_SELECTOR));
       });
+      const fallbackUserTurns = Array.from(
+        document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
+      );
       const userTurns = turns.filter((turn) => {
         const role = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
-        return role === 'user';
+        if (role === 'user') return true;
+        return Boolean(
+          turn.querySelector('[data-message-author-role="user"], [data-turn="user"]'),
+        );
       });
       const answerNode = ANSWER_SELECTORS
         .map((selector) => document.querySelectorAll(selector))
@@ -200,16 +207,47 @@ function buildTabInspectionExpression(): string {
       if (currentModelLabel === 'ChatGPT' && hasProPill) {
         currentModelLabel = 'ChatGPT + Pro';
       }
-      const assistantTexts = assistantTurns
-        .map((node) => normalize(node.textContent))
-        .filter(Boolean);
-      const userTexts = userTurns
-        .map((node) => normalize(node.textContent))
-        .filter(Boolean);
-      const answerTexts = Array.from(answerNode || []).map((node) => normalize(node.textContent)).filter(Boolean);
-      const assistantCount = assistantTurns.length > 0 ? assistantTurns.length : answerTexts.length;
-      const lastAssistantText = assistantTexts[assistantTexts.length - 1] || answerTexts[answerTexts.length - 1] || '';
-      const lastUserText = userTexts[userTexts.length - 1] || '';
+      const rawAnswerNodes = Array.from(answerNode || []);
+      const userCandidates = Array.from(new Set([...userTurns, ...fallbackUserTurns]));
+      const lastUserTurn = userCandidates.reduce((latest, candidate) => {
+        if (!latest) return candidate;
+        return latest.compareDocumentPosition(candidate) & 4 ? candidate : latest;
+      }, null);
+      const lastUserContainer = lastUserTurn
+        ? turns.find((turn) => turn === lastUserTurn || turn.contains?.(lastUserTurn))
+        : null;
+      const answerNodes = rawAnswerNodes.filter(
+        (node) =>
+          !lastUserTurn ||
+          (node !== lastUserTurn &&
+            !lastUserTurn.contains?.(node) &&
+            !node.contains?.(lastUserTurn)),
+      );
+      const answerTexts = answerNodes.map((node) => normalize(node.textContent)).filter(Boolean);
+      const assistantCandidates = Array.from(new Set([...assistantTurns, ...answerNodes]));
+      const lastAssistantNode = assistantCandidates.reduce((latest, candidate) => {
+        if (!latest) return candidate;
+        return latest.compareDocumentPosition(candidate) & 4 ? candidate : latest;
+      }, null);
+      const lastAssistantContainer = lastAssistantNode
+        ? turns.find((turn) => turn === lastAssistantNode || turn.contains?.(lastAssistantNode))
+        : null;
+      const assistantFollowsLatestUser = Boolean(
+        lastAssistantNode &&
+        lastUserTurn &&
+        lastAssistantNode !== lastUserTurn &&
+        (lastUserTurn.compareDocumentPosition(lastAssistantNode) & 4),
+      );
+      const lastAssistantTurnIndex = lastAssistantContainer
+        ? turns.indexOf(lastAssistantContainer)
+        : -1;
+      const lastUserTurnIndex = lastUserContainer ? turns.indexOf(lastUserContainer) : -1;
+      const assistantOwners = assistantCandidates.map(
+        (node) => turns.find((turn) => turn === node || turn.contains?.(node)) || node,
+      );
+      const assistantCount = new Set(assistantOwners).size;
+      const lastAssistantText = normalize(lastAssistantNode?.textContent);
+      const lastUserText = normalize(lastUserTurn?.textContent);
       const authenticated = !loginButtonExists && (promptReady || sendExists || stopExists || assistantCount > 0);
       return {
         title: normalize(document.title),
@@ -222,11 +260,18 @@ function buildTabInspectionExpression(): string {
         authenticated,
         assistantCount,
         lastAssistantText,
+        assistantFollowsLatestUser,
+        lastAssistantTurnIndex,
+        lastUserTurnIndex,
         lastUserText,
         visibilityState: document.visibilityState,
         focused: Boolean(document.hasFocus?.()),
       };
     })()`;
+}
+
+export function buildTabInspectionExpressionForTest(): string {
+  return buildTabInspectionExpression();
 }
 
 export async function listChatGptTargets(options: HostPort = {}): Promise<ChromeTarget[]> {
@@ -285,13 +330,31 @@ export async function inspectChatGptTab(
       authenticated?: boolean;
       assistantCount?: number;
       lastAssistantText?: string;
+      assistantFollowsLatestUser?: boolean;
+      lastAssistantTurnIndex?: number;
+      lastUserTurnIndex?: number;
       lastUserText?: string;
       visibilityState?: string;
       focused?: boolean;
     };
     const snapshot = await readAssistantSnapshot(Runtime).catch(() => null);
+    const inspectedAssistantTurnIndex =
+      typeof info.lastAssistantTurnIndex === "number" && info.lastAssistantTurnIndex >= 0
+        ? info.lastAssistantTurnIndex
+        : undefined;
+    const normalizedSnapshotText = normalizeTitle(snapshot?.text ?? "").toLowerCase();
+    const normalizedInspectedText = normalizeTitle(info.lastAssistantText ?? "").toLowerCase();
+    const snapshotMatchesInspectedTurn =
+      (typeof snapshot?.turnIndex === "number" &&
+        snapshot.turnIndex === inspectedAssistantTurnIndex) ||
+      (snapshot?.turnIndex == null &&
+        inspectedAssistantTurnIndex === undefined &&
+        normalizedSnapshotText.length > 0 &&
+        normalizedSnapshotText === normalizedInspectedText);
     const lastAssistantText =
-      typeof snapshot?.text === "string" && snapshot.text.trim().length > 0
+      snapshotMatchesInspectedTurn &&
+      typeof snapshot?.text === "string" &&
+      snapshot.text.trim().length > 0
         ? snapshot.text.trim()
         : String(info.lastAssistantText ?? "").trim();
     const lastUserText = String(info.lastUserText ?? "").trim();
@@ -309,6 +372,12 @@ export async function inspectChatGptTab(
       authenticated: Boolean(info.authenticated),
       assistantCount: Number.isFinite(info.assistantCount) ? Number(info.assistantCount) : 0,
       lastAssistantText,
+      assistantFollowsLatestUser: Boolean(info.assistantFollowsLatestUser),
+      lastAssistantTurnIndex: inspectedAssistantTurnIndex,
+      lastUserTurnIndex:
+        typeof info.lastUserTurnIndex === "number" && info.lastUserTurnIndex >= 0
+          ? info.lastUserTurnIndex
+          : undefined,
       lastAssistantSnippet: trimToSnippet(lastAssistantText),
       lastUserText,
       lastUserSnippet: trimToSnippet(lastUserText),
@@ -319,8 +388,13 @@ export async function inspectChatGptTab(
       state: "detached",
       lastAssistantMarkdown: null,
       lastAssistantMessageId:
-        typeof snapshot?.messageId === "string" ? snapshot.messageId : undefined,
-      lastAssistantTurnId: typeof snapshot?.turnId === "string" ? snapshot.turnId : undefined,
+        snapshotMatchesInspectedTurn && typeof snapshot?.messageId === "string"
+          ? snapshot.messageId
+          : undefined,
+      lastAssistantTurnId:
+        snapshotMatchesInspectedTurn && typeof snapshot?.turnId === "string"
+          ? snapshot.turnId
+          : undefined,
     };
     summary.state = classifyTabState(summary);
     summary.fingerprint = buildTargetFingerprint(summary);
@@ -465,22 +539,6 @@ export async function harvestChatGptTab(
   try {
     const { Runtime } = client;
     const snapshot = await readAssistantSnapshot(Runtime).catch(() => null);
-    let assistantMarkdown: string | null = null;
-    if (snapshot?.messageId || snapshot?.turnId) {
-      assistantMarkdown = await captureAssistantMarkdown(
-        Runtime,
-        {
-          messageId: snapshot.messageId,
-          turnId: snapshot.turnId,
-        },
-        noopLogger,
-      ).catch(() => null);
-    }
-    const latestText =
-      typeof snapshot?.text === "string" && snapshot.text.trim().length > 0
-        ? snapshot.text.trim()
-        : resolved.lastAssistantText;
-    const lastAssistantText = latestText ?? "";
     const nowSummary = await inspectChatGptTab({
       host,
       port,
@@ -491,17 +549,45 @@ export async function harvestChatGptTab(
         type: "page",
       },
     });
+    const normalizedSnapshotText = normalizeTitle(snapshot?.text ?? "").toLowerCase();
+    const normalizedInspectedText = normalizeTitle(nowSummary.lastAssistantText).toLowerCase();
+    const snapshotMatchesLatestTurn =
+      (typeof snapshot?.turnIndex === "number" &&
+        snapshot.turnIndex === nowSummary.lastAssistantTurnIndex) ||
+      (snapshot?.turnIndex == null &&
+        nowSummary.lastAssistantTurnIndex === undefined &&
+        normalizedSnapshotText.length > 0 &&
+        normalizedSnapshotText === normalizedInspectedText);
+    let assistantMarkdown: string | null = null;
+    if (snapshotMatchesLatestTurn && (snapshot?.messageId || snapshot?.turnId)) {
+      assistantMarkdown = await captureAssistantMarkdown(
+        Runtime,
+        {
+          messageId: snapshot.messageId,
+          turnId: snapshot.turnId,
+        },
+        noopLogger,
+      ).catch(() => null);
+    }
+    const lastAssistantText =
+      snapshotMatchesLatestTurn &&
+      typeof snapshot?.text === "string" &&
+      snapshot.text.trim().length > 0
+        ? snapshot.text.trim()
+        : nowSummary.lastAssistantText;
     const harvested: ChatGptTabSummary = {
       ...nowSummary,
       lastAssistantText,
       lastAssistantSnippet: trimToSnippet(lastAssistantText),
       lastAssistantMarkdown: assistantMarkdown ?? (lastAssistantText || null),
       lastAssistantMessageId:
-        typeof snapshot?.messageId === "string"
+        snapshotMatchesLatestTurn && typeof snapshot?.messageId === "string"
           ? snapshot.messageId
           : nowSummary.lastAssistantMessageId,
       lastAssistantTurnId:
-        typeof snapshot?.turnId === "string" ? snapshot.turnId : nowSummary.lastAssistantTurnId,
+        snapshotMatchesLatestTurn && typeof snapshot?.turnId === "string"
+          ? snapshot.turnId
+          : nowSummary.lastAssistantTurnId,
     };
     if (harvested.stopExists && options.stallWindowMs && options.stallWindowMs > 0) {
       const firstFingerprint = harvested.fingerprint;
@@ -527,6 +613,9 @@ export async function harvestChatGptTab(
       harvested.loginButtonExists = followup.loginButtonExists;
       harvested.lastUserText = followup.lastUserText;
       harvested.lastUserSnippet = followup.lastUserSnippet;
+      harvested.assistantFollowsLatestUser = followup.assistantFollowsLatestUser;
+      harvested.lastAssistantTurnIndex = followup.lastAssistantTurnIndex;
+      harvested.lastUserTurnIndex = followup.lastUserTurnIndex;
       harvested.fingerprint = followup.fingerprint;
       harvested.state =
         harvested.stopExists && firstFingerprint === followup.fingerprint

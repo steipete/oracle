@@ -1,6 +1,7 @@
 import type { LaunchedChrome } from "chrome-launcher";
 import type { SessionMetadata } from "../sessionStore.js";
 import type { BrowserLogger } from "./types.js";
+import { isAnswerNowPlaceholderText } from "./actions/assistantResponse.js";
 import { resolveBrowserConfig } from "./config.js";
 import { acquireManualLoginChromeForRun, isImageOnlyUiChromeText } from "./index.js";
 import { isRecoverableChatGptConversationUrl } from "./reattachability.js";
@@ -88,20 +89,30 @@ async function waitForRecoveredConversationReady(
 export function isRecoveredConversationHarvestReady(harvested: {
   stopExists?: boolean;
   assistantCount?: number;
+  assistantFollowsLatestUser?: boolean;
+  lastAssistantTurnIndex?: number;
+  lastUserTurnIndex?: number;
   lastAssistantMarkdown?: string | null;
   lastAssistantText?: string | null;
   lastAssistantSnippet?: string | null;
 }): boolean {
   const latestAssistant =
-    harvested.lastAssistantMarkdown ??
     harvested.lastAssistantText ??
+    harvested.lastAssistantMarkdown ??
     harvested.lastAssistantSnippet ??
     "";
+  const assistantFollowsLatestUser =
+    harvested.assistantFollowsLatestUser === true ||
+    (typeof harvested.lastAssistantTurnIndex === "number" &&
+      typeof harvested.lastUserTurnIndex === "number" &&
+      harvested.lastAssistantTurnIndex > harvested.lastUserTurnIndex);
   return (
     harvested.stopExists === true ||
     ((harvested.assistantCount ?? 0) > 0 &&
+      assistantFollowsLatestUser &&
       latestAssistant.trim().length > 0 &&
       !isImageOnlyUiChromeText(latestAssistant) &&
+      !isAnswerNowPlaceholderText(latestAssistant) &&
       !/^answer now$/i.test(latestAssistant.trim()))
   );
 }
@@ -159,28 +170,24 @@ export async function recoverConversationTab(
   );
 
   const { chrome } = await acquireManualLoginChromeForRun(userDataDir, config, logger, meta.id, {});
-  const targetId = await openChatGptTarget({
-    host: chrome.host ?? "127.0.0.1",
-    port: chrome.port,
-    url,
-  });
   const host = chrome.host ?? "127.0.0.1";
   const port = chrome.port;
 
-  if (waitForReady) {
-    try {
+  try {
+    const targetId = await openChatGptTarget({ host, port, url });
+    if (waitForReady) {
       await waitForRecoveredConversationReady({ host, port }, targetId, readyTimeoutMs);
-    } catch (error) {
-      try {
-        chrome.kill();
-      } catch {
-        // best-effort cleanup
-      }
-      throw error;
     }
+
+    logger(`[browser] Recovery: Chrome listening on ${host}:${port}; tab loaded.`);
+
+    return { host, port, url, ref: targetId, chrome };
+  } catch (error) {
+    try {
+      chrome.kill();
+    } catch {
+      // best-effort cleanup
+    }
+    throw error;
   }
-
-  logger(`[browser] Recovery: Chrome listening on ${host}:${port}; tab loaded.`);
-
-  return { host, port, url, ref: targetId, chrome };
 }

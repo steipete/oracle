@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  isRecoveredConversationHarvestReady,
   resolveRecoveryProfileDir,
   resolveRecoveryUrl,
 } from "../../src/browser/recoverConversation.js";
@@ -84,6 +85,81 @@ describe("resolveRecoveryUrl", () => {
 
   test("ignores empty browser metadata", () => {
     expect(resolveRecoveryUrl({ id: "x" } as unknown as SessionMetadata)).toBeNull();
+  });
+});
+
+describe("isRecoveredConversationHarvestReady", () => {
+  const currentAnswer = {
+    assistantCount: 2,
+    lastAssistantTurnIndex: 3,
+    lastUserTurnIndex: 2,
+    lastAssistantText: "Current answer",
+  };
+
+  test("requires the latest assistant turn to follow the latest user turn", () => {
+    expect(isRecoveredConversationHarvestReady(currentAnswer)).toBe(true);
+    expect(
+      isRecoveredConversationHarvestReady({
+        ...currentAnswer,
+        lastAssistantTurnIndex: 1,
+      }),
+    ).toBe(false);
+    expect(
+      isRecoveredConversationHarvestReady({
+        assistantCount: 1,
+        lastAssistantText: "Historical answer",
+      }),
+    ).toBe(false);
+  });
+
+  test("accepts indexless project-view answers with verified DOM ordering", () => {
+    expect(
+      isRecoveredConversationHarvestReady({
+        assistantCount: 1,
+        assistantFollowsLatestUser: true,
+        lastAssistantText: "Current project answer",
+      }),
+    ).toBe(true);
+  });
+
+  test("rejects Pro-thinking and ChatGPT placeholder variants", () => {
+    expect(
+      isRecoveredConversationHarvestReady({
+        ...currentAnswer,
+        lastAssistantText: "Pro thinking Answer now",
+      }),
+    ).toBe(false);
+    expect(
+      isRecoveredConversationHarvestReady({
+        ...currentAnswer,
+        lastAssistantText: "Answer now",
+      }),
+    ).toBe(false);
+    expect(
+      isRecoveredConversationHarvestReady({
+        ...currentAnswer,
+        lastAssistantText: "ChatGPT said: Answer now",
+      }),
+    ).toBe(false);
+  });
+
+  test("uses raw latest-turn text before captured Markdown", () => {
+    expect(
+      isRecoveredConversationHarvestReady({
+        ...currentAnswer,
+        lastAssistantText: "Pro thinking Answer now",
+        lastAssistantMarkdown: "Historical completed answer",
+      }),
+    ).toBe(false);
+  });
+
+  test("accepts a visible stop control while the current answer is running", () => {
+    expect(
+      isRecoveredConversationHarvestReady({
+        stopExists: true,
+        assistantCount: 0,
+      }),
+    ).toBe(true);
   });
 });
 

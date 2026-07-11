@@ -18,6 +18,9 @@ const meta = {
 const readyHarvest = {
   authenticated: true,
   assistantCount: 1,
+  assistantFollowsLatestUser: true,
+  lastAssistantTurnIndex: 1,
+  lastUserTurnIndex: 0,
   stopExists: false,
   lastAssistantText: "Recovered answer",
   lastAssistantMarkdown: "Recovered answer",
@@ -174,6 +177,34 @@ describe("recoverConversationTab flow", () => {
         readyTimeoutMs: 0,
       }),
     ).rejects.toThrow(/did not become ready/);
+
+    expect(chrome.kill).toHaveBeenCalledTimes(1);
+  });
+
+  test("kills launched Chrome when opening the recovery target fails", async () => {
+    const openChatGptTarget = vi.fn(async () => {
+      throw new Error("CDP.New failed");
+    });
+    const chrome = { port: 53999, kill: vi.fn(), process: { unref: vi.fn() } };
+    const acquireManualLoginChromeForRun = vi.fn(async () => ({ chrome }));
+
+    vi.doMock("../../src/browser/liveTabs.js", () => ({
+      extractConversationIdFromUrl: (url: string) =>
+        url.includes("/c/") ? url.split("/c/")[1] : null,
+      openChatGptTarget,
+      harvestChatGptTab: vi.fn(),
+    }));
+    vi.doMock("../../src/browser/index.js", () => ({
+      acquireManualLoginChromeForRun,
+      isImageOnlyUiChromeText: () => false,
+    }));
+
+    const { recoverConversationTab } = await import("../../src/browser/recoverConversation.js");
+    await expect(
+      recoverConversationTab(meta, logger, {
+        readyTimeoutMs: 1,
+      }),
+    ).rejects.toThrow(/CDP.New failed/);
 
     expect(chrome.kill).toHaveBeenCalledTimes(1);
   });

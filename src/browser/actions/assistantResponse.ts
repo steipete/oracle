@@ -58,8 +58,8 @@ function matchesThinkingStatusLabel(trimmed: string): boolean {
   return trimmed.startsWith("pro thinking") && trimmed.length <= 40;
 }
 
-function isAnswerNowPlaceholderText(normalized: string): boolean {
-  const text = normalized.trim();
+export function isAnswerNowPlaceholderText(value: string): boolean {
+  const text = value.toLowerCase().replace(/\s+/g, " ").trim();
   if (!text) return false;
   // Learned: "Pro thinking" shows a placeholder turn that contains "Answer now".
   // That is not the final answer and must be ignored in browser automation.

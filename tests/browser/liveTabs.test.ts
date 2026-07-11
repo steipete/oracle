@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  buildTabInspectionExpressionForTest,
   classifyTabState,
   formatBrowserTabState,
   resolveChatGptTabFromSummariesForTest,
@@ -21,6 +22,9 @@ function makeTab(overrides: Partial<ChatGptTabSummary> = {}): ChatGptTabSummary 
     authenticated: true,
     assistantCount: 1,
     lastAssistantText: "Answer",
+    assistantFollowsLatestUser: true,
+    lastAssistantTurnIndex: 1,
+    lastUserTurnIndex: 0,
     lastAssistantSnippet: "Answer",
     lastUserText: "Question",
     lastUserSnippet: "Question",
@@ -35,6 +39,13 @@ function makeTab(overrides: Partial<ChatGptTabSummary> = {}): ChatGptTabSummary 
 }
 
 describe("liveTabs helpers", () => {
+  test("excludes fallback answer nodes contained by the latest user turn", () => {
+    const expression = buildTabInspectionExpressionForTest();
+    expect(expression).toContain("!lastUserTurn.contains?.(node)");
+    expect(expression).toContain("!node.contains?.(lastUserTurn)");
+    expect(expression).toContain("assistantCandidates.reduce");
+  });
+
   test("classifies running/completed/detached states", () => {
     expect(
       classifyTabState({

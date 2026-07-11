@@ -377,13 +377,12 @@ export async function liveTailSessionBrowserOutput(
         ref: browserTabRef,
       });
       const fullText = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText ?? "";
-      if (
-        requireRecoveredContent &&
-        !isRecoveredConversationHarvestReady(harvested) &&
-        Date.now() < recoveredContentDeadlineMs
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, LIVE_POLL_MS));
-        continue;
+      if (requireRecoveredContent && !isRecoveredConversationHarvestReady(harvested)) {
+        if (Date.now() < recoveredContentDeadlineMs) {
+          await new Promise((resolve) => setTimeout(resolve, LIVE_POLL_MS));
+          continue;
+        }
+        throw new Error("Recovered ChatGPT conversation did not become ready in time.");
       }
       requireRecoveredContent = false;
       const hash = createHash("sha1").update(fullText).digest("hex");
