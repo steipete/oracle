@@ -2,6 +2,10 @@
 
 ## 0.15.3 — Unreleased
 
+### Added
+
+- Browser: allow `ORACLE_BROWSER_MAX_CONCURRENT_TABS` to set the per-host shared-profile tab cap while preserving explicit config precedence and the default limit. Thanks @StartupBros!
+
 ### Fixed
 
 - Browser: scope the fallback stop-control selector to the composer so read-aloud, dictation, and voice controls cannot hold completed responses open until timeout. Thanks @StartupBros!
