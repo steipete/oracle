@@ -536,6 +536,10 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       if (isCompletedSummary(text)) return false;
       return ACTIVE_LABELS.some((label) => text === label || text.startsWith(label + ' '));
     };
+    const isExactActiveLabel = (raw) => {
+      const text = norm(raw);
+      return Boolean(text) && !isCompletedSummary(text) && ACTIVE_LABELS.includes(text);
+    };
     const statusNodes = (() => {
       try {
         return Array.from(
@@ -549,7 +553,12 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
     })();
     for (const node of statusNodes) {
       if (!(node instanceof HTMLElement) || !isVisible(node)) continue;
-      if (isActiveLabel(node.textContent) || isActiveLabel(node.getAttribute('aria-label'))) return ${strong};
+      const testId = norm(node.getAttribute('data-testid'));
+      const verifiedThinkingChrome = testId.includes('thinking') || testId.includes('reasoning');
+      const matches = verifiedThinkingChrome
+        ? isActiveLabel(node.textContent) || isActiveLabel(node.getAttribute('aria-label'))
+        : isExactActiveLabel(node.textContent) || isExactActiveLabel(node.getAttribute('aria-label'));
+      if (matches) return ${strong};
     }
     // 5) A live progress bar (determinate or indeterminate) is active generation, even when no
     //    label or shimmer is present (some connector/tool phases surface only a progress bar).
@@ -614,7 +623,16 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       if (!(node instanceof HTMLElement) || !isVisible(node)) continue;
       const rect = node.getBoundingClientRect();
       const rightSide = rect.left >= window.innerWidth * 0.35 && rect.width >= 180 && rect.height >= 120;
-      if (hasLiveProgress(node)) return ${strong};
+      const panelLabel = norm([
+        node.getAttribute?.('aria-label'),
+        node.getAttribute?.('data-testid'),
+        node.className,
+      ].filter(Boolean).join(' '));
+      const verifiedThinkingPanel =
+        panelLabel.includes('thinking') ||
+        panelLabel.includes('reasoning') ||
+        panelLabel.includes('sidecar');
+      if (hasLiveProgress(node) && verifiedThinkingPanel) return ${strong};
       // A text-only sidecar match is intentionally weak: completed turns can retain a mounted
       // reasoning panel whose shape/text heuristics still look active. The terminal gate may
       // override only this weak evidence after a stable, debounced finished-action bar.

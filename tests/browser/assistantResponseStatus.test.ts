@@ -376,6 +376,7 @@ describe("thinking-active completion veto", () => {
     shimmer?: boolean;
     ariaBusy?: boolean;
     statusText?: string;
+    statusTestId?: string;
     progress?: boolean;
     progressNow?: number;
     progressMax?: number;
@@ -384,7 +385,15 @@ describe("thinking-active completion veto", () => {
   }
 
   function createThinkingContext(opts: ThinkingFixtureOptions) {
-    const statusNodes = opts.statusText != null ? [new FakeEl(opts.statusText)] : [];
+    const statusNodes =
+      opts.statusText != null
+        ? [
+            new FakeEl(
+              opts.statusText,
+              opts.statusTestId ? { "data-testid": opts.statusTestId } : {},
+            ),
+          ]
+        : [];
     const progressAttrs: Record<string, string> =
       opts.progressNow != null
         ? {
@@ -487,6 +496,24 @@ describe("thinking-active completion veto", () => {
     },
   );
 
+  test("does NOT treat ordinary live-region answer prose as active thinking", () => {
+    expect(
+      evalThinkingActivityDetails({ statusText: "Thinking clearly requires practice." }),
+    ).toEqual({
+      active: false,
+      strong: false,
+    });
+  });
+
+  test("allows prefix matching only in verified thinking chrome", () => {
+    expect(
+      evalThinkingActivityDetails({
+        statusText: "Thinking through the remaining cases",
+        statusTestId: "reasoning-status",
+      }),
+    ).toEqual({ active: true, strong: true });
+  });
+
   test.each(COMPLETED_SUMMARY_LABELS)(
     "does NOT fire on the persistent completed reasoning summary %s",
     (statusText) => {
@@ -517,6 +544,20 @@ describe("thinking-active completion veto", () => {
     panel.rect = { left: 1000, top: 100, width: 380, height: 400 }; // right side, large
     expect(evalThinkingActive({ panel })).toBe(true);
     expect(evalThinkingActivityDetails({ panel })).toEqual({ active: true, strong: false });
+  });
+
+  test("does NOT treat progress in a generic panel as model activity", () => {
+    const panel = new FakeEl("Upload");
+    panel.rect = { left: 1000, top: 100, width: 380, height: 400 };
+    panel.children = [new FakeEl("", { "aria-valuenow": "40", role: "progressbar" })];
+    expect(evalThinkingActivityDetails({ panel })).toEqual({ active: false, strong: false });
+  });
+
+  test("treats progress in verified reasoning chrome as strong activity", () => {
+    const panel = new FakeEl("", { "data-testid": "reasoning-panel" });
+    panel.rect = { left: 1000, top: 100, width: 380, height: 400 };
+    panel.children = [new FakeEl("", { "aria-valuenow": "40", role: "progressbar" })];
+    expect(evalThinkingActivityDetails({ panel })).toEqual({ active: true, strong: true });
   });
 
   test.each(COMPLETED_SUMMARY_LABELS)("does NOT fire on completed sidecar summary %s", (text) => {
