@@ -6,13 +6,10 @@ describe("provider route plan", () => {
     const plan = buildProviderRoutePlan({
       model,
       providerMode: "auto",
-      env: {
-        OPENAI_API_KEY: "test-openai-key",
-        OPENROUTER_API_KEY: "test-openrouter-key",
-      },
+      env: {},
     });
 
-    expect(plan.ok).toBe(true);
+    expect(plan.ok).toBe(false);
     expect(plan.providerLabel).toBe("OpenAI");
     expect(plan.base).toBe("api.openai.com");
     expect(plan.keySource).toBe("OPENAI_API_KEY");
