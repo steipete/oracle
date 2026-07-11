@@ -11,7 +11,10 @@ import {
   ensureNotBlocked,
   ensureLoggedIn,
 } from "../../src/browser/pageActions.js";
+import { createContext, Script } from "node:vm";
 import {
+  buildCloudflareInterstitialExpressionForTest,
+  isCloudflareInterstitialForTest,
   buildLoginProbeExpressionForTest,
   buildWelcomeBackAccountPickerExpressionForTest,
 } from "../../src/browser/actions/navigation.js";
@@ -254,28 +257,62 @@ describe("waitForResumedConversationHydration", () => {
   });
 });
 
+describe("isCloudflareInterstitial hydration grace", () => {
+  const verdicts = (...values: unknown[]) => {
+    const fn = vi.fn();
+    for (const value of values) fn.mockResolvedValueOnce({ result: { value } });
+    fn.mockResolvedValue({ result: { value: values[values.length - 1] } });
+    return { evaluate: fn } as unknown as ChromeClient["Runtime"];
+  };
+
+  test("weak-only evidence that resolves into the app shell is NOT a challenge", async () => {
+    // The post-navigation race: bot-management script present, React shell not yet hydrated,
+    // short body. The shell appearing during the grace window must clear the classification.
+    const runtime = verdicts({ weak: true }, { weak: true }, { shell: true });
+    await expect(isCloudflareInterstitialForTest(runtime, 5_000)).resolves.toBe(false);
+  });
+
+  test("weak-only evidence that persists through the grace window IS a challenge", async () => {
+    const runtime = verdicts({ weak: true });
+    await expect(isCloudflareInterstitialForTest(runtime, 1_200)).resolves.toBe(true);
+  });
+
+  test("strong evidence classifies immediately without waiting", async () => {
+    const runtime = verdicts({ strong: true });
+    const started = Date.now();
+    await expect(isCloudflareInterstitialForTest(runtime, 60_000)).resolves.toBe(true);
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  test("no evidence at all returns false immediately", async () => {
+    const runtime = verdicts({});
+    await expect(isCloudflareInterstitialForTest(runtime, 60_000)).resolves.toBe(false);
+  });
+});
+
 describe("ensureNotBlocked", () => {
   test("throws descriptive error when cloudflare detected", async () => {
+    // The detector evaluates a verdict object; strong evidence classifies immediately.
     const runtime = {
-      evaluate: vi.fn().mockResolvedValue({ result: { value: "Just a moment..." } }),
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { strong: true } } }),
     } as unknown as ChromeClient["Runtime"];
     await expect(ensureNotBlocked(runtime, true, logger)).rejects.toThrow(/headless mode/i);
     expect(logger).toHaveBeenCalledWith("Cloudflare anti-bot page detected");
   });
 
-  test("passes through when title clean", async () => {
+  test("passes through when not a challenge (e.g. a normal page carrying the CF script)", async () => {
     const runtime = {
       evaluate: vi
         .fn()
-        .mockResolvedValueOnce({ result: { value: "ChatGPT" } })
-        .mockResolvedValueOnce({ result: { value: false } }),
+        .mockResolvedValueOnce({ result: { value: { shell: true } } }) // challenge verdict: app shell
+        .mockResolvedValue({ result: { value: false } }), // account security block probe
     } as unknown as ChromeClient["Runtime"];
     await expect(ensureNotBlocked(runtime, false, logger)).resolves.toBeUndefined();
   });
 
   test("throws structured browser error when headful cloudflare is detected", async () => {
     const runtime = {
-      evaluate: vi.fn().mockResolvedValue({ result: { value: "Just a moment..." } }),
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { strong: true } } }),
     } as unknown as ChromeClient["Runtime"];
     try {
       await ensureNotBlocked(runtime, false, logger);
@@ -293,15 +330,96 @@ describe("ensureNotBlocked", () => {
     const runtime = {
       evaluate: vi
         .fn()
-        .mockResolvedValueOnce({ result: { value: "ChatGPT" } })
-        .mockResolvedValueOnce({ result: { value: false } })
-        .mockResolvedValueOnce({ result: { value: true } }),
+        .mockResolvedValueOnce({ result: { value: { shell: true } } }) // not a Cloudflare interstitial
+        .mockResolvedValueOnce({ result: { value: true } }), // account security block
     } as unknown as ChromeClient["Runtime"];
 
     await expect(ensureNotBlocked(runtime, false, logger)).rejects.toMatchObject({
       details: { stage: "chatgpt-account-blocked" },
     });
     expect(logger).toHaveBeenCalledWith("ChatGPT account security block detected");
+  });
+});
+
+describe("cloudflare interstitial detection (DOM logic)", () => {
+  function evalCloudflare(opts: {
+    title?: string;
+    bodyText?: string;
+    appShell?: boolean;
+    widget?: boolean;
+    script?: boolean;
+  }): boolean {
+    const expr = buildCloudflareInterstitialExpressionForTest();
+    const context = createContext({
+      String,
+      Boolean,
+      document: {
+        title: opts.title ?? "",
+        body: { innerText: opts.bodyText ?? "" },
+        querySelector: (selector: string) => {
+          const s = String(selector);
+          if (
+            s.includes("prompt-textarea") ||
+            s.includes("conversation-turn") ||
+            s.includes("profile-button") ||
+            s.includes("form[data-type]") ||
+            s.includes('href*="/c/"')
+          ) {
+            return opts.appShell ? {} : null;
+          }
+          if (
+            s.includes("challenge-form") ||
+            s.includes("cf-challenge") ||
+            s.includes("challenges.cloudflare.com") ||
+            s.includes("cdn-cgi/challenge-platform")
+          ) {
+            return opts.widget ? {} : null;
+          }
+          if (s.includes("challenge-platform")) {
+            return opts.script ? {} : null; // the bot-management script
+          }
+          return null;
+        },
+      },
+    });
+    return new Script(expr).runInContext(context) as boolean;
+  }
+
+  test("does NOT flag a normal app page that merely carries the CF bot-management script", () => {
+    // The regression: the new GPT-5.6 "Work" UI (app shell present) + the challenge-platform
+    // script was wrongly detected as a Cloudflare challenge.
+    expect(evalCloudflare({ title: "ChatGPT", appShell: true, script: true })).toBe(false);
+  });
+
+  test("does NOT flag a content-rich page even without a recognized app shell", () => {
+    expect(
+      evalCloudflare({ title: "", appShell: false, script: true, bodyText: "x".repeat(1200) }),
+    ).toBe(false);
+  });
+
+  test("does NOT treat generic challenge copy as strong evidence on a content-rich page", () => {
+    expect(
+      evalCloudflare({
+        title: "ChatGPT",
+        appShell: false,
+        script: true,
+        bodyText: `A normal long-form answer says just a moment in passing. ${"x".repeat(1200)}`,
+      }),
+    ).toBe(false);
+  });
+
+  test("flags the real interstitial by title", () => {
+    expect(evalCloudflare({ title: "Just a moment..." })).toBe(true);
+  });
+
+  test("flags a real challenge widget with no app shell", () => {
+    expect(evalCloudflare({ title: "", appShell: false, widget: true })).toBe(true);
+  });
+
+  test("flags a short interstitial page carrying the script", () => {
+    expect(
+      evalCloudflare({ title: "", appShell: false, script: true, bodyText: "just a moment" }),
+    ).toBe(true);
   });
 });
 

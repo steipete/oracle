@@ -6,6 +6,7 @@
 
 - Browser: keep hidden macOS Chrome windows rendered off-screen so trusted prompt submissions land without retaining drafts or leaking them into later runs. Fixes #298 and #312. Thanks @LeoLin990405!
 - Browser: require positive terminal evidence before finalizing ChatGPT responses so settled preambles and mid-stream text cannot be captured as the completed answer. Thanks @StartupBros!
+- Browser: distinguish genuine Cloudflare interstitials from healthy ChatGPT pages that carry bot-management scripts or mention generic challenge text. Thanks @StartupBros!
 
 ## 0.15.2 — 2026-07-06
 
