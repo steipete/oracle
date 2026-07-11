@@ -154,7 +154,53 @@ function matchesSelectorList(node: FakeElement, selector: string): boolean {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean)
-    .some((part) => matchesSimpleSelector(node, part));
+    .some((part) => matchesComplexSelector(node, part));
+}
+
+// Descendant combinator support: split on whitespace OUTSIDE attribute brackets and :not()
+// parens, match the last compound on the node itself, and walk ancestors for the rest.
+function matchesComplexSelector(node: FakeElement, selector: string): boolean {
+  const compounds: string[] = [];
+  let current = "";
+  let depth = 0;
+  for (const char of selector) {
+    if (char === "[" || char === "(") depth += 1;
+    if (char === "]" || char === ")") depth -= 1;
+    if (depth === 0 && /\s/.test(char)) {
+      if (current) compounds.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current) compounds.push(current);
+  if (compounds.length === 0) return false;
+  if (!matchesCompoundSelector(node, compounds[compounds.length - 1] ?? "")) return false;
+  let ancestor = node.parentElement;
+  for (let i = compounds.length - 2; i >= 0; i -= 1) {
+    let found: FakeElement | null = null;
+    while (ancestor) {
+      if (matchesCompoundSelector(ancestor, compounds[i] ?? "")) {
+        found = ancestor;
+        break;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    if (!found) return false;
+    ancestor = found.parentElement;
+  }
+  return true;
+}
+
+// :not(...) support: every negated simple selector must NOT match the node.
+function matchesCompoundSelector(node: FakeElement, selector: string): boolean {
+  const negations: string[] = [];
+  const positive = selector.replace(/:not\(([^)]+)\)/g, (_match, inner: string) => {
+    negations.push(inner);
+    return "";
+  });
+  if (negations.some((negated) => matchesSimpleSelector(node, negated))) return false;
+  return matchesSimpleSelector(node, positive);
 }
 
 function matchesSimpleSelector(node: FakeElement, selector: string): boolean {
@@ -507,13 +553,35 @@ describe("thinking status browser expression", () => {
     "falls back to a visible stop control when no thinking indicator matches: %o",
     async (attrs) => {
       const document = new FakeDocument();
+      // The aria-label fallback is scoped to the composer FORM (post-#285 review): mirror the
+      // real DOM, where the generation stop control lives inside the composer form.
+      const form = new FakeElement("form", "", {});
       const composer = new FakeElement("div", "", { "data-testid": "composer-footer-actions" });
       composer.append(new FakeElement("button", "", attrs));
-      document.append(composer);
+      form.append(composer);
+      document.append(form);
 
       const result = await runThinkingStatusExpression(document);
 
       expect(result).toEqual({ message: "response streaming", source: "inline" });
+    },
+  );
+
+  test.each(["Stop reading aloud", "Stop dictation", "Stop voice mode"])(
+    "ignores non-generation stop control %j",
+    async (label) => {
+      // Post-merge review of #285: any visible page-wide "stop" control (read-aloud, voice,
+      // dictation) held the stop fallback true and stalled completion until the timeout.
+      const document = new FakeDocument();
+      const form = new FakeElement("form", "", {});
+      form.append(new FakeElement("button", "", { "aria-label": label }));
+      document.append(form);
+      const outside = new FakeElement("button", "", { "aria-label": "Stop background audio" });
+      document.append(outside);
+
+      const result = await runThinkingStatusExpression(document);
+
+      expect(result).toBeNull();
     },
   );
 

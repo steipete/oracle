@@ -102,6 +102,18 @@ describe("assistant thinking-status capture", () => {
     expect(expression).toContain("const fallback = extractFallback();");
   });
 
+  test("aria-label stop fallback is scoped to the composer and excludes non-generation stops", () => {
+    // Post-merge review of #285: a document-wide button[aria-label*="stop"] match let ANY
+    // visible stop control (read-aloud, voice/dictation) hold isStopButtonVisible() true and
+    // stall completion until the response timeout. Pin the scoping + exclusions.
+    const fallback = STOP_BUTTON_SELECTORS.find((s) => s.includes('aria-label*="stop"'));
+    expect(fallback).toBeDefined();
+    expect(fallback).toMatch(/^form /);
+    expect(fallback).toContain(':not([aria-label*="dictat" i])');
+    expect(fallback).toContain(':not([aria-label*="voice" i])');
+    expect(fallback).toContain(':not([aria-label*="read" i])');
+  });
+
   test("shares all stop-control selectors with completion capture", () => {
     let observedSelector = "";
     new Script(buildStopButtonVisibilityExpressionForTest()).runInContext(

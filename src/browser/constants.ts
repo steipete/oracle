@@ -73,10 +73,14 @@ export const UPLOAD_STATUS_SELECTORS = [
 ];
 
 export const STOP_BUTTON_SELECTOR = '[data-testid="stop-button"]';
+// The aria-label fallback exists for data-testid drift, but a document-wide match makes ANY
+// visible "stop" control (read-aloud, voice/dictation) read as "still generating", which blocks
+// completion until the response timeout. Scope it to the composer form and exclude the known
+// non-generation stop controls that legitimately live there.
 export const STOP_BUTTON_SELECTORS = [
   STOP_BUTTON_SELECTOR,
   '[data-testid="composer-stop-button"]',
-  'button[aria-label*="stop" i]',
+  'form button[aria-label*="stop" i]:not([aria-label*="dictat" i]):not([aria-label*="voice" i]):not([aria-label*="read" i])',
 ];
 export const SEND_BUTTON_SELECTORS = [
   'button[data-testid="send-button"]',
