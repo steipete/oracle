@@ -28,6 +28,13 @@ describe("buildBrowserConfig", () => {
     expect(config.desiredModel).toBe("Thinking 5.4");
   });
 
+  test("maps the GPT-5.6 family and explicit Sol variant separately", async () => {
+    const config = await buildBrowserConfig({ model: "gpt-5.6" });
+    expect(config.desiredModel).toBe("GPT-5.6 Sol");
+    const sol = await buildBrowserConfig({ model: "gpt-5.6-sol" });
+    expect(sol.desiredModel).toBe("GPT-5.6 Sol");
+  });
+
   test("keeps version signal for gpt-5.5 Instant browser runs", async () => {
     const config = await buildBrowserConfig({ model: "gpt-5.5-instant" });
     expect(config.desiredModel).toBe("GPT-5.5 Instant");

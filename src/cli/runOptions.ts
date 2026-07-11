@@ -59,7 +59,13 @@ export function resolveRunOptionsFromConfig({
 
   const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || DEFAULT_MODEL;
   const apiModel = resolveApiModel(cliModelArg);
-  const browserModel = normalizeChatGptModelForBrowser(inferModelFromLabel(cliModelArg));
+  // Browser label inference is intentionally engine-scoped: API model ids such as
+  // gpt-5.6-luna must remain provider values even though browser mode rejects
+  // unrecognized GPT-5.6 picker variants.
+  const browserModel =
+    resolvedEngine === "browser"
+      ? normalizeChatGptModelForBrowser(inferModelFromLabel(cliModelArg))
+      : apiModel;
   const isCodex = apiModel.startsWith("gpt-5.1-codex");
   const isClaude = apiModel.startsWith("claude");
   const isGrok = apiModel.startsWith("grok");

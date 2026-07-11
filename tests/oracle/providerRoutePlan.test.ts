@@ -2,6 +2,19 @@ import { describe, expect, test } from "vitest";
 import { buildProviderRoutePlan } from "../../src/oracle/providerRoutePlan.js";
 
 describe("provider route plan", () => {
+  test.each(["gpt-5.6", "gpt-5.6-sol"])("routes %s through first-party OpenAI", (model) => {
+    const plan = buildProviderRoutePlan({
+      model,
+      providerMode: "auto",
+      env: {},
+    });
+
+    expect(plan.ok).toBe(false);
+    expect(plan.providerLabel).toBe("OpenAI");
+    expect(plan.base).toBe("api.openai.com");
+    expect(plan.keySource).toBe("OPENAI_API_KEY");
+  });
+
   test("forced OpenAI ignores configured Azure for GPT models", () => {
     const plan = buildProviderRoutePlan({
       model: "gpt-5.4",

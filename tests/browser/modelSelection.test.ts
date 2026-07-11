@@ -216,6 +216,9 @@ const evaluateIntelligenceModelSelectionExpression = async (
   targetModel: string,
   initialButtonLabel = "Extra High",
   includeInstant = true,
+  includeGpt56 = false,
+  initialVersion: "5.5" | "5.6" = includeGpt56 ? "5.6" : "5.5",
+  preserveButtonLabelOnVersionChange = false,
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -241,7 +244,7 @@ const evaluateIntelligenceModelSelectionExpression = async (
   class FakeElement extends FakeEventTarget {
     constructor(
       public textContent: string,
-      private readonly attributes: Readonly<Record<string, string>> = {},
+      private readonly attributes: Record<string, string> = {},
       private readonly children: readonly FakeElement[] = [],
       private readonly onDispatch?: (event: unknown) => void,
     ) {
@@ -250,6 +253,10 @@ const evaluateIntelligenceModelSelectionExpression = async (
 
     getAttribute(name: string): string | null {
       return this.attributes[name] ?? null;
+    }
+
+    setAttribute(name: string, value: string): void {
+      this.attributes[name] = value;
     }
 
     querySelector(selector: string): FakeElement | null {
@@ -296,12 +303,30 @@ const evaluateIntelligenceModelSelectionExpression = async (
     "5.5",
     {
       role: "menuitemradio",
-      "aria-checked": "true",
-      "data-state": "checked",
+      "aria-checked": initialVersion === "5.5" ? "true" : "false",
+      "data-state": initialVersion === "5.5" ? "checked" : "unchecked",
     },
     [],
     () => {
       modelButton.textContent = "GPT-5.5";
+    },
+  );
+  const fiveSixSol = new FakeElement(
+    "GPT-5.6 Sol",
+    {
+      role: "menuitemradio",
+      "aria-checked": initialVersion === "5.6" ? "true" : "false",
+      "data-state": initialVersion === "5.6" ? "checked" : "unchecked",
+    },
+    [],
+    () => {
+      fiveSixSol.setAttribute("aria-checked", "true");
+      fiveSixSol.setAttribute("data-state", "checked");
+      fiveFive.setAttribute("aria-checked", "false");
+      fiveFive.setAttribute("data-state", "unchecked");
+      if (!preserveButtonLabelOnVersionChange) {
+        modelButton.textContent = "GPT-5.6 Sol";
+      }
     },
   );
   const fiveFour = new FakeElement(
@@ -316,9 +341,13 @@ const evaluateIntelligenceModelSelectionExpression = async (
       modelButton.textContent = "GPT-5.4";
     },
   );
-  const gpt55Submenu = new FakeElement("5.55.45.34.5o3", { role: "menu" }, [fiveFive, fiveFour]);
+  const gpt55Submenu = new FakeElement("GPT-5.6 Sol5.55.45.34.5o3", { role: "menu" }, [
+    ...(includeGpt56 ? [fiveSixSol] : []),
+    fiveFive,
+    fiveFour,
+  ]);
   const gpt55Trigger = new FakeElement(
-    "GPT-5.5",
+    initialVersion === "5.6" ? "GPT-5.6 Sol" : "GPT-5.5",
     {
       role: "menuitem",
       "aria-haspopup": "menu",
@@ -620,7 +649,8 @@ const evaluateConfiguredModelSelectionExpression = async (
         versionListOpen = false;
       },
     );
-  const versionList = new FakeElement("5.5 5.4 5.3 5.2", { role: "listbox" }, [
+  const versionList = new FakeElement("5.6 Sol 5.5 5.4 5.3 5.2", { role: "listbox" }, [
+    versionOption("5.6 Sol"),
     versionOption("5.5"),
     versionOption("5.4"),
     versionOption("5.3"),
@@ -909,6 +939,75 @@ const evaluateNoModelButtonExpression = (
 };
 
 describe("browser model selection matchers", () => {
+  it("includes explicit GPT-5.6 Sol tokens", () => {
+    const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("GPT-5.6 Sol");
+    expect(labelTokens).toContain("gpt-5.6 sol");
+    expect(labelTokens).toContain("gpt-5.6");
+    expect(testIdTokens).toContain("model-switcher-gpt-5-6");
+    expect(testIdTokens).toContain("gpt56");
+  });
+
+  it("requires an explicit GPT-5.6 composer signal", () => {
+    expect(buildComposerSignalMatchersForTest("GPT-5.6 Sol")).toEqual({
+      includesAny: ["5 6 sol"],
+      excludesAny: ["pro"],
+      allowBlank: false,
+    });
+  });
+
+  it("recognizes GPT-5.6 Sol when the composer pill includes an effort label", () => {
+    const result = evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "5.6 Sol Extra High");
+    expect(result).toEqual({ status: "already-selected", label: "5.6 Sol Extra High" });
+  });
+
+  it("selects the GPT-5.6 Sol model row", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression("GPT-5.6 Sol", { label: "GPT-5.6 Sol" }),
+    ).resolves.toEqual({ status: "switched", label: "GPT-5.6 Sol" });
+  });
+
+  it("opens the current GPT-5.x version submenu before selecting GPT-5.6 Sol", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "Extra High", true, true),
+    ).resolves.toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
+  });
+
+  it("reports GPT-5.6 Sol instead of a localized Intelligence effort pill", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "极速", true, true),
+    ).resolves.toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
+  });
+
+  it("verifies a GPT-5.6 Sol switch when the localized effort pill stays unchanged", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "极速", true, true, "5.5", true),
+    ).resolves.toEqual({ status: "switched", label: "GPT-5.6 Sol" });
+  });
+
+  it("keeps an explicit Sol request distinct from future GPT-5.6 variants", () => {
+    const result = evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Luna");
+    expect(result).toBeInstanceOf(Promise);
+  });
+
+  it("keeps base Sol distinct from the Pro target", () => {
+    const inlinePro = evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Sol Pro");
+    expect(inlinePro).toBeInstanceOf(Promise);
+
+    const separateProPill = evaluateImmediateModelSelectionExpression(
+      "GPT-5.6 Sol",
+      "GPT-5.6 Sol",
+      "5.6 Sol",
+      "Pro",
+    );
+    expect(separateProPill).toBeInstanceOf(Promise);
+  });
+
+  it("includes real pointer coordinates when opening version submenus", () => {
+    const expression = buildModelSelectionExpressionForTest("GPT-5.6 Sol");
+    expect(expression).toContain("rect.x + rect.width / 2");
+    expect(expression).toContain("clientX, clientY");
+  });
+
   it("includes pro + 5.5 tokens for gpt-5.5-pro", () => {
     const { labelTokens, testIdTokens } = buildModelMatchersLiteralForTest("gpt-5.5-pro");
     expect(labelTokens).toContain("pro extended");
@@ -1262,6 +1361,22 @@ describe("browser model selection matchers", () => {
     expect(() => assertResolvedModelSelectionForTest("Pro", "Pro")).not.toThrow();
   });
 
+  it("fails loudly if GPT-5.6 Sol resolves to a localized effort label", () => {
+    expect(() => assertResolvedModelSelectionForTest("GPT-5.6 Sol", "")).toThrow(
+      /requires GPT-5\.6 Sol/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("GPT-5.6 Sol", "极速")).toThrow(
+      /requires GPT-5\.6 Sol/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.6-sol", "GPT-5.6 Luna")).toThrow(
+      /requires GPT-5\.6 Sol/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.6-sol", "GPT-5.6 Sol Pro")).toThrow(
+      /requires GPT-5\.6 Sol/,
+    );
+    expect(() => assertResolvedModelSelectionForTest("gpt-5.6-sol", "GPT-5.6 Sol")).not.toThrow();
+  });
+
   it("does not validate the active picker label when strategy keeps current selection", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
@@ -1393,6 +1508,13 @@ describe("browser model selection matchers", () => {
     await expect(evaluateConfiguredModelSelectionExpression("Thinking 5.4")).resolves.toEqual({
       status: "switched",
       label: "Thinking GPT-5.4",
+    });
+  });
+
+  it("uses Configure to select and verify the pinned GPT-5.6 Sol variant", async () => {
+    await expect(evaluateConfiguredModelSelectionExpression("GPT-5.6 Sol")).resolves.toEqual({
+      status: "switched",
+      label: "Thinking 5.6 Sol",
     });
   });
 

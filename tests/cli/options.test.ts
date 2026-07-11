@@ -10,6 +10,7 @@ import {
   resolvePreviewMode,
   resolveApiModel,
   inferModelFromLabel,
+  isGpt56BrowserLabel,
   normalizeModelOption,
   parseHeartbeatOption,
   parseTimeoutOption,
@@ -254,6 +255,12 @@ describe("resolveApiModel", () => {
     );
   });
 
+  test("keeps GPT-5.6 API ids available for engine-aware validation", () => {
+    expect(resolveApiModel("gpt-5.6")).toBe("gpt-5.6");
+    expect(resolveApiModel("gpt-5.6-sol")).toBe("gpt-5.6-sol");
+    expect(resolveApiModel("openai/gpt-5.6")).toBe("openai/gpt-5.6");
+  });
+
   test("passes through unknown names (OpenRouter/custom)", () => {
     expect(resolveApiModel("instant")).toBe("instant");
     expect(resolveApiModel("openai/gpt-5.4")).toBe("openai/gpt-5.4");
@@ -264,6 +271,7 @@ describe("resolveApiModel", () => {
 
 describe("inferModelFromLabel", () => {
   test("returns canonical names when label already matches", () => {
+    expect(inferModelFromLabel("gpt-5.6")).toBe("gpt-5.6");
     expect(inferModelFromLabel("gpt-5.5-pro")).toBe("gpt-5.5-pro");
     expect(inferModelFromLabel("gpt-5.5")).toBe("gpt-5.5");
     expect(inferModelFromLabel("gpt-5.4-pro")).toBe("gpt-5.4-pro");
@@ -275,6 +283,21 @@ describe("inferModelFromLabel", () => {
     expect(inferModelFromLabel("gemini-3.1-pro")).toBe("gemini-3.1-pro");
     expect(inferModelFromLabel("gemini-3.5-flash")).toBe("gemini-3.5-flash");
     expect(inferModelFromLabel("gemini-3.1-flash-lite")).toBe("gemini-3.1-flash-lite");
+  });
+
+  test("infers the browser GPT-5.6 Sol family", () => {
+    expect(inferModelFromLabel("GPT-5.6 Sol")).toBe("gpt-5.6-sol");
+    expect(inferModelFromLabel("ChatGPT 5_6")).toBe("gpt-5.6");
+  });
+
+  test("does not reserve unrelated slashless API model ids containing 5.6", () => {
+    expect(isGpt56BrowserLabel("vendor-5.6-large")).toBe(false);
+    expect(isGpt56BrowserLabel("model_5_6_custom")).toBe(false);
+  });
+
+  test("rejects unknown bare GPT-5.6 browser variants", () => {
+    expect(() => inferModelFromLabel("gpt-5.6-pro")).toThrow("Unknown GPT-5.6 browser variant");
+    expect(() => inferModelFromLabel("GPT-5.6 Luna")).toThrow("Unknown GPT-5.6 browser variant");
   });
 
   test("preserves provider-qualified ids instead of remapping them to built-ins", () => {
