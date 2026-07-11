@@ -63,20 +63,47 @@ function isDeepResearchBrowserSession(metadata: SessionMetadata): boolean {
   return metadata.mode === "browser" && metadata.browser?.config?.researchMode === "deep";
 }
 
-function isDeepResearchPlaceholderCapture(metadata: SessionMetadata, logText: string): boolean {
-  const answer = trimBeforeFirstAnswer(logText)
-    .replace(/^Answer:\s*/i, "")
+const DEEP_RESEARCH_TOOL_CALL_MARKERS = [
+  "called tool",
+  "used tool",
+  "użyto narzędzia",
+  "narzędzie wywołane",
+];
+
+function isDeepResearchToolCallPlaceholder(answerText: string, outputTokens?: number): boolean {
+  const lines = answerText
     .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-  const isToolOnly =
-    answer === "called tool" ||
-    answer === "used tool" ||
-    answer === "użyto narzędzia" ||
-    answer === "narzędzie wywołane";
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  if (!lines[0] || !DEEP_RESEARCH_TOOL_CALL_MARKERS.includes(lines[0])) {
+    return false;
+  }
+  if (lines.length === 1) {
+    return outputTokens == null || outputTokens <= 8;
+  }
+  const wrapper = lines.slice(1).join(" ");
+  const structuralSignals = [
+    wrapper.includes("deep research app"),
+    /\bcall tool\b/.test(wrapper),
+    /\brequest\s*\{/.test(wrapper),
+    /\bresponse\s*\{/.test(wrapper),
+    /\bsession[_ ]id\b/.test(wrapper),
+  ].filter(Boolean).length;
+  return wrapper.includes("deep research app") && structuralSignals >= 2;
+}
+
+export function isDeepResearchPlaceholderCapture(
+  metadata: SessionMetadata,
+  logText: string,
+): boolean {
+  if (/\[reattach\][^\n]*\nAnswer:/i.test(logText)) {
+    return false;
+  }
+  const answer = trimBeforeFirstAnswer(logText).replace(/^Answer:\s*/i, "");
   const modelUsage = metadata.models?.find((run) => run.model === metadata.model)?.usage;
   const outputTokens = metadata.usage?.outputTokens ?? modelUsage?.outputTokens;
-  return isToolOnly && (outputTokens == null || outputTokens <= 8);
+  return isDeepResearchToolCallPlaceholder(answer, outputTokens);
 }
 
 async function writeReattachAnswer(
@@ -697,14 +724,11 @@ export function trimBeforeFirstAnswer(logText: string): string {
   if (index === -1) {
     return logText;
   }
-  const fromFirstAnswer = logText.slice(index);
-  if (
-    /^Answer:\s*(called tool|used tool|użyto narzędzia|narzędzie wywołane)\s*\n\[reattach\]/i.test(
-      fromFirstAnswer,
-    )
-  ) {
-    const laterIndex = logText.lastIndexOf(marker);
-    if (laterIndex > index) {
+  const laterIndex = logText.lastIndexOf(marker);
+  const reattachIndex = logText.indexOf("[reattach]", index + marker.length);
+  if (laterIndex > index && reattachIndex > index && reattachIndex < laterIndex) {
+    const firstCapture = logText.slice(index + marker.length, reattachIndex);
+    if (isDeepResearchToolCallPlaceholder(firstCapture)) {
       return logText.slice(laterIndex);
     }
   }
