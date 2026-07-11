@@ -7,21 +7,24 @@ description: "Oracle second-model review: bundle prompts/files, debug, refactor,
 
 Oracle bundles your prompt + selected files into one “one-shot” request so another model can answer with real repo context (API or browser automation). Treat outputs as advisory: verify against the codebase + tests.
 
-## Main use case (browser, GPT‑5.5 Pro)
+## Main use case (browser, GPT‑5.6 Sol Pro)
 
-Default workflow here: `--engine browser` with GPT‑5.5 Pro in ChatGPT. This is the “human in the loop” path: it can take ~10 minutes to ~1 hour; expect a stored session you can reattach to.
+Default workflow here: `--engine browser` with GPT‑5.6 Sol Pro in ChatGPT. OpenAI describes Pro as the highest-capability GPT‑5.6 option for difficult tasks and longer-running workflows. This is the “human in the loop” path: it can take ~10 minutes to ~1 hour; expect a stored session you can reattach to.
 
 Recommended defaults:
 
 - Engine: browser (`--engine browser`)
-- Model: GPT‑5.5 Pro (either `--model gpt-5.5-pro` or a ChatGPT picker label like `--model "5.5 Pro"`)
+- Model: GPT‑5.6 Sol Pro (`--model "GPT-5.6 Sol Pro"`; the ChatGPT picker resolves this to `Pro`)
+- Reasoning: do not add `--browser-thinking-time extra-high` to Pro. Extra High is the maximum reasoning setting for the separate base GPT‑5.6 Sol model, while Pro selects GPT‑5.6 Sol Pro.
 - Attachments: directories/globs + excludes; avoid secrets.
+
+Reference: [GPT-5.6 in ChatGPT](https://help.openai.com/en/articles/20001354-gpt-56-in-chatgpt).
 
 ## Golden path (fast + reliable)
 
 1. Pick a tight file set (fewest files that still contain the truth).
 2. Preview what you’re about to send (`--dry-run` + `--files-report` when needed).
-3. Run in browser mode for the usual GPT‑5.5 Pro ChatGPT workflow; use API only when you explicitly want it.
+3. Run in browser mode for the usual GPT‑5.6 Sol Pro ChatGPT workflow; use API only when you explicitly want it.
 4. If the run detaches/timeouts: reattach to the stored session (don’t re-run).
 
 ## Commands (preferred)
@@ -41,7 +44,7 @@ Recommended defaults:
   - Use when CLI startup or time-to-first-output feels slow; inspect `first-output` and `exit`.
 
 - Browser run (main path; long-running is normal):
-  - `npx -y @steipete/oracle --engine browser --model gpt-5.5-pro -p "<task>" --file "src/**"`
+  - `npx -y @steipete/oracle --engine browser --model "GPT-5.6 Sol Pro" -p "<task>" --file "src/**"`
 
 - Manual paste fallback (assemble bundle, copy to clipboard):
   - `npx -y @steipete/oracle --render --copy -p "<task>" --file "src/**"`
@@ -103,7 +106,7 @@ Recommended defaults:
 
 - Stored under `~/.oracle/sessions` (override with `ORACLE_HOME_DIR`).
 - Browser runs save durable files under `~/.oracle/sessions/<id>/artifacts/`, including `transcript.md`, Deep Research reports, and downloaded ChatGPT-generated images when available.
-- Runs may detach or take a long time (browser/API + GPT‑5.5 Pro often does). If the CLI times out: don’t re-run; reattach.
+- Runs may detach or take a long time (browser/API + GPT‑5.6 Sol Pro often does). If the CLI times out: don’t re-run; reattach.
   - List: `oracle status --hours 72`
   - Attach: `oracle session <id> --render`
 - Use `--slug "<3-5 words>"` to keep session IDs readable.
