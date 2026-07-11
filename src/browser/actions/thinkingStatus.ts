@@ -512,10 +512,17 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
     };
     // 1) Stop/interrupt control visible -> generation is active (language-independent).
     if (some(STOP_SELECTOR, isVisible)) return ${strong};
-    // 2) Visible animated loading-shimmer skeleton (only mounted while streaming/thinking).
-    if (some('span.loading-shimmer, .loading-shimmer, [class*="loading-shimmer"]', isVisible)) return ${strong};
-    // 3) aria-busy live region.
-    if (some('[aria-busy="true"]', isVisible)) return ${strong};
+    // 2-3) Shimmer/aria-busy are checked only inside the current turn or verified thinking
+    // panel below. Page-global busy UI (history/sidebar/upload) is not model activity.
+    const hasBusyIndicator = (scope) => {
+      let nodes;
+      try {
+        nodes = scope.querySelectorAll(
+          'span.loading-shimmer, .loading-shimmer, [class*="loading-shimmer"], [aria-busy="true"]',
+        );
+      } catch { return false; }
+      return Array.from(nodes).some((node) => isVisible(node));
+    };
     // 4) Active (present-tense) thinking status label near a status/reasoning node.
     const norm = (value) =>
       String(value || '')
@@ -524,12 +531,11 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
         .toLowerCase()
         .replace(/\\s+/g, ' ')
         .trim();
-    // Completed reasoning summary: SHORT visible text containing "thought for " (numeric or
-    // worded duration, with or without a heading prefix like "Reasoning Thought for 12s", even
-    // when fragments concatenate without whitespace). The length cap is what keeps this from
-    // vetoing a live sidecar trace: a running trace grows far past 60 chars, while a collapsed
-    // completed summary (plus optional heading) stays short.
-    const isCompletedSummary = (text) => text.length > 0 && text.length <= 60 && text.includes('thought for ');
+    // Completed reasoning summary: the whole visible label must be a duration summary. Anchoring
+    // prevents an early live trace such as "Thought for 2s: Searching the web" from being
+    // mistaken for completion before the trace grows beyond an arbitrary length threshold.
+    const isCompletedSummary = (text) =>
+      /^(?:(?:reasoning|pro thinking)\\s*)?thought for (?:\\d+(?:\\.\\d+)?\\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours)(?:\\s+\\d+(?:\\.\\d+)?\\s*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours))*|(?:a|an) [a-z]+(?: [a-z]+){0,2})$/.test(text);
     const isActiveLabel = (raw) => {
       const text = norm(raw);
       if (!text || text.length > 60) return false;
@@ -594,7 +600,10 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       try { return document.querySelectorAll(CONVERSATION_SELECTOR); } catch { return []; }
     })();
     const lastTurn = turns.length ? turns[turns.length - 1] : null;
-    if (lastTurn instanceof HTMLElement && hasLiveProgress(lastTurn)) return ${strong};
+    if (
+      lastTurn instanceof HTMLElement &&
+      (hasBusyIndicator(lastTurn) || hasLiveProgress(lastTurn))
+    ) return ${strong};
     // 6) A visible thinking/reasoning sidecar panel (the connector/reasoning phase is often
     //    exposed ONLY through a right-side panel with no inline label). Match the existing
     //    thinking-monitor heuristic: a right-side panel that looks like thinking, or any such
@@ -606,6 +615,7 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
       // is judged by its full rendered length, not by fragments of it.
       const visible = norm(node.textContent) || norm(node.getAttribute?.('aria-label'));
       if (isCompletedSummary(visible)) return false;
+      if (visible.includes('thought for ')) return true;
       const label = norm([
         node.textContent,
         node.getAttribute?.('aria-label'),
@@ -632,7 +642,7 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
         panelLabel.includes('thinking') ||
         panelLabel.includes('reasoning') ||
         panelLabel.includes('sidecar');
-      if (hasLiveProgress(node) && verifiedThinkingPanel) return ${strong};
+      if ((hasBusyIndicator(node) || hasLiveProgress(node)) && verifiedThinkingPanel) return ${strong};
       // A text-only sidecar match is intentionally weak: completed turns can retain a mounted
       // reasoning panel whose shape/text heuristics still look active. The terminal gate may
       // override only this weak evidence after a stable, debounced finished-action bar.

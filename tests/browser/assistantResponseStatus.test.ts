@@ -365,8 +365,20 @@ describe("thinking-active completion veto", () => {
       return this.attrs[name] ?? null;
     }
     querySelectorAll(selector: string) {
-      if (selector.includes("progress")) return this.children;
-      return [];
+      const matches: FakeEl[] = [];
+      if (selector.includes("progress"))
+        matches.push(
+          ...this.children.filter((child) => child.getAttribute("role") === "progressbar"),
+        );
+      if (selector.includes("loading-shimmer"))
+        matches.push(
+          ...this.children.filter((child) => child.getAttribute("data-kind") === "shimmer"),
+        );
+      if (selector.includes("aria-busy"))
+        matches.push(
+          ...this.children.filter((child) => child.getAttribute("aria-busy") === "true"),
+        );
+      return [...new Set(matches)];
     }
     public children: FakeEl[] = [];
   }
@@ -381,6 +393,7 @@ describe("thinking-active completion veto", () => {
     progressNow?: number;
     progressMax?: number;
     unrelatedProgress?: boolean;
+    unrelatedBusy?: boolean;
     panel?: FakeEl;
   }
 
@@ -407,7 +420,11 @@ describe("thinking-active completion veto", () => {
     // Progress is scoped to the CURRENT assistant turn (review P1): the harness models the
     // turn container; unrelatedProgress mounts a live bar OUTSIDE any turn, which must not veto.
     const turn = new FakeEl("turn");
-    turn.children = progressNodes;
+    turn.children = [
+      ...progressNodes,
+      ...(opts.shimmer ? [new FakeEl("", { "data-kind": "shimmer" })] : []),
+      ...(opts.ariaBusy ? [new FakeEl("", { "aria-busy": "true" })] : []),
+    ];
     const turnNodes = [turn];
     const panelNodes = opts.panel ? [opts.panel] : [];
     return createContext({
@@ -421,8 +438,8 @@ describe("thinking-active completion veto", () => {
           if (selector.includes("stop") || selector.includes('aria-label*="stop"')) {
             return opts.stop ? [new FakeEl()] : [];
           }
-          if (selector.includes("loading-shimmer")) return opts.shimmer ? [new FakeEl()] : [];
-          if (selector.includes("aria-busy")) return opts.ariaBusy ? [new FakeEl()] : [];
+          if (selector.includes("loading-shimmer")) return opts.unrelatedBusy ? [new FakeEl()] : [];
+          if (selector.includes("aria-busy")) return opts.unrelatedBusy ? [new FakeEl()] : [];
           if (selector.includes("progressbar") || selector.includes("aria-valuenow")) {
             // Only an UNRELATED page-wide bar is ever visible at document level now; the
             // turn-scoped bars are reached through the turn node's own querySelectorAll.
@@ -539,6 +556,13 @@ describe("thinking-active completion veto", () => {
     expect(evalThinkingActive({ unrelatedProgress: true })).toBe(false);
   });
 
+  test("does NOT fire on unrelated page-wide busy indicators", () => {
+    expect(evalThinkingActivityDetails({ unrelatedBusy: true })).toEqual({
+      active: false,
+      strong: false,
+    });
+  });
+
   test("fires on a right-side reasoning sidecar panel with no inline label", () => {
     const panel = new FakeEl("Reasoning");
     panel.rect = { left: 1000, top: 100, width: 380, height: 400 }; // right side, large
@@ -573,6 +597,12 @@ describe("thinking-active completion veto", () => {
     const panel = new FakeEl(
       "Thought for 2s: Searching the web. Reasoning about the diff and enumerating candidate hunks to inspect next.",
     );
+    panel.rect = { left: 1000, top: 100, width: 380, height: 400 };
+    expect(evalThinkingActive({ panel })).toBe(true);
+  });
+
+  test("fires on a short live trace that begins with a completed sub-step", () => {
+    const panel = new FakeEl("Thought for 2s: Searching the web");
     panel.rect = { left: 1000, top: 100, width: 380, height: 400 };
     expect(evalThinkingActive({ panel })).toBe(true);
   });
