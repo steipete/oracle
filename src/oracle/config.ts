@@ -41,12 +41,16 @@ const countTokensAnthropic: TokenizerFn = (input: unknown): number => {
   return countTokensAnthropicImpl(stringifyTokenizerInput(input));
 };
 
+// GPT-5.6 applies higher rates to requests above 272K input tokens. Keep the
+// supported limit at the base-rate boundary until cost estimation supports tiers.
+const GPT_5_6_BASE_RATE_INPUT_LIMIT = 272_000;
+
 export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
   "gpt-5.6": {
     model: "gpt-5.6",
     provider: "openai",
     tokenizer: countTokensGpt5 as TokenizerFn,
-    inputLimit: 1_050_000,
+    inputLimit: GPT_5_6_BASE_RATE_INPUT_LIMIT,
     pricing: {
       inputPerToken: 5 / 1_000_000,
       outputPerToken: 30 / 1_000_000,
@@ -57,7 +61,7 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
     model: "gpt-5.6-sol",
     provider: "openai",
     tokenizer: countTokensGpt5 as TokenizerFn,
-    inputLimit: 1_050_000,
+    inputLimit: GPT_5_6_BASE_RATE_INPUT_LIMIT,
     pricing: {
       inputPerToken: 5 / 1_000_000,
       outputPerToken: 30 / 1_000_000,

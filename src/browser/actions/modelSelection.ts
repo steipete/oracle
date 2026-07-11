@@ -997,7 +997,7 @@ function buildModelSelectionExpression(
         desiredModelVariant === 'sol' &&
         (labelHasProWord(normalizedText) || normalizeText(testid ?? '').includes('pro'))
       ) return false;
-      if (desiredVersion === '5-6') return true;
+      if (desiredVersion === '5-6') return !hasProComposerPill();
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };

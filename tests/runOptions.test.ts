@@ -404,6 +404,17 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(multi.runOptions.models).toEqual(["gpt-5.6-sol", "gpt-5.5"]);
   });
 
+  it.each(["gpt-5.6", "gpt-5.6-sol"] as const)("caps %s at the flat-price boundary", (model) => {
+    expect(MODEL_CONFIGS[model]).toMatchObject({
+      provider: "openai",
+      inputLimit: 272_000,
+      pricing: {
+        inputPerToken: 5 / 1_000_000,
+        outputPerToken: 30 / 1_000_000,
+      },
+    });
+  });
+
   it("preserves unrelated slashless 5.6 model ids in API runs", () => {
     const { resolvedEngine, runOptions } = resolveRunOptionsFromConfig({
       prompt: basePrompt,
