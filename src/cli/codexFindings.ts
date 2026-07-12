@@ -5,12 +5,17 @@ import { buildBrowserConfig } from "./browserConfig.js";
 import { loadUserConfig } from "../config.js";
 import { runBrowserCodexFindings } from "../browser/codexFindingsRunner.js";
 import { normalizeCodexFindingsUrl } from "../codex/url.js";
-import type { CodexFindingsResult } from "../codex/types.js";
+import type { CodexFindingAction, CodexFindingsResult } from "../codex/types.js";
 
 export interface CodexFindingsCliOptions extends Partial<BrowserFlagOptions> {
   chatgptUrl?: string;
   severity?: string;
   finding?: string;
+  action?: CodexFindingAction;
+  text?: string;
+  confirm?: boolean;
+  repo?: string;
+  modalOnly?: boolean;
   limit?: number;
   json?: boolean;
   verbose?: boolean;
@@ -26,9 +31,14 @@ export async function runCodexFindingsCliCommand(options: CodexFindingsCliOption
     configuredBrowser: userConfig.browser ?? {},
   });
   const result = await runBrowserCodexFindings({
-    operation: options.finding ? "detail" : "list",
+    operation: options.action ? "action" : options.finding ? "detail" : "list",
     chatgptUrl: findingsUrl,
     findingId: options.finding,
+    action: options.action,
+    actionText: options.text,
+    confirm: options.confirm,
+    repo: options.repo,
+    modalOnly: options.modalOnly,
     severity: options.severity,
     limit: options.limit,
     config: browserConfig,
@@ -115,6 +125,13 @@ function printCodexFindingsResult(result: CodexFindingsResult, json: boolean): v
       console.log(chalk.bold("# Validation artifact (signed, expires soon)"));
       console.log(`  ${d.validationArtifact}`);
     }
+    return;
+  }
+  if (result.operation === "action" && result.actionResult) {
+    console.log(chalk.bold(`Finding action: ${result.action ?? "unknown"}`));
+    console.log(result.actionResult.message ?? result.actionResult.status);
+    if (result.actionResult.url) console.log(result.actionResult.url);
+    if (result.actionResult.text) console.log(result.actionResult.text);
     return;
   }
   const findings = result.findings ?? [];

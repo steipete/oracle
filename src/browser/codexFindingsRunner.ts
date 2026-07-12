@@ -43,14 +43,21 @@ import {
   resolveManualLoginWaitMs,
 } from "./manualLoginProfile.js";
 import {
+  executeFindingAction,
   goToNextFindingsPage,
   readFindingDetail,
   waitForFindingDetailReady,
   waitForFindingsPageSettled,
   waitForFindingsReady,
 } from "./actions/codexFindings.js";
+import type { FindingActionResult } from "./actions/codexFindings.js";
 import { normalizeCodexFindingsUrl, buildFindingDetailUrl } from "../codex/url.js";
-import { aggregateFindingPages, shouldStopPaging } from "../codex/findings.js";
+import {
+  aggregateFindingPages,
+  githubRepoFromUrl,
+  isModalRuntimeEvidence,
+  shouldStopPaging,
+} from "../codex/findings.js";
 import type {
   CodexFinding,
   CodexFindingsPageCounter,
@@ -170,9 +177,7 @@ export async function runBrowserCodexFindings(
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
       Promise.race([promise, disconnectPromise]);
 
-    // READ-ONLY: no Input, no DOM domain — the tool cannot emit a trusted event, so no
-    // mutating Radix action (Create PR / Submit / Close / Adjust / feedback) is reachable.
-    const { Network, Page, Runtime, Target } = client;
+    const { Network, Page, Runtime, Input, Target } = client;
     await Promise.all([Network.enable({}), Page.enable(), Runtime.enable()]);
     if (!config.headless && config.hideWindow) {
       await positionChromeWindowOffscreen(client, logger);
@@ -221,6 +226,52 @@ export async function runBrowserCodexFindings(
       };
     }
 
+    if (request.operation === "action") {
+      const findingId = requireFindingId(request.findingId);
+      if (!request.action) throw new Error("codex finding action requires an action.");
+      if (["create-pr", "chat", "close", "adjust"].includes(request.action) && !request.confirm) {
+        throw new Error(`Refusing mutating finding action ${request.action} without --confirm.`);
+      }
+      const detailUrl = buildFindingDetailUrl(findingsUrl, findingId);
+      await raceWithDisconnect(navigateToChatGPT(Page, Runtime, detailUrl, logger));
+      await raceWithDisconnect(waitForFindingDetailReady(Runtime, config.inputTimeoutMs, logger));
+      const detail = await raceWithDisconnect(readFindingDetail(Runtime, findingId));
+      const expectedRepo = request.repo ?? (request.modalOnly ? "umgbhalla/harp" : undefined);
+      if (expectedRepo && githubRepoFromUrl(detail.repo ?? "") !== expectedRepo) {
+        throw new Error(
+          `Finding ${findingId} belongs to ${githubRepoFromUrl(detail.repo ?? "") ?? "an unknown repository"}, not ${expectedRepo}.`,
+        );
+      }
+      if (
+        request.modalOnly &&
+        (detail.files.length === 0 || detail.files.some((file) => !isModalRuntimeEvidence(file)))
+      ) {
+        throw new Error(
+          `Finding ${findingId} is not Modal-runtime-only; refusing action because its evidence includes frontend, local-only, test, eval, or unknown paths.`,
+        );
+      }
+      const actionResult: FindingActionResult = await raceWithDisconnect(
+        executeFindingAction(
+          Runtime,
+          Input,
+          request.action,
+          request.actionText,
+          config.inputTimeoutMs,
+          logger,
+        ),
+      );
+      completed = true;
+      return {
+        status: "ok",
+        operation: "action",
+        findingsUrl: detailUrl,
+        action: request.action,
+        actionResult,
+        warnings,
+        tookMs: Date.now() - startedAt,
+      };
+    }
+
     // LIST: the findings list is SSR'd + rendered as `li > button` rows; scrape the DOM and
     // page through with a plain Next-page click (verified to advance). No trusted Input needed.
     await raceWithDisconnect(navigateToChatGPT(Page, Runtime, findingsUrl, logger));
@@ -241,7 +292,7 @@ export async function runBrowserCodexFindings(
       counter = page.counter;
       pagesVisited += 1;
       const collected = aggregateFindingPages(pages).length;
-      if (limit !== undefined && collected >= limit) {
+      if (!request.repo && !request.modalOnly && limit !== undefined && collected >= limit) {
         break;
       }
       if (shouldStopPaging(page.counter, pagesVisited)) {
@@ -255,6 +306,10 @@ export async function runBrowserCodexFindings(
       }
     }
     let findings = aggregateFindingPages(pages);
+    if (request.repo || request.modalOnly) {
+      const expectedRepo = request.repo ?? "umgbhalla/harp";
+      findings = findings.filter((finding) => finding.repo === expectedRepo);
+    }
     if (request.severity) {
       findings = findings.filter((f) => f.severity === request.severity);
     }

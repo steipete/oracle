@@ -68,3 +68,23 @@ export function shouldStopPaging(
   }
   return pagesVisited >= 1 && counter.to >= counter.total;
 }
+
+const MODAL_RUNTIME_ROOTS = ["harp/", "deploy.sh", "pyproject.toml"] as const;
+const NON_MODAL_PATHS = new Set(["harp/sandbox_local.py", "harp/serve_local.py"]);
+
+export function modalEvidencePath(url: string): string | null {
+  const match = /\/blob\/[a-f0-9]{7,64}\/(.+?)(?:#|$)/iu.exec(url);
+  return match?.[1] ?? null;
+}
+
+export function isModalRuntimeEvidence(url: string): boolean {
+  const path = modalEvidencePath(url);
+  if (!path || NON_MODAL_PATHS.has(path) || path.startsWith("harp/evals/")) return false;
+  if (path.startsWith("tests/") || path.startsWith("tests_harp/")) return false;
+  return MODAL_RUNTIME_ROOTS.some((root) => path === root || path.startsWith(root));
+}
+
+export function githubRepoFromUrl(url: string): string | null {
+  const match = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/(?:commit|blob)\//u.exec(url);
+  return match?.[1] ?? null;
+}

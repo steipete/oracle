@@ -1,5 +1,6 @@
 import type { BrowserLogger, ChromeClient } from "../types.js";
 import type {
+  CodexFindingAction,
   CodexFinding,
   CodexFindingDetail,
   CodexFindingDetailSection,
@@ -13,12 +14,20 @@ import {
 import { delay } from "../utils.js";
 
 type Runtime = ChromeClient["Runtime"];
+type Input = ChromeClient["Input"];
 
 export interface FindingsPage {
   items: CodexFinding[];
   counter?: CodexFindingsPageCounter;
   hasNext: boolean;
   hasPrev: boolean;
+}
+
+export interface FindingActionResult {
+  status: string;
+  message?: string;
+  url?: string;
+  text?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,5 +337,226 @@ export async function readFindingDetail(
     sections: Array.isArray(detail.sections) ? detail.sections : [],
     files: Array.isArray(detail.files) ? detail.files : [],
     validationArtifact: detail.validationArtifact ?? null,
+  };
+}
+
+function actionButtonName(action: CodexFindingAction | "submit"): string {
+  switch (action) {
+    case "create-pr":
+      return "Create PR";
+    case "chat":
+      return "Chat";
+    case "close":
+      return "Close";
+    case "adjust":
+      return "Adjust";
+    case "copy-content":
+      return "Copy finding content";
+    case "copy-link":
+      return "Copy finding link";
+    case "copy-patch":
+    case "copy-git-apply":
+      return "Open git action menu";
+    case "submit":
+      return "Submit";
+  }
+}
+
+export function buildFindingActionTargetExpression(action: CodexFindingAction): string {
+  return buildButtonTargetExpression(actionButtonName(action));
+}
+
+function buildButtonTargetExpression(name: string): string {
+  return `(() => {
+    const wanted = ${JSON.stringify(name)};
+    const visible = (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const nodes = [...document.querySelectorAll('button')];
+    const button = nodes.find((node) => {
+      const label = (node.getAttribute('aria-label') || node.innerText || '').trim();
+      return label === wanted && visible(node) && !node.disabled && node.getAttribute('aria-disabled') !== 'true';
+    });
+    if (!button) return { ok: false, reason: 'button not found: ' + wanted };
+    button.scrollIntoView({ block: 'center', inline: 'center' });
+    const rect = button.getBoundingClientRect();
+    return { ok: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`;
+}
+
+function buildNamedButtonTargetExpression(name: string): string {
+  return buildButtonTargetExpression(name);
+}
+
+async function clickTrustedPoint(
+  runtime: Runtime,
+  input: Input,
+  x: number,
+  y: number,
+): Promise<void> {
+  if (input && typeof input.dispatchMouseEvent === "function") {
+    await input.dispatchMouseEvent({ type: "mouseMoved", x, y });
+    await input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });
+    await input.dispatchMouseEvent({ type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    return;
+  }
+  throw new Error("Trusted browser input is unavailable; refusing to trigger a finding action.");
+}
+
+async function clickFindingActionButton(
+  runtime: Runtime,
+  input: Input,
+  action: CodexFindingAction,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let reason = "button not found";
+  while (Date.now() < deadline) {
+    const value = (
+      await runtime.evaluate({
+        expression: buildFindingActionTargetExpression(action),
+        returnByValue: true,
+      })
+    ).result?.value as { ok?: boolean; x?: number; y?: number; reason?: string } | undefined;
+    if (value?.ok && typeof value.x === "number" && typeof value.y === "number") {
+      await clickTrustedPoint(runtime, input, value.x, value.y);
+      return;
+    }
+    reason = value?.reason ?? reason;
+    await delay(250);
+  }
+  throw new Error(`Finding action ${action} was not ready: ${reason}`);
+}
+
+async function clickNamedButton(
+  runtime: Runtime,
+  input: Input,
+  name: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let reason = "button not found";
+  while (Date.now() < deadline) {
+    const value = (
+      await runtime.evaluate({
+        expression: buildNamedButtonTargetExpression(name),
+        returnByValue: true,
+      })
+    ).result?.value as { ok?: boolean; x?: number; y?: number; reason?: string } | undefined;
+    if (value?.ok && typeof value.x === "number" && typeof value.y === "number") {
+      await clickTrustedPoint(runtime, input, value.x, value.y);
+      return;
+    }
+    reason = value?.reason ?? reason;
+    await delay(250);
+  }
+  throw new Error(`Finding button ${name} was not ready: ${reason}`);
+}
+
+async function openGitActionMenu(runtime: Runtime, input: Input, timeoutMs: number): Promise<void> {
+  await clickNamedButton(runtime, input, "Open git action menu", timeoutMs);
+}
+
+async function fillFindingChat(runtime: Runtime, text: string): Promise<void> {
+  const expression = `(() => {
+    const input = document.querySelector('textarea[placeholder="Ask a question or add context (optional)"]');
+    if (!(input instanceof HTMLTextAreaElement)) return false;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    setter?.call(input, ${JSON.stringify(text)});
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${JSON.stringify(text)}, inputType: 'insertText' }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`;
+  const value = (await runtime.evaluate({ expression, returnByValue: true })).result?.value;
+  if (value !== true) throw new Error("Finding chat composer was not found.");
+}
+
+export async function executeFindingAction(
+  runtime: Runtime,
+  input: Input,
+  action: CodexFindingAction,
+  actionText: string | undefined,
+  timeoutMs: number,
+  logger: BrowserLogger,
+): Promise<FindingActionResult> {
+  if (action === "create-pr") {
+    await openGitActionMenu(runtime, input, timeoutMs);
+    const existing = (
+      await runtime.evaluate({
+        expression: `(() => {
+        const item = [...document.querySelectorAll('[role="menuitem"]')].find((el) => (el.innerText || '').trim() === 'View PR');
+        if (!(item instanceof HTMLElement)) return null;
+        const link = item.closest('a')?.href || item.querySelector('a')?.href || null;
+        return { link };
+      })()`,
+        returnByValue: true,
+      })
+    ).result?.value as { link?: string | null } | null | undefined;
+    if (existing) {
+      await input.dispatchKeyEvent({ type: "keyDown", key: "Escape", code: "Escape" });
+      await input.dispatchKeyEvent({ type: "keyUp", key: "Escape", code: "Escape" });
+      return {
+        status: "existing-pr",
+        message: "A PR already exists for this finding.",
+        url: existing.link ?? undefined,
+      };
+    }
+    await input.dispatchKeyEvent({ type: "keyDown", key: "Escape", code: "Escape" });
+    await input.dispatchKeyEvent({ type: "keyUp", key: "Escape", code: "Escape" });
+  }
+  await clickFindingActionButton(runtime, input, action, timeoutMs);
+  if (action === "chat") {
+    if (!actionText?.trim()) throw new Error("chat requires --text");
+    await fillFindingChat(runtime, actionText);
+    await clickNamedButton(runtime, input, "Submit", timeoutMs);
+  }
+  if (action === "copy-patch" || action === "copy-git-apply") {
+    const menuText = action === "copy-patch" ? "Copy patch" : "Copy git apply";
+    const expression = `(() => {
+      const wanted = ${JSON.stringify(menuText)};
+      const node = [...document.querySelectorAll('[role="menuitem"]')].find((el) => (el.innerText || '').trim() === wanted);
+      if (!(node instanceof HTMLElement)) return null;
+      const rect = node.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`;
+    const value = (await runtime.evaluate({ expression, returnByValue: true })).result?.value as
+      | { x?: number; y?: number }
+      | null
+      | undefined;
+    if (!value || typeof value.x !== "number" || typeof value.y !== "number") {
+      throw new Error(`Finding git menu item was not found: ${menuText}`);
+    }
+    await clickTrustedPoint(runtime, input, value.x, value.y);
+  }
+  const deadline = Date.now() + Math.min(timeoutMs, 30_000);
+  let state:
+    | { url?: string; text?: string; pr?: string | null; dialog?: string | null }
+    | undefined;
+  while (Date.now() < deadline) {
+    state = (
+      await runtime.evaluate({
+        expression: `(() => ({
+          url: location.href,
+          text: document.querySelector('main')?.innerText?.slice(0, 2000) || '',
+          pr: [...document.querySelectorAll('a[href*="/pull/"]')].map((a) => a.href)[0] || null,
+          dialog: document.querySelector('[role="dialog"]')?.innerText || null,
+        }))()`,
+        returnByValue: true,
+      })
+    ).result?.value as
+      | { url?: string; text?: string; pr?: string | null; dialog?: string | null }
+      | undefined;
+    if (action !== "create-pr" || state?.pr || state?.dialog) break;
+    await delay(250);
+  }
+  logger(`[codex] finding action completed: ${action}`);
+  return {
+    status: "ok",
+    message: state?.dialog ?? (action === "create-pr" && state?.pr ? "PR created" : undefined),
+    url: state?.pr ?? state?.url,
+    text: state?.text,
   };
 }

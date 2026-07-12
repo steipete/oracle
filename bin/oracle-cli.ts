@@ -1024,7 +1024,7 @@ addProjectSourcesCommonOptions(
 
 const codexCommand = program
   .command("codex")
-  .description("Read-only access to ChatGPT Codex Cloud (security findings).");
+  .description("Access ChatGPT Codex Cloud security findings and explicit finding actions.");
 
 function addCodexCommonOptions(command: Command): Command {
   return command
@@ -1053,6 +1053,12 @@ function addCodexCommonOptions(command: Command): Command {
     .option("--browser-keep-browser", "Keep Chrome running after completion.", false)
     .option("--browser-hide-window", "Hide Chrome window after launch on macOS.", false)
     .option("--browser-allow-cookie-errors", "Continue when cookie sync fails.", false)
+    .option("--repo <owner/name>", "Restrict findings to one repository.")
+    .option(
+      "--modal-only",
+      "Restrict Harp findings to evidence paths shipped by the Modal runtime; excludes frontend, local, tests, and evals.",
+      false,
+    )
     .option("--json", "Print structured JSON.", false)
     .option("-v, --verbose", "Enable verbose browser logging.", false);
 }
@@ -1067,6 +1073,33 @@ addCodexCommonOptions(
       "Show detail sections for a single finding (32-hex id) instead of the list.",
     )
     .option("--limit <n>", "Max number of findings to return (default: all).", parseIntOption),
+).action(async function (this: Command) {
+  const { runCodexFindingsCliCommand } = await import("../src/cli/codexFindings.js");
+  await runCodexFindingsCliCommand(this.optsWithGlobals());
+});
+
+addCodexCommonOptions(
+  codexCommand
+    .command("finding")
+    .description("Inspect or explicitly act on one Codex Cloud security finding.")
+    .requiredOption("--finding <id>", "Finding selection id (32 hexadecimal characters).")
+    .addOption(
+      new Option(
+        "--action <action>",
+        "Action: create-pr|chat|close|adjust|copy-content|copy-link|copy-patch|copy-git-apply.",
+      ).choices([
+        "create-pr",
+        "chat",
+        "close",
+        "adjust",
+        "copy-content",
+        "copy-link",
+        "copy-patch",
+        "copy-git-apply",
+      ]),
+    )
+    .option("--text <text>", "Text for the chat action.")
+    .option("--confirm", "Confirm a mutating action (create-pr|chat|close|adjust).", false),
 ).action(async function (this: Command) {
   const { runCodexFindingsCliCommand } = await import("../src/cli/codexFindings.js");
   await runCodexFindingsCliCommand(this.optsWithGlobals());

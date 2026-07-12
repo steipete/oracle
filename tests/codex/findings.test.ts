@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateFindingPages,
+  githubRepoFromUrl,
+  isModalRuntimeEvidence,
   parseFindingItem,
   parseFindingsCounter,
   parseSeverity,
@@ -117,5 +119,32 @@ describe("buildFindingDetailUrl / buildFindingsDataUrl", () => {
   });
   it("suffixes .data (kept for parity, unused by list)", () => {
     expect(buildFindingsDataUrl(CODEX_FINDINGS_URL)).toBe(`${CODEX_FINDINGS_URL}.data?sev=`);
+  });
+});
+
+describe("Modal runtime finding scope", () => {
+  it("recognizes Harp Modal evidence and rejects local/frontend surfaces", () => {
+    expect(
+      isModalRuntimeEvidence(
+        "https://github.com/umgbhalla/harp/blob/abcdef1/harp/serve_modal.py#L1-L10",
+      ),
+    ).toBe(true);
+    expect(
+      isModalRuntimeEvidence(
+        "https://github.com/umgbhalla/harp/blob/abcdef1/harp/sandbox_local.py#L1-L10",
+      ),
+    ).toBe(false);
+    expect(
+      isModalRuntimeEvidence(
+        "https://github.com/umgbhalla/harp/blob/abcdef1/apps/web/app/page.tsx#L1-L10",
+      ),
+    ).toBe(false);
+  });
+
+  it("extracts the repository from report evidence links", () => {
+    expect(githubRepoFromUrl("https://github.com/umgbhalla/harp/commit/abcdef1234567890")).toBe(
+      "umgbhalla/harp",
+    );
+    expect(githubRepoFromUrl("https://example.com/nope")).toBeNull();
   });
 });
