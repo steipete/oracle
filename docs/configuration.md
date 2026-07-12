@@ -44,7 +44,7 @@ JSON5 parsing, so trailing commas and comments are allowed.
     autoReattachIntervalMs: 0, // interval between auto-reattach attempts (0 = disabled)
     autoReattachTimeoutMs: 120000, // time budget per auto-reattach attempt (default: 2m)
     modelStrategy: "select", // select | current | ignore (ChatGPT only; ignored for Gemini web)
-    thinkingTime: "extended", // light | standard | extended | heavy (ChatGPT Thinking/Pro models)
+    thinkingTime: "extended", // light | standard | extended | heavy | pro (ChatGPT Thinking/Pro models)
     researchMode: "off", // off | deep (ChatGPT Deep Research; browser only)
     manualLogin: false, // set true to reuse a persistent automation profile and sign in once (Windows defaults to true when unset)
     manualLoginProfileDir: null, // override profile dir (or set ORACLE_BROWSER_PROFILE_DIR)

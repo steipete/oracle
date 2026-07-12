@@ -92,6 +92,7 @@ Pro / Thinking models in browser mode accept a `--browser-thinking-time` knob:
 | `standard` | Default                          |
 | `extended` | Pro Extended / Thinking Extended |
 | `heavy`    | Heavy thinking                   |
+| `pro`      | Unified picker Pro               |
 
 ```bash
 oracle --engine browser --model gpt-5.5-pro \

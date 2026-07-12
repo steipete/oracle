@@ -12,17 +12,16 @@ responses as advisory and verify them against the codebase and tests.
 
 ## Main use case (browser, GPT-5.6)
 
-Use browser mode with GPT-5.6 when the ChatGPT account exposes it. GPT-5.6 Sol
-and GPT-5.6 Sol Pro are distinct targets: base Sol uses the Extra High effort
-setting, while Pro is a separate picker target for difficult or long-running
-work.
+Use browser mode with GPT-5.6 when the ChatGPT account exposes it. The unified
+picker selects the GPT-5.6 Sol version and reasoning effort independently. Base
+Sol can use Extra High, while difficult or long-running work can select Pro.
 
 Recommended defaults:
 
 - Engine: browser (`--engine browser`)
 - Base Sol: `--model gpt-5.6-sol`
 - Base Sol maximum reasoning: `--browser-thinking-time heavy` (Extra High)
-- Pro: `--model gpt-5-pro`, without a thinking-time flag
+- GPT-5.6 Sol Pro: `--model gpt-5.6-sol --browser-thinking-time pro`
 - Fallback: explicitly use `--model gpt-5.5-pro` when GPT-5.6 is unavailable
 - Attachments: directories/globs plus excludes; never attach secrets by default
 
@@ -36,7 +35,7 @@ This version supports the same aliases in browser and API mode:
 
 - `gpt-5.6`: follow the GPT-5.6 family default
 - `gpt-5.6-sol`: pin ChatGPT's `GPT-5.6 Sol` entry
-- `gpt-5-pro`: select ChatGPT's `Pro` target
+- `gpt-5-pro`: select ChatGPT's generic `Pro` target without proving a GPT version
 
 For base Sol, use:
 
@@ -46,8 +45,16 @@ oracle --engine browser --model gpt-5.6-sol \
   -p "<task>" --file "src/**"
 ```
 
-Do not use `--model "GPT-5.6 Sol Pro"`. Pro is intentionally handled as a
-distinct picker target. Browser label validation rejects unknown future
+For GPT-5.6 Sol with Pro effort, use:
+
+```bash
+oracle --engine browser --model gpt-5.6-sol \
+  --browser-thinking-time pro \
+  -p "<task>" --file "src/**"
+```
+
+Do not use `--model "GPT-5.6 Sol Pro"`. Select the Sol version and Pro effort
+independently. Browser label validation rejects unknown future
 variants such as `gpt-5.6-luna` instead of silently falling back to Sol; API
 runs preserve such provider model IDs unchanged.
 

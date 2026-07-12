@@ -198,6 +198,7 @@ describe("parseThinkingTimeOption", () => {
     ["extra high", "heavy"],
     ["extrahigh", "heavy"],
     ["xhigh", "heavy"],
+    ["pro", "pro"],
   ] as const)("normalizes %s to %s", (input, expected) => {
     expect(parseThinkingTimeOption(input)).toBe(expected);
   });

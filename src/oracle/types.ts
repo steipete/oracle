@@ -36,7 +36,7 @@ export type ProModelName =
 
 export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
-export type ThinkingTimeLevel = "light" | "standard" | "extended" | "heavy";
+export type ThinkingTimeLevel = "light" | "standard" | "extended" | "heavy" | "pro";
 
 export type BrowserBundleFormat = "auto" | "text" | "zip";
 

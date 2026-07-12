@@ -67,6 +67,16 @@ describe("summarizeModelRunsForConsult", () => {
     ).toMatchObject({
       browserThinkingTime: "heavy",
     });
+
+    expect(
+      consultInputSchema.parse({
+        prompt: "review this plan",
+        files: [],
+        browserThinkingTime: "pro",
+      }),
+    ).toMatchObject({
+      browserThinkingTime: "pro",
+    });
   });
 
   test("keeps the registered MCP input schema JSON-schema compatible", () => {

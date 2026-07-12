@@ -244,7 +244,7 @@ function buildModelSelectionExpression(
             ? '5-0'
           : null;
     const desiredModelVariant = normalizedTarget.includes(' sol') ? 'sol' : null;
-    const wantsPro = normalizedTarget.includes(' pro') || normalizedTarget.endsWith(' pro') || normalizedTokens.includes('pro');
+    const wantsPro = targetWords.includes('pro');
     const wantsInstant = normalizedTarget.includes('instant');
     const wantsThinking = normalizedTarget.includes('thinking');
     const targetUsesCurrentGpt55Alias =
@@ -271,19 +271,23 @@ function buildModelSelectionExpression(
       }
       return false;
     };
-    const hasProComposerPill = () => Boolean(
-      Array.from(document.querySelectorAll('button.__composer-pill, button[aria-label]'))
-        .filter((node) => {
-          const label = normalizeText(node.getAttribute?.('aria-label') ?? '');
-          return node.matches?.('button.__composer-pill') || label.includes('click to remove');
-        })
-        .some((node) => {
-          const label = normalizeText(
-            (node.getAttribute?.('aria-label') ?? '') + ' ' + (node.textContent ?? '')
-          );
-          return hasToken(label, 'pro') && !hasToken(label, 'thinking');
-        })
-    );
+    const isProComposerPill = (node) => {
+      const ariaLabel = normalizeText(node.getAttribute?.('aria-label') ?? '');
+      const textLabel = normalizeText(node.textContent ?? '');
+      const isComposerPill =
+        node.matches?.('button.__composer-pill') || ariaLabel.includes('click to remove');
+      if (!isComposerPill) return false;
+      const label = normalizeText(ariaLabel + ' ' + textLabel);
+      return (
+        hasToken(label, 'pro') &&
+        !hasToken(label, 'thinking') &&
+        (textLabel === 'pro' || ariaLabel === 'pro' || ariaLabel === 'pro click to remove')
+      );
+    };
+    const getProComposerPills = (root) =>
+      Array.from(root?.querySelectorAll?.('button.__composer-pill, button[aria-label]') ?? [])
+        .filter(isProComposerPill);
+    const hasProComposerPill = () => getProComposerPills(document).length > 0;
 
     const isVisibleElement = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -351,8 +355,15 @@ function buildModelSelectionExpression(
     };
 
     const getButtonLabel = () => (findModelButton()?.textContent ?? '').trim();
-    const getComposerModelLabel = () =>
-      (document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR)?.textContent ?? '').trim();
+    const getComposerModelLabel = () => {
+      const footer = document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR);
+      let label = (footer?.textContent ?? '').trim();
+      for (const pill of getProComposerPills(footer)) {
+        const pillText = (pill.textContent ?? '').trim();
+        if (pillText) label = label.split(pillText).join(' ');
+      }
+      return label.replace(/\\s+/g, ' ').trim();
+    };
     const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
     const isIntelligenceEffortLabel = (label) =>
       label === 'instant' ||
@@ -440,7 +451,6 @@ function buildModelSelectionExpression(
         !configuredVersionLabel.includes(desiredModelVariant) &&
         !configuredVariant.includes(desiredModelVariant)
       ) return false;
-      if (desiredModelVariant === 'sol' && labelHasProWord(configuredVariant)) return false;
       if (wantsPro) return labelHasProWord(configuredVariant);
       if (wantsInstant) return configuredVariant.includes('instant');
       if (wantsThinking) {
@@ -450,8 +460,9 @@ function buildModelSelectionExpression(
     };
     const getResolvedLabel = (fallback) => {
       if (configuredSelectionMatchesTarget()) {
-        const variant = getConfiguredVariantLabel();
         const version = formatModelOptionLabel(getConfiguredVersionLabel());
+        if (desiredModelVariant === 'sol') return version;
+        const variant = getConfiguredVariantLabel();
         return [variant, version].filter(Boolean).join(' ');
       }
       const composerLabel = getComposerModelLabel();
@@ -506,7 +517,6 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) return true;
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
-      if (desiredModelVariant === 'sol' && hasProComposerPill()) return false;
       if (wantsThinking && !wantsPro && hasProComposerPill()) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
@@ -562,13 +572,17 @@ function buildModelSelectionExpression(
       const normalizedLabel = normalizeText(getButtonLabel());
       return !normalizedLabel || normalizedLabel === 'chatgpt';
     };
+    const hasIncompatibleIndependentProPill = () => {
+      const allowsIndependentProPill = desiredVersion === '5-6' && desiredModelVariant === 'sol';
+      return !wantsPro && !allowsIndependentProPill && hasProComposerPill();
+    };
     const composerSignalMatchesTarget = () => {
       const signal = readComposerModelSignal();
+      if (hasIncompatibleIndependentProPill()) {
+        return false;
+      }
       if (!signal) {
         return COMPOSER_SIGNAL_ALLOW_BLANK;
-      }
-      if (desiredModelVariant === 'sol' && hasProComposerPill()) {
-        return false;
       }
       if (wantsPro && labelHasLegacyProVersion(signal)) {
         return false;
@@ -582,6 +596,9 @@ function buildModelSelectionExpression(
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
     };
     const activeSelectionMatchesTarget = () => {
+      if (hasIncompatibleIndependentProPill()) {
+        return false;
+      }
       if (buttonMatchesTarget()) {
         return true;
       }
@@ -989,6 +1006,7 @@ function buildModelSelectionExpression(
       node?.getAttribute?.('data-has-submenu') !== null;
     const canTrustSelectedOption = (node, normalizedText, testid) => {
       if (!optionIsSelected(node)) return false;
+      if (hasIncompatibleIndependentProPill()) return false;
       if (getConfigurationDialog() && !configuredSelectionMatchesTarget()) return false;
       const optionVersion = versionFromLabel(normalizedText) ?? versionFromTestId(testid);
       if (desiredVersion && optionVersion !== desiredVersion) return false;
@@ -997,7 +1015,7 @@ function buildModelSelectionExpression(
         desiredModelVariant === 'sol' &&
         (labelHasProWord(normalizedText) || normalizeText(testid ?? '').includes('pro'))
       ) return false;
-      if (desiredVersion === '5-6') return !hasProComposerPill();
+      if (desiredVersion === '5-6') return true;
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };
@@ -1056,6 +1074,7 @@ function buildModelSelectionExpression(
         if (
           wantsInstant &&
           desiredVersion === '5-5' &&
+          !hasIncompatibleIndependentProPill() &&
           currentButtonLabel === 'instant' &&
           currentButtonLabel !== previousButtonLabel
         ) {

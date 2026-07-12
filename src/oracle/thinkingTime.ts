@@ -1,6 +1,6 @@
 import type { ThinkingTimeLevel } from "./types.js";
 
-export const THINKING_TIME_LEVELS = ["light", "standard", "extended", "heavy"] as const;
+export const THINKING_TIME_LEVELS = ["light", "standard", "extended", "heavy", "pro"] as const;
 export const THINKING_TIME_ALIASES = [
   "instant",
   "low",
@@ -42,6 +42,8 @@ export function normalizeThinkingTimeLevel(
     case "extrahigh":
     case "xhigh":
       return "heavy";
+    case "pro":
+      return "pro";
     default:
       return null;
   }

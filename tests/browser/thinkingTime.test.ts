@@ -20,7 +20,7 @@ describe("browser thinking-time selection expression", () => {
   });
 
   it("targets the requested thinking time level", () => {
-    const levels = ["light", "standard", "extended", "heavy"] as const;
+    const levels = ["light", "standard", "extended", "heavy", "pro"] as const;
     for (const level of levels) {
       const expression = buildThinkingTimeExpressionForTest(level);
       expect(expression).toContain("const TARGET_LEVEL");
@@ -47,6 +47,7 @@ describe("browser thinking-time selection expression", () => {
       "extended: ['extended', 'high'",
     );
     expect(buildThinkingTimeExpressionForTest("heavy")).toContain("heavy: ['heavy', 'extra high'");
+    expect(buildThinkingTimeExpressionForTest("pro")).toContain("pro: ['pro']");
   });
 
   it("accepts standard selected-state markers when verifying effort", () => {
@@ -308,6 +309,18 @@ describe("browser thinking-time selection expression", () => {
     ).rejects.toThrow(/refusing to submit without confirmed Pro Extended/);
   });
 
+  it("fails closed when explicit Pro effort cannot be confirmed", async () => {
+    const runtime = {
+      evaluate: async () => ({
+        result: { value: { status: "option-not-found", modelKind: null } },
+      }),
+    };
+
+    await expect(
+      ensureThinkingTime(runtime as never, "pro", (() => {}) as never, "GPT-5.6 Sol"),
+    ).rejects.toThrow(/refusing to submit without confirmed Pro\./);
+  });
+
   it("keeps thinking effort best-effort when no target model kind is provided", async () => {
     const runtime = {
       evaluate: async () => ({
@@ -391,11 +404,17 @@ describe("browser thinking-time selection expression", () => {
       "aria-checked": "true",
       "data-state": "checked",
     });
+    const proExtendedRadio = new FakeElement("Pro Extended", {
+      role: "menuitemradio",
+      "aria-checked": "true",
+      "data-state": "checked",
+    });
     const effortItems = [
       new FakeElement("极速5.5", { role: "menuitemradio", "aria-checked": "false" }),
       new FakeElement("中", { role: "menuitemradio", "aria-checked": "false" }),
       new FakeElement("高", { role: "menuitemradio", "aria-checked": "false" }),
       new FakeElement("极高", { role: "menuitemradio", "aria-checked": "false" }),
+      proExtendedRadio,
       proRadio,
       new FakeElement("GPT-5.6 Sol", { role: "menuitem", "aria-haspopup": "menu" }),
     ];
@@ -439,30 +458,28 @@ describe("browser thinking-time selection expression", () => {
     };
     let now = 0;
     const performanceStub = { now: () => (now += 100) };
-    const expression = buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro");
-    const evaluate = new Function(
-      "document",
-      "performance",
-      "setTimeout",
-      "window",
-      "EventTarget",
-      "PointerEvent",
-      "MouseEvent",
-      "HTMLElement",
-      `return ${expression};`,
-    ) as (
-      document: unknown,
-      performance: unknown,
-      setTimeout: unknown,
-      window: unknown,
-      EventTarget: unknown,
-      PointerEvent: unknown,
-      MouseEvent: unknown,
-      HTMLElement: unknown,
-    ) => Promise<unknown>;
-
-    await expect(
-      evaluate(
+    const evaluateExpression = (expression: string) => {
+      const evaluate = new Function(
+        "document",
+        "performance",
+        "setTimeout",
+        "window",
+        "EventTarget",
+        "PointerEvent",
+        "MouseEvent",
+        "HTMLElement",
+        `return ${expression};`,
+      ) as (
+        document: unknown,
+        performance: unknown,
+        setTimeout: unknown,
+        window: unknown,
+        EventTarget: unknown,
+        PointerEvent: unknown,
+        MouseEvent: unknown,
+        HTMLElement: unknown,
+      ) => Promise<unknown>;
+      return evaluate(
         documentStub,
         performanceStub,
         (callback: () => void) => callback(),
@@ -471,8 +488,21 @@ describe("browser thinking-time selection expression", () => {
         FakeMouseEvent,
         FakeMouseEvent,
         FakeElement,
-      ),
+      );
+    };
+
+    await expect(
+      evaluateExpression(buildThinkingTimeExpressionForTest("extended", "gpt-5.5-pro")),
     ).resolves.toEqual({ status: "already-selected", label: "Pro" });
+    await expect(
+      evaluateExpression(buildThinkingTimeExpressionForTest("pro", "GPT-5.6 Sol")),
+    ).resolves.toEqual({ status: "already-selected", label: "Pro" });
+
+    effortItems.splice(effortItems.indexOf(proRadio), 1);
+    modelButton.textContent = "Pro Extended";
+    await expect(
+      evaluateExpression(buildThinkingTimeExpressionForTest("pro", "GPT-5.6 Sol")),
+    ).resolves.toMatchObject({ status: "option-not-found" });
   });
 
   it("selects exact Chinese Intelligence tiers without prefix collisions", async () => {

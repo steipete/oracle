@@ -19,12 +19,17 @@ const evaluateImmediateModelSelectionExpression = (
 ): unknown => {
   const expression = buildModelSelectionExpressionForTest(targetModel);
   const modelButton = { textContent: buttonLabel };
-  const composerSignal = composerLabel ? { textContent: composerLabel } : null;
   const proPill = proPillLabel
     ? {
         textContent: proPillLabel,
         getAttribute: (name: string) => (name === "aria-label" ? proPillLabel : null),
         matches: (selector: string) => selector.includes("__composer-pill"),
+      }
+    : null;
+  const composerSignal = composerLabel
+    ? {
+        textContent: composerLabel,
+        querySelectorAll: () => (proPill ? [proPill] : []),
       }
     : null;
   const documentStub = {
@@ -77,8 +82,11 @@ const evaluateImmediateModelSelectionExpression = (
 
 const evaluateMenuModelSelectionExpression = async (
   targetModel: string,
-  option: { label: string; testId?: string } | Array<{ label: string; testId?: string }>,
+  option:
+    | { label: string; testId?: string; selected?: boolean }
+    | Array<{ label: string; testId?: string; selected?: boolean }>,
   extraMenus: unknown[] = [],
+  persistentProPill = false,
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -140,18 +148,21 @@ const evaluateMenuModelSelectionExpression = async (
     "data-testid": "model-switcher-dropdown-button",
   });
   const options = Array.isArray(option) ? option : [option];
-  const modelOptions = options.map(
-    (item) =>
-      new FakeElement(item.label, item.testId ? { "data-testid": item.testId } : {}, [], () => {
-        modelButton.textContent = item.label;
-      }),
-  );
+  const modelOptions = options.map((item) => {
+    const attributes: Record<string, string> = {};
+    if (item.testId) attributes["data-testid"] = item.testId;
+    if (item.selected) attributes["aria-checked"] = "true";
+    return new FakeElement(item.label, attributes, [], () => {
+      modelButton.textContent = item.label;
+    });
+  });
   const menu = new FakeElement(
     options.map((item) => item.label).join(" "),
     { role: "menu" },
     modelOptions,
   );
   const menus = [...extraMenus, menu];
+  const proPill = new FakeElement("Pro", { "aria-label": "Pro, click to remove" });
   const documentStub = {
     querySelector: (selector: string) => {
       if (selector.includes("model-switcher-dropdown-button")) {
@@ -163,6 +174,9 @@ const evaluateMenuModelSelectionExpression = async (
       return null;
     },
     querySelectorAll: (selector: string) => {
+      if (selector.includes("button.__composer-pill")) {
+        return persistentProPill ? [proPill] : [];
+      }
       if (selector.includes('role="menu"') || selector.includes("data-radix")) {
         return menus;
       }
@@ -172,7 +186,8 @@ const evaluateMenuModelSelectionExpression = async (
     body: { innerText: "" },
     dispatchEvent: () => true,
   };
-  const performanceStub = { now: () => 0 };
+  let now = 0;
+  const performanceStub = { now: () => (persistentProPill ? (now += 100) : 0) };
   const windowStub = { location: { href: "https://chatgpt.com/" } };
   const immediateSetTimeout = (handler: TimerHandler): number => {
     if (typeof handler === "function") {
@@ -487,6 +502,8 @@ const evaluateIntelligenceModelSelectionExpression = async (
 const evaluateConfiguredModelSelectionExpression = async (
   targetModel: string,
   initialVariant = "Thinking",
+  initialVersion = "5.5",
+  initiallyOpen = false,
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -502,9 +519,9 @@ const evaluateConfiguredModelSelectionExpression = async (
   }
 
   let topMenuOpen = false;
-  let configurationOpen = false;
+  let configurationOpen = initiallyOpen;
   let versionListOpen = false;
-  let selectedVersion = "5.5";
+  let selectedVersion = initialVersion;
   let selectedVariant = initialVariant;
 
   type AttributeValue = string | (() => string);
@@ -972,6 +989,45 @@ describe("browser model selection matchers", () => {
     ).resolves.toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
   });
 
+  it("accepts GPT-5.6 Sol while the independent Pro effort is active", async () => {
+    await expect(
+      evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "Pro", true, true),
+    ).resolves.toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
+  });
+
+  it("accepts GPT-5.6 Sol composer evidence with a generic button and Pro effort", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "ChatGPT", "5.6 Sol", "Pro"),
+    ).toEqual({ status: "already-selected", label: "5.6 Sol" });
+  });
+
+  it("removes an independent Pro effort pill from aggregated composer footer evidence", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "ChatGPT", "5.6 SolPro", "Pro"),
+    ).toEqual({ status: "already-selected", label: "5.6 Sol" });
+  });
+
+  it("does not let a cleaned Pro effort pill validate incompatible generic footer targets", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression("Thinking 5.5", "ChatGPT", "ThinkingPro", "Pro"),
+    ).toBeInstanceOf(Promise);
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.2 Instant", "ChatGPT", "InstantPro", "Pro"),
+    ).toBeInstanceOf(Promise);
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.2", "ChatGPT", "Pro", "Pro"),
+    ).toBeInstanceOf(Promise);
+  });
+
+  it("does not let an incompatible Pro effort pill validate matching explicit buttons", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.2", "GPT-5.2", "", "Pro"),
+    ).toBeInstanceOf(Promise);
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.2 Instant", "GPT-5.2 Instant", "", "Pro"),
+    ).toBeInstanceOf(Promise);
+  });
+
   it("reports GPT-5.6 Sol instead of a localized Intelligence effort pill", async () => {
     await expect(
       evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "极速", true, true),
@@ -989,7 +1045,7 @@ describe("browser model selection matchers", () => {
     expect(result).toBeInstanceOf(Promise);
   });
 
-  it("keeps base Sol distinct from the Pro target", () => {
+  it("keeps Sol version evidence distinct from the independent Pro effort", () => {
     const inlinePro = evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Sol Pro");
     expect(inlinePro).toBeInstanceOf(Promise);
 
@@ -999,7 +1055,10 @@ describe("browser model selection matchers", () => {
       "5.6 Sol",
       "Pro",
     );
-    expect(separateProPill).toBeInstanceOf(Promise);
+    expect(separateProPill).toEqual({
+      status: "already-selected",
+      label: "5.6 Sol",
+    });
   });
 
   it("includes real pointer coordinates when opening version submenus", () => {
@@ -1109,6 +1168,28 @@ describe("browser model selection matchers", () => {
     ).resolves.toEqual({ status: "switched", label: "Instant" });
   });
 
+  it("does not complete an Instant switch while an incompatible Pro pill remains active", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression(
+        "GPT-5.5 Instant",
+        { label: "Instant", testId: "model-switcher-gpt-5-5" },
+        [],
+        true,
+      ),
+    ).resolves.toMatchObject({ status: "option-not-found" });
+  });
+
+  it("does not trust a selected GPT-5.6 row while an incompatible Pro pill remains active", async () => {
+    await expect(
+      evaluateMenuModelSelectionExpression(
+        "GPT-5.6",
+        { label: "GPT-5.6", testId: "model-switcher-gpt-5-6", selected: true },
+        [],
+        true,
+      ),
+    ).resolves.toMatchObject({ status: "option-not-found" });
+  });
+
   it("closes the menu after a successful selection path", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.4");
     expect(expression).toContain("const closeMenu = () =>");
@@ -1158,7 +1239,9 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain("return resolved + ' + Pro'");
     expect(expression).toContain("if (normalized.includes('thinking')) return 'Pro'");
     expect(expression).toContain("normalizedLabel === 'extended'");
-    expect(expression).toContain("hasToken(label, 'pro') && !hasToken(label, 'thinking')");
+    expect(expression).toContain("const isProComposerPill = (node) =>");
+    expect(expression).toContain("textLabel === 'pro'");
+    expect(expression).toContain("ariaLabel === 'pro click to remove'");
     expect(expression).not.toContain('button[aria-label*="Pro"]');
     expect(expression).toContain("hasProComposerPill()");
   });
@@ -1514,7 +1597,16 @@ describe("browser model selection matchers", () => {
   it("uses Configure to select and verify the pinned GPT-5.6 Sol variant", async () => {
     await expect(evaluateConfiguredModelSelectionExpression("GPT-5.6 Sol")).resolves.toEqual({
       status: "switched",
-      label: "Thinking 5.6 Sol",
+      label: "5.6 Sol",
+    });
+  });
+
+  it("accepts configured GPT-5.6 Sol with the independent Pro effort selected", async () => {
+    await expect(
+      evaluateConfiguredModelSelectionExpression("GPT-5.6 Sol", "Pro", "5.6 Sol", true),
+    ).resolves.toEqual({
+      status: "already-selected",
+      label: "5.6 Sol",
     });
   });
 
