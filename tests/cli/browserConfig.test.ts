@@ -20,6 +20,8 @@ describe("buildBrowserConfig", () => {
       allowCookieErrors: true,
       researchMode: "off",
       archiveConversations: undefined,
+      scheduledTaskMode: false,
+      pinConversation: false,
     });
   });
 
@@ -125,6 +127,40 @@ describe("buildBrowserConfig", () => {
       browserArchive: "never",
     });
     expect(config.archiveConversations).toBe("never");
+  });
+
+  test("configures Scheduled task creation without model switching or archiving", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.5-pro",
+      browserScheduledTask: true,
+      browserPinConversation: true,
+    });
+    expect(config).toMatchObject({
+      url: "https://chatgpt.com/scheduled",
+      desiredModel: null,
+      modelStrategy: "ignore",
+      researchMode: "off",
+      archiveConversations: "never",
+      scheduledTaskMode: true,
+      pinConversation: true,
+    });
+  });
+
+  test("rejects Scheduled task modes that would bypass its lifecycle", async () => {
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.5-pro",
+        browserScheduledTask: true,
+        browserResearch: "deep",
+      }),
+    ).rejects.toThrow(/cannot be combined.*browser-research deep/i);
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.5-pro",
+        browserScheduledTask: true,
+        browserArchive: "always",
+      }),
+    ).rejects.toThrow(/cannot be combined with browser archiving/i);
   });
 
   test("honors overrides and converts durations + booleans", async () => {

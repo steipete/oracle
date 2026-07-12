@@ -88,6 +88,8 @@ See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrout
 | `--browser-thinking-time <light\|standard\|extended\|heavy>`                   | Pro / Thinking model intensity.                              |
 | `--browser-research deep`                                                      | Activate Deep Research mode.                                 |
 | `--browser-follow-up <prompt>`                                                 | Multi-turn in the same ChatGPT conversation.                 |
+| `--browser-scheduled-task`                                                     | Create and verify a ChatGPT Scheduled task.                  |
+| `--browser-pin-conversation`                                                   | Pin and verify the resulting conversation.                   |
 | `--browser-port <port>`                                                        | Pin Chrome DevTools port.                                    |
 | `--browser-inline-cookies[(-file)] <…>`                                        | Supply cookies inline (no Keychain / Chrome).                |
 | `--browser-timeout`, `--browser-input-timeout`, `--browser-attachment-timeout` | Overall / input / attachment readiness timeouts (h/m/s/ms).  |

@@ -207,6 +207,61 @@ describe("promptComposer", () => {
     ).resolves.toBe(1);
   });
 
+  test("accepts the Scheduled page conversation handoff as a committed submission", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            baseline: 0,
+            turnsCount: 0,
+            userMatched: false,
+            prefixMatched: false,
+            lastMatched: false,
+            hasNewTurn: false,
+            stopVisible: false,
+            assistantVisible: false,
+            composerCleared: true,
+            inConversation: true,
+          },
+        },
+      }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "schedule this",
+        150,
+        undefined,
+        0,
+        "scheduled-task",
+      ),
+    ).resolves.toBe(0);
+  });
+
+  test("retries a retained Scheduled page draft through its send control", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({ result: { value: { status: "clicked" } } }),
+      };
+      const logger = Object.assign(vi.fn(), { verbose: false });
+      const promise = promptComposer.retryScheduledTaskSendIfNeeded(
+        runtime as never,
+        logger as never,
+      );
+      await vi.advanceTimersByTimeAsync(750);
+      await expect(promise).resolves.toBeUndefined();
+      expect(logger).toHaveBeenCalledWith(
+        "Retried Scheduled task submission through the page control",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("attachment sends time out instead of allowing Enter fallback", async () => {
     vi.useFakeTimers();
     try {

@@ -192,6 +192,10 @@ Expect a near-instant response (no Thinking spinner) and confirm the composer pi
    `pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5-pro --browser-thinking-time extended --browser-archive always --prompt "Reply exactly CHECK_ARCHIVE_OK."`
    Confirm the output contains `CHECK_ARCHIVE_OK`, `oracle session <id> --render` still shows the transcript, and ChatGPT shows the conversation under archived chats rather than the active sidebar. Also confirm a default `--browser-archive auto` run with Deep Research or follow-ups is not archived.
 
+9. **Scheduled task + pin smoke**
+   `pnpm run oracle -- --engine browser --browser-manual-login --browser-scheduled-task --browser-pin-conversation --prompt "Create a task titled CHECK_SCHEDULED_TASK_OK that runs monthly on the first Monday at 09:00 local time and replies with CHECK_SCHEDULED_TASK_OK."`
+   Confirm ChatGPT's Scheduled page lists the active monthly task and its source conversation is in the Pinned sidebar section. Delete the test task and conversation after verification.
+
 Record session IDs and outcomes in the PR description (pass/fail, notable delays). This ensures reviewers can audit real runs.
 
 ### Remote Chrome smoke test (CDP)

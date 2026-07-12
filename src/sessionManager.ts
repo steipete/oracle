@@ -6,6 +6,7 @@ import net from "node:net";
 import type {
   BrowserArchiveMode,
   BrowserArchiveResult,
+  BrowserPinResult,
   BrowserModelStrategy,
   BrowserResearchMode,
   CookieParam,
@@ -80,6 +81,10 @@ export interface BrowserSessionConfig {
   researchMode?: BrowserResearchMode;
   /** Archive completed ChatGPT conversations after local artifacts are saved. */
   archiveConversations?: BrowserArchiveMode;
+  /** Submit through ChatGPT's Scheduled page and verify its conversation handoff. */
+  scheduledTaskMode?: boolean;
+  /** Pin the resulting ChatGPT conversation after a successful browser run. */
+  pinConversation?: boolean;
   /** Browser-only: existing ChatGPT conversation URL to resume before submitting. */
   resumeConversationUrl?: string | null;
 }
@@ -146,6 +151,7 @@ export interface BrowserMetadata {
   runtime?: BrowserRuntimeMetadata;
   harvest?: BrowserHarvestMetadata;
   archive?: BrowserArchiveResult;
+  pin?: BrowserPinResult;
   modelSelection?: BrowserModelSelectionEvidence;
   warnings?: BrowserRunWarning[];
 }

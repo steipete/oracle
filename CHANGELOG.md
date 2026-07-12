@@ -2,6 +2,10 @@
 
 ## 0.16.1 — Unreleased
 
+### Added
+
+- Browser: add `--browser-scheduled-task` for verified ChatGPT Scheduled task creation and `--browser-pin-conversation` for verified sidebar pinning of the resulting conversation.
+
 ## 0.16.0 — 2026-07-12
 
 ### Added
