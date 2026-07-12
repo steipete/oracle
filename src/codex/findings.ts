@@ -38,7 +38,9 @@ export function parseFindingItem(raw: RawFindingItem, index: number): CodexFindi
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && line !== "·");
   const title = lines[0] ?? "(untitled finding)";
-  const repo = lines.find((line) => /\//u.test(line) && !/^committed/iu.test(line));
+  // Finding titles can contain path-like text (for example `/work`). Only treat a
+  // standalone owner/name line as repository metadata.
+  const repo = lines.find((line) => /^[^/\s]+\/[^/\s]+$/u.test(line));
   const status = lines.find((line) => /^committed/iu.test(line));
   const severity = parseSeverity(raw.severityLabel ?? "");
   const id = `${title}|${repo ?? ""}`;
@@ -69,19 +71,31 @@ export function shouldStopPaging(
   return pagesVisited >= 1 && counter.to >= counter.total;
 }
 
-const MODAL_RUNTIME_ROOTS = ["harp/", "deploy.sh", "pyproject.toml"] as const;
-const NON_MODAL_PATHS = new Set(["harp/sandbox_local.py", "harp/serve_local.py"]);
-
-export function modalEvidencePath(url: string): string | null {
+export function evidencePath(url: string): string | null {
   const match = /\/blob\/[a-f0-9]{7,64}\/(.+?)(?:#|$)/iu.exec(url);
   return match?.[1] ?? null;
 }
 
-export function isModalRuntimeEvidence(url: string): boolean {
-  const path = modalEvidencePath(url);
-  if (!path || NON_MODAL_PATHS.has(path) || path.startsWith("harp/evals/")) return false;
-  if (path.startsWith("tests/") || path.startsWith("tests_harp/")) return false;
-  return MODAL_RUNTIME_ROOTS.some((root) => path === root || path.startsWith(root));
+function matchesEvidencePrefix(path: string, prefix: string): boolean {
+  const normalized = prefix.trim().replace(/^\/+|\/+$/gu, "");
+  if (!normalized) return false;
+  return path === normalized || path.startsWith(`${normalized}/`);
+}
+
+export function isEvidencePathAllowed(
+  url: string,
+  {
+    includePrefixes = [],
+    excludePrefixes = [],
+  }: { includePrefixes?: string[]; excludePrefixes?: string[] } = {},
+): boolean {
+  const path = evidencePath(url);
+  if (!path) return false;
+  if (excludePrefixes.some((prefix) => matchesEvidencePrefix(path, prefix))) return false;
+  return (
+    includePrefixes.length === 0 ||
+    includePrefixes.some((prefix) => matchesEvidencePrefix(path, prefix))
+  );
 }
 
 export function githubRepoFromUrl(url: string): string | null {

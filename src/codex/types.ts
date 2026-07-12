@@ -54,7 +54,8 @@ export interface CodexFindingsRequest {
   confirm?: boolean;
   severity?: CodexFindingSeverity | string; // optional client-side filter
   repo?: string;
-  modalOnly?: boolean;
+  evidencePrefixes?: string[];
+  evidenceExcludes?: string[];
   limit?: number; // max findings returned (client cap); default = all
   config?: BrowserAutomationConfig;
   log?: (message: string) => void;

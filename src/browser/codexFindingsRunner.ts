@@ -55,12 +55,12 @@ import { normalizeCodexFindingsUrl, buildFindingDetailUrl } from "../codex/url.j
 import {
   aggregateFindingPages,
   githubRepoFromUrl,
-  isModalRuntimeEvidence,
+  isEvidencePathAllowed,
   shouldStopPaging,
 } from "../codex/findings.js";
 import type {
   CodexFinding,
-  CodexFindingsPageCounter,
+  CodexFindingDetail,
   CodexFindingsRequest,
   CodexFindingsResult,
 } from "../codex/types.js";
@@ -215,6 +215,7 @@ export async function runBrowserCodexFindings(
       const detail = await raceWithDisconnect(
         readFindingDetail(Runtime, requireFindingId(request.findingId)),
       );
+      assertFindingScope(detail, request);
       completed = true;
       return {
         status: "ok",
@@ -236,20 +237,7 @@ export async function runBrowserCodexFindings(
       await raceWithDisconnect(navigateToChatGPT(Page, Runtime, detailUrl, logger));
       await raceWithDisconnect(waitForFindingDetailReady(Runtime, config.inputTimeoutMs, logger));
       const detail = await raceWithDisconnect(readFindingDetail(Runtime, findingId));
-      const expectedRepo = request.repo ?? (request.modalOnly ? "umgbhalla/harp" : undefined);
-      if (expectedRepo && githubRepoFromUrl(detail.repo ?? "") !== expectedRepo) {
-        throw new Error(
-          `Finding ${findingId} belongs to ${githubRepoFromUrl(detail.repo ?? "") ?? "an unknown repository"}, not ${expectedRepo}.`,
-        );
-      }
-      if (
-        request.modalOnly &&
-        (detail.files.length === 0 || detail.files.some((file) => !isModalRuntimeEvidence(file)))
-      ) {
-        throw new Error(
-          `Finding ${findingId} is not Modal-runtime-only; refusing action because its evidence includes frontend, local-only, test, eval, or unknown paths.`,
-        );
-      }
+      assertFindingScope(detail, request);
       const actionResult: FindingActionResult = await raceWithDisconnect(
         executeFindingAction(
           Runtime,
@@ -280,7 +268,6 @@ export async function runBrowserCodexFindings(
     const limit =
       typeof request.limit === "number" && request.limit >= 0 ? request.limit : undefined;
     const pages: CodexFinding[][] = [];
-    let counter: CodexFindingsPageCounter | undefined;
     let pagesVisited = 0;
     // Hard cap so a mis-reporting counter can never loop forever.
     const maxPages = 100;
@@ -289,10 +276,9 @@ export async function runBrowserCodexFindings(
         waitForFindingsPageSettled(Runtime, config.inputTimeoutMs, logger),
       );
       pages.push(page.items);
-      counter = page.counter;
       pagesVisited += 1;
       const collected = aggregateFindingPages(pages).length;
-      if (!request.repo && !request.modalOnly && limit !== undefined && collected >= limit) {
+      if (!request.repo && limit !== undefined && collected >= limit) {
         break;
       }
       if (shouldStopPaging(page.counter, pagesVisited)) {
@@ -306,13 +292,11 @@ export async function runBrowserCodexFindings(
       }
     }
     let findings = aggregateFindingPages(pages);
-    if (request.repo || request.modalOnly) {
-      const expectedRepo = request.repo ?? "umgbhalla/harp";
-      findings = findings.filter((finding) => finding.repo === expectedRepo);
-    }
+    if (request.repo) findings = findings.filter((finding) => finding.repo === request.repo);
     if (request.severity) {
       findings = findings.filter((f) => f.severity === request.severity);
     }
+    const filteredTotal = findings.length;
     if (limit !== undefined) {
       findings = findings.slice(0, limit);
     }
@@ -323,10 +307,10 @@ export async function runBrowserCodexFindings(
       operation: "list",
       findingsUrl,
       findings,
-      counter: counter ?? {
+      counter: {
         from: findings.length ? 1 : 0,
         to: findings.length,
-        total: findings.length,
+        total: filteredTotal,
       },
       warnings,
       tookMs: Date.now() - startedAt,
@@ -403,6 +387,25 @@ export async function runBrowserCodexFindings(
     if (cleanupProfileLock) {
       await cleanupProfileLock.release().catch(() => undefined);
     }
+  }
+}
+
+function assertFindingScope(detail: CodexFindingDetail, request: CodexFindingsRequest): void {
+  if (request.repo && githubRepoFromUrl(detail.repo ?? "") !== request.repo) {
+    throw new Error(
+      `Finding belongs to ${githubRepoFromUrl(detail.repo ?? "") ?? "an unknown repository"}, not ${request.repo}.`,
+    );
+  }
+  const includePrefixes = request.evidencePrefixes ?? [];
+  const excludePrefixes = request.evidenceExcludes ?? [];
+  if (includePrefixes.length === 0 && excludePrefixes.length === 0) return;
+  if (
+    detail.files.length === 0 ||
+    detail.files.some((file) => !isEvidencePathAllowed(file, { includePrefixes, excludePrefixes }))
+  ) {
+    throw new Error(
+      "Finding evidence does not satisfy the requested path policy; refusing to continue.",
+    );
   }
 }
 

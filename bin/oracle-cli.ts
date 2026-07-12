@@ -1054,11 +1054,6 @@ function addCodexCommonOptions(command: Command): Command {
     .option("--browser-hide-window", "Hide Chrome window after launch on macOS.", false)
     .option("--browser-allow-cookie-errors", "Continue when cookie sync fails.", false)
     .option("--repo <owner/name>", "Restrict findings to one repository.")
-    .option(
-      "--modal-only",
-      "Restrict Harp findings to evidence paths shipped by the Modal runtime; excludes frontend, local, tests, and evals.",
-      false,
-    )
     .option("--json", "Print structured JSON.", false)
     .option("-v, --verbose", "Enable verbose browser logging.", false);
 }
@@ -1099,6 +1094,18 @@ addCodexCommonOptions(
       ]),
     )
     .option("--text <text>", "Text for the chat action.")
+    .option(
+      "--evidence-prefix <paths...>",
+      "Require action evidence paths to match one of these repository-relative prefixes.",
+      collectTextValues,
+      [],
+    )
+    .option(
+      "--exclude-evidence <paths...>",
+      "Reject action evidence paths matching one of these repository-relative prefixes.",
+      collectTextValues,
+      [],
+    )
     .option("--confirm", "Confirm a mutating action (create-pr|chat|close|adjust).", false),
 ).action(async function (this: Command) {
   const { runCodexFindingsCliCommand } = await import("../src/cli/codexFindings.js");

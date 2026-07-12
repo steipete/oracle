@@ -6,6 +6,10 @@
 
 - Codex Cloud: add explicit `oracle codex finding --action ...` commands for trusted Create PR, Chat, Close, Adjust, and copy actions while keeping `oracle codex findings` read-only.
 
+### Fixed
+
+- Codex Cloud: scope finding actions to the detail panel, verify action-specific UI outcomes, enforce `--repo` consistently, and replace repository-specific evidence filtering with configurable include/exclude path policies.
+
 ## 0.16.0 — 2026-07-12
 
 ### Added

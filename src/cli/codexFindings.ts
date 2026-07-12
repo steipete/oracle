@@ -15,7 +15,8 @@ export interface CodexFindingsCliOptions extends Partial<BrowserFlagOptions> {
   text?: string;
   confirm?: boolean;
   repo?: string;
-  modalOnly?: boolean;
+  evidencePrefix?: string[];
+  excludeEvidence?: string[];
   limit?: number;
   json?: boolean;
   verbose?: boolean;
@@ -38,7 +39,8 @@ export async function runCodexFindingsCliCommand(options: CodexFindingsCliOption
     actionText: options.text,
     confirm: options.confirm,
     repo: options.repo,
-    modalOnly: options.modalOnly,
+    evidencePrefixes: options.evidencePrefix,
+    evidenceExcludes: options.excludeEvidence,
     severity: options.severity,
     limit: options.limit,
     config: browserConfig,

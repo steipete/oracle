@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateFindingPages,
+  evidencePath,
   githubRepoFromUrl,
-  isModalRuntimeEvidence,
+  isEvidencePathAllowed,
   parseFindingItem,
   parseFindingsCounter,
   parseSeverity,
@@ -64,6 +65,16 @@ describe("parseFindingItem", () => {
     expect(finding.severity).toBe("unknown");
     expect(finding.repo).toBe("acme/x");
   });
+  it("does not mistake path-like title text for repository metadata", () => {
+    const finding = parseFindingItem(
+      {
+        innerText: "Scoped memories leak through tenant-wide /work files\nCommitted 1d ago",
+        severityLabel: "High severity",
+      },
+      0,
+    );
+    expect(finding.repo).toBeUndefined();
+  });
 });
 
 describe("aggregateFindingPages", () => {
@@ -122,23 +133,16 @@ describe("buildFindingDetailUrl / buildFindingsDataUrl", () => {
   });
 });
 
-describe("Modal runtime finding scope", () => {
-  it("recognizes Harp Modal evidence and rejects local/frontend surfaces", () => {
+describe("Evidence path scope", () => {
+  it("matches configured prefixes and exclusions without repository assumptions", () => {
+    const runtime = "https://github.com/acme/project/blob/abcdef1/src/runtime.py#L1-L10";
+    const frontend = "https://github.com/acme/project/blob/abcdef1/apps/web/page.tsx#L1-L10";
+    expect(evidencePath(runtime)).toBe("src/runtime.py");
+    expect(isEvidencePathAllowed(runtime, { includePrefixes: ["src/"] })).toBe(true);
     expect(
-      isModalRuntimeEvidence(
-        "https://github.com/umgbhalla/harp/blob/abcdef1/harp/serve_modal.py#L1-L10",
-      ),
-    ).toBe(true);
-    expect(
-      isModalRuntimeEvidence(
-        "https://github.com/umgbhalla/harp/blob/abcdef1/harp/sandbox_local.py#L1-L10",
-      ),
+      isEvidencePathAllowed(runtime, { includePrefixes: ["src/"], excludePrefixes: ["src/"] }),
     ).toBe(false);
-    expect(
-      isModalRuntimeEvidence(
-        "https://github.com/umgbhalla/harp/blob/abcdef1/apps/web/app/page.tsx#L1-L10",
-      ),
-    ).toBe(false);
+    expect(isEvidencePathAllowed(frontend, { includePrefixes: ["src/"] })).toBe(false);
   });
 
   it("extracts the repository from report evidence links", () => {

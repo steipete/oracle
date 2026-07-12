@@ -375,9 +375,15 @@ function buildButtonTargetExpression(name: string): string {
       const style = window.getComputedStyle(node);
       return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
     };
-    const nodes = [...document.querySelectorAll('button')];
+    const labelFor = (node) => (node.getAttribute('aria-label') || node.innerText || '').trim();
+    const panel = [...document.querySelectorAll('section')].find((section) =>
+      section.querySelector('a[href="#summary"]') &&
+      [...section.querySelectorAll('button')].some((node) => labelFor(node) === wanted && visible(node)),
+    );
+    if (!panel) return { ok: false, reason: 'finding action panel not found' };
+    const nodes = [...panel.querySelectorAll('button')];
     const button = nodes.find((node) => {
-      const label = (node.getAttribute('aria-label') || node.innerText || '').trim();
+      const label = labelFor(node);
       return label === wanted && visible(node) && !node.disabled && node.getAttribute('aria-disabled') !== 'true';
     });
     if (!button) return { ok: false, reason: 'button not found: ' + wanted };
@@ -385,6 +391,92 @@ function buildButtonTargetExpression(name: string): string {
     const rect = button.getBoundingClientRect();
     return { ok: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   })()`;
+}
+
+function buildFindingActionStateExpression(): string {
+  return `(() => {
+    const panel = [...document.querySelectorAll('section')].find((section) =>
+      section.querySelector('a[href="#summary"]') &&
+      section.querySelector('button'),
+    );
+    const panelText = panel?.innerText || '';
+    const labels = panel ? [...panel.querySelectorAll('button')].map((node) =>
+      (node.getAttribute('aria-label') || node.innerText || '').trim(),
+    ) : [];
+    const liveText = [...document.querySelectorAll('[role="alert"], [role="status"], [aria-live]')]
+      .map((node) => node.innerText || node.textContent || '')
+      .join('\\n');
+    const menuOpen = document.querySelector('[role="menu"], [data-radix-popper-content-wrapper]') !== null;
+    const dialogText = [...document.querySelectorAll('[role="dialog"]')]
+      .map((node) => node.innerText || '')
+      .join('\\n');
+    return {
+      panelText,
+      liveText,
+      dialogText,
+      menuOpen,
+      hasClose: labels.includes('Close'),
+      hasSubmit: labels.includes('Submit'),
+      pr: [...document.querySelectorAll('a[href*="/pull/"]')].map((a) => a.href)[0] || null,
+    };
+  })()`;
+}
+
+type FindingActionState = {
+  panelText?: string;
+  liveText?: string;
+  dialogText?: string;
+  menuOpen?: boolean;
+  hasClose?: boolean;
+  hasSubmit?: boolean;
+  pr?: string | null;
+};
+
+async function readFindingActionState(runtime: Runtime): Promise<FindingActionState> {
+  const evaluated = await runtime.evaluate({
+    expression: buildFindingActionStateExpression(),
+    returnByValue: true,
+  });
+  const value = evaluated.result?.value as FindingActionState | undefined;
+  if (!value) {
+    const description =
+      evaluated.exceptionDetails?.exception?.description ??
+      evaluated.exceptionDetails?.text ??
+      "no state returned";
+    throw new Error(`Unable to read finding action panel state: ${description}`);
+  }
+  return value;
+}
+
+async function waitForFindingActionPostcondition(
+  runtime: Runtime,
+  action: CodexFindingAction,
+  before: FindingActionState,
+  timeoutMs: number,
+): Promise<FindingActionState> {
+  const deadline = Date.now() + Math.min(timeoutMs, 30_000);
+  let state = await readFindingActionState(runtime);
+  while (Date.now() < deadline) {
+    const liveChanged = state.liveText !== before.liveText;
+    const panelChanged = state.panelText !== before.panelText;
+    const copied = /copied|clipboard/iu.test(state.liveText ?? "");
+    const complete =
+      action === "copy-content" || action === "copy-link"
+        ? copied
+        : action === "copy-patch" || action === "copy-git-apply"
+          ? state.menuOpen === false
+          : action === "chat"
+            ? state.hasSubmit === false || panelChanged || liveChanged
+            : action === "close"
+              ? state.hasClose === false || /closed/iu.test(state.panelText ?? "") || panelChanged
+              : action === "adjust"
+                ? Boolean(state.dialogText) || panelChanged || liveChanged
+                : Boolean(state.pr) || Boolean(state.dialogText);
+    if (complete) return state;
+    await delay(250);
+    state = await readFindingActionState(runtime);
+  }
+  throw new Error(`Finding action ${action} did not produce its expected UI result.`);
 }
 
 function buildNamedButtonTargetExpression(name: string): string {
@@ -482,6 +574,7 @@ export async function executeFindingAction(
   timeoutMs: number,
   logger: BrowserLogger,
 ): Promise<FindingActionResult> {
+  const before = await readFindingActionState(runtime);
   if (action === "create-pr") {
     await openGitActionMenu(runtime, input, timeoutMs);
     const existing = (
@@ -531,32 +624,12 @@ export async function executeFindingAction(
     }
     await clickTrustedPoint(runtime, input, value.x, value.y);
   }
-  const deadline = Date.now() + Math.min(timeoutMs, 30_000);
-  let state:
-    | { url?: string; text?: string; pr?: string | null; dialog?: string | null }
-    | undefined;
-  while (Date.now() < deadline) {
-    state = (
-      await runtime.evaluate({
-        expression: `(() => ({
-          url: location.href,
-          text: document.querySelector('main')?.innerText?.slice(0, 2000) || '',
-          pr: [...document.querySelectorAll('a[href*="/pull/"]')].map((a) => a.href)[0] || null,
-          dialog: document.querySelector('[role="dialog"]')?.innerText || null,
-        }))()`,
-        returnByValue: true,
-      })
-    ).result?.value as
-      | { url?: string; text?: string; pr?: string | null; dialog?: string | null }
-      | undefined;
-    if (action !== "create-pr" || state?.pr || state?.dialog) break;
-    await delay(250);
-  }
+  const state = await waitForFindingActionPostcondition(runtime, action, before, timeoutMs);
   logger(`[codex] finding action completed: ${action}`);
   return {
     status: "ok",
-    message: state?.dialog ?? (action === "create-pr" && state?.pr ? "PR created" : undefined),
-    url: state?.pr ?? state?.url,
-    text: state?.text,
+    message: state.dialogText ?? (action === "create-pr" && state.pr ? "PR created" : undefined),
+    url: state.pr ?? undefined,
+    text: state.panelText,
   };
 }
