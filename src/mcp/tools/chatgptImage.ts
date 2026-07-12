@@ -43,7 +43,7 @@ const chatGptImageInputShape = {
     ),
   browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
-    .describe("Set ChatGPT thinking time when supported by the chosen model."),
+    .describe("Set ChatGPT thinking time; pro requires GPT-5.6 Sol with model strategy select."),
   browserModelStrategy: z
     .enum(["select", "current", "ignore"])
     .optional()

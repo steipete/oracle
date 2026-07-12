@@ -1,5 +1,6 @@
 import type { ChromeClient, BrowserLogger } from "../types.js";
 import type { ThinkingTimeLevel } from "../../oracle/types.js";
+import { assertProThinkingTimeTarget } from "../../oracle/thinkingTime.js";
 import {
   MENU_CONTAINER_SELECTOR,
   MENU_ITEM_SELECTOR,
@@ -61,6 +62,7 @@ export async function ensureThinkingTime(
   logger: BrowserLogger,
   desiredModel?: string | null,
 ) {
+  assertProThinkingTimeTarget(level, desiredModel);
   const result = await evaluateThinkingTimeSelection(Runtime, level, desiredModel);
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
   const targetModelKind = inferThinkingTargetModelKind(desiredModel);

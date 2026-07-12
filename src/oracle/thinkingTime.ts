@@ -48,3 +48,22 @@ export function normalizeThinkingTimeLevel(
       return null;
   }
 }
+
+export function assertProThinkingTimeTarget(
+  level: ThinkingTimeLevel | null | undefined,
+  desiredModel: string | null | undefined,
+): void {
+  if (level !== "pro") return;
+  const normalizedModel = (desiredModel ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const isGpt56Sol =
+    /(?:^| )5 6(?: |$)/.test(normalizedModel) && normalizedModel.split(" ").includes("sol");
+  if (!isGpt56Sol) {
+    throw new Error(
+      'Browser thinking time "pro" requires GPT-5.6 Sol with model strategy "select".',
+    );
+  }
+}

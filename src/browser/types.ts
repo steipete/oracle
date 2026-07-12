@@ -110,7 +110,7 @@ export interface BrowserAutomationConfig {
   manualLoginCookieSync?: boolean;
   /** Copy this signed-in Chrome user-data dir to a throwaway profile and run against it (login-free). */
   copyProfileSource?: string | null;
-  /** Thinking time intensity level for Thinking/Pro models: light, standard, extended, heavy, pro */
+  /** Thinking time intensity; pro requires selected GPT-5.6 Sol. */
   thinkingTime?: ThinkingTimeLevel;
   /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
   researchMode?: BrowserResearchMode;

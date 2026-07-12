@@ -321,6 +321,21 @@ describe("browser thinking-time selection expression", () => {
     ).rejects.toThrow(/refusing to submit without confirmed Pro\./);
   });
 
+  it("rejects explicit Pro effort before evaluating a non-Sol model", async () => {
+    let evaluations = 0;
+    const runtime = {
+      evaluate: async () => {
+        evaluations += 1;
+        return { result: { value: { status: "switched" } } };
+      },
+    };
+
+    await expect(
+      ensureThinkingTime(runtime as never, "pro", (() => {}) as never, "Thinking 5.4"),
+    ).rejects.toThrow(/requires GPT-5\.6 Sol/);
+    expect(evaluations).toBe(0);
+  });
+
   it("keeps thinking effort best-effort when no target model kind is provided", async () => {
     const runtime = {
       evaluate: async () => ({

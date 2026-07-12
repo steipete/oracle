@@ -36,7 +36,11 @@ export async function ensureModelSelection(
   desiredModel: string,
   logger: BrowserLogger,
   strategy: BrowserModelStrategy = "select",
-  options: { buttonWaitMs?: number; buttonPollMs?: number } = {},
+  options: {
+    buttonWaitMs?: number;
+    buttonPollMs?: number;
+    allowIndependentProPill?: boolean;
+  } = {},
 ): Promise<BrowserModelSelectionEvidence> {
   const buttonWaitMs = options.buttonWaitMs ?? MODEL_BUTTON_WAIT_MS;
   const buttonPollMs = options.buttonPollMs ?? MODEL_BUTTON_POLL_MS;
@@ -46,7 +50,11 @@ export async function ensureModelSelection(
   let announcedWait = false;
   for (;;) {
     const outcome = await Runtime.evaluate({
-      expression: buildModelSelectionExpression(desiredModel, strategy),
+      expression: buildModelSelectionExpression(
+        desiredModel,
+        strategy,
+        options.allowIndependentProPill === true,
+      ),
       awaitPromise: true,
       returnByValue: true,
     });
@@ -178,6 +186,7 @@ export function assertResolvedModelSelectionForTest(
 function buildModelSelectionExpression(
   targetModel: string,
   strategy: BrowserModelStrategy,
+  allowIndependentProPill = false,
 ): string {
   const matchers = buildModelMatchersLiteral(targetModel);
   const composerSignalMatchers = buildComposerSignalMatchers(targetModel);
@@ -185,6 +194,7 @@ function buildModelSelectionExpression(
   const idLiteral = JSON.stringify(matchers.testIdTokens);
   const primaryLabelLiteral = JSON.stringify(targetModel);
   const strategyLiteral = JSON.stringify(strategy);
+  const allowIndependentProPillLiteral = JSON.stringify(allowIndependentProPill);
   const composerSignalSelectorLiteral = JSON.stringify(COMPOSER_MODEL_SIGNAL_SELECTOR);
   const composerIncludesLiteral = JSON.stringify(composerSignalMatchers.includesAny);
   const composerExcludesLiteral = JSON.stringify(composerSignalMatchers.excludesAny);
@@ -204,6 +214,7 @@ function buildModelSelectionExpression(
     const TEST_IDS = ${idLiteral};
     const PRIMARY_LABEL = ${primaryLabelLiteral};
     const MODEL_STRATEGY = ${strategyLiteral};
+    const ALLOW_INDEPENDENT_PRO_PILL = ${allowIndependentProPillLiteral};
     const COMPOSER_SIGNAL_INCLUDES = ${composerIncludesLiteral};
     const COMPOSER_SIGNAL_EXCLUDES = ${composerExcludesLiteral};
     const COMPOSER_SIGNAL_ALLOW_BLANK = ${composerAllowBlankLiteral};
@@ -271,23 +282,19 @@ function buildModelSelectionExpression(
       }
       return false;
     };
-    const isProComposerPill = (node) => {
-      const ariaLabel = normalizeText(node.getAttribute?.('aria-label') ?? '');
-      const textLabel = normalizeText(node.textContent ?? '');
-      const isComposerPill =
-        node.matches?.('button.__composer-pill') || ariaLabel.includes('click to remove');
-      if (!isComposerPill) return false;
-      const label = normalizeText(ariaLabel + ' ' + textLabel);
-      return (
-        hasToken(label, 'pro') &&
-        !hasToken(label, 'thinking') &&
-        (textLabel === 'pro' || ariaLabel === 'pro' || ariaLabel === 'pro click to remove')
-      );
-    };
-    const getProComposerPills = (root) =>
-      Array.from(root?.querySelectorAll?.('button.__composer-pill, button[aria-label]') ?? [])
-        .filter(isProComposerPill);
-    const hasProComposerPill = () => getProComposerPills(document).length > 0;
+    const hasProComposerPill = () => Boolean(
+      Array.from(document.querySelectorAll('button.__composer-pill, button[aria-label]'))
+        .filter((node) => {
+          const label = normalizeText(node.getAttribute?.('aria-label') ?? '');
+          return node.matches?.('button.__composer-pill') || label.includes('click to remove');
+        })
+        .some((node) => {
+          const label = normalizeText(
+            (node.getAttribute?.('aria-label') ?? '') + ' ' + (node.textContent ?? '')
+          );
+          return hasToken(label, 'pro') && !hasToken(label, 'thinking');
+        })
+    );
 
     const isVisibleElement = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -355,15 +362,8 @@ function buildModelSelectionExpression(
     };
 
     const getButtonLabel = () => (findModelButton()?.textContent ?? '').trim();
-    const getComposerModelLabel = () => {
-      const footer = document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR);
-      let label = (footer?.textContent ?? '').trim();
-      for (const pill of getProComposerPills(footer)) {
-        const pillText = (pill.textContent ?? '').trim();
-        if (pillText) label = label.split(pillText).join(' ');
-      }
-      return label.replace(/\\s+/g, ' ').trim();
-    };
+    const getComposerModelLabel = () =>
+      (document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR)?.textContent ?? '').trim();
     const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
     const isIntelligenceEffortLabel = (label) =>
       label === 'instant' ||
@@ -451,6 +451,11 @@ function buildModelSelectionExpression(
         !configuredVersionLabel.includes(desiredModelVariant) &&
         !configuredVariant.includes(desiredModelVariant)
       ) return false;
+      if (
+        desiredModelVariant === 'sol' &&
+        labelHasProWord(configuredVariant) &&
+        !ALLOW_INDEPENDENT_PRO_PILL
+      ) return false;
       if (wantsPro) return labelHasProWord(configuredVariant);
       if (wantsInstant) return configuredVariant.includes('instant');
       if (wantsThinking) {
@@ -460,9 +465,13 @@ function buildModelSelectionExpression(
     };
     const getResolvedLabel = (fallback) => {
       if (configuredSelectionMatchesTarget()) {
-        const version = formatModelOptionLabel(getConfiguredVersionLabel());
-        if (desiredModelVariant === 'sol') return version;
         const variant = getConfiguredVariantLabel();
+        const version = formatModelOptionLabel(getConfiguredVersionLabel());
+        if (
+          desiredModelVariant === 'sol' &&
+          ALLOW_INDEPENDENT_PRO_PILL &&
+          labelHasProWord(normalizeText(variant))
+        ) return version;
         return [variant, version].filter(Boolean).join(' ');
       }
       const composerLabel = getComposerModelLabel();
@@ -473,6 +482,11 @@ function buildModelSelectionExpression(
         versionFromLabel(normalizedComposerLabel) === desiredVersion &&
         normalizedComposerLabel.split(' ').includes(desiredModelVariant)
       ) {
+        if (
+          desiredModelVariant === 'sol' &&
+          ALLOW_INDEPENDENT_PRO_PILL &&
+          hasProComposerPill()
+        ) return PRIMARY_LABEL;
         return withProPillSignal(composerLabel);
       }
       const buttonLabel = getButtonLabel();
@@ -517,6 +531,11 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) return true;
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
+      if (
+        desiredModelVariant === 'sol' &&
+        hasProComposerPill() &&
+        !ALLOW_INDEPENDENT_PRO_PILL
+      ) return false;
       if (wantsThinking && !wantsPro && hasProComposerPill()) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
@@ -572,13 +591,13 @@ function buildModelSelectionExpression(
       const normalizedLabel = normalizeText(getButtonLabel());
       return !normalizedLabel || normalizedLabel === 'chatgpt';
     };
-    const hasIncompatibleIndependentProPill = () => {
-      const allowsIndependentProPill = desiredVersion === '5-6' && desiredModelVariant === 'sol';
-      return !wantsPro && !allowsIndependentProPill && hasProComposerPill();
-    };
     const composerSignalMatchesTarget = () => {
       const signal = readComposerModelSignal();
-      if (hasIncompatibleIndependentProPill()) {
+      if (
+        desiredModelVariant === 'sol' &&
+        hasProComposerPill() &&
+        !ALLOW_INDEPENDENT_PRO_PILL
+      ) {
         return false;
       }
       if (!signal) {
@@ -587,7 +606,11 @@ function buildModelSelectionExpression(
       if (wantsPro && labelHasLegacyProVersion(signal)) {
         return false;
       }
-      if (COMPOSER_SIGNAL_EXCLUDES.some((token) => token && signal.includes(token))) {
+      if (COMPOSER_SIGNAL_EXCLUDES.some((token) =>
+        token &&
+        signal.includes(token) &&
+        !(token === 'pro' && desiredModelVariant === 'sol' && ALLOW_INDEPENDENT_PRO_PILL && hasProComposerPill())
+      )) {
         return false;
       }
       if (COMPOSER_SIGNAL_INCLUDES.length === 0) {
@@ -596,9 +619,6 @@ function buildModelSelectionExpression(
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
     };
     const activeSelectionMatchesTarget = () => {
-      if (hasIncompatibleIndependentProPill()) {
-        return false;
-      }
       if (buttonMatchesTarget()) {
         return true;
       }
@@ -1006,7 +1026,6 @@ function buildModelSelectionExpression(
       node?.getAttribute?.('data-has-submenu') !== null;
     const canTrustSelectedOption = (node, normalizedText, testid) => {
       if (!optionIsSelected(node)) return false;
-      if (hasIncompatibleIndependentProPill()) return false;
       if (getConfigurationDialog() && !configuredSelectionMatchesTarget()) return false;
       const optionVersion = versionFromLabel(normalizedText) ?? versionFromTestId(testid);
       if (desiredVersion && optionVersion !== desiredVersion) return false;
@@ -1015,7 +1034,9 @@ function buildModelSelectionExpression(
         desiredModelVariant === 'sol' &&
         (labelHasProWord(normalizedText) || normalizeText(testid ?? '').includes('pro'))
       ) return false;
-      if (desiredVersion === '5-6') return true;
+      if (desiredVersion === '5-6') {
+        return ALLOW_INDEPENDENT_PRO_PILL || !hasProComposerPill();
+      }
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };
@@ -1074,7 +1095,6 @@ function buildModelSelectionExpression(
         if (
           wantsInstant &&
           desiredVersion === '5-5' &&
-          !hasIncompatibleIndependentProPill() &&
           currentButtonLabel === 'instant' &&
           currentButtonLabel !== previousButtonLabel
         ) {
@@ -1498,6 +1518,7 @@ function buildModelMatchersLiteral(targetModel: string): {
 export function buildModelSelectionExpressionForTest(
   targetModel: string,
   strategy: BrowserModelStrategy = "select",
+  allowIndependentProPill = false,
 ): string {
-  return buildModelSelectionExpression(targetModel, strategy);
+  return buildModelSelectionExpression(targetModel, strategy, allowIndependentProPill);
 }

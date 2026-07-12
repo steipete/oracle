@@ -34,7 +34,10 @@ import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
 import { mapModelToBrowserLabel, resolveBrowserModelLabel } from "../../cli/browserConfig.js";
 import type { BrowserModelStrategy } from "../../browser/types.js";
-import { normalizeThinkingTimeLevel } from "../../oracle/thinkingTime.js";
+import {
+  assertProThinkingTimeTarget,
+  normalizeThinkingTimeLevel,
+} from "../../oracle/thinkingTime.js";
 import type { ThinkingTimeLevel } from "../../oracle/types.js";
 
 // Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
@@ -92,7 +95,9 @@ const consultInputShape = {
     ),
   browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
-    .describe("Browser-only: set ChatGPT thinking time when supported by the chosen model."),
+    .describe(
+      "Browser-only: set ChatGPT thinking time; pro requires GPT-5.6 Sol with model strategy select.",
+    ),
   browserModelStrategy: z
     .enum(["select", "current", "ignore"])
     .optional()
@@ -348,6 +353,13 @@ export function buildConsultBrowserConfig({
     ? true
     : (configuredBrowser.manualLogin ?? process.platform === "win32");
   const configuredThinkingTime = normalizeThinkingTimeLevel(configuredBrowser.thinkingTime);
+  const thinkingTime = browserThinkingTime ?? configuredThinkingTime ?? undefined;
+  const modelStrategy = browserModelStrategy ?? configuredBrowser.modelStrategy;
+  const desiredModel = desiredModelLabel || mapModelToBrowserLabel(runModel);
+  assertProThinkingTimeTarget(
+    thinkingTime,
+    (modelStrategy ?? "select") === "select" ? desiredModel : null,
+  );
 
   return {
     ...configuredBrowser,
@@ -361,11 +373,11 @@ export function buildConsultBrowserConfig({
     manualLoginProfileDir: manualLogin
       ? ((envProfileDir || configuredBrowser.manualLoginProfileDir) ?? null)
       : null,
-    thinkingTime: browserThinkingTime ?? configuredThinkingTime ?? undefined,
-    modelStrategy: browserModelStrategy ?? configuredBrowser.modelStrategy,
+    thinkingTime,
+    modelStrategy,
     researchMode: browserResearchMode ?? configuredBrowser.researchMode,
     archiveConversations: browserArchive ?? configuredBrowser.archiveConversations,
-    desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
+    desiredModel,
   };
 }
 
@@ -578,18 +590,25 @@ export async function runConsultTool(
 
   let browserConfig: BrowserSessionConfig | undefined;
   if (resolvedEngine === "browser") {
-    browserConfig = buildConsultBrowserConfig({
-      userConfig,
-      env: process.env,
-      runModel: runOptions.model,
-      inputModel: model,
-      browserModelLabel,
-      browserThinkingTime,
-      browserModelStrategy,
-      browserResearchMode,
-      browserArchive,
-      browserKeepBrowser,
-    });
+    try {
+      browserConfig = buildConsultBrowserConfig({
+        userConfig,
+        env: process.env,
+        runModel: runOptions.model,
+        inputModel: model,
+        browserModelLabel,
+        browserThinkingTime,
+        browserModelStrategy,
+        browserResearchMode,
+        browserArchive,
+        browserKeepBrowser,
+      });
+    } catch (error) {
+      return {
+        isError: true,
+        content: textContent(error instanceof Error ? error.message : String(error)),
+      };
+    }
   }
 
   if (dryRun) {

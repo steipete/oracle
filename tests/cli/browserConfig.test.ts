@@ -35,6 +35,27 @@ describe("buildBrowserConfig", () => {
     expect(sol.desiredModel).toBe("GPT-5.6 Sol");
   });
 
+  test("allows Pro thinking time only for selected GPT-5.6 Sol", async () => {
+    await expect(
+      buildBrowserConfig({ model: "gpt-5.6-sol", browserThinkingTime: "pro" }),
+    ).resolves.toMatchObject({
+      desiredModel: "GPT-5.6 Sol",
+      thinkingTime: "pro",
+      modelStrategy: "select",
+    });
+
+    await expect(
+      buildBrowserConfig({ model: "gpt-5.4", browserThinkingTime: "pro" }),
+    ).rejects.toThrow(/requires GPT-5\.6 Sol/);
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.6-sol",
+        browserThinkingTime: "pro",
+        browserModelStrategy: "current",
+      }),
+    ).rejects.toThrow(/model strategy "select"/);
+  });
+
   test("keeps version signal for gpt-5.5 Instant browser runs", async () => {
     const config = await buildBrowserConfig({ model: "gpt-5.5-instant" });
     expect(config.desiredModel).toBe("GPT-5.5 Instant");
