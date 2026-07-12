@@ -1047,6 +1047,10 @@ function addCodexCommonOptions(command: Command): Command {
     .option("--browser-chrome-profile <profile>", "Chrome profile name for cookie sync.")
     .option("--browser-chrome-path <path>", "Chrome/Chromium executable path.")
     .option("--browser-cookie-path <path>", "Explicit Chrome cookie DB path.")
+    .option(
+      "--copy-profile <dir>",
+      "Copy a signed-in Chrome user-data directory into a throwaway browser profile.",
+    )
     .option("--browser-inline-cookies <json>", "Inline ChatGPT cookies JSON.")
     .option("--browser-inline-cookies-file <path>", "File containing ChatGPT cookies JSON.")
     .option("--browser-no-cookie-sync", "Skip copying cookies from Chrome.")

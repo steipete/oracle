@@ -34,6 +34,7 @@ import {
   writeDevToolsActivePort,
   type ProfileRunLock,
 } from "./profileState.js";
+import { copyChromeProfile } from "./profileCopy.js";
 import { CHATGPT_URL } from "./constants.js";
 import { delay } from "./utils.js";
 import {
@@ -94,6 +95,7 @@ export async function runBrowserCodexFindings(
   }
 
   const manualLogin = Boolean(config.manualLogin);
+  const usingCopiedProfile = Boolean(config.copyProfileSource);
   const manualProfileDir = config.manualLoginProfileDir
     ? path.resolve(config.manualLoginProfileDir)
     : defaultManualLoginProfileDir();
@@ -105,6 +107,16 @@ export async function runBrowserCodexFindings(
     await mkdir(userDataDir, { recursive: true });
     logger(`Manual login mode enabled; reusing persistent profile at ${userDataDir}`);
     await assertManualLoginProfileReadyForRun({ userDataDir, keepBrowser: effectiveKeepBrowser });
+  } else if (config.copyProfileSource) {
+    const copiedProfileDirectory = await copyChromeProfile(
+      config.copyProfileSource,
+      userDataDir,
+      config.chromeProfile,
+    );
+    config = { ...config, chromeProfile: copiedProfileDirectory };
+    logger(
+      `Seeded temporary Chrome profile ${copiedProfileDirectory} from ${config.copyProfileSource} (copy-profile mode; signed-in session reused without manual login)`,
+    );
   } else {
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
@@ -183,7 +195,7 @@ export async function runBrowserCodexFindings(
       await positionChromeWindowOffscreen(client, logger);
     }
     removeDialogHandler = installJavaScriptDialogAutoDismissal(Page, logger);
-    if (!manualLogin) {
+    if (!manualLogin && !usingCopiedProfile) {
       await Network.clearBrowserCookies();
     }
 
@@ -191,6 +203,7 @@ export async function runBrowserCodexFindings(
       config,
       network: Network,
       manualLogin,
+      usingCopiedProfile,
       logger,
     });
     await clearStaleChatGptConversationCookies(Network, Target, logger);
@@ -383,6 +396,8 @@ export async function runBrowserCodexFindings(
         // best effort
       }
       logger(`Chrome left running on port ${chrome.port} with profile ${userDataDir}`);
+    } else if (!manualLogin) {
+      await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
     }
     if (cleanupProfileLock) {
       await cleanupProfileLock.release().catch(() => undefined);
@@ -413,13 +428,19 @@ async function applyCodexFindingsCookies({
   config,
   network,
   manualLogin,
+  usingCopiedProfile,
   logger,
 }: {
   config: ResolvedBrowserConfig;
   network: ChromeClient["Network"];
   manualLogin: boolean;
+  usingCopiedProfile: boolean;
   logger: BrowserLogger;
 }): Promise<number> {
+  if (usingCopiedProfile) {
+    logger("Using the signed-in copied Chrome profile; skipping cookie sync.");
+    return 0;
+  }
   const manualLoginCookieSync = manualLogin && Boolean(config.manualLoginCookieSync);
   const cookieSyncEnabled = config.cookieSync && (!manualLogin || manualLoginCookieSync);
   if (!cookieSyncEnabled) {
