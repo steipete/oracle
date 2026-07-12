@@ -90,6 +90,8 @@ export interface BrowserFlagOptions {
   browserPort?: number;
   browserDebugPort?: number;
   model: ModelName;
+  /** Raw `-m` value before CLI inference; matched against the live picker inventory. */
+  modelRequest?: string;
   verbose?: boolean;
 }
 
@@ -250,7 +252,7 @@ export async function buildBrowserConfig(
     copyProfileSource: options.copyProfile ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,
-    modelRequest: options.model,
+    modelRequest: options.modelRequest?.trim() || options.model,
     modelStrategy,
     debug: options.verbose ? true : undefined,
     // Allow cookie failures by default so runs can continue without Chrome/Keychain secrets.

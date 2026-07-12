@@ -69,10 +69,16 @@ miss, the existing `buildModelSelectionExpression` loop.
 
 Driven against a signed-in ChatGPT via the CLI running from source:
 
-- `-m "GPT-5.6 Sol"` → `Model picker (inventory): GPT-5.6 Sol` — the exact input that collapses to
-  `gpt-5.2` and fails on published 0.15.2 now resolves correctly (already-selected short-circuit).
-- `-m gpt-5.5-pro` → `Model picker (inventory): Pro GPT-5.5` — a real version switch (5.6 Sol → 5.5),
-  applied via the version submenu and verified.
+| `-m` input | result |
+|------------|--------|
+| `"GPT-5.6 Sol"` | `Model picker (inventory): GPT-5.6 Sol` — the input that collapses to `gpt-5.2` and fails on 0.15.2 |
+| `gpt-5.5-pro` | `Model picker (inventory): Pro GPT-5.5` — real version switch (5.6 Sol → 5.5) |
+| `gpt-5.4` | `Model picker (inventory): GPT-5.4` — switch; the "Leaving on July 23" note is stripped |
+| `o3` | `Model picker (inventory): o3` — a model the CLI can't name, selected purely from the live menu |
+| `gpt-9.9` (invalid) | `Model inventory: "gpt-9.9" → not-found (available: GPT-5.6 Sol, GPT-5.5, GPT-5.4, GPT-5.3, o3); using legacy picker.` |
+
+The raw `-m` value is threaded as `modelRequest` (not the CLI-inferred id), so `o3` and any
+future/unknown model resolve from the live menu instead of being pre-collapsed to `gpt-5.2`.
 
 Two DOM quirks were found and handled during live testing (both in the tests):
 - The composer pill merges version+effort for non-default versions (`5.5Pro`), so verification reads
@@ -87,8 +93,8 @@ Two DOM quirks were found and handled during live testing (both in the tests):
    opt-in flag, cached, off by default (browser users often have no API key).
 2. Once discovery is proven in the field, retire the hard-coded version ladder / testid tokens in
    `buildModelSelectionExpression` and keep it only as a deep fallback.
-3. Thread the *pre-inference* `-m` literal (today `modelRequest` is the CLI-resolved id) so a brand-new
-   version the CLI doesn't recognize still matches purely from the live menu.
+3. Consider making `not-found` a hard error (with the real candidate list) instead of a legacy
+   fallback, once discovery is trusted — clearer than the legacy engine's downstream failure.
 
 ## Notes / edge cases handled
 
