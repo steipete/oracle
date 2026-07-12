@@ -1022,6 +1022,56 @@ addProjectSourcesCommonOptions(
   await runProjectSourcesCliCommand("add", this.optsWithGlobals());
 });
 
+const codexCommand = program
+  .command("codex")
+  .description("Read-only access to ChatGPT Codex Cloud (security findings).");
+
+function addCodexCommonOptions(command: Command): Command {
+  return command
+    .option(
+      "--chatgpt-url <url>",
+      "Codex Cloud findings URL (default https://chatgpt.com/codex/cloud/security/findings; or browser.chatgptUrl config).",
+    )
+    .addOption(
+      new Option("--browser-manual-login", "Reuse a persistent signed-in Chrome profile.").default(
+        undefined,
+      ),
+    )
+    .option("--browser-manual-login-profile-dir <path>", "Persistent Chrome profile directory.")
+    .option("--browser-timeout <duration>", "Overall browser timeout (e.g. 10m, 1h).")
+    .option("--browser-input-timeout <duration>", "Timeout waiting for the findings UI.")
+    .option("--browser-profile-lock-timeout <duration>", "Timeout waiting for profile launch lock.")
+    .option("--browser-reuse-wait <duration>", "Wait for an existing shared Chrome to appear.")
+    .option("--browser-max-concurrent-tabs <n>", "Concurrent tabs allowed for the shared profile.")
+    .option("--browser-cookie-wait <duration>", "Wait before retrying cookie sync.")
+    .option("--browser-chrome-profile <profile>", "Chrome profile name for cookie sync.")
+    .option("--browser-chrome-path <path>", "Chrome/Chromium executable path.")
+    .option("--browser-cookie-path <path>", "Explicit Chrome cookie DB path.")
+    .option("--browser-inline-cookies <json>", "Inline ChatGPT cookies JSON.")
+    .option("--browser-inline-cookies-file <path>", "File containing ChatGPT cookies JSON.")
+    .option("--browser-no-cookie-sync", "Skip copying cookies from Chrome.")
+    .option("--browser-keep-browser", "Keep Chrome running after completion.", false)
+    .option("--browser-hide-window", "Hide Chrome window after launch on macOS.", false)
+    .option("--browser-allow-cookie-errors", "Continue when cookie sync fails.", false)
+    .option("--json", "Print structured JSON.", false)
+    .option("-v, --verbose", "Enable verbose browser logging.", false);
+}
+
+addCodexCommonOptions(
+  codexCommand
+    .command("findings")
+    .description("List Codex Cloud security findings (read-only), or show one finding's detail.")
+    .option("--severity <sev>", "Filter list results by severity (critical|high|medium|low).")
+    .option(
+      "--finding <id>",
+      "Show detail sections for a single finding (32-hex id) instead of the list.",
+    )
+    .option("--limit <n>", "Max number of findings to return (default: all).", parseIntOption),
+).action(async function (this: Command) {
+  const { runCodexFindingsCliCommand } = await import("../src/cli/codexFindings.js");
+  await runCodexFindingsCliCommand(this.optsWithGlobals());
+});
+
 const bridgeCommand = program
   .command("bridge")
   .description("Bridge a Windows-hosted ChatGPT session to Linux clients.");

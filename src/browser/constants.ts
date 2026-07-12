@@ -1,6 +1,7 @@
 import type { BrowserModelStrategy } from "./types.js";
 
 export const CHATGPT_URL = "https://chatgpt.com/";
+export const CODEX_FINDINGS_URL = "https://chatgpt.com/codex/cloud/security/findings";
 export const DEFAULT_MODEL_TARGET = "Pro";
 export const DEFAULT_MODEL_STRATEGY: BrowserModelStrategy = "select";
 export const COOKIE_URLS = [
