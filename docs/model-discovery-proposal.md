@@ -46,27 +46,49 @@ Because version parsing is generic, a brand-new model (gpt-5.7, gpt-6, o4) resol
 ChatGPT lists it — **zero code change**. Unavailable requests fail loud with the real candidate
 list instead of clicking a phantom.
 
-## What's in this PR (prototype, additive, zero-regression)
+## What's in this PR
+
+Discovery + data-driven match are now **wired into the live selection path** as the
+preferred route for `strategy: "select"`, with a safety net: any discovery/match/apply/verify
+failure returns null and falls through to the untouched legacy engine. Worst case is one extra
+discovery round-trip, then exactly today's behavior — so this can only improve outcomes.
 
 | File | Purpose |
 |------|---------|
 | `src/oracle/modelInventory.ts` | Types + pure `buildInventoryFromRawItems` (classify/clean/current) |
 | `src/oracle/modelMatch.ts` | Pure `matchModelToInventory` + `parseRequest` (generic version, effort synonyms) |
-| `src/browser/actions/modelInventoryScrape.ts` | `enumerateModelInventory(Runtime)` — grounded DOM scraper |
-| `tests/oracle/modelInventory.test.ts` | 6 cases incl. the real 5.6 DOM |
-| `tests/oracle/modelMatch.test.ts` | 11 cases incl. the 0.15.2 failures + a future-model case |
+| `src/browser/actions/modelInventoryScrape.ts` | `enumerateModelInventory` / `applyInventorySelection` / `readCurrentSelection` (grounded DOM ops) |
+| `src/browser/actions/modelSelection.ts` | `selectViaInventory` orchestrator, tried before the legacy engine |
+| `src/browser/types.ts`, `src/cli/browserConfig.ts`, `src/sessionManager.ts` | thread the raw `-m` request as `modelRequest` |
+| `tests/oracle/*`, `tests/browser/*` | 26 unit tests incl. the 0.15.2 failures, a future-model case, and a `new Function()` parse-check of every browser expression |
 
-`npx vitest run tests/oracle/modelInventory.test.ts tests/oracle/modelMatch.test.ts` → **17 passed**.
-Nothing is wired into the live path yet, so there is no behavior change.
+Flow: `ensureModelSelection` → `selectViaInventory` (discover → match → apply → verify) → on any
+miss, the existing `buildModelSelectionExpression` loop.
 
-## Follow-ups (separate commits)
+## Live verification (GPT-5.6 "Sol", 2026-07-12)
 
-1. Wire discovery+match into `ensureModelSelection` for `strategy: "select"`, with **fallback to the
-   existing `buildModelSelectionExpression`** when discovery fails (keeps all current cases safe).
-2. Optional LLM fallback for ambiguous/not-found: send the enumerated options (as an **enum
+Driven against a signed-in ChatGPT via the CLI running from source:
+
+- `-m "GPT-5.6 Sol"` → `Model picker (inventory): GPT-5.6 Sol` — the exact input that collapses to
+  `gpt-5.2` and fails on published 0.15.2 now resolves correctly (already-selected short-circuit).
+- `-m gpt-5.5-pro` → `Model picker (inventory): Pro GPT-5.5` — a real version switch (5.6 Sol → 5.5),
+  applied via the version submenu and verified.
+
+Two DOM quirks were found and handled during live testing (both in the tests):
+- The composer pill merges version+effort for non-default versions (`5.5Pro`), so verification reads
+  the top-menu **version-trigger label** + **checked effort radio**, not the pill.
+- After a switch, a **spurious empty** `aria-haspopup="menu"` item can precede the real version
+  trigger — trigger detection now requires version-like text.
+
+## Follow-ups (separate commits/PRs)
+
+1. Optional LLM fallback for `ambiguous` / `not-found`: send the enumerated options (as an **enum
    constraint** so it can't hallucinate) to a cheap model; gated behind API-key availability or an
    opt-in flag, cached, off by default (browser users often have no API key).
-3. Retire the hard-coded version ladder / testid tokens once discovery is the default path.
+2. Once discovery is proven in the field, retire the hard-coded version ladder / testid tokens in
+   `buildModelSelectionExpression` and keep it only as a deep fallback.
+3. Thread the *pre-inference* `-m` literal (today `modelRequest` is the CLI-resolved id) so a brand-new
+   version the CLI doesn't recognize still matches purely from the live menu.
 
 ## Notes / edge cases handled
 
