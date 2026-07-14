@@ -57,8 +57,8 @@ export interface BrowserConfigDefaults {
   hideWindow?: boolean;
   keepBrowser?: boolean;
   modelStrategy?: BrowserModelStrategy;
-  /** Thinking time intensity; 'pro' requires selected GPT-5.6 Sol. */
-  thinkingTime?: ThinkingTimeLevel;
+  /** Persistent thinking-time defaults; explicit Pro selection remains CLI-only. */
+  thinkingTime?: Exclude<ThinkingTimeLevel, "pro">;
   /** Browser-only research mode. "deep" activates ChatGPT Deep Research. */
   researchMode?: BrowserResearchMode;
   /** Archive completed ChatGPT conversations after local artifacts are saved. */

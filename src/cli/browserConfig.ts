@@ -195,7 +195,7 @@ export async function buildBrowserConfig(
     : shouldUseOverride
       ? desiredModelOverride
       : mapModelToBrowserLabel(options.model);
-  const thinkingTime = normalizeThinkingTimeLevel(options.browserThinkingTime) ?? undefined;
+  const thinkingTime = normalizeThinkingTimeLevel(options.browserThinkingTime, true) ?? undefined;
   assertProThinkingTimeTarget(
     thinkingTime,
     (modelStrategy ?? DEFAULT_MODEL_STRATEGY) === "select" ? desiredModel : null,

@@ -68,15 +68,13 @@ describe("summarizeModelRunsForConsult", () => {
       browserThinkingTime: "heavy",
     });
 
-    expect(
+    expect(() =>
       consultInputSchema.parse({
         prompt: "review this plan",
         files: [],
         browserThinkingTime: "pro",
       }),
-    ).toMatchObject({
-      browserThinkingTime: "pro",
-    });
+    ).toThrow();
   });
 
   test("keeps the registered MCP input schema JSON-schema compatible", () => {
@@ -207,40 +205,6 @@ describe("summarizeModelRunsForConsult", () => {
       desiredModel: "GPT-5.2",
       cookieSync: false,
     });
-  });
-
-  test("allows Pro thinking time only for selected GPT-5.6 Sol", () => {
-    expect(
-      buildConsultBrowserConfig({
-        userConfig: {},
-        env: {},
-        runModel: "gpt-5.6-sol",
-        inputModel: "gpt-5.6-sol",
-        browserThinkingTime: "pro",
-      }),
-    ).toMatchObject({
-      desiredModel: "GPT-5.6 Sol",
-      thinkingTime: "pro",
-    });
-
-    expect(() =>
-      buildConsultBrowserConfig({
-        userConfig: {},
-        env: {},
-        runModel: "gpt-5.4",
-        inputModel: "gpt-5.4",
-        browserThinkingTime: "pro",
-      }),
-    ).toThrow(/requires GPT-5\.6 Sol/);
-
-    expect(() =>
-      buildConsultBrowserConfig({
-        userConfig: { browser: { thinkingTime: "pro" } },
-        env: {},
-        runModel: "gpt-5.4",
-        inputModel: "gpt-5.4",
-      }),
-    ).toThrow(/requires GPT-5\.6 Sol/);
   });
 
   test("defaults MCP browser consults to manual login on Windows", () => {

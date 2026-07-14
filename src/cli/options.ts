@@ -159,7 +159,7 @@ export function parseSearchOption(value: string): boolean {
 }
 
 export function parseThinkingTimeOption(value: string): ThinkingTimeLevel {
-  const normalized = normalizeThinkingTimeLevel(value);
+  const normalized = normalizeThinkingTimeLevel(value, true);
   if (normalized) {
     return normalized;
   }

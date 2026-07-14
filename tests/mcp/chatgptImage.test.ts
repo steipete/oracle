@@ -149,17 +149,4 @@ describe("chatgpt_image MCP tool", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toMatch(/requires a ChatGPT\/GPT model/);
   });
-
-  test("rejects Pro thinking time for a non-Sol image request", async () => {
-    const handler = registerHandler();
-    const result = (await handler({
-      dryRun: true,
-      prompt: "Create a small product mockup.",
-      model: "gpt-5.4",
-      browserThinkingTime: "pro",
-    })) as { isError?: boolean; content: Array<{ type: "text"; text: string }> };
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/requires GPT-5\.6 Sol/);
-  });
 });
