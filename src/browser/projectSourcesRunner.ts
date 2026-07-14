@@ -113,7 +113,7 @@ export async function runBrowserProjectSources(
   if (manualLogin) {
     tabLease = await acquireBrowserTabLease(userDataDir, {
       maxConcurrentTabs: config.maxConcurrentTabs,
-      timeoutMs: config.timeoutMs,
+      timeoutMs: config.queueTimeoutMs,
       logger,
       sessionId: "project-sources",
     });

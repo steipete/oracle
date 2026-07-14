@@ -50,6 +50,7 @@ const VALUE_FLAGS = new Set([
   "--browser-cookie-wait",
   "--browser-input-timeout",
   "--browser-max-concurrent-tabs",
+  "--browser-queue-timeout",
   "--browser-model-strategy",
   "--browser-port",
   "--browser-profile-lock-timeout",

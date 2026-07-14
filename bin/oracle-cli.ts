@@ -133,6 +133,7 @@ interface CliOptions extends OptionValues {
   browserAttachmentTimeout?: string;
   browserProfileLockTimeout?: string;
   browserMaxConcurrentTabs?: string;
+  browserQueueTimeout?: string;
   browserCookieWait?: string;
   browserNoCookieSync?: boolean;
   browserInlineCookiesFile?: string;
@@ -687,7 +688,13 @@ program
   .addOption(
     new Option(
       "--browser-max-concurrent-tabs <n>",
-      "Soft limit for concurrent ChatGPT tabs sharing one manual-login profile (default 3).",
+      "Soft limit for concurrent ChatGPT tabs sharing one manual-login profile (default 1).",
+    ).hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--browser-queue-timeout <ms|s|m|h>",
+      "Maximum time to wait for a shared-profile browser slot (default: no limit).",
     ).hideHelp(),
   )
   .addOption(
@@ -974,6 +981,7 @@ function addProjectSourcesCommonOptions(command: Command): Command {
     .option("--browser-profile-lock-timeout <duration>", "Timeout waiting for profile launch lock.")
     .option("--browser-reuse-wait <duration>", "Wait for an existing shared Chrome to appear.")
     .option("--browser-max-concurrent-tabs <n>", "Concurrent tabs allowed for the shared profile.")
+    .option("--browser-queue-timeout <duration>", "Timeout waiting for a shared-profile slot.")
     .option("--browser-cookie-wait <duration>", "Wait before retrying cookie sync.")
     .option("--browser-chrome-profile <profile>", "Chrome profile name for cookie sync.")
     .option("--browser-chrome-path <path>", "Chrome/Chromium executable path.")

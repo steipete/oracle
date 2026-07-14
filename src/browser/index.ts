@@ -162,6 +162,12 @@ function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolea
   return classifyPreservedBrowserError(error, headless) !== null;
 }
 
+function isPromptCommitVerificationError(error: unknown): error is BrowserAutomationError {
+  if (!(error instanceof BrowserAutomationError)) return false;
+  const details = error.details as { stage?: string; code?: string } | undefined;
+  return details?.stage === "submit-prompt" && details.code === "prompt-commit-timeout";
+}
+
 function shouldKeepLocalBrowserOpen(options: {
   effectiveKeepBrowser: boolean;
   preserveBrowserOnError: boolean;
@@ -1038,7 +1044,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   if (manualLogin) {
     tabLease = await acquireBrowserTabLease(userDataDir, {
       maxConcurrentTabs: config.maxConcurrentTabs,
-      timeoutMs: config.timeoutMs,
+      timeoutMs: config.queueTimeoutMs,
       logger,
       sessionId: options.sessionId,
     });
@@ -2210,6 +2216,37 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const normalizedError = error instanceof Error ? error : new Error(String(error));
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
+    if (isPromptCommitVerificationError(normalizedError)) {
+      const runtime = {
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+        promptSubmitted,
+        controllerPid: process.pid,
+      };
+      const reattachable = !usingCopiedProfile && !config.headless;
+      if (reattachable) {
+        preserveBrowserOnError = true;
+      }
+      await emitRuntimeHint();
+      logger(
+        reattachable
+          ? "Prompt submission could not be verified; preserving the browser target for inspection."
+          : "Prompt submission could not be verified; this browser mode cannot preserve the target.",
+      );
+      throw new BrowserAutomationError(
+        normalizedError.message,
+        {
+          ...normalizedError.details,
+          runtime: reattachable ? runtime : undefined,
+          reattachable,
+        },
+        normalizedError,
+      );
+    }
     const preservedErrorKind = classifyPreservedBrowserError(normalizedError, config.headless);
     if (preservedErrorKind === "cloudflare-challenge") {
       if (usingCopiedProfile) {
@@ -2822,7 +2859,7 @@ async function runRemoteBrowserMode(
       await mkdir(remoteLeaseProfileDir, { recursive: true });
       tabLease = await acquireBrowserTabLease(remoteLeaseProfileDir, {
         maxConcurrentTabs: config.maxConcurrentTabs,
-        timeoutMs: config.timeoutMs,
+        timeoutMs: config.queueTimeoutMs,
         logger,
         sessionId: options.sessionId,
         chromeHost: host,
@@ -3647,6 +3684,25 @@ async function runRemoteBrowserMode(
     const normalizedError = error instanceof Error ? error : new Error(String(error));
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
+
+    if (isPromptCommitVerificationError(normalizedError)) {
+      const runtime = {
+        chromeHost: host,
+        chromePort: port,
+        chromeBrowserWSEndpoint: browserWSEndpoint,
+        chromeProfileRoot,
+        chromeTargetId: remoteTargetId ?? undefined,
+        tabUrl: lastUrl,
+        promptSubmitted,
+        controllerPid: process.pid,
+      };
+      await emitRuntimeHint();
+      throw new BrowserAutomationError(
+        normalizedError.message,
+        { ...normalizedError.details, runtime, reattachable: true },
+        normalizedError,
+      );
+    }
 
     if (!socketClosed) {
       logger(`Failed to complete ChatGPT run: ${normalizedError.message}`);

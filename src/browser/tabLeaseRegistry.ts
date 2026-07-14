@@ -31,8 +31,17 @@ export interface BrowserTabLease {
 }
 
 interface BrowserTabLeaseRegistryFile {
-  version: 1;
+  version: 2;
   leases: BrowserTabLeaseRecord[];
+  waiters: BrowserTabWaiterRecord[];
+}
+
+interface BrowserTabWaiterRecord {
+  id: string;
+  pid: number;
+  sessionId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface BrowserTabLeaseDeps {
@@ -76,60 +85,93 @@ export async function acquireBrowserTabLease(
   const startedAt = now();
   let warned = false;
   let lastHeartbeatAt = 0;
+  let leaseAcquired = false;
 
-  for (;;) {
-    const acquired = await withRegistryLock(profileDir, async () => {
-      const registry = await readRegistry(profileDir);
-      const active = pruneStaleLeases(registry.leases, {
-        nowMs: now(),
-        staleMs,
-        isProcessAlive: deps.isProcessAlive ?? isProcessAlive,
-      });
-      if (active.length >= maxConcurrentTabs) {
-        if (active.length !== registry.leases.length) {
-          await writeRegistry(profileDir, { version: 1, leases: active });
+  try {
+    for (;;) {
+      const acquired = await withRegistryLock(profileDir, async () => {
+        const registry = await readRegistry(profileDir);
+        const nowMs = now();
+        const alive = deps.isProcessAlive ?? isProcessAlive;
+        const active = pruneStaleLeases(registry.leases, {
+          nowMs,
+          staleMs,
+          isProcessAlive: alive,
+        });
+        let waiters = pruneStaleWaiters(registry.waiters, {
+          nowMs,
+          staleMs,
+          isProcessAlive: alive,
+        });
+        const timestamp = new Date(nowMs).toISOString();
+        const existingWaiter = waiters.find((waiter) => waiter.id === leaseId);
+        if (existingWaiter) {
+          waiters = waiters.map((waiter) =>
+            waiter.id === leaseId ? { ...waiter, updatedAt: timestamp } : waiter,
+          );
+        } else {
+          waiters.push({
+            id: leaseId,
+            pid,
+            sessionId: options.sessionId,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
         }
-        return null;
+        const queuePosition = waiters.findIndex((waiter) => waiter.id === leaseId);
+        const availableSlots = Math.max(0, maxConcurrentTabs - active.length);
+        if (queuePosition < 0 || queuePosition >= availableSlots) {
+          await writeRegistry(profileDir, { version: 2, leases: active, waiters });
+          return null;
+        }
+        const lease: BrowserTabLeaseRecord = {
+          id: leaseId,
+          pid,
+          sessionId: options.sessionId,
+          chromeHost: options.chromeHost,
+          chromePort: options.chromePort,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        await writeRegistry(profileDir, {
+          version: 2,
+          leases: [...active, lease],
+          waiters: waiters.filter((waiter) => waiter.id !== leaseId),
+        });
+        return lease;
+      });
+
+      if (acquired) {
+        leaseAcquired = true;
+        options.logger?.(
+          `[browser] Acquired ChatGPT browser slot ${leaseId.slice(0, 8)} (${maxConcurrentTabs} max).`,
+        );
+        return {
+          id: leaseId,
+          release: async () => releaseBrowserTabLease(profileDir, leaseId, options.logger),
+          update: async (patch) => updateBrowserTabLease(profileDir, leaseId, patch),
+        };
       }
-      const timestamp = new Date(now()).toISOString();
-      const lease: BrowserTabLeaseRecord = {
-        id: leaseId,
-        pid,
-        sessionId: options.sessionId,
-        chromeHost: options.chromeHost,
-        chromePort: options.chromePort,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      await writeRegistry(profileDir, { version: 1, leases: [...active, lease] });
-      return lease;
-    });
 
-    if (acquired) {
-      options.logger?.(
-        `[browser] Acquired ChatGPT browser slot ${leaseId.slice(0, 8)} (${maxConcurrentTabs} max).`,
-      );
-      return {
-        id: leaseId,
-        release: async () => releaseBrowserTabLease(profileDir, leaseId, options.logger),
-        update: async (patch) => updateBrowserTabLease(profileDir, leaseId, patch),
-      };
+      const elapsed = now() - startedAt;
+      if (!warned || now() - lastHeartbeatAt >= 30_000) {
+        options.logger?.(
+          `[browser] Waiting for ChatGPT browser slot (${maxConcurrentTabs} max, ${Math.round(elapsed / 1000)}s elapsed).`,
+        );
+        warned = true;
+        lastHeartbeatAt = now();
+      }
+      if (timeoutMs > 0 && elapsed >= timeoutMs) {
+        throw new Error(
+          `Timed out waiting for ChatGPT browser slot after ${Math.round(elapsed / 1000)}s (${maxConcurrentTabs} max).`,
+        );
+      }
+      await delay(timeoutMs > 0 ? Math.min(pollMs, timeoutMs - elapsed) : pollMs);
     }
-
-    const elapsed = now() - startedAt;
-    if (!warned || now() - lastHeartbeatAt >= 30_000) {
-      options.logger?.(
-        `[browser] Waiting for ChatGPT browser slot (${maxConcurrentTabs} max, ${Math.round(elapsed / 1000)}s elapsed).`,
-      );
-      warned = true;
-      lastHeartbeatAt = now();
+  } finally {
+    if (!leaseAcquired) {
+      await removeBrowserTabWaiter(profileDir, leaseId).catch(() => undefined);
     }
-    if (timeoutMs > 0 && elapsed >= timeoutMs) {
-      throw new Error(
-        `Timed out waiting for ChatGPT browser slot after ${Math.round(elapsed / 1000)}s (${maxConcurrentTabs} max).`,
-      );
-    }
-    await delay(timeoutMs > 0 ? Math.min(pollMs, timeoutMs - elapsed) : pollMs);
   }
 }
 
@@ -145,7 +187,7 @@ export async function updateBrowserTabLease(
         ? { ...lease, ...patch, id: lease.id, updatedAt: new Date().toISOString() }
         : lease,
     );
-    await writeRegistry(profileDir, { version: 1, leases });
+    await writeRegistry(profileDir, { ...registry, version: 2, leases });
   });
 }
 
@@ -157,7 +199,7 @@ export async function releaseBrowserTabLease(
   await withRegistryLock(profileDir, async () => {
     const registry = await readRegistry(profileDir);
     const leases = registry.leases.filter((lease) => lease.id !== leaseId);
-    await writeRegistry(profileDir, { version: 1, leases });
+    await writeRegistry(profileDir, { ...registry, version: 2, leases });
   }).catch(() => undefined);
   logger?.(`[browser] Released ChatGPT browser slot ${leaseId.slice(0, 8)}.`);
 }
@@ -180,10 +222,15 @@ export async function hasOtherActiveBrowserTabLeases(
       staleMs,
       isProcessAlive: options.isProcessAlive ?? isProcessAlive,
     });
-    if (active.length !== registry.leases.length) {
-      await writeRegistry(profileDir, { version: 1, leases: active });
+    const waiters = pruneStaleWaiters(registry.waiters, {
+      nowMs: now(),
+      staleMs,
+      isProcessAlive: options.isProcessAlive ?? isProcessAlive,
+    });
+    if (active.length !== registry.leases.length || waiters.length !== registry.waiters.length) {
+      await writeRegistry(profileDir, { ...registry, version: 2, leases: active, waiters });
     }
-    return active.some((lease) => lease.id !== leaseId);
+    return active.some((lease) => lease.id !== leaseId) || waiters.length > 0;
   });
 }
 
@@ -217,14 +264,15 @@ async function readRegistry(profileDir: string): Promise<BrowserTabLeaseRegistry
     const raw = await readFile(registryPath(profileDir), "utf8");
     const parsed = JSON.parse(raw) as BrowserTabLeaseRegistryFile;
     if (!Array.isArray(parsed.leases)) {
-      return { version: 1, leases: [] };
+      return { version: 2, leases: [], waiters: [] };
     }
     return {
-      version: 1,
+      version: 2,
       leases: parsed.leases.filter(isLeaseRecord),
+      waiters: Array.isArray(parsed.waiters) ? parsed.waiters.filter(isWaiterRecord) : [],
     };
   } catch {
-    return { version: 1, leases: [] };
+    return { version: 2, leases: [], waiters: [] };
   }
 }
 
@@ -256,9 +304,41 @@ function pruneStaleLeases(
   });
 }
 
+function pruneStaleWaiters(
+  waiters: BrowserTabWaiterRecord[],
+  options: { nowMs: number; staleMs: number; isProcessAlive: (pid: number) => boolean },
+): BrowserTabWaiterRecord[] {
+  return waiters.filter((waiter) => {
+    if (!options.isProcessAlive(waiter.pid)) return false;
+    const updatedAt = Date.parse(waiter.updatedAt);
+    return !Number.isFinite(updatedAt) || options.nowMs - updatedAt <= options.staleMs;
+  });
+}
+
+async function removeBrowserTabWaiter(profileDir: string, waiterId: string): Promise<void> {
+  await withRegistryLock(profileDir, async () => {
+    const registry = await readRegistry(profileDir);
+    const waiters = registry.waiters.filter((waiter) => waiter.id !== waiterId);
+    if (waiters.length !== registry.waiters.length) {
+      await writeRegistry(profileDir, { ...registry, version: 2, waiters });
+    }
+  });
+}
+
 function isLeaseRecord(value: unknown): value is BrowserTabLeaseRecord {
   if (!value || typeof value !== "object") return false;
   const record = value as BrowserTabLeaseRecord;
+  return (
+    typeof record.id === "string" &&
+    typeof record.pid === "number" &&
+    typeof record.createdAt === "string" &&
+    typeof record.updatedAt === "string"
+  );
+}
+
+function isWaiterRecord(value: unknown): value is BrowserTabWaiterRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as BrowserTabWaiterRecord;
   return (
     typeof record.id === "string" &&
     typeof record.pid === "number" &&

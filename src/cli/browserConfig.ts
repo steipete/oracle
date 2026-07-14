@@ -64,6 +64,7 @@ export interface BrowserFlagOptions {
   browserReuseWait?: string;
   browserProfileLockTimeout?: string;
   browserMaxConcurrentTabs?: string;
+  browserQueueTimeout?: string;
   browserAutoReattachDelay?: string;
   browserAutoReattachInterval?: string;
   browserAutoReattachTimeout?: string;
@@ -227,6 +228,9 @@ export async function buildBrowserConfig(
       ? parseDuration(options.browserProfileLockTimeout, 0)
       : undefined,
     maxConcurrentTabs: parseMaxConcurrentTabs(options.browserMaxConcurrentTabs),
+    queueTimeoutMs: options.browserQueueTimeout
+      ? parseDuration(options.browserQueueTimeout, 0)
+      : undefined,
     autoReattachDelayMs: options.browserAutoReattachDelay
       ? parseDuration(options.browserAutoReattachDelay, 0)
       : undefined,

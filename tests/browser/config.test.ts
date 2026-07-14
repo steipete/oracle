@@ -7,12 +7,14 @@ import { CHATGPT_URL, DEEP_RESEARCH_DEFAULT_TIMEOUT_MS } from "../../src/browser
 describe("resolveBrowserConfig", () => {
   const originalProfileDir = process.env.ORACLE_BROWSER_PROFILE_DIR;
   const originalMaxTabs = process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS;
+  const originalQueueTimeout = process.env.ORACLE_BROWSER_QUEUE_TIMEOUT;
 
   beforeEach(() => {
     // Isolate from the caller's environment: a developer/CI export of the max-tabs
     // override must not leak into tests that assert built-in defaults. afterEach
     // below still restores the caller's original value once the suite finishes.
     delete process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS;
+    delete process.env.ORACLE_BROWSER_QUEUE_TIMEOUT;
   });
 
   afterEach(() => {
@@ -25,6 +27,11 @@ describe("resolveBrowserConfig", () => {
       delete process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS;
     } else {
       process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS = originalMaxTabs;
+    }
+    if (originalQueueTimeout === undefined) {
+      delete process.env.ORACLE_BROWSER_QUEUE_TIMEOUT;
+    } else {
+      process.env.ORACLE_BROWSER_QUEUE_TIMEOUT = originalQueueTimeout;
     }
   });
 
@@ -39,6 +46,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.profileLockTimeoutMs).toBe(300_000);
     expect(resolved.attachmentTimeoutMs).toBe(45_000);
     expect(resolved.maxConcurrentTabs).toBe(1);
+    expect(resolved.queueTimeoutMs).toBe(0);
     expect(resolved.researchMode).toBe("off");
     expect(resolved.archiveConversations).toBe("auto");
   });
@@ -57,6 +65,7 @@ describe("resolveBrowserConfig", () => {
       browserTabRef: "current",
       debug: true,
       maxConcurrentTabs: 5,
+      queueTimeoutMs: 90_000,
       researchMode: "deep",
       archiveConversations: "never",
     });
@@ -72,8 +81,18 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.browserTabRef).toBe("current");
     expect(resolved.debug).toBe(true);
     expect(resolved.maxConcurrentTabs).toBe(5);
+    expect(resolved.queueTimeoutMs).toBe(90_000);
     expect(resolved.researchMode).toBe("deep");
     expect(resolved.archiveConversations).toBe("never");
+  });
+
+  test("resolves an independent queue timeout from config and environment", () => {
+    process.env.ORACLE_BROWSER_QUEUE_TIMEOUT = "2m";
+    expect(resolveBrowserConfig(undefined).queueTimeoutMs).toBe(120_000);
+    expect(resolveBrowserConfig({ queueTimeoutMs: 45_000 }).queueTimeoutMs).toBe(45_000);
+
+    process.env.ORACLE_BROWSER_QUEUE_TIMEOUT = "invalid";
+    expect(resolveBrowserConfig(undefined).queueTimeoutMs).toBe(0);
   });
 
   test("allows temporary chat URLs when desiredModel is Pro", () => {

@@ -96,6 +96,7 @@ See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrout
 | `--browser-reuse-wait`                                                         | Wait for shared Chrome profile before launching.             |
 | `--browser-profile-lock-timeout`                                               | Wait for the manual-login profile lock.                      |
 | `--browser-max-concurrent-tabs`                                                | Soft limit for shared-profile parallel runs (default 1).     |
+| `--browser-queue-timeout`                                                      | FIFO queue wait budget; default 0 waits indefinitely.        |
 | `--browser-keep-browser`                                                       | Keep the browser open after the run.                         |
 | `--browser-headless`, `--browser-hide-window`                                  | Visibility controls.                                         |
 | `--browser-attachments <auto\|never\|always>`                                  | Attach files inline vs upload.                               |

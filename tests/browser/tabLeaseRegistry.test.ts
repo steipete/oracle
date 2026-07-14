@@ -97,6 +97,90 @@ describe("tabLeaseRegistry", () => {
     }
   });
 
+  test("serves four independent clients in FIFO order without starving an older waiter", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    const waitForQueuedSession = async (sessionId: string) => {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const registry = JSON.parse(
+          await readFile(path.join(dir, "oracle-tab-leases.json"), "utf8"),
+        ) as { waiters?: Array<{ sessionId?: string }> };
+        if (registry.waiters?.some((waiter) => waiter.sessionId === sessionId)) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error(`Timed out waiting for ${sessionId} to enter the queue`);
+    };
+
+    try {
+      const acquired: string[] = [];
+      const first = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 1,
+        pollMs: 25,
+        sessionId: "client-b",
+      });
+      acquired.push("client-b");
+
+      const startQueuedClient = (sessionId: string) =>
+        acquireBrowserTabLease(dir, {
+          maxConcurrentTabs: 1,
+          pollMs: 25,
+          sessionId,
+        }).then((lease) => {
+          acquired.push(sessionId);
+          return lease;
+        });
+
+      const clientA = startQueuedClient("client-a");
+      await waitForQueuedSession("client-a");
+      const clientC = startQueuedClient("client-c");
+      await waitForQueuedSession("client-c");
+      const clientD = startQueuedClient("client-d");
+      await waitForQueuedSession("client-d");
+
+      await first.release();
+      const leaseA = await clientA;
+      expect(acquired).toEqual(["client-b", "client-a"]);
+      await leaseA.release();
+
+      const leaseC = await clientC;
+      expect(acquired).toEqual(["client-b", "client-a", "client-c"]);
+      await leaseC.release();
+
+      const leaseD = await clientD;
+      expect(acquired).toEqual(["client-b", "client-a", "client-c", "client-d"]);
+      await leaseD.release();
+
+      const registry = JSON.parse(
+        await readFile(path.join(dir, "oracle-tab-leases.json"), "utf8"),
+      ) as { leases: unknown[]; waiters: unknown[] };
+      expect(registry.leases).toEqual([]);
+      expect(registry.waiters).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("removes a waiter after its independent queue budget expires", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    try {
+      const active = await acquireBrowserTabLease(dir, { sessionId: "active" });
+      await expect(
+        acquireBrowserTabLease(dir, {
+          timeoutMs: 75,
+          pollMs: 25,
+          sessionId: "expiring-waiter",
+        }),
+      ).rejects.toThrow(/timed out waiting/i);
+
+      const registry = JSON.parse(
+        await readFile(path.join(dir, "oracle-tab-leases.json"), "utf8"),
+      ) as { waiters: Array<{ sessionId?: string }> };
+      expect(registry.waiters).toEqual([]);
+      await active.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("drops stale leases owned by dead pids", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
     try {
@@ -150,6 +234,36 @@ describe("tabLeaseRegistry", () => {
       expect(await hasOtherActiveBrowserTabLeases(dir, first.id)).toBe(false);
 
       await first.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps shared Chrome alive while a queued client is waiting for handoff", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    try {
+      const active = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 1,
+        pollMs: 25,
+        sessionId: "active-session",
+      });
+      const queuedPromise = acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 1,
+        pollMs: 25,
+        sessionId: "queued-session",
+      });
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const registry = JSON.parse(
+          await readFile(path.join(dir, "oracle-tab-leases.json"), "utf8"),
+        ) as { waiters?: Array<{ sessionId?: string }> };
+        if (registry.waiters?.some((waiter) => waiter.sessionId === "queued-session")) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      expect(await hasOtherActiveBrowserTabLeases(dir, active.id)).toBe(true);
+      await active.release();
+      const queued = await queuedPromise;
+      await queued.release();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -1239,6 +1239,57 @@ describe("performSessionRun", () => {
     expect(logLines).not.toContain("This run did not return cleanly");
   });
 
+  test("terminalizes the sole stored browser model when runOptions uses models", async () => {
+    const automationError = new BrowserAutomationError("queue failed", {
+      stage: "browser-queue",
+    });
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(automationError);
+    const sessionMeta: SessionMetadata = {
+      ...baseSessionMeta,
+      models: [{ model: "gpt-5-pro", status: "running" }],
+    };
+
+    await expect(
+      performSessionRun({
+        sessionMeta,
+        runOptions: {
+          prompt: "neutral",
+          model: "gpt-5-pro" as ModelName,
+          models: ["gpt-5-pro"],
+        },
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow("queue failed");
+
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      "gpt-5-pro",
+      expect.objectContaining({ status: "error" }),
+    );
+    const terminalModelCall = sessionStoreMock.updateModelRun.mock.calls.find(
+      ([, model, update]) => model === "gpt-5-pro" && update.status === "error",
+    );
+    const terminalSessionCall = sessionStoreMock.updateSession.mock.calls.find(
+      ([, update]) => update.status === "error",
+    );
+    expect(terminalModelCall).toBeDefined();
+    expect(terminalSessionCall).toBeDefined();
+    expect(
+      sessionStoreMock.updateModelRun.mock.invocationCallOrder[
+        sessionStoreMock.updateModelRun.mock.calls.indexOf(terminalModelCall!)
+      ],
+    ).toBeLessThan(
+      sessionStoreMock.updateSession.mock.invocationCallOrder[
+        sessionStoreMock.updateSession.mock.calls.indexOf(terminalSessionCall!)
+      ]!,
+    );
+  });
+
   test("preserves persisted runtime hints when browser automation fails without runtime details", async () => {
     const automationError = new BrowserAutomationError(
       "Prompt did not appear in conversation before timeout (send may have failed)",
