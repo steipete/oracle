@@ -36,11 +36,7 @@ export async function ensureModelSelection(
   desiredModel: string,
   logger: BrowserLogger,
   strategy: BrowserModelStrategy = "select",
-  options: {
-    buttonWaitMs?: number;
-    buttonPollMs?: number;
-    allowIndependentProPill?: boolean;
-  } = {},
+  options: { buttonWaitMs?: number; buttonPollMs?: number } = {},
 ): Promise<BrowserModelSelectionEvidence> {
   const buttonWaitMs = options.buttonWaitMs ?? MODEL_BUTTON_WAIT_MS;
   const buttonPollMs = options.buttonPollMs ?? MODEL_BUTTON_POLL_MS;
@@ -50,11 +46,7 @@ export async function ensureModelSelection(
   let announcedWait = false;
   for (;;) {
     const outcome = await Runtime.evaluate({
-      expression: buildModelSelectionExpression(
-        desiredModel,
-        strategy,
-        options.allowIndependentProPill === true,
-      ),
+      expression: buildModelSelectionExpression(desiredModel, strategy),
       awaitPromise: true,
       returnByValue: true,
     });
@@ -186,7 +178,6 @@ export function assertResolvedModelSelectionForTest(
 function buildModelSelectionExpression(
   targetModel: string,
   strategy: BrowserModelStrategy,
-  allowIndependentProPill = false,
 ): string {
   const matchers = buildModelMatchersLiteral(targetModel);
   const composerSignalMatchers = buildComposerSignalMatchers(targetModel);
@@ -194,7 +185,6 @@ function buildModelSelectionExpression(
   const idLiteral = JSON.stringify(matchers.testIdTokens);
   const primaryLabelLiteral = JSON.stringify(targetModel);
   const strategyLiteral = JSON.stringify(strategy);
-  const allowIndependentProPillLiteral = JSON.stringify(allowIndependentProPill);
   const composerSignalSelectorLiteral = JSON.stringify(COMPOSER_MODEL_SIGNAL_SELECTOR);
   const composerIncludesLiteral = JSON.stringify(composerSignalMatchers.includesAny);
   const composerExcludesLiteral = JSON.stringify(composerSignalMatchers.excludesAny);
@@ -214,7 +204,6 @@ function buildModelSelectionExpression(
     const TEST_IDS = ${idLiteral};
     const PRIMARY_LABEL = ${primaryLabelLiteral};
     const MODEL_STRATEGY = ${strategyLiteral};
-    const ALLOW_INDEPENDENT_PRO_PILL = ${allowIndependentProPillLiteral};
     const COMPOSER_SIGNAL_INCLUDES = ${composerIncludesLiteral};
     const COMPOSER_SIGNAL_EXCLUDES = ${composerExcludesLiteral};
     const COMPOSER_SIGNAL_ALLOW_BLANK = ${composerAllowBlankLiteral};
@@ -255,7 +244,7 @@ function buildModelSelectionExpression(
             ? '5-0'
           : null;
     const desiredModelVariant = normalizedTarget.includes(' sol') ? 'sol' : null;
-    const wantsPro = targetWords.includes('pro');
+    const wantsPro = normalizedTarget.includes(' pro') || normalizedTarget.endsWith(' pro') || normalizedTokens.includes('pro');
     const wantsInstant = normalizedTarget.includes('instant');
     const wantsThinking = normalizedTarget.includes('thinking');
     const targetUsesCurrentGpt55Alias =
@@ -451,11 +440,6 @@ function buildModelSelectionExpression(
         !configuredVersionLabel.includes(desiredModelVariant) &&
         !configuredVariant.includes(desiredModelVariant)
       ) return false;
-      if (
-        desiredModelVariant === 'sol' &&
-        labelHasProWord(configuredVariant) &&
-        !ALLOW_INDEPENDENT_PRO_PILL
-      ) return false;
       if (wantsPro) return labelHasProWord(configuredVariant);
       if (wantsInstant) return configuredVariant.includes('instant');
       if (wantsThinking) {
@@ -467,11 +451,7 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) {
         const variant = getConfiguredVariantLabel();
         const version = formatModelOptionLabel(getConfiguredVersionLabel());
-        if (
-          desiredModelVariant === 'sol' &&
-          ALLOW_INDEPENDENT_PRO_PILL &&
-          labelHasProWord(normalizeText(variant))
-        ) return version;
+        if (desiredModelVariant === 'sol' && labelHasProWord(normalizeText(variant))) return version;
         return [variant, version].filter(Boolean).join(' ');
       }
       const composerLabel = getComposerModelLabel();
@@ -482,11 +462,7 @@ function buildModelSelectionExpression(
         versionFromLabel(normalizedComposerLabel) === desiredVersion &&
         normalizedComposerLabel.split(' ').includes(desiredModelVariant)
       ) {
-        if (
-          desiredModelVariant === 'sol' &&
-          ALLOW_INDEPENDENT_PRO_PILL &&
-          hasProComposerPill()
-        ) return PRIMARY_LABEL;
+        if (desiredModelVariant === 'sol' && hasProComposerPill()) return PRIMARY_LABEL;
         return withProPillSignal(composerLabel);
       }
       const buttonLabel = getButtonLabel();
@@ -497,6 +473,7 @@ function buildModelSelectionExpression(
         versionFromLabel(normalizedButton) === desiredVersion &&
         normalizedButton.split(' ').includes(desiredModelVariant)
       ) {
+        if (desiredModelVariant === 'sol' && hasProComposerPill()) return PRIMARY_LABEL;
         return withProPillSignal(buttonLabel);
       }
       const fallbackLabel = formatModelOptionLabel(fallback);
@@ -531,11 +508,6 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) return true;
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
-      if (
-        desiredModelVariant === 'sol' &&
-        hasProComposerPill() &&
-        !ALLOW_INDEPENDENT_PRO_PILL
-      ) return false;
       if (wantsThinking && !wantsPro && hasProComposerPill()) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
@@ -582,7 +554,11 @@ function buildModelSelectionExpression(
       }
       if (wantsThinking && !normalizedLabel.includes('thinking')) return false;
       // Also reject if button has variants we DON'T want
-      if (!wantsPro && normalizedLabel.includes(' pro')) return false;
+      if (
+        !wantsPro &&
+        normalizedLabel.includes(' pro') &&
+        !(desiredModelVariant === 'sol' && hasProComposerPill())
+      ) return false;
       if (!wantsInstant && normalizedLabel.includes('instant')) return false;
       if (!wantsThinking && normalizedLabel.includes('thinking')) return false;
       return true;
@@ -593,13 +569,6 @@ function buildModelSelectionExpression(
     };
     const composerSignalMatchesTarget = () => {
       const signal = readComposerModelSignal();
-      if (
-        desiredModelVariant === 'sol' &&
-        hasProComposerPill() &&
-        !ALLOW_INDEPENDENT_PRO_PILL
-      ) {
-        return false;
-      }
       if (!signal) {
         return COMPOSER_SIGNAL_ALLOW_BLANK;
       }
@@ -609,7 +578,7 @@ function buildModelSelectionExpression(
       if (COMPOSER_SIGNAL_EXCLUDES.some((token) =>
         token &&
         signal.includes(token) &&
-        !(token === 'pro' && desiredModelVariant === 'sol' && ALLOW_INDEPENDENT_PRO_PILL && hasProComposerPill())
+        !(token === 'pro' && desiredModelVariant === 'sol' && hasProComposerPill())
       )) {
         return false;
       }
@@ -1034,9 +1003,7 @@ function buildModelSelectionExpression(
         desiredModelVariant === 'sol' &&
         (labelHasProWord(normalizedText) || normalizeText(testid ?? '').includes('pro'))
       ) return false;
-      if (desiredVersion === '5-6') {
-        return ALLOW_INDEPENDENT_PRO_PILL || !hasProComposerPill();
-      }
+      if (desiredVersion === '5-6') return true;
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };
@@ -1518,7 +1485,6 @@ function buildModelMatchersLiteral(targetModel: string): {
 export function buildModelSelectionExpressionForTest(
   targetModel: string,
   strategy: BrowserModelStrategy = "select",
-  allowIndependentProPill = false,
 ): string {
-  return buildModelSelectionExpression(targetModel, strategy, allowIndependentProPill);
+  return buildModelSelectionExpression(targetModel, strategy);
 }

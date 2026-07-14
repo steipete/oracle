@@ -2,16 +2,14 @@ import { z } from "zod";
 import { THINKING_TIME_INPUT_VALUES, normalizeThinkingTimeLevel } from "../oracle/thinkingTime.js";
 import type { ThinkingTimeLevel } from "../oracle/types.js";
 
-type McpThinkingTimeLevel = Exclude<ThinkingTimeLevel, "pro">;
-
 export const CONSULT_PRESETS = ["chatgpt-pro-heavy"] as const;
 
 export const browserThinkingTimeRawSchema = z.enum(THINKING_TIME_INPUT_VALUES);
 
 export const browserThinkingTimeInputSchema = browserThinkingTimeRawSchema.transform(
-  (value): McpThinkingTimeLevel => {
+  (value): ThinkingTimeLevel => {
     const normalized = normalizeThinkingTimeLevel(value);
-    if (!normalized || normalized === "pro") {
+    if (!normalized) {
       throw new Error(`Unknown browserThinkingTime value: ${value}`);
     }
     return normalized;

@@ -159,12 +159,12 @@ export function parseSearchOption(value: string): boolean {
 }
 
 export function parseThinkingTimeOption(value: string): ThinkingTimeLevel {
-  const normalized = normalizeThinkingTimeLevel(value, true);
+  const normalized = normalizeThinkingTimeLevel(value);
   if (normalized) {
     return normalized;
   }
   throw new InvalidArgumentError(
-    'Thinking time must be one of "light", "standard", "extended", "heavy", "pro", or a ChatGPT UI alias like "instant", "medium", "high", or "extra-high".',
+    'Thinking time must be one of "light", "standard", "extended", "heavy", or a ChatGPT UI alias like "instant", "medium", "high", or "extra-high".',
   );
 }
 

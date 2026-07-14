@@ -16,13 +16,8 @@ const evaluateImmediateModelSelectionExpression = (
   buttonLabel: string,
   composerLabel = "",
   proPillLabel = "",
-  allowIndependentProPill = false,
 ): unknown => {
-  const expression = buildModelSelectionExpressionForTest(
-    targetModel,
-    "select",
-    allowIndependentProPill,
-  );
+  const expression = buildModelSelectionExpressionForTest(targetModel);
   const modelButton = { textContent: buttonLabel };
   const composerSignal = composerLabel ? { textContent: composerLabel } : null;
   const proPill = proPillLabel
@@ -224,7 +219,6 @@ const evaluateIntelligenceModelSelectionExpression = async (
   includeGpt56 = false,
   initialVersion: "5.5" | "5.6" = includeGpt56 ? "5.6" : "5.5",
   preserveButtonLabelOnVersionChange = false,
-  allowIndependentProPill = false,
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -419,11 +413,7 @@ const evaluateIntelligenceModelSelectionExpression = async (
     "aria-label": "Pro Extended",
   });
 
-  const expression = buildModelSelectionExpressionForTest(
-    targetModel,
-    "select",
-    allowIndependentProPill,
-  );
+  const expression = buildModelSelectionExpressionForTest(targetModel);
   const documentStub = {
     querySelector: (selector: string) => {
       if (selector.includes("__composer-pill")) {
@@ -497,9 +487,6 @@ const evaluateIntelligenceModelSelectionExpression = async (
 const evaluateConfiguredModelSelectionExpression = async (
   targetModel: string,
   initialVariant = "Thinking",
-  initialVersion = "5.5",
-  initiallyOpen = false,
-  allowIndependentProPill = false,
 ): Promise<unknown> => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -515,9 +502,9 @@ const evaluateConfiguredModelSelectionExpression = async (
   }
 
   let topMenuOpen = false;
-  let configurationOpen = initiallyOpen;
+  let configurationOpen = false;
   let versionListOpen = false;
-  let selectedVersion = initialVersion;
+  let selectedVersion = "5.5";
   let selectedVariant = initialVariant;
 
   type AttributeValue = string | (() => string);
@@ -670,11 +657,7 @@ const evaluateConfiguredModelSelectionExpression = async (
     versionOption("5.2"),
   ]);
 
-  const expression = buildModelSelectionExpressionForTest(
-    targetModel,
-    "select",
-    allowIndependentProPill,
-  );
+  const expression = buildModelSelectionExpressionForTest(targetModel);
   const documentStub = {
     querySelector: (selector: string) => {
       if (selector.includes("close-button")) {
@@ -989,44 +972,6 @@ describe("browser model selection matchers", () => {
     ).resolves.toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
   });
 
-  it("rejects a carried-over Pro effort when base GPT-5.6 Sol was requested", async () => {
-    await expect(
-      evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "Pro", true, true),
-    ).resolves.toMatchObject({ status: "option-not-found" });
-  });
-
-  it("accepts GPT-5.6 Sol with an explicitly requested independent Pro effort", async () => {
-    await expect(
-      evaluateIntelligenceModelSelectionExpression(
-        "GPT-5.6 Sol",
-        "Pro",
-        true,
-        true,
-        "5.6",
-        false,
-        true,
-      ),
-    ).resolves.toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
-  });
-
-  it("accepts GPT-5.6 Sol composer evidence with a generic button and Pro effort", () => {
-    expect(
-      evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "ChatGPT", "5.6 Sol", "Pro", true),
-    ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
-  });
-
-  it("removes an independent Pro effort pill from aggregated composer footer evidence", () => {
-    expect(
-      evaluateImmediateModelSelectionExpression(
-        "GPT-5.6 Sol",
-        "ChatGPT",
-        "5.6 SolPro",
-        "Pro",
-        true,
-      ),
-    ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
-  });
-
   it("reports GPT-5.6 Sol instead of a localized Intelligence effort pill", async () => {
     await expect(
       evaluateIntelligenceModelSelectionExpression("GPT-5.6 Sol", "极速", true, true),
@@ -1044,29 +989,26 @@ describe("browser model selection matchers", () => {
     expect(result).toBeInstanceOf(Promise);
   });
 
-  it("keeps Sol version evidence distinct from the independent Pro effort", () => {
+  it("keeps an inline Sol Pro model label distinct", () => {
     const inlinePro = evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Sol Pro");
     expect(inlinePro).toBeInstanceOf(Promise);
+  });
 
-    const separateProPill = evaluateImmediateModelSelectionExpression(
-      "GPT-5.6 Sol",
-      "GPT-5.6 Sol",
-      "5.6 Sol",
-      "Pro",
-    );
-    expect(separateProPill).toBeInstanceOf(Promise);
+  it("accepts GPT-5.6 Sol with an independent Pro effort pill", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Sol", "5.6 Sol", "Pro"),
+    ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
+  });
 
-    const explicitlyAllowedProPill = evaluateImmediateModelSelectionExpression(
-      "GPT-5.6 Sol",
-      "GPT-5.6 Sol",
-      "5.6 Sol",
-      "Pro",
-      true,
-    );
-    expect(explicitlyAllowedProPill).toEqual({
-      status: "already-selected",
-      label: "GPT-5.6 Sol",
-    });
+  it("accepts an aggregated Sol label only with an independent Pro effort pill", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression(
+        "GPT-5.6 Sol",
+        "GPT-5.6 Sol Pro",
+        "GPT-5.6 Sol Pro",
+        "Pro",
+      ),
+    ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
   });
 
   it("includes real pointer coordinates when opening version submenus", () => {
@@ -1585,13 +1527,13 @@ describe("browser model selection matchers", () => {
     });
   });
 
-  it("accepts configured GPT-5.6 Sol with the independent Pro effort selected", async () => {
-    await expect(
-      evaluateConfiguredModelSelectionExpression("GPT-5.6 Sol", "Pro", "5.6 Sol", true, true),
-    ).resolves.toEqual({
-      status: "already-selected",
-      label: "5.6 Sol",
-    });
+  it("accepts configured GPT-5.6 Sol with independent Pro effort", async () => {
+    await expect(evaluateConfiguredModelSelectionExpression("GPT-5.6 Sol", "Pro")).resolves.toEqual(
+      {
+        status: "switched",
+        label: "5.6 Sol",
+      },
+    );
   });
 
   it("selects the requested variant after changing Configure versions", async () => {
