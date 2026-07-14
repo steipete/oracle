@@ -5,7 +5,7 @@ import type { BrowserLogger } from "./types.js";
 import { isProcessAlive } from "./profileState.js";
 import { delay } from "./utils.js";
 
-export const DEFAULT_MAX_CONCURRENT_CHATGPT_TABS = 3;
+export const DEFAULT_MAX_CONCURRENT_CHATGPT_TABS = 1;
 const REGISTRY_FILENAME = "oracle-tab-leases.json";
 const REGISTRY_LOCK_DIRNAME = "oracle-tab-leases.lock";
 const DEFAULT_POLL_MS = 1000;

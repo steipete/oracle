@@ -10,10 +10,40 @@ import {
 
 describe("tabLeaseRegistry", () => {
   test("normalizes the concurrent tab limit", () => {
-    expect(normalizeMaxConcurrentTabs(undefined)).toBe(3);
+    expect(normalizeMaxConcurrentTabs(undefined)).toBe(1);
     expect(normalizeMaxConcurrentTabs("4")).toBe(4);
-    expect(normalizeMaxConcurrentTabs(0)).toBe(3);
-    expect(normalizeMaxConcurrentTabs("nope")).toBe(3);
+    expect(normalizeMaxConcurrentTabs(0)).toBe(1);
+    expect(normalizeMaxConcurrentTabs("nope")).toBe(1);
+  });
+
+  test("holds the default slot until the active run releases it", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    try {
+      const first = await acquireBrowserTabLease(dir, {
+        pollMs: 25,
+        timeoutMs: 500,
+        sessionId: "streaming-session",
+      });
+      let secondAcquired = false;
+      const secondPromise = acquireBrowserTabLease(dir, {
+        pollMs: 25,
+        timeoutMs: 1000,
+        sessionId: "queued-session",
+      }).then((lease) => {
+        secondAcquired = true;
+        return lease;
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(secondAcquired).toBe(false);
+
+      await first.release();
+      const second = await secondPromise;
+      expect(secondAcquired).toBe(true);
+      await second.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("queues when the max concurrent tab limit is reached", async () => {

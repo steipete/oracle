@@ -1350,8 +1350,8 @@ describe("performSessionRun", () => {
 
     const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({
-      status: "running",
-      response: { status: "running", incompleteReason: "chrome-disconnected" },
+      status: "error",
+      response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
       browser: expect.objectContaining({
         runtime: expect.objectContaining({ chromePort: 9222 }),
         modelSelection: expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
@@ -1360,11 +1360,14 @@ describe("performSessionRun", () => {
     expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
       baseSessionMeta.id,
       "gpt-5.2-pro",
-      expect.objectContaining({ status: "running" }),
+      expect.objectContaining({
+        status: "error",
+        response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
+      }),
     );
     const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
     expect(logLines).toContain(
-      "Chrome disconnected before completion; keeping session running for reattach.",
+      "Chrome disconnected before completion; marking session error for reattach.",
     );
     expect(logLines).toContain("oracle session sess-1 --render");
   });

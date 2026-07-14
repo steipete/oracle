@@ -578,15 +578,23 @@ export async function performSessionRun({
         });
         throw error;
       }
-      log(dim("Chrome disconnected before completion; keeping session running for reattach."));
+      const completedAt = new Date().toISOString();
+      log(dim("Chrome disconnected before completion; marking session error for reattach."));
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
-          status: "running",
-          completedAt: undefined,
+          status: "error",
+          completedAt,
+          response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
+          error: {
+            category: userError.category,
+            message: userError.message,
+            details: userError.details,
+          },
         });
       }
       await sessionStore.updateSession(sessionMeta.id, {
-        status: "running",
+        status: "error",
+        completedAt,
         errorMessage: message,
         mode,
         browser: {
@@ -594,7 +602,12 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: runtime ?? currentBrowser?.runtime,
         },
-        response: { status: "running", incompleteReason: "chrome-disconnected" },
+        response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
+        error: {
+          category: userError.category,
+          message: userError.message,
+          details: userError.details,
+        },
       });
       logBrowserReattachGuidance(recoverableRuntime);
       return;

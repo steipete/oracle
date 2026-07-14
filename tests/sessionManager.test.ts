@@ -266,9 +266,26 @@ describe("session lifecycle", () => {
         },
       },
     });
+    await sessionModule.updateModelRunMetadata(meta.id, "gpt-5.2-pro", {
+      status: "running",
+    });
     const refreshed = await sessionModule.readSessionMetadata(meta.id);
     expect(refreshed?.status).toBe("error");
     expect(refreshed?.errorMessage).toMatch(/chrome/i);
+    expect(refreshed?.response).toMatchObject({
+      status: "incomplete",
+      incompleteReason: "chrome-disconnected",
+    });
+    expect(refreshed?.models).toEqual([
+      expect.objectContaining({
+        model: "gpt-5.2-pro",
+        status: "error",
+        response: expect.objectContaining({
+          status: "incomplete",
+          incompleteReason: "chrome-disconnected",
+        }),
+      }),
+    ]);
     const rawBeforeList = JSON.parse(
       await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
     );
@@ -279,6 +296,7 @@ describe("session lifecycle", () => {
     );
     expect(rawAfterList.status).toBe("error");
     expect(rawAfterList.errorMessage).toMatch(/chrome/i);
+    expect(rawAfterList.models[0].status).toBe("error");
   });
 });
 

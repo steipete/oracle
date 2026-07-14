@@ -2370,11 +2370,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         ).catch(() => false);
       }
     }
-    if (tabLease) {
-      const handle = tabLease;
-      tabLease = null;
-      await handle.release().catch(() => undefined);
-    }
     removeDialogHandler?.();
     removeTerminationHooks?.();
     if (!keepBrowserOpen) {
@@ -2418,6 +2413,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     if (cleanupProfileLock) {
       const handle = cleanupProfileLock;
       cleanupProfileLock = null;
+      await handle.release().catch(() => undefined);
+    }
+    if (tabLease) {
+      const handle = tabLease;
+      tabLease = null;
       await handle.release().catch(() => undefined);
     }
   }
@@ -3682,11 +3682,6 @@ async function runRemoteBrowserMode(
       // ignore
     }
     removeDialogHandler?.();
-    if (tabLease) {
-      const handle = tabLease;
-      tabLease = null;
-      await handle.release().catch(() => undefined);
-    }
     if (
       shouldCloseOwnedRunTargetAfterRun({
         runStatus,
@@ -3695,6 +3690,11 @@ async function runRemoteBrowserMode(
       })
     ) {
       await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
+    }
+    if (tabLease) {
+      const handle = tabLease;
+      tabLease = null;
+      await handle.release().catch(() => undefined);
     }
     // Don't kill remote Chrome - it's not ours to manage
     const totalSeconds = (Date.now() - startedAt) / 1000;

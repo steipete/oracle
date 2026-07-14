@@ -39,7 +39,7 @@ JSON5 parsing, so trailing commas and comments are allowed.
     assistantRecheckTimeoutMs: 120000, // time budget for the recheck attempt (default: 2m)
     reuseChromeWaitMs: 10000, // wait for a shared Chrome profile to appear before launching (parallel runs)
     profileLockTimeoutMs: 300000, // wait for the manual-login profile lock before sending (parallel runs)
-    maxConcurrentTabs: 3, // soft limit for concurrent ChatGPT tabs using one manual-login profile (or set ORACLE_BROWSER_MAX_CONCURRENT_TABS)
+    maxConcurrentTabs: 1, // serialize ChatGPT runs using one manual-login profile (or set ORACLE_BROWSER_MAX_CONCURRENT_TABS)
     autoReattachDelayMs: 0, // delay before starting periodic auto-reattach attempts (0 = disabled)
     autoReattachIntervalMs: 0, // interval between auto-reattach attempts (0 = disabled)
     autoReattachTimeoutMs: 120000, // time budget per auto-reattach attempt (default: 2m)

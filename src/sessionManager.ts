@@ -963,19 +963,39 @@ async function markDeadBrowser(
   if (signals.length === 0 || signals.some(Boolean)) {
     return meta;
   }
+  const completedAt = new Date().toISOString();
   const response = meta.response
     ? {
         ...meta.response,
-        status: "error",
+        status: "incomplete",
         incompleteReason: meta.response.incompleteReason ?? "chrome-disconnected",
       }
-    : { status: "error", incompleteReason: "chrome-disconnected" };
+    : { status: "incomplete", incompleteReason: "chrome-disconnected" };
+  const models = meta.models?.map((model) =>
+    model.status === "running"
+      ? {
+          ...model,
+          status: "error" as const,
+          completedAt,
+          response: {
+            ...model.response,
+            status: "incomplete",
+            incompleteReason: model.response?.incompleteReason ?? "chrome-disconnected",
+          },
+          error: {
+            category: "browser-automation",
+            message: "Browser session ended (Chrome is no longer reachable)",
+          },
+        }
+      : model,
+  );
   const updated: SessionMetadata = {
     ...meta,
     status: "error",
     errorMessage: "Browser session ended (Chrome is no longer reachable)",
-    completedAt: new Date().toISOString(),
+    completedAt,
     response,
+    models,
   };
   if (persist) {
     await fs.writeFile(metaPath(meta.id), JSON.stringify(updated, null, 2), "utf8");
