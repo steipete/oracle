@@ -1336,6 +1336,7 @@ describe("performSessionRun", () => {
       );
       throw automationError;
     });
+    vi.mocked(resumeBrowserSession).mockRejectedValueOnce(new Error("target not ready"));
 
     await performSessionRun({
       sessionMeta: baseSessionMeta,
@@ -1348,6 +1349,7 @@ describe("performSessionRun", () => {
       version: cliVersion,
     });
 
+    expect(vi.mocked(resumeBrowserSession)).toHaveBeenCalledTimes(1);
     const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
     expect(finalUpdate).toMatchObject({
       status: "running",
@@ -1367,6 +1369,73 @@ describe("performSessionRun", () => {
       "Chrome disconnected before completion; keeping session running for reattach.",
     );
     expect(logLines).toContain("oracle session sess-1 --render");
+    expect(logLines).toContain("Auto-reattach attempt 1");
+  });
+
+  test("auto-reattaches after connection loss and marks session completed", async () => {
+    const automationError = new BrowserAutomationError(
+      "Chrome DevTools client disconnected before oracle finished; the browser target appears still alive.",
+      {
+        stage: "connection-lost",
+        recoverableDisconnect: true,
+        disconnectCause: "cdp-client-disconnect",
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          chromeTargetId: "TARGET-1",
+          promptSubmitted: true,
+        },
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async (_args, deps) => {
+      await deps?.persistRuntimeHint?.(
+        {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          chromeTargetId: "TARGET-1",
+          promptSubmitted: true,
+        },
+        {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-03T00:00:00.000Z",
+        },
+      );
+      throw automationError;
+    });
+    vi.mocked(resumeBrowserSession).mockResolvedValueOnce({
+      answerText: "recovered answer",
+      answerMarkdown: "recovered **answer**",
+    });
+    vi.mocked(ensureSessionArtifacts).mockResolvedValueOnce([
+      { kind: "transcript", path: "/tmp/transcript.md" },
+    ]);
+
+    await performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    expect(vi.mocked(resumeBrowserSession)).toHaveBeenCalledTimes(1);
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "completed",
+      response: { status: "completed" },
+    });
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).toContain("Auto-reattach succeeded; session marked completed.");
   });
 
   test("marks copied-profile connection loss as non-reattachable", async () => {

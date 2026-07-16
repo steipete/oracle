@@ -75,6 +75,11 @@ import {
   writeDevToolsActivePort,
 } from "./profileState.js";
 import {
+  connectionLostUserMessage,
+  isRecoverableChromeDisconnect,
+  probeChromeTargetLiveness,
+} from "./cdpLiveness.js";
+import {
   acquireBrowserTabLease,
   hasOtherActiveBrowserTabLeases,
   type BrowserTabLease,
@@ -1156,12 +1161,41 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const disconnectPromise = new Promise<never>((_, reject) => {
       client?.on("disconnect", () => {
         connectionClosedUnexpectedly = true;
-        logger("Chrome window closed; attempting to abort run.");
-        reject(
-          new Error(
-            "Chrome window closed before oracle finished. Please keep it open until completion.",
-          ),
-        );
+        void (async () => {
+          const liveness = await probeChromeTargetLiveness({
+            host: chromeHost,
+            port: chrome.port,
+            targetId: lastTargetId ?? isolatedTargetId,
+          });
+          const recoverable = isRecoverableChromeDisconnect(liveness);
+          if (recoverable) {
+            logger(
+              "CDP client disconnected; Chrome/target still reachable. Leaving run recoverable for reattach.",
+            );
+          } else {
+            logger("Chrome window closed; attempting to abort run.");
+          }
+          reject(
+            new BrowserAutomationError(connectionLostUserMessage({ recoverable }), {
+              stage: "connection-lost",
+              recoverableDisconnect: recoverable,
+              disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
+              runtime: {
+                chromePid: chrome.pid,
+                chromePort: chrome.port,
+                chromeHost,
+                userDataDir,
+                chromeTargetId: lastTargetId ?? isolatedTargetId ?? undefined,
+                tabUrl: liveness.matchedUrl ?? lastUrl,
+                conversationId: (liveness.matchedUrl ?? lastUrl)
+                  ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+                  : undefined,
+                promptSubmitted,
+                controllerPid: process.pid,
+              },
+            }),
+          );
+        })();
       });
     });
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
@@ -2273,21 +2307,38 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       throw normalizedError;
     }
     if ((config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") && normalizedError.stack) {
-      logger(`Chrome window closed before completion: ${normalizedError.message}`);
+      logger(`Chrome connection lost before completion: ${normalizedError.message}`);
       logger(normalizedError.stack);
     }
     await emitRuntimeHint();
+    if (
+      normalizedError instanceof BrowserAutomationError &&
+      (normalizedError.details as { stage?: string } | undefined)?.stage === "connection-lost"
+    ) {
+      throw normalizedError;
+    }
+    const liveness = await probeChromeTargetLiveness({
+      host: chromeHost,
+      port: chrome.port,
+      targetId: lastTargetId ?? isolatedTargetId,
+    });
+    const recoverable = isRecoverableChromeDisconnect(liveness);
     throw new BrowserAutomationError(
-      "Chrome window closed before oracle finished. Please keep it open until completion.",
+      connectionLostUserMessage({ recoverable }),
       {
         stage: "connection-lost",
+        recoverableDisconnect: recoverable,
+        disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
         runtime: {
           chromePid: chrome.pid,
           chromePort: chrome.port,
           chromeHost,
           userDataDir,
           chromeTargetId: lastTargetId,
-          tabUrl: lastUrl,
+          tabUrl: liveness.matchedUrl ?? lastUrl,
+          conversationId: (liveness.matchedUrl ?? lastUrl)
+            ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+            : undefined,
           promptSubmitted,
           controllerPid: process.pid,
         },
@@ -3656,15 +3707,27 @@ async function runRemoteBrowserMode(
       throw normalizedError;
     }
 
-    throw new BrowserAutomationError("Remote Chrome connection lost before Oracle finished.", {
+    const liveness = await probeChromeTargetLiveness({
+      host,
+      port,
+      targetId: remoteTargetId,
+      browserWSEndpoint,
+    });
+    const recoverable = isRecoverableChromeDisconnect(liveness);
+    throw new BrowserAutomationError(connectionLostUserMessage({ recoverable, remote: true }), {
       stage: "connection-lost",
+      recoverableDisconnect: recoverable,
+      disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
       runtime: {
         chromeHost: host,
         chromePort: port,
         chromeBrowserWSEndpoint: browserWSEndpoint,
         chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
-        tabUrl: lastUrl,
+        tabUrl: liveness.matchedUrl ?? lastUrl,
+        conversationId: (liveness.matchedUrl ?? lastUrl)
+          ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+          : undefined,
         promptSubmitted,
         controllerPid: process.pid,
       },
