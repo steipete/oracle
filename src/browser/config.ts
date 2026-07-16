@@ -43,7 +43,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   reuseChromeWaitMs: 10_000,
   profileLockTimeoutMs: 300_000,
   maxConcurrentTabs: DEFAULT_MAX_CONCURRENT_CHATGPT_TABS,
-  queueTimeoutMs: 0,
+  queueTimeoutMs: 1_200_000,
   autoReattachDelayMs: 0,
   autoReattachIntervalMs: 0,
   autoReattachTimeoutMs: 120_000,

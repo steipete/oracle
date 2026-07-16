@@ -1,11 +1,11 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import type { BrowserLogger } from "./types.js";
 import { isProcessAlive } from "./profileState.js";
 import { delay } from "./utils.js";
 
-export const DEFAULT_MAX_CONCURRENT_CHATGPT_TABS = 1;
+export const DEFAULT_MAX_CONCURRENT_CHATGPT_TABS = 3;
 const REGISTRY_FILENAME = "oracle-tab-leases.json";
 const REGISTRY_LOCK_DIRNAME = "oracle-tab-leases.lock";
 const DEFAULT_POLL_MS = 1000;
@@ -236,6 +236,7 @@ export async function hasOtherActiveBrowserTabLeases(
 
 async function withRegistryLock<T>(profileDir: string, callback: () => Promise<T>): Promise<T> {
   const lockDir = path.join(profileDir, REGISTRY_LOCK_DIRNAME);
+  await mkdir(profileDir, { recursive: true });
   const startedAt = Date.now();
   for (;;) {
     try {
@@ -281,7 +282,14 @@ async function writeRegistry(
   registry: BrowserTabLeaseRegistryFile,
 ): Promise<void> {
   await mkdir(profileDir, { recursive: true });
-  await writeFile(registryPath(profileDir), `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  const targetPath = registryPath(profileDir);
+  const temporaryPath = `${targetPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+    await rename(temporaryPath, targetPath);
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
 }
 
 function registryPath(profileDir: string): string {

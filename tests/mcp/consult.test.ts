@@ -212,7 +212,7 @@ describe("summarizeModelRunsForConsult", () => {
     expect(config.cookieSync).toBe(process.platform !== "win32");
   });
 
-  test("uses the shared serialized browser default for MCP consults", () => {
+  test("uses the shared browser concurrency default for MCP consults", () => {
     const config = buildConsultBrowserConfig({
       userConfig: {},
       env: {},
@@ -220,7 +220,7 @@ describe("summarizeModelRunsForConsult", () => {
       inputModel: "gpt-5.6-sol",
     });
 
-    expect(resolveBrowserConfig(config).maxConcurrentTabs).toBe(1);
+    expect(resolveBrowserConfig(config).maxConcurrentTabs).toBe(3);
   });
 
   test("lets explicit consult inputs override config defaults", () => {

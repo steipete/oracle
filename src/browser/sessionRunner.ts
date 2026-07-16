@@ -133,6 +133,23 @@ function buildBrowserRunWarnings(args: {
   ];
 }
 
+function runtimeFromBrowserResult(browserResult: BrowserRunResult): BrowserRuntimeMetadata {
+  return {
+    browserTransport: browserResult.browserTransport,
+    chromePid: browserResult.chromePid,
+    chromePort: browserResult.chromePort,
+    chromeHost: browserResult.chromeHost,
+    chromeBrowserWSEndpoint: browserResult.chromeBrowserWSEndpoint,
+    chromeProfileRoot: browserResult.chromeProfileRoot,
+    userDataDir: browserResult.userDataDir,
+    chromeTargetId: browserResult.chromeTargetId,
+    tabUrl: browserResult.tabUrl,
+    conversationId: browserResult.conversationId,
+    promptSubmitted: browserResult.promptSubmitted,
+    controllerPid: browserResult.controllerPid ?? process.pid,
+  };
+}
+
 export async function runBrowserSessionExecution(
   { runOptions, browserConfig, cwd, log }: RunBrowserSessionArgs,
   deps: BrowserSessionRunnerDeps = {},
@@ -181,7 +198,7 @@ export async function runBrowserSessionExecution(
     if (typeof message !== "string") return;
     const shouldAlwaysPrint =
       message.startsWith("[browser] ") &&
-      /archive|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot|browser control|browser guidance|model selection|model picker/i.test(
+      /archive|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot|browser control|browser guidance|model selection|model picker|attachment upload/i.test(
         message,
       );
     if (!runOptions.verbose && !shouldAlwaysPrint) return;
@@ -252,12 +269,26 @@ export async function runBrowserSessionExecution(
   for (const warning of warnings) {
     log(chalk.yellow(`[browser] ${warning.message}`));
   }
-  if (!runOptions.silent) {
-    log(chalk.bold("Answer:"));
-    log(browserResult.answerMarkdown || browserResult.answerText || chalk.dim("(no text output)"));
-    log("");
+  const runtime = runtimeFromBrowserResult(browserResult);
+  if (runOptions.sessionId && browserResult.promptSubmitted !== true) {
+    throw new BrowserAutomationError(
+      "Browser run ended before Oracle verified that the prompt was submitted.",
+      { stage: "submit-prompt", code: "prompt-not-submitted", runtime },
+    );
   }
   const answerText = browserResult.answerMarkdown || browserResult.answerText || "";
+  if (!answerText.trim()) {
+    throw new BrowserAutomationError("Browser run ended without a non-empty assistant response.", {
+      stage: "assistant-timeout",
+      code: "empty-assistant-output",
+      runtime,
+    });
+  }
+  if (!runOptions.silent) {
+    log(chalk.bold("Answer:"));
+    log(answerText);
+    log("");
+  }
   const savedArtifacts = await ensureSessionArtifacts({
     sessionId: runOptions.sessionId,
     prompt: promptArtifacts.composerText,
@@ -267,6 +298,20 @@ export async function runBrowserSessionExecution(
     existingArtifacts: browserResult.artifacts,
     logger: automationLogger,
   });
+  if (runOptions.sessionId) {
+    const transcript = savedArtifacts?.find((artifact) => artifact.kind === "transcript");
+    if (
+      !transcript ||
+      transcript.validation?.ok === false ||
+      typeof transcript.sizeBytes !== "number" ||
+      transcript.sizeBytes <= 0
+    ) {
+      throw new BrowserAutomationError(
+        "Browser run captured an answer but did not persist a non-empty transcript artifact.",
+        { stage: "assistant-timeout", code: "transcript-artifact-missing", runtime },
+      );
+    }
+  }
   const usage = {
     inputTokens: promptArtifacts.estimatedInputTokens,
     outputTokens: browserResult.answerTokens,
@@ -301,20 +346,7 @@ export async function runBrowserSessionExecution(
   return {
     usage,
     elapsedMs: browserResult.tookMs,
-    runtime: {
-      browserTransport: browserResult.browserTransport,
-      chromePid: browserResult.chromePid,
-      chromePort: browserResult.chromePort,
-      chromeHost: browserResult.chromeHost,
-      chromeBrowserWSEndpoint: browserResult.chromeBrowserWSEndpoint,
-      chromeProfileRoot: browserResult.chromeProfileRoot,
-      userDataDir: browserResult.userDataDir,
-      chromeTargetId: browserResult.chromeTargetId,
-      tabUrl: browserResult.tabUrl,
-      conversationId: browserResult.conversationId,
-      promptSubmitted: browserResult.promptSubmitted,
-      controllerPid: browserResult.controllerPid ?? process.pid,
-    },
+    runtime,
     archive: browserResult.archive,
     modelSelection,
     warnings,

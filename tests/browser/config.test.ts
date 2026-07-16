@@ -45,8 +45,8 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.manualLogin).toBe(isWindows);
     expect(resolved.profileLockTimeoutMs).toBe(300_000);
     expect(resolved.attachmentTimeoutMs).toBe(45_000);
-    expect(resolved.maxConcurrentTabs).toBe(1);
-    expect(resolved.queueTimeoutMs).toBe(0);
+    expect(resolved.maxConcurrentTabs).toBe(3);
+    expect(resolved.queueTimeoutMs).toBe(1_200_000);
     expect(resolved.researchMode).toBe("off");
     expect(resolved.archiveConversations).toBe("auto");
   });
@@ -92,7 +92,7 @@ describe("resolveBrowserConfig", () => {
     expect(resolveBrowserConfig({ queueTimeoutMs: 45_000 }).queueTimeoutMs).toBe(45_000);
 
     process.env.ORACLE_BROWSER_QUEUE_TIMEOUT = "invalid";
-    expect(resolveBrowserConfig(undefined).queueTimeoutMs).toBe(0);
+    expect(resolveBrowserConfig(undefined).queueTimeoutMs).toBe(1_200_000);
   });
 
   test("allows temporary chat URLs when desiredModel is Pro", () => {
@@ -134,14 +134,14 @@ describe("resolveBrowserConfig", () => {
     expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(5);
 
     process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS = "0";
-    expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(1);
+    expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(3);
 
     process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS = "not-a-number";
-    expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(1);
+    expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(3);
 
     for (const malformed of ["5junk", "2.5", "1e2"]) {
       process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS = malformed;
-      expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(1);
+      expect(resolveBrowserConfig(undefined).maxConcurrentTabs).toBe(3);
     }
   });
 

@@ -780,9 +780,17 @@ async function runSubmissionWithRecovery({
       }
 
       const isPromptTooLarge = hasBrowserErrorCode(error, "prompt-too-large");
-      if (fallbackSubmission && isPromptTooLarge && !usedFallbackSubmission) {
+      const isAttachmentUploadTimeout = hasBrowserErrorCode(error, "attachment-upload-timeout");
+      const fallbackDirectionIsSafe =
+        (isPromptTooLarge && fallbackSubmission && fallbackSubmission.attachments.length > 0) ||
+        (isAttachmentUploadTimeout && fallbackSubmission?.attachments.length === 0);
+      if (fallbackSubmission && fallbackDirectionIsSafe && !usedFallbackSubmission) {
         usedFallbackSubmission = true;
-        logger("[browser] Inline prompt too large; retrying with file uploads.");
+        logger(
+          isPromptTooLarge
+            ? "[browser] Inline prompt too large; retrying with file uploads."
+            : "[browser] Attachment upload stalled; retrying eligible text files inline.",
+        );
         await prepareFallbackSubmission();
         currentPrompt = fallbackSubmission.prompt;
         currentAttachments = fallbackSubmission.attachments;

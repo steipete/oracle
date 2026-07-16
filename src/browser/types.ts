@@ -126,8 +126,9 @@ export interface BrowserRunOptions {
   prompt: string;
   attachments?: BrowserAttachment[];
   /**
-   * Optional secondary submission to try if the initial prompt is rejected by ChatGPT
-   * (e.g. inline file paste exceeds composer limits). Intended for auto inline->upload fallback.
+   * Optional secondary submission used once when ChatGPT rejects an inline prompt or an
+   * attachment upload stalls. The prompt assembler only creates upload->inline fallbacks for
+   * eligible text-only inputs that fit the bounded composer budget.
    */
   fallbackSubmission?: { prompt: string; attachments: BrowserAttachment[] };
   config?: BrowserAutomationConfig;

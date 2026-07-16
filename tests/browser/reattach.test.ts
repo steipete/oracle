@@ -224,6 +224,32 @@ describe("resumeBrowserSession", () => {
     expect(recoverSession).toHaveBeenCalled();
   });
 
+  test("fails closed when the recorded target is gone without a conversation URL", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      tabUrl: "https://chatgpt.com/",
+      promptSubmitted: true,
+    };
+    const recoverSession = vi.fn(async () => ({
+      answerText: "unexpected",
+      answerMarkdown: "unexpected",
+    }));
+    const logger = vi.fn() as BrowserLogger;
+
+    await expect(
+      resumeBrowserSession(runtime, {}, logger, {
+        listTargets: vi.fn(async () => {
+          throw new Error("connect ECONNREFUSED 127.0.0.1:51559");
+        }),
+        recoverSession,
+      }),
+    ).rejects.toMatchObject({
+      details: expect.objectContaining({ code: "conversation-url-missing" }),
+    });
+    expect(recoverSession).not.toHaveBeenCalled();
+  });
+
   test("tries live reattach from browser websocket metadata before falling back", async () => {
     const runtime = {
       chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",

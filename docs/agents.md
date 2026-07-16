@@ -95,8 +95,8 @@ Completed runs persist answers, usage, cost, session ids, model choices, and lin
 
 When multiple agents share one signed-in Chrome profile (the manual-login workflow), Oracle coordinates browser tab slots so parallel runs queue instead of crashing. Tune with:
 
-- `--browser-max-concurrent-tabs` — default 1 active tab; additional callers wait in FIFO order.
-- `--browser-queue-timeout` — optional queue-only budget; default 0 waits indefinitely without consuming active browser time.
+- `--browser-max-concurrent-tabs` — default 3 active tabs; additional callers wait in FIFO order.
+- `--browser-queue-timeout` — independent FIFO queue-wait budget (default 20m); set `0` only to opt into an unlimited wait.
 - `--browser-profile-lock-timeout` — wait for the profile lock before sending.
 - `--browser-reuse-wait` — wait for a shared Chrome profile before launching.
 

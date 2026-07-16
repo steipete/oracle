@@ -27,6 +27,55 @@ vi.doMock("../../src/browser/profileState.js", async () => {
   };
 });
 
+describe("terminateChromeProcessGroup", () => {
+  test("lets the Chrome process tree exit on SIGTERM before force-kill fallback", async () => {
+    const { terminateChromeProcessGroup } = await import("../../src/browser/chromeLifecycle.js");
+    const signal = vi.fn();
+    const forceKill = vi.fn();
+    const cleanup = vi.fn();
+    let checks = 0;
+
+    await terminateChromeProcessGroup({ pid: 4321 }, vi.fn() as never, forceKill, cleanup, {
+      signal,
+      isAlive: () => checks++ === 0,
+      wait: async () => undefined,
+      graceMs: 1_000,
+    });
+
+    expect(signal).toHaveBeenCalledWith(process.platform === "win32" ? 4321 : -4321, "SIGTERM");
+    expect(forceKill).not.toHaveBeenCalled();
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  test("falls back to the Chrome pid when it is not a process-group leader", async () => {
+    const { terminateChromeProcessGroup } = await import("../../src/browser/chromeLifecycle.js");
+    const forceKill = vi.fn();
+    const cleanup = vi.fn();
+    const logger = vi.fn();
+    const signal = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("kill ESRCH");
+      })
+      .mockImplementationOnce(() => undefined);
+    const isAlive = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+    await terminateChromeProcessGroup({ pid: 4321 }, logger, forceKill, cleanup, {
+      signal,
+      isAlive,
+      wait: vi.fn(),
+    });
+
+    expect(signal).toHaveBeenNthCalledWith(1, -4321, "SIGTERM");
+    expect(signal).toHaveBeenNthCalledWith(2, 4321, "SIGTERM");
+    expect(forceKill).not.toHaveBeenCalled();
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(logger).toHaveBeenCalledWith(
+      "[browser] Chrome process group -4321 is unavailable; terminating pid 4321 directly.",
+    );
+  });
+});
+
 describe("registerTerminationHooks", () => {
   test("kills Chrome and removes a copied profile on an in-flight signal", async () => {
     const { registerTerminationHooks } = await import("../../src/browser/chromeLifecycle.js");

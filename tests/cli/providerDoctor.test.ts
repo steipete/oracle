@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createServer } from "node:http";
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = path.join(process.cwd(), "bin", "oracle-cli.ts");
@@ -118,7 +119,7 @@ describe("provider doctor CLI", () => {
   );
 
   test(
-    "prints provider preflight without a prompt or session storage",
+    "actively validates provider credentials without a prompt or session storage",
     async () => {
       const env = {
         ...process.env,
@@ -136,11 +137,31 @@ describe("provider doctor CLI", () => {
         ORACLE_HOME_DIR: "/dev/null",
       };
 
+      const server = createServer((request, response) => {
+        const authorized =
+          request.headers.authorization === "Bearer sk-preflight-openai-key" ||
+          request.headers["x-goog-api-key"] === "gk-preflight-gemini-key";
+        response.writeHead(authorized ? 200 : 401, { "content-type": "application/json" });
+        response.end('{"data":[]}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing test server address");
+
       const { stdout } = await execFileAsync(
         process.execPath,
-        ["--import", "tsx", CLI_ENTRY, "--preflight", "--models", "gpt-5.4,gemini-3-pro"],
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--preflight",
+          "--models",
+          "gpt-5.4,gemini-3-pro",
+          "--base-url",
+          `http://127.0.0.1:${address.port}/v1`,
+        ],
         { env },
-      );
+      ).finally(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
       expect(stdout).toContain("Provider preflight");
       expect(stdout).toContain("gpt-5.4: ok");
@@ -150,6 +171,87 @@ describe("provider doctor CLI", () => {
       expect(stdout).not.toContain("Prompt is required");
       expect(stdout).not.toContain("sk-preflight-openai-key");
       expect(stdout).not.toContain("gk-preflight-gemini-key");
+    },
+    CLI_TIMEOUT,
+  );
+
+  test(
+    "fails closed when the provider endpoint is malformed",
+    async () => {
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-preflight-openai-key",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: "/dev/null",
+      };
+
+      await expect(
+        execFileAsync(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            CLI_ENTRY,
+            "--preflight",
+            "--model",
+            "gpt-5.4",
+            "--provider",
+            "openai",
+            "--base-url",
+            "not a url",
+          ],
+          { env },
+        ),
+      ).rejects.toMatchObject({
+        code: 1,
+        stdout: expect.stringMatching(/gpt-5\.4: not ready[\s\S]*Credential validation failed/i),
+      });
+    },
+    CLI_TIMEOUT,
+  );
+
+  test(
+    "fails preflight when the configured credential is rejected",
+    async () => {
+      const server = createServer((_request, response) => {
+        response.writeHead(401, { "content-type": "application/json" });
+        response.end('{"error":"invalid credential"}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing test server address");
+
+      const env = {
+        ...process.env,
+        OPENAI_API_KEY: "sk-rejected-preflight-key",
+        AZURE_OPENAI_ENDPOINT: "",
+        ORACLE_HOME_DIR: "/dev/null",
+      };
+      const error = await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--preflight",
+          "--model",
+          "gpt-5.4",
+          "--provider",
+          "openai",
+          "--base-url",
+          `http://127.0.0.1:${address.port}/v1`,
+        ],
+        { env },
+      )
+        .then(() => null)
+        .catch((caught) => caught as { stdout?: string; code?: number })
+        .finally(() => new Promise<void>((resolve) => server.close(() => resolve())));
+
+      expect(error?.code).toBe(1);
+      expect(error?.stdout).toContain("gpt-5.4: not ready");
+      expect(error?.stdout).toContain("Credential validation failed (HTTP 401)");
+      expect(error?.stdout).not.toContain("sk-rejected-preflight-key");
     },
     CLI_TIMEOUT,
   );

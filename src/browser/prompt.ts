@@ -444,6 +444,16 @@ export async function assembleBrowserPrompt(
       attachments: fallbackAttachments,
       bundled: fallbackBundled,
     };
+  } else if (
+    attachments.length > 0 &&
+    rawUploadAttachments.length === 0 &&
+    inlineComposerText.length <= DEFAULT_BROWSER_INLINE_CHAR_BUDGET
+  ) {
+    fallback = {
+      composerText: inlineComposerText,
+      attachments: [],
+      bundled: null,
+    };
   }
 
   return {

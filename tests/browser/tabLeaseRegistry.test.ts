@@ -10,22 +10,24 @@ import {
 
 describe("tabLeaseRegistry", () => {
   test("normalizes the concurrent tab limit", () => {
-    expect(normalizeMaxConcurrentTabs(undefined)).toBe(1);
+    expect(normalizeMaxConcurrentTabs(undefined)).toBe(3);
     expect(normalizeMaxConcurrentTabs("4")).toBe(4);
-    expect(normalizeMaxConcurrentTabs(0)).toBe(1);
-    expect(normalizeMaxConcurrentTabs("nope")).toBe(1);
+    expect(normalizeMaxConcurrentTabs(0)).toBe(3);
+    expect(normalizeMaxConcurrentTabs("nope")).toBe(3);
   });
 
-  test("holds the default slot until the active run releases it", async () => {
+  test("holds a serialized slot until the active run releases it", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
     try {
       const first = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 1,
         pollMs: 25,
         timeoutMs: 500,
         sessionId: "streaming-session",
       });
       let secondAcquired = false;
       const secondPromise = acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 1,
         pollMs: 25,
         timeoutMs: 1000,
         sessionId: "queued-session",
@@ -162,9 +164,13 @@ describe("tabLeaseRegistry", () => {
   test("removes a waiter after its independent queue budget expires", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
     try {
-      const active = await acquireBrowserTabLease(dir, { sessionId: "active" });
+      const active = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 1,
+        sessionId: "active",
+      });
       await expect(
         acquireBrowserTabLease(dir, {
+          maxConcurrentTabs: 1,
           timeoutMs: 75,
           pollMs: 25,
           sessionId: "expiring-waiter",

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -8,6 +9,34 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import * as profileState from "../../src/browser/profileState.js";
 
 describe("profileState", () => {
+  test("probes DevTools without Node 24 fetch/setTypeOfService", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end('{"Browser":"Chrome"}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test server address");
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new TypeError("setTypeOfService EINVAL"));
+
+    try {
+      await expect(
+        profileState.verifyDevToolsReachable({
+          host: "127.0.0.1",
+          port: address.port,
+          attempts: 1,
+          timeoutMs: 1_000,
+        }),
+      ).resolves.toEqual({ ok: true });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   test("writes DevToolsActivePort to both root and Default", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-profile-"));
     try {
