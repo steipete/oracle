@@ -140,6 +140,12 @@ export interface BrowserRunOptions {
   outputPath?: string;
   /** Additional prompts to submit in the same browser conversation after the initial answer. */
   followUpPrompts?: string[];
+  /**
+   * Close a newly-created completed run tab even when the owning Chrome process
+   * must remain alive. Used by long-lived shared browser services; incomplete
+   * and attached-existing tabs are still preserved for recovery/user ownership.
+   */
+  closeOwnedTabOnComplete?: boolean;
   /** Optional hook to persist runtime info and current model evidence as soon as Chrome is ready. */
   runtimeHintCb?: (
     hint: BrowserRuntimeMetadata,

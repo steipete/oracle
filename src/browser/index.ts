@@ -854,8 +854,13 @@ function shouldCloseOwnedRunTargetAfterRun(options: {
   runStatus: "attempted" | "complete";
   ownsTarget: boolean;
   keepBrowser: boolean;
+  closeOwnedTabOnComplete?: boolean;
 }): boolean {
-  return options.runStatus === "complete" && options.ownsTarget && !options.keepBrowser;
+  return (
+    options.runStatus === "complete" &&
+    options.ownsTarget &&
+    (Boolean(options.closeOwnedTabOnComplete) || !options.keepBrowser)
+  );
 }
 
 function buildSkippedModelSelectionEvidence(
@@ -2311,6 +2316,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         runStatus,
         ownsTarget,
         keepBrowser: effectiveKeepBrowser,
+        closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
       }) &&
       isolatedTargetId &&
       chrome?.port
@@ -3692,6 +3698,7 @@ async function runRemoteBrowserMode(
         runStatus,
         ownsTarget,
         keepBrowser: Boolean(config.keepBrowser),
+        closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
       })
     ) {
       await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);

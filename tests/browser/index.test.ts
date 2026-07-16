@@ -114,12 +114,24 @@ describe("browser run target cleanup", () => {
     ).toBe(true);
   });
 
+  test("closes a completed service-owned tab while keeping shared Chrome alive", () => {
+    expect(
+      __test__.shouldCloseOwnedRunTargetAfterRun({
+        runStatus: "complete",
+        ownsTarget: true,
+        keepBrowser: true,
+        closeOwnedTabOnComplete: true,
+      }),
+    ).toBe(true);
+  });
+
   test("does not close attached or incomplete targets", () => {
     expect(
       __test__.shouldCloseOwnedRunTargetAfterRun({
         runStatus: "complete",
         ownsTarget: false,
         keepBrowser: false,
+        closeOwnedTabOnComplete: true,
       }),
     ).toBe(false);
     expect(
@@ -127,6 +139,7 @@ describe("browser run target cleanup", () => {
         runStatus: "attempted",
         ownsTarget: true,
         keepBrowser: false,
+        closeOwnedTabOnComplete: true,
       }),
     ).toBe(false);
   });
