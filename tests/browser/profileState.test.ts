@@ -90,6 +90,25 @@ describe("profileState", () => {
       for (const lock of lockFiles) {
         expect(existsSync(lock)).toBe(false);
       }
+      expect(existsSync(path.join(dir, "chrome.pid"))).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("removes a dead Chrome pid hint without touching profile locks", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-profile-"));
+    const lockPath = path.join(dir, "SingletonLock");
+    try {
+      await writeFile(lockPath, "x");
+      const child = spawn(process.execPath, ["-e", "process.exit(0)"], { stdio: "ignore" });
+      await once(child, "exit");
+      await profileState.writeChromePid(dir, child.pid ?? 0);
+
+      await profileState.cleanupStaleProfileState(dir, undefined, { lockRemovalMode: "never" });
+
+      expect(existsSync(path.join(dir, "chrome.pid"))).toBe(false);
+      expect(existsSync(lockPath)).toBe(true);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

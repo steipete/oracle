@@ -397,16 +397,22 @@ export async function cleanupStaleProfileState(
     }
   }
 
+  const pid = await readChromePid(userDataDir);
+  const chromePidAlive = pid ? isProcessAlive(pid) : false;
+  if (pid && !chromePidAlive) {
+    await rm(path.join(userDataDir, CHROME_PID_FILENAME), { force: true }).catch(() => undefined);
+    logger?.(`Removed stale Chrome pid hint ${pid}`);
+  }
+
   const lockRemovalMode = options.lockRemovalMode ?? "never";
   if (lockRemovalMode === "never") {
     return;
   }
 
-  const pid = await readChromePid(userDataDir);
   if (!pid) {
     return;
   }
-  if (isProcessAlive(pid)) {
+  if (chromePidAlive) {
     logger?.(`Chrome pid ${pid} still alive; skipping profile lock cleanup`);
     return;
   }
