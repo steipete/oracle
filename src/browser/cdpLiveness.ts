@@ -69,7 +69,21 @@ export async function probeChromeTargetLiveness(options: {
 }
 
 export function isRecoverableChromeDisconnect(liveness: ChromeTargetLiveness): boolean {
-  return liveness.endpointReachable && liveness.targetFound !== false;
+  if (!liveness.endpointReachable) {
+    return false;
+  }
+  // Confirmed live target → recoverable.
+  if (liveness.targetFound === true) {
+    return true;
+  }
+  // Confirmed missing target → not recoverable.
+  if (liveness.targetFound === false) {
+    return false;
+  }
+  // targetFound === null:
+  // - no target id was provided (endpoint-only check) → recoverable
+  // - target list failed after a specific id was requested (error set) → fail closed
+  return !liveness.error;
 }
 
 export function connectionLostUserMessage(options: {

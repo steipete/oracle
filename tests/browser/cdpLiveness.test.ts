@@ -65,6 +65,24 @@ describe("cdpLiveness", () => {
     expect(isRecoverableChromeDisconnect(liveness)).toBe(false);
   });
 
+  test("fails closed when target list errors after a specific target id is requested", async () => {
+    const liveness = await probeChromeTargetLiveness({
+      host: "127.0.0.1",
+      port: 9222,
+      targetId: "TARGET-1",
+      verifyEndpoint: async () => ({ ok: true }),
+      listTargets: async () => {
+        throw new Error("target list timeout");
+      },
+    });
+    expect(liveness).toEqual({
+      endpointReachable: true,
+      targetFound: null,
+      error: "target list timeout",
+    });
+    expect(isRecoverableChromeDisconnect(liveness)).toBe(false);
+  });
+
   test("connectionLostUserMessage distinguishes recoverable disconnects", () => {
     expect(connectionLostUserMessage({ recoverable: true })).toContain("still alive");
     expect(connectionLostUserMessage({ recoverable: false })).toContain("Chrome window closed");
