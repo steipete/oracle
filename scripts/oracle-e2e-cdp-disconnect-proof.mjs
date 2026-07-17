@@ -219,6 +219,12 @@ async function main() {
       "--browser-port",
       String(process.env.ORACLE_E2E_BROWSER_PORT || "9333"),
     );
+    // Linux CI/Docker: hide the window under Xvfb. Do not enable headless;
+    // Cloudflare blocks headless ChatGPT automation.
+    if (process.env.ORACLE_E2E_HIDE_WINDOW === "1") {
+      args.push("--browser-hide-window");
+      log("using --browser-hide-window (Xvfb / non-interactive host)");
+    }
     log(`using launch + cookie sync (port ${process.env.ORACLE_E2E_BROWSER_PORT || "9333"})`);
   }
   const cookiesFile = process.env.ORACLE_BROWSER_COOKIES_FILE || "";

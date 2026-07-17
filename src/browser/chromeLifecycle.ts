@@ -668,6 +668,12 @@ function buildChromeFlags(
     flags.push("--window-position=-32000,-32000");
   }
 
+  // Opt-in only: container/CI Chromium often cannot use the sandbox. Callers must
+  // set ORACLE_CHROME_NO_SANDBOX=1 explicitly (never default this on).
+  if (process.env.ORACLE_CHROME_NO_SANDBOX === "1") {
+    flags.push("--no-sandbox", "--disable-dev-shm-usage");
+  }
+
   return flags;
 }
 
