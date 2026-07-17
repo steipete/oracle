@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { writeOwnerOnlyFile } from "./write-owner-only-file.mjs";
 import { getCookies } from "@steipete/sweet-cookie";
 
 const out = process.argv[2];
@@ -25,6 +25,6 @@ const payload = cookies.map(({ name, value, domain, path, secure, httpOnly, same
 });
 
 const hasSession = payload.some((c) => c.name.startsWith("__Secure-next-auth.session-token"));
-writeFileSync(out, JSON.stringify(payload));
+writeOwnerOnlyFile(out, JSON.stringify(payload));
 console.log(`wrote ${payload.length} cookies to ${out}; session=${hasSession}`);
 process.exit(hasSession ? 0 : 1);
