@@ -99,7 +99,19 @@ function listOutboundCdpFds(pid, port) {
 function closeRemoteFds(pid, fds) {
   if (!fds.length) throw new Error(`no outbound CDP fds for pid=${pid}`);
   // Modern Chrome allows multiple CDP clients, so a second attach does not drop
-  // Oracle's socket. Close Oracle's established CDP fds in-process via lldb.
+  // Oracle's socket. Close Oracle's established CDP fds in-process.
+  // macOS: lldb; Linux/Ubuntu: gdb (matches issue #326's report environment).
+  if (process.platform === "linux") {
+    const args = ["-p", String(pid), "-batch", "-n"];
+    for (const fd of fds) {
+      args.push("-ex", `call (int)close(${fd})`);
+    }
+    return execFileSync("gdb", args, {
+      encoding: "utf8",
+      timeout: 30_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  }
   const args = ["-p", String(pid), "-b"];
   for (const fd of fds) {
     args.push("-o", `expr -- (int)close(${fd})`);
@@ -129,9 +141,9 @@ async function forceDetachOracleClient(port, controllerPid) {
   log(
     `forcing CDP detach by closing Oracle pid=${controllerPid} fds=[${fds.join(",")}] on port=${port}`,
   );
-  const lldbOut = closeRemoteFds(controllerPid, fds);
-  if (/error:/i.test(lldbOut) && !/close\(/.test(lldbOut)) {
-    log(`lldb warning: ${lldbOut.slice(0, 240)}`);
+  const debuggerOut = closeRemoteFds(controllerPid, fds);
+  if (/error:/i.test(debuggerOut) && !/close\(/.test(debuggerOut)) {
+    log(`fd-close warning: ${debuggerOut.slice(0, 240)}`);
   }
 
   // Endpoint must remain up (recoverable path), unlike killing Chrome.

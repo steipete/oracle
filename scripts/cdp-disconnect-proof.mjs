@@ -8,6 +8,7 @@
  *
  * Does not require ChatGPT login.
  */
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,7 +16,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { launch } = require("chrome-launcher");
+const { launch, Launcher } = require("chrome-launcher");
 const CDP = require("chrome-remote-interface");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,36 @@ function log(step, detail) {
   console.log(`[${new Date().toISOString()}] ${step}${detail ? `: ${detail}` : ""}`);
 }
 
+/** Resolve Chrome/Chromium for macOS + Linux CI/Docker without hardcoding one OS. */
+function resolveChromePath() {
+  if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+  const candidates = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/snap/bin/chromium",
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  try {
+    const installations = Launcher.getInstallations?.() ?? [];
+    if (installations[0] && existsSync(installations[0])) {
+      return installations[0];
+    }
+  } catch {
+    /* ignore */
+  }
+  throw new Error(
+    "Chrome/Chromium not found. Set CHROME_PATH to a browser binary (Linux: chromium or google-chrome).",
+  );
+}
+
 async function listTargets(port) {
   const res = await fetch(`http://127.0.0.1:${port}/json/list`);
   if (!res.ok) throw new Error(`/json/list failed: ${res.status}`);
@@ -41,12 +72,11 @@ async function run() {
   let chrome;
   let client;
   let port;
-  const chromePath =
-    process.env.CHROME_PATH ||
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  const chromePath = resolveChromePath();
 
   try {
-    log("launch", "Chrome headless with remote debugging");
+    log("platform", `${process.platform}/${process.arch} chromePath=${chromePath}`);
+    log("launch", "Chrome/Chromium headless with remote debugging");
     chrome = await launch({
       chromePath,
       chromeFlags: [
@@ -55,6 +85,9 @@ async function run() {
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
+        // Required for Chromium in many Linux/Docker/CI sandboxes.
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
       ],
       userDataDir,
       handleSIGINT: false,

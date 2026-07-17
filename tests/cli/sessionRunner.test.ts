@@ -137,6 +137,8 @@ beforeEach(() => {
     }
   });
   vi.mocked(runMultiModelApiSession).mockReset();
+  vi.mocked(resumeBrowserSession).mockReset();
+  vi.mocked(runBrowserSessionExecution).mockReset();
   vi.mocked(ensureSessionArtifacts).mockReset();
   vi.mocked(ensureSessionArtifacts).mockImplementation(
     async ({ existingArtifacts }) => existingArtifacts,
@@ -1306,9 +1308,11 @@ describe("performSessionRun", () => {
 
   test("keeps session running when browser connection is lost", async () => {
     const automationError = new BrowserAutomationError(
-      "Chrome window closed before oracle finished.",
+      "Chrome DevTools client disconnected before oracle finished; the browser target appears still alive.",
       {
         stage: "connection-lost",
+        recoverableDisconnect: true,
+        disconnectCause: "cdp-client-disconnect",
         runtime: {
           chromePort: 9222,
           chromeHost: "127.0.0.1",
@@ -1370,6 +1374,89 @@ describe("performSessionRun", () => {
     );
     expect(logLines).toContain("oracle session sess-1 --render");
     expect(logLines).toContain("Auto-reattach attempt 1");
+  });
+
+  test("skips auto-reattach when disconnect is classified non-recoverable", async () => {
+    const automationError = new BrowserAutomationError(
+      "Chrome window closed before oracle finished. Please keep it open until completion.",
+      {
+        stage: "connection-lost",
+        recoverableDisconnect: false,
+        disconnectCause: "chrome-closed",
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async () => {
+      throw automationError;
+    });
+
+    await performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    expect(vi.mocked(resumeBrowserSession)).not.toHaveBeenCalled();
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).toContain("Skipping auto-reattach: disconnect classified as non-recoverable.");
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "running",
+      response: { status: "running", incompleteReason: "chrome-disconnected" },
+    });
+  });
+
+  test("connection-loss recovery is one-shot by default (no infinite retry loop)", async () => {
+    const automationError = new BrowserAutomationError(
+      "Chrome DevTools client disconnected before oracle finished; the browser target appears still alive.",
+      {
+        stage: "connection-lost",
+        recoverableDisconnect: true,
+        disconnectCause: "cdp-client-disconnect",
+        runtime: {
+          chromePort: 9222,
+          chromeHost: "127.0.0.1",
+          tabUrl: "https://chatgpt.com/c/demo",
+          chromeTargetId: "TARGET-1",
+          promptSubmitted: true,
+        },
+      },
+    );
+    vi.mocked(runBrowserSessionExecution).mockImplementationOnce(async () => {
+      throw automationError;
+    });
+    vi.mocked(resumeBrowserSession).mockRejectedValueOnce(new Error("target not ready yet"));
+
+    await performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+    });
+
+    expect(vi.mocked(resumeBrowserSession)).toHaveBeenCalledTimes(1);
+    const logLines = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(logLines).toContain("Auto-reattach will try up to 1 attempt(s).");
+    expect(logLines).toContain("Auto-reattach stopped after 1 attempt(s)");
+    const finalUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+    expect(finalUpdate).toMatchObject({
+      status: "running",
+      response: { status: "running", incompleteReason: "chrome-disconnected" },
+    });
   });
 
   test("auto-reattaches after connection loss and marks session completed", async () => {

@@ -597,6 +597,16 @@ export async function performSessionRun({
         response: { status: "running", incompleteReason: "chrome-disconnected" },
       });
       logBrowserReattachGuidance(recoverableRuntime);
+      // Only auto-reattach when liveness classified the target as still alive.
+      // Closed-Chrome disconnects stay running + guidance but must not enter a
+      // futile resume loop (fail closed on availability).
+      const recoverableDisconnect =
+        (userError.details as { recoverableDisconnect?: boolean } | undefined)
+          ?.recoverableDisconnect === true;
+      if (!recoverableDisconnect) {
+        log(dim("Skipping auto-reattach: disconnect classified as non-recoverable."));
+        return;
+      }
       // Connection-lost should attempt the same recovery path as assistant-timeout.
       // When auto-reattach interval is unset, still try a single resume so a live
       // Chrome/target can be harvested instead of leaving the session permanently running.
