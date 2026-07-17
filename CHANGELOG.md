@@ -2,14 +2,9 @@
 
 ## 0.16.1 — Unreleased
 
-### Changed
-
-- Browser: serialize shared manual-login profile runs by default (`maxConcurrentTabs: 1`) so one response finishes and persists before the next caller takes over Chrome; explicit CLI, config, and environment overrides can still opt into parallel tabs.
-
 ### Fixed
 
 - CLI: avoid inheriting `browser.thinkingTime` from config when `--browser-model-strategy current` is explicit, while preserving an explicit `--browser-thinking-time` override. Thanks @jung0han!
-- Browser/CLI: record terminal Chrome disconnects as recoverable error sessions, including terminal per-model status, instead of leaving dead runs reported as active.
 
 ## 0.16.0 — 2026-07-12
 

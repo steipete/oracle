@@ -688,13 +688,13 @@ program
   .addOption(
     new Option(
       "--browser-max-concurrent-tabs <n>",
-      "Soft limit for concurrent ChatGPT tabs sharing one manual-login profile (default 1).",
+      "Soft limit for concurrent ChatGPT tabs sharing one manual-login profile (default 3).",
     ).hideHelp(),
   )
   .addOption(
     new Option(
       "--browser-queue-timeout <ms|s|m|h>",
-      "Maximum time to wait for a shared-profile browser slot (default: no limit).",
+      "Maximum time to wait for a shared-profile browser slot (default 20m; 0 waits indefinitely).",
     ).hideHelp(),
   )
   .addOption(

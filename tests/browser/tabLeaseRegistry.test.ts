@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import {
   acquireBrowserTabLease,
   hasOtherActiveBrowserTabLeases,
@@ -14,6 +14,49 @@ describe("tabLeaseRegistry", () => {
     expect(normalizeMaxConcurrentTabs("4")).toBe(4);
     expect(normalizeMaxConcurrentTabs(0)).toBe(3);
     expect(normalizeMaxConcurrentTabs("nope")).toBe(3);
+  });
+
+  test("upgrades a version 1 registry without dropping active leases", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    const existingLease = {
+      id: "existing-v1-lease",
+      pid: process.pid,
+      sessionId: "existing-session",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      await writeFile(
+        path.join(dir, "oracle-tab-leases.json"),
+        `${JSON.stringify({ version: 1, leases: [existingLease] }, null, 2)}\n`,
+        "utf8",
+      );
+
+      const acquired = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 2,
+        timeoutMs: 500,
+        sessionId: "new-session",
+      });
+      const registry = JSON.parse(
+        await readFile(path.join(dir, "oracle-tab-leases.json"), "utf8"),
+      ) as {
+        version: number;
+        leases: Array<{ id: string; sessionId?: string }>;
+        waiters: unknown[];
+      };
+
+      expect(registry.version).toBe(2);
+      expect(registry.leases).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "existing-v1-lease", sessionId: "existing-session" }),
+          expect.objectContaining({ id: acquired.id, sessionId: "new-session" }),
+        ]),
+      );
+      expect(registry.waiters).toEqual([]);
+      await acquired.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("holds a serialized slot until the active run releases it", async () => {
