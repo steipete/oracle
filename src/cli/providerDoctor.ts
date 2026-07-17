@@ -3,12 +3,7 @@ import { DEFAULT_MODEL } from "../oracle/config.js";
 import type { ApiProviderMode, AzureOptions, ModelName } from "../oracle/types.js";
 import { resolveApiModel } from "./options.js";
 import { loadUserConfig, type UserConfig } from "../config.js";
-import {
-  buildProviderRoutePlan,
-  resolveProviderRoute,
-  type ProviderRoutePlan,
-} from "../oracle/providerRoutePlan.js";
-import { probeProviderCredential } from "../oracle/providerCredentialProbe.js";
+import { buildProviderRoutePlan, type ProviderRoutePlan } from "../oracle/providerRoutePlan.js";
 
 export interface ProviderDoctorCliOptions {
   providers?: boolean;
@@ -51,44 +46,6 @@ export async function runProviderDoctor(options: ProviderDoctorCliOptions): Prom
 
   printProviderPlans(plans);
   process.exitCode = plans.some((plan) => !plan.ok) ? 1 : 0;
-}
-
-export async function runProviderPreflight(args: {
-  models: ModelName[];
-  providerMode: ApiProviderMode;
-  azure?: AzureOptions;
-  baseUrl?: string;
-  env?: NodeJS.ProcessEnv;
-}): Promise<ProviderRoutePlan[]> {
-  return await Promise.all(
-    args.models.map(async (model) => {
-      const route = resolveProviderRoute({
-        model,
-        providerMode: args.providerMode,
-        azure: args.azure,
-        baseUrl: args.baseUrl,
-        env: args.env,
-      });
-      if (!route.ok) {
-        return buildProviderRoutePlan({
-          model,
-          providerMode: args.providerMode,
-          azure: args.azure,
-          baseUrl: args.baseUrl,
-          env: args.env,
-        });
-      }
-      const probe = await probeProviderCredential(route);
-      const {
-        apiKey: _apiKey,
-        nativeProvider: _nativeProvider,
-        openRouterFallback: _openRouterFallback,
-        azureEndpoint: _azureEndpoint,
-        ...plan
-      } = route;
-      return probe.ok ? plan : { ...plan, ok: false, error: probe.error };
-    }),
-  );
 }
 
 export function printProviderPlans(

@@ -122,8 +122,9 @@ and verifies the file is rewritten as version 2 with an empty waiter list.
 Validation on the same branch:
 
 ```text
-focused browser/session/MCP tests: 81 passed
-full test suite: 1583 passed, 43 skipped
+focused browser acceptance suite: 38 passed
+provider/performance regression suite after scope split: 23 passed
+full test suite: 1581 passed, 43 skipped
 pnpm run check: passed
 pnpm run build: passed
 git diff --check: passed

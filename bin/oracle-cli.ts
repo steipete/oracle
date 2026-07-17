@@ -1824,25 +1824,16 @@ async function runRootCommand(options: CliOptions): Promise<void> {
         }
       : undefined;
     const { buildProviderRoutePlan } = await import("../src/oracle/providerRoutePlan.js");
-    const { printProviderPlans, runProviderPreflight } =
-      await import("../src/cli/providerDoctor.js");
-    const plans = options.preflight
-      ? await runProviderPreflight({
-          models: engineModels,
-          providerMode,
-          azure: configuredAzureForRoute,
-          baseUrl: options.baseUrl,
-          env: process.env,
-        })
-      : engineModels.map((model) =>
-          buildProviderRoutePlan({
-            model,
-            providerMode,
-            azure: configuredAzureForRoute,
-            baseUrl: options.baseUrl,
-            env: process.env,
-          }),
-        );
+    const plans = engineModels.map((model) =>
+      buildProviderRoutePlan({
+        model,
+        providerMode,
+        azure: configuredAzureForRoute,
+        baseUrl: options.baseUrl,
+        env: process.env,
+      }),
+    );
+    const { printProviderPlans } = await import("../src/cli/providerDoctor.js");
     printProviderPlans(plans, { title: options.preflight ? "Provider preflight" : "Route plan" });
     process.exitCode = plans.some((plan) => !plan.ok) ? 1 : 0;
     return;
