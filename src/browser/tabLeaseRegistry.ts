@@ -11,6 +11,7 @@ const REGISTRY_LOCK_DIRNAME = "oracle-tab-leases.lock";
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_STALE_MS = 6 * 60 * 60 * 1000;
 const REGISTRY_LOCK_TIMEOUT_MS = 10_000;
+const WINDOWS_LOCK_TRANSIENT_RETRY_MS = 1_000;
 
 export interface BrowserTabLeaseRecord {
   id: string;
@@ -59,6 +60,14 @@ export function normalizeMaxConcurrentTabs(value: unknown): number {
     return DEFAULT_MAX_CONCURRENT_CHATGPT_TABS;
   }
   return Math.max(1, Math.trunc(numeric));
+}
+
+export function isRetryableRegistryLockError(
+  error: unknown,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const code = (error as { code?: string }).code;
+  return code === "EEXIST" || (platform === "win32" && (code === "EPERM" || code === "EBUSY"));
 }
 
 export async function acquireBrowserTabLease(
@@ -243,10 +252,15 @@ async function withRegistryLock<T>(profileDir: string, callback: () => Promise<T
       await mkdir(lockDir, { recursive: false });
       break;
     } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") {
+      if (!isRetryableRegistryLockError(error)) {
         throw error;
       }
-      if (Date.now() - startedAt > REGISTRY_LOCK_TIMEOUT_MS) {
+      const elapsed = Date.now() - startedAt;
+      const code = (error as { code?: string }).code;
+      if (code !== "EEXIST" && elapsed > WINDOWS_LOCK_TRANSIENT_RETRY_MS) {
+        throw error;
+      }
+      if (elapsed > REGISTRY_LOCK_TIMEOUT_MS) {
         await rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
         continue;
       }

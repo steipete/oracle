@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import {
   acquireBrowserTabLease,
   hasOtherActiveBrowserTabLeases,
+  isRetryableRegistryLockError,
   normalizeMaxConcurrentTabs,
 } from "../../src/browser/tabLeaseRegistry.js";
 
@@ -14,6 +15,14 @@ describe("tabLeaseRegistry", () => {
     expect(normalizeMaxConcurrentTabs("4")).toBe(4);
     expect(normalizeMaxConcurrentTabs(0)).toBe(3);
     expect(normalizeMaxConcurrentTabs("nope")).toBe(3);
+  });
+
+  test("retries transient Windows lock contention without masking permission errors elsewhere", () => {
+    expect(isRetryableRegistryLockError({ code: "EEXIST" }, "darwin")).toBe(true);
+    expect(isRetryableRegistryLockError({ code: "EPERM" }, "win32")).toBe(true);
+    expect(isRetryableRegistryLockError({ code: "EBUSY" }, "win32")).toBe(true);
+    expect(isRetryableRegistryLockError({ code: "EPERM" }, "darwin")).toBe(false);
+    expect(isRetryableRegistryLockError({ code: "EACCES" }, "win32")).toBe(false);
   });
 
   test("upgrades a version 1 registry without dropping active leases", async () => {
