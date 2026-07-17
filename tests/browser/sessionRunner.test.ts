@@ -16,6 +16,93 @@ const baseRunOptions: RunOracleOptions = {
 const baseConfig: BrowserSessionConfig = {};
 
 describe("runBrowserSessionExecution", () => {
+  const assembledPrompt = async () => ({
+    markdown: "prompt",
+    composerText: "prompt",
+    estimatedInputTokens: 42,
+    attachments: [],
+    inlineFileCount: 0,
+    tokenEstimateIncludesInlineFiles: false,
+    attachmentsPolicy: "auto" as const,
+    attachmentMode: "inline" as const,
+    fallback: null,
+  });
+
+  test("rejects a persisted session when prompt submission was not verified", async () => {
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: { ...baseRunOptions, sessionId: "prompt-not-submitted" },
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+        },
+        {
+          assemblePrompt: assembledPrompt,
+          executeBrowser: vi.fn(async () => ({
+            answerText: "stale text",
+            answerMarkdown: "stale text",
+            tookMs: 1000,
+            answerTokens: 2,
+            answerChars: 10,
+            promptSubmitted: false,
+          })),
+        },
+      ),
+    ).rejects.toMatchObject({ details: expect.objectContaining({ code: "prompt-not-submitted" }) });
+  });
+
+  test("rejects empty assistant output and an empty transcript artifact", async () => {
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+        },
+        {
+          assemblePrompt: assembledPrompt,
+          executeBrowser: vi.fn(async () => ({
+            answerText: "",
+            answerMarkdown: "",
+            tookMs: 1000,
+            answerTokens: 0,
+            answerChars: 0,
+            promptSubmitted: true,
+          })),
+        },
+      ),
+    ).rejects.toMatchObject({
+      details: expect.objectContaining({ code: "empty-assistant-output" }),
+    });
+
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: { ...baseRunOptions, sessionId: "empty-transcript" },
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+        },
+        {
+          assemblePrompt: assembledPrompt,
+          executeBrowser: vi.fn(async () => ({
+            answerText: "answer",
+            answerMarkdown: "answer",
+            artifacts: [{ kind: "transcript" as const, path: "/tmp/empty.md", sizeBytes: 0 }],
+            tookMs: 1000,
+            answerTokens: 1,
+            answerChars: 6,
+            promptSubmitted: true,
+          })),
+        },
+      ),
+    ).rejects.toMatchObject({
+      details: expect.objectContaining({ code: "transcript-artifact-missing" }),
+    });
+  });
+
   test("logs stats and returns usage/runtime", async () => {
     const log = vi.fn();
     const persistRuntimeHint = vi.fn();
@@ -249,10 +336,11 @@ describe("runBrowserSessionExecution", () => {
     const executeBrowser = vi.fn(async () => ({
       answerText: "ok",
       answerMarkdown: "ok",
-      artifacts: [{ kind: "transcript" as const, path: "/tmp/transcript.md" }],
+      artifacts: [{ kind: "transcript" as const, path: "/tmp/transcript.md", sizeBytes: 10 }],
       tookMs: 1000,
       answerTokens: 1,
       answerChars: 2,
+      promptSubmitted: true,
     }));
 
     await runBrowserSessionExecution(

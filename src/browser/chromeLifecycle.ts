@@ -48,12 +48,90 @@ export async function launchChrome(
         port: debugPort ?? undefined,
         ignoreDefaultFlags: launchOptions.ignoreDefaultFlags,
       });
+  const rawKill = launcher.kill.bind(launcher);
+  let killPromise: Promise<void> | null = null;
+  Object.assign(launcher, {
+    kill: () => {
+      killPromise ??= terminateChromeProcessGroup(launcher, logger, rawKill, () =>
+        (launcher as unknown as { destroyTmp?: () => void }).destroyTmp?.(),
+      );
+      return killPromise;
+    },
+  });
   const pidLabel = typeof launcher.pid === "number" ? ` (pid ${launcher.pid})` : "";
   const hostLabel = connectHost ? ` on ${connectHost}` : "";
   logger(`Launched Chrome${pidLabel} on port ${launcher.port}${hostLabel}`);
   return Object.assign(launcher, { host: connectHost ?? "127.0.0.1" }) as LaunchedChrome & {
     host?: string;
   };
+}
+
+export async function terminateChromeProcessGroup(
+  chrome: { pid?: number },
+  logger: BrowserLogger,
+  forceKill: () => void | Promise<void>,
+  cleanup: () => void = () => {},
+  deps: {
+    signal?: (pid: number, signal: NodeJS.Signals) => void;
+    isAlive?: (pid: number) => boolean;
+    wait?: (ms: number) => Promise<void>;
+    graceMs?: number;
+  } = {},
+): Promise<void> {
+  const pid = chrome.pid;
+  if (!pid) {
+    await forceKill();
+    return;
+  }
+  const signal =
+    deps.signal ?? ((target, requestedSignal) => process.kill(target, requestedSignal));
+  const isAlive =
+    deps.isAlive ??
+    ((target: number) => {
+      try {
+        process.kill(target, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  const wait = deps.wait ?? delay;
+  const processGroupPid = process.platform === "win32" ? pid : -pid;
+
+  try {
+    signal(processGroupPid, "SIGTERM");
+  } catch {
+    if (!isAlive(pid)) {
+      cleanup();
+      return;
+    }
+    logger(
+      `[browser] Chrome process group ${processGroupPid} is unavailable; terminating pid ${pid} directly.`,
+    );
+    try {
+      signal(pid, "SIGTERM");
+    } catch {
+      if (!isAlive(pid)) {
+        cleanup();
+        return;
+      }
+      await forceKill();
+      return;
+    }
+  }
+
+  const deadline = Date.now() + (deps.graceMs ?? 5_000);
+  while (Date.now() < deadline && isAlive(pid)) {
+    await wait(100);
+  }
+  if (!isAlive(pid)) {
+    cleanup();
+    logger(`[browser] Chrome process tree ${pid} exited after SIGTERM.`);
+    return;
+  }
+
+  logger(`[browser] Chrome process tree ${pid} ignored SIGTERM; forcing termination.`);
+  await forceKill();
 }
 
 export async function positionChromeWindowOffscreen(
@@ -800,7 +878,17 @@ async function launchWithCustomHost({
 
   await launcher.launch();
 
-  const kill = async () => launcher.kill();
+  const rawKill = launcher.kill.bind(launcher);
+  let killPromise: Promise<void> | null = null;
+  const kill = () => {
+    killPromise ??= terminateChromeProcessGroup(
+      { pid: launcher.pid ?? undefined },
+      () => {},
+      rawKill,
+      () => launcher.destroyTmp(),
+    );
+    return killPromise;
+  };
   return {
     pid: launcher.pid ?? undefined,
     port: launcher.port ?? 0,

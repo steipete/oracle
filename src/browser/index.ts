@@ -162,6 +162,12 @@ function shouldPreserveBrowserOnError(error: unknown, headless: boolean): boolea
   return classifyPreservedBrowserError(error, headless) !== null;
 }
 
+function isPromptCommitVerificationError(error: unknown): error is BrowserAutomationError {
+  if (!(error instanceof BrowserAutomationError)) return false;
+  const details = error.details as { stage?: string; code?: string } | undefined;
+  return details?.stage === "submit-prompt" && details.code === "prompt-commit-timeout";
+}
+
 function shouldKeepLocalBrowserOpen(options: {
   effectiveKeepBrowser: boolean;
   preserveBrowserOnError: boolean;
@@ -774,9 +780,17 @@ async function runSubmissionWithRecovery({
       }
 
       const isPromptTooLarge = hasBrowserErrorCode(error, "prompt-too-large");
-      if (fallbackSubmission && isPromptTooLarge && !usedFallbackSubmission) {
+      const isAttachmentUploadTimeout = hasBrowserErrorCode(error, "attachment-upload-timeout");
+      const fallbackDirectionIsSafe =
+        (isPromptTooLarge && fallbackSubmission && fallbackSubmission.attachments.length > 0) ||
+        (isAttachmentUploadTimeout && fallbackSubmission?.attachments.length === 0);
+      if (fallbackSubmission && fallbackDirectionIsSafe && !usedFallbackSubmission) {
         usedFallbackSubmission = true;
-        logger("[browser] Inline prompt too large; retrying with file uploads.");
+        logger(
+          isPromptTooLarge
+            ? "[browser] Inline prompt too large; retrying with file uploads."
+            : "[browser] Attachment upload stalled; retrying eligible text files inline.",
+        );
         await prepareFallbackSubmission();
         currentPrompt = fallbackSubmission.prompt;
         currentAttachments = fallbackSubmission.attachments;
@@ -1038,7 +1052,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   if (manualLogin) {
     tabLease = await acquireBrowserTabLease(userDataDir, {
       maxConcurrentTabs: config.maxConcurrentTabs,
-      timeoutMs: config.timeoutMs,
+      timeoutMs: config.queueTimeoutMs,
       logger,
       sessionId: options.sessionId,
     });
@@ -2210,6 +2224,37 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const normalizedError = error instanceof Error ? error : new Error(String(error));
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
+    if (isPromptCommitVerificationError(normalizedError)) {
+      const runtime = {
+        chromePid: chrome.pid,
+        chromePort: chrome.port,
+        chromeHost,
+        userDataDir,
+        chromeTargetId: lastTargetId,
+        tabUrl: lastUrl,
+        promptSubmitted,
+        controllerPid: process.pid,
+      };
+      const reattachable = !usingCopiedProfile && !config.headless;
+      if (reattachable) {
+        preserveBrowserOnError = true;
+      }
+      await emitRuntimeHint();
+      logger(
+        reattachable
+          ? "Prompt submission could not be verified; preserving the browser target for inspection."
+          : "Prompt submission could not be verified; this browser mode cannot preserve the target.",
+      );
+      throw new BrowserAutomationError(
+        normalizedError.message,
+        {
+          ...normalizedError.details,
+          runtime: reattachable ? runtime : undefined,
+          reattachable,
+        },
+        normalizedError,
+      );
+    }
     const preservedErrorKind = classifyPreservedBrowserError(normalizedError, config.headless);
     if (preservedErrorKind === "cloudflare-challenge") {
       if (usingCopiedProfile) {
@@ -2370,11 +2415,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         ).catch(() => false);
       }
     }
-    if (tabLease) {
-      const handle = tabLease;
-      tabLease = null;
-      await handle.release().catch(() => undefined);
-    }
     removeDialogHandler?.();
     removeTerminationHooks?.();
     if (!keepBrowserOpen) {
@@ -2418,6 +2458,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     if (cleanupProfileLock) {
       const handle = cleanupProfileLock;
       cleanupProfileLock = null;
+      await handle.release().catch(() => undefined);
+    }
+    if (tabLease) {
+      const handle = tabLease;
+      tabLease = null;
       await handle.release().catch(() => undefined);
     }
   }
@@ -2822,7 +2867,7 @@ async function runRemoteBrowserMode(
       await mkdir(remoteLeaseProfileDir, { recursive: true });
       tabLease = await acquireBrowserTabLease(remoteLeaseProfileDir, {
         maxConcurrentTabs: config.maxConcurrentTabs,
-        timeoutMs: config.timeoutMs,
+        timeoutMs: config.queueTimeoutMs,
         logger,
         sessionId: options.sessionId,
         chromeHost: host,
@@ -3648,6 +3693,25 @@ async function runRemoteBrowserMode(
     const socketClosed = connectionClosedUnexpectedly || isWebSocketClosureError(normalizedError);
     connectionClosedUnexpectedly = connectionClosedUnexpectedly || socketClosed;
 
+    if (isPromptCommitVerificationError(normalizedError)) {
+      const runtime = {
+        chromeHost: host,
+        chromePort: port,
+        chromeBrowserWSEndpoint: browserWSEndpoint,
+        chromeProfileRoot,
+        chromeTargetId: remoteTargetId ?? undefined,
+        tabUrl: lastUrl,
+        promptSubmitted,
+        controllerPid: process.pid,
+      };
+      await emitRuntimeHint();
+      throw new BrowserAutomationError(
+        normalizedError.message,
+        { ...normalizedError.details, runtime, reattachable: true },
+        normalizedError,
+      );
+    }
+
     if (!socketClosed) {
       logger(`Failed to complete ChatGPT run: ${normalizedError.message}`);
       if ((config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") && normalizedError.stack) {
@@ -3682,11 +3746,6 @@ async function runRemoteBrowserMode(
       // ignore
     }
     removeDialogHandler?.();
-    if (tabLease) {
-      const handle = tabLease;
-      tabLease = null;
-      await handle.release().catch(() => undefined);
-    }
     if (
       shouldCloseOwnedRunTargetAfterRun({
         runStatus,
@@ -3695,6 +3754,11 @@ async function runRemoteBrowserMode(
       })
     ) {
       await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
+    }
+    if (tabLease) {
+      const handle = tabLease;
+      tabLease = null;
+      await handle.release().catch(() => undefined);
     }
     // Don't kill remote Chrome - it's not ours to manage
     const totalSeconds = (Date.now() - startedAt) / 1000;

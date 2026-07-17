@@ -5,6 +5,7 @@ import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
+import { BrowserAutomationError } from "../../oracle/errors.js";
 
 export async function uploadAttachmentFile(
   deps: {
@@ -1342,6 +1343,8 @@ export async function waitForAttachmentCompletion(
   let sawInputMatch = false;
   let attachmentMatchSince: number | null = null;
   let lastVerboseLog = 0;
+  let lastMissing = expectedInputBasenames;
+  let lastProgressSignature = "";
   const expression = `(() => {
     const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
     const promptSelectors = ${JSON.stringify(INPUT_SELECTORS)};
@@ -1620,6 +1623,16 @@ export async function waitForAttachmentCompletion(
         });
       };
       const missing = expectedNormalized.filter((expected) => !matchesExpected(expected));
+      lastMissing = missing.map((name) => name.split("/").pop()?.split("\\").pop() ?? name);
+      const progressSignature = lastMissing.slice().sort().join("\0");
+      if (expectedNormalized.length > 0 && progressSignature !== lastProgressSignature) {
+        lastProgressSignature = progressSignature;
+        const readyCount = Math.max(0, expectedNormalized.length - lastMissing.length);
+        const waitingFor = lastMissing.length > 0 ? `; waiting for ${lastMissing.join(", ")}` : "";
+        logger?.(
+          `[browser] Attachment upload progress: ${readyCount}/${expectedNormalized.length} ready${waitingFor}.`,
+        );
+      }
       if (missing.length === 0 || fileCountSatisfied) {
         const stableThresholdMs = value.uploading ? 3000 : 1500;
         if (attachmentMatchSince === null) {
@@ -1704,7 +1717,16 @@ export async function waitForAttachmentCompletion(
   }
   logger?.("Attachment upload timed out while waiting for ChatGPT composer to become ready.");
   await logDomFailure(Runtime, logger ?? (() => {}), "file-upload-timeout");
-  throw new Error("Attachments did not finish uploading before timeout.");
+  const stalledFiles = lastMissing.length > 0 ? lastMissing : expectedInputBasenames;
+  throw new BrowserAutomationError(
+    `Attachments did not finish uploading before timeout${stalledFiles.length > 0 ? `; stalled: ${stalledFiles.join(", ")}` : ""}.`,
+    {
+      stage: "attachment-upload",
+      code: "attachment-upload-timeout",
+      stalledFiles,
+      expectedFiles: expectedInputBasenames,
+    },
+  );
 }
 
 export async function waitForUserTurnAttachments(

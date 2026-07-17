@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { createServer } from "node:http";
 import { describe, expect, test } from "vitest";
 import {
   buildDetachedPerfTraceEnv,
@@ -316,6 +317,13 @@ describe("CLI performance traces", () => {
         // biome-ignore lint/style/useNamingConvention: env var name
         ORACLE_HOME_DIR: tmp,
       };
+      const server = createServer((_request, response) => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end('{"data":[]}');
+      });
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing test server address");
 
       const { stdout } = await execFileAsync(
         process.execPath,
@@ -328,12 +336,14 @@ describe("CLI performance traces", () => {
           "gpt-5.4",
           "--provider",
           "openai",
+          "--base-url",
+          `http://127.0.0.1:${address.port}/v1`,
           "--perf-trace-path",
           tracePath,
           "--perf-trace",
         ],
         { env, timeout: CLI_TIMEOUT },
-      );
+      ).finally(() => new Promise<void>((resolve) => server.close(() => resolve())));
 
       expect(stdout).toContain("Provider preflight");
       const trace = JSON.parse(await readFile(tracePath, "utf8")) as {

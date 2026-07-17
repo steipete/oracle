@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { SessionModelRun } from "../../src/sessionStore.js";
+import { resolveBrowserConfig } from "../../src/browser/config.js";
 import { applyConsultPreset } from "../../src/mcp/consultPresets.ts";
 import { consultInputSchema } from "../../src/mcp/types.ts";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
@@ -209,6 +210,17 @@ describe("summarizeModelRunsForConsult", () => {
 
     expect(config.manualLogin).toBe(process.platform === "win32");
     expect(config.cookieSync).toBe(process.platform !== "win32");
+  });
+
+  test("uses the shared browser concurrency default for MCP consults", () => {
+    const config = buildConsultBrowserConfig({
+      userConfig: {},
+      env: {},
+      runModel: "gpt-5.6-sol",
+      inputModel: "gpt-5.6-sol",
+    });
+
+    expect(resolveBrowserConfig(config).maxConcurrentTabs).toBe(3);
   });
 
   test("lets explicit consult inputs override config defaults", () => {

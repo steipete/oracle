@@ -213,28 +213,10 @@ export async function submitPrompt(
     );
   }
 
-  const clicked = await attemptSendButton(
-    runtime,
-    input,
-    logger,
-    deps?.attachmentNames,
-    deps?.attachmentTimeoutMs,
-  );
-  if (!clicked) {
-    await input.dispatchKeyEvent({
-      type: "keyDown",
-      ...ENTER_KEY_EVENT,
-      text: ENTER_KEY_TEXT,
-      unmodifiedText: ENTER_KEY_TEXT,
-    });
-    await input.dispatchKeyEvent({
-      type: "keyUp",
-      ...ENTER_KEY_EVENT,
-    });
-    logger("Submitted prompt via Enter key");
-  } else {
-    logger("Clicked send button");
-  }
+  await dispatchPromptSubmission(runtime, input, logger, {
+    attachmentNames: deps?.attachmentNames,
+    attachmentTimeoutMs: deps?.attachmentTimeoutMs,
+  });
   await deps.onPromptSubmitted?.();
 
   const commitTimeoutMs = Math.max(60_000, deps.inputTimeoutMs ?? 0);
@@ -245,7 +227,47 @@ export async function submitPrompt(
     commitTimeoutMs,
     logger,
     deps.baselineTurns ?? undefined,
+    async () => {
+      logger("Prompt remained in the composer; retrying submission once.");
+      await dispatchPromptSubmission(runtime, input, logger, {
+        attachmentNames: deps?.attachmentNames,
+        attachmentTimeoutMs: deps?.attachmentTimeoutMs,
+      });
+    },
   );
+}
+
+async function dispatchPromptSubmission(
+  runtime: ChromeClient["Runtime"],
+  input: ChromeClient["Input"],
+  logger: BrowserLogger,
+  options: {
+    attachmentNames?: AttachmentReadyInput[];
+    attachmentTimeoutMs?: number | null;
+  },
+): Promise<void> {
+  const clicked = await attemptSendButton(
+    runtime,
+    input,
+    logger,
+    options.attachmentNames,
+    options.attachmentTimeoutMs,
+  );
+  if (clicked) {
+    logger("Clicked send button");
+    return;
+  }
+  await input.dispatchKeyEvent({
+    type: "keyDown",
+    ...ENTER_KEY_EVENT,
+    text: ENTER_KEY_TEXT,
+    unmodifiedText: ENTER_KEY_TEXT,
+  });
+  await input.dispatchKeyEvent({
+    type: "keyUp",
+    ...ENTER_KEY_EVENT,
+  });
+  logger("Submitted prompt via Enter key");
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
@@ -787,7 +809,9 @@ async function verifyPromptCommitted(
   timeoutMs: number,
   logger?: BrowserLogger,
   baselineTurns?: number,
+  retrySubmission?: () => Promise<void>,
 ): Promise<number | null> {
+  const startedAt = Date.now();
   const deadline = Date.now() + timeoutMs;
   const encodedPrompt = JSON.stringify(prompt.trim());
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
@@ -846,6 +870,7 @@ async function verifyPromptCommitted(
 	      .filter((node) => Boolean(node));
 	    const visibleInputs = inputs.filter((node) => isVisible(node));
 	    const activeInputs = visibleInputs.length > 0 ? visibleInputs : inputs;
+	    const composerValues = activeInputs.map((node) => normalize(readValue(node))).filter(Boolean);
 	    const userMatched =
 	      normalizedPrompt.length > 0 && normalizedTurns.some((text) => text.includes(normalizedPrompt));
 	    const prefixMatched =
@@ -869,6 +894,12 @@ async function verifyPromptCommitted(
       const activeEmpty =
         activeInputs.length === 0 ? null : activeInputs.every((node) => !String(readValue(node)).trim());
       const composerCleared = activeEmpty ?? !(String(editorValue).trim() || String(fallbackValue).trim());
+      const composerMatchesPrompt =
+        normalizedPrompt.length > 0 &&
+        composerValues.some((value) =>
+          value.includes(normalizedPrompt) ||
+          (normalizedPromptPrefix.length > 30 && value.includes(normalizedPromptPrefix)),
+        );
       const href = typeof location === 'object' && location.href ? location.href : '';
       const inConversation = /\\/c\\//.test(href);
 		    return {
@@ -880,6 +911,7 @@ async function verifyPromptCommitted(
 	      stopVisible,
       assistantVisible,
       composerCleared,
+      composerMatchesPrompt,
       inConversation,
       href,
       fallbackValue,
@@ -890,6 +922,8 @@ async function verifyPromptCommitted(
   })()`;
 
   let lastProbe: CommitProbeState | undefined;
+  let retriedSubmission = false;
+  const retryAfterMs = Math.min(5_000, Math.max(100, Math.floor(timeoutMs / 4)));
   while (Date.now() < deadline) {
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
     const info = result.value as CommitProbeState | undefined;
@@ -909,6 +943,15 @@ async function verifyPromptCommitted(
       ((info?.stopVisible ?? false) || info?.assistantVisible || info?.inConversation);
     if (fallbackCommit) {
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
+    }
+    if (
+      retrySubmission &&
+      !retriedSubmission &&
+      Date.now() - startedAt >= retryAfterMs &&
+      shouldRetryPromptCommit(info)
+    ) {
+      retriedSubmission = true;
+      await retrySubmission();
     }
     await delay(100);
   }
@@ -954,12 +997,20 @@ interface CommitProbeState {
   stopVisible?: boolean;
   assistantVisible?: boolean;
   composerCleared?: boolean;
+  composerMatchesPrompt?: boolean;
   inConversation?: boolean;
   turnsCount?: number;
   href?: string;
   editorValue?: string;
   fallbackValue?: string;
   lastTurn?: string;
+}
+
+function shouldRetryPromptCommit(probe: CommitProbeState | undefined): boolean {
+  if (!probe?.composerMatchesPrompt || probe.composerCleared) return false;
+  if (probe.userMatched || probe.prefixMatched || probe.lastMatched || probe.hasNewTurn)
+    return false;
+  return !probe.stopVisible && !probe.assistantVisible && !probe.inConversation;
 }
 
 // Keep booleans/counts but replace free text with lengths so session metadata stays lean.
@@ -974,6 +1025,7 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
     stopVisible: probe.stopVisible,
     assistantVisible: probe.assistantVisible,
     composerCleared: probe.composerCleared,
+    composerMatchesPrompt: probe.composerMatchesPrompt,
     inConversation: probe.inConversation,
     editorLength: typeof probe.editorValue === "string" ? probe.editorValue.length : undefined,
     lastTurnLength: typeof probe.lastTurn === "string" ? probe.lastTurn.length : undefined,
@@ -985,4 +1037,5 @@ export const __test__ = {
   attemptSendButton,
   sendButtonTimeoutMs,
   verifyPromptCommitted,
+  shouldRetryPromptCommit,
 };

@@ -24,6 +24,7 @@ export interface BrowserDefaultsOptions {
   browserReuseWait?: string | number;
   browserProfileLockTimeout?: string | number;
   browserMaxConcurrentTabs?: string | number;
+  browserQueueTimeout?: string | number;
   browserAutoReattachDelay?: string | number;
   browserAutoReattachInterval?: string | number;
   browserAutoReattachTimeout?: string | number;
@@ -115,6 +116,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset("browserMaxConcurrentTabs") && typeof browser.maxConcurrentTabs === "number") {
     options.browserMaxConcurrentTabs = String(browser.maxConcurrentTabs);
+  }
+  if (isUnset("browserQueueTimeout") && typeof browser.queueTimeoutMs === "number") {
+    options.browserQueueTimeout = String(browser.queueTimeoutMs);
   }
   if (isUnset("browserAutoReattachDelay") && typeof browser.autoReattachDelayMs === "number") {
     options.browserAutoReattachDelay = String(browser.autoReattachDelayMs);

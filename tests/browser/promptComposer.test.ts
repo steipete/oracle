@@ -175,6 +175,80 @@ describe("promptComposer", () => {
     }
   });
 
+  test("retries submission once when the prompt is still uncommitted in the composer", async () => {
+    vi.useFakeTimers();
+    try {
+      let retried = false;
+      const runtime = {
+        evaluate: vi.fn().mockImplementation(async () => ({
+          result: {
+            value: retried
+              ? {
+                  baseline: 0,
+                  turnsCount: 1,
+                  userMatched: true,
+                  lastMatched: true,
+                  hasNewTurn: true,
+                  composerCleared: true,
+                  inConversation: true,
+                }
+              : {
+                  baseline: 0,
+                  turnsCount: 0,
+                  userMatched: false,
+                  prefixMatched: false,
+                  lastMatched: false,
+                  hasNewTurn: false,
+                  stopVisible: false,
+                  assistantVisible: false,
+                  composerCleared: false,
+                  composerMatchesPrompt: true,
+                  inConversation: false,
+                  editorValue: "neutral prompt",
+                },
+          },
+        })),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+      const retrySubmission = vi.fn(async () => {
+        retried = true;
+      });
+
+      const committed = promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "neutral prompt",
+        1_000,
+        undefined,
+        0,
+        retrySubmission,
+      );
+      await vi.advanceTimersByTimeAsync(500);
+
+      await expect(committed).resolves.toBe(1);
+      expect(retrySubmission).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does not retry when commit evidence could indicate an accepted prompt", () => {
+    expect(
+      promptComposer.shouldRetryPromptCommit({
+        composerMatchesPrompt: true,
+        composerCleared: false,
+        hasNewTurn: true,
+      }),
+    ).toBe(false);
+    expect(
+      promptComposer.shouldRetryPromptCommit({
+        composerMatchesPrompt: true,
+        composerCleared: false,
+        stopVisible: true,
+      }),
+    ).toBe(false);
+  });
+
   test("allows prompt match even if baseline turn count cannot be read", async () => {
     const runtime = {
       evaluate: vi

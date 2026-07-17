@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import http from "node:http";
 import { delay } from "./utils.js";
 
 export type ProfileStateLogger = (message: string) => void;
@@ -314,16 +315,9 @@ export async function verifyDevToolsReachable({
   attempts?: number;
   timeoutMs?: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const versionUrl = `http://${host}:${port}/json/version`;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const response = await fetch(versionUrl, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      await requestDevToolsVersion({ host, port, timeoutMs });
       return { ok: true };
     } catch (error) {
       if (attempt < attempts - 1) {
@@ -335,6 +329,36 @@ export async function verifyDevToolsReachable({
     }
   }
   return { ok: false, error: "unreachable" };
+}
+
+function requestDevToolsVersion({
+  host,
+  port,
+  timeoutMs,
+}: {
+  host: string;
+  port: number;
+  timeoutMs: number;
+}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = http.request(
+      { host, port, path: "/json/version", method: "GET" },
+      (response) => {
+        response.resume();
+        const status = response.statusCode ?? 0;
+        if (status >= 200 && status < 300) {
+          resolve();
+          return;
+        }
+        reject(new Error(`HTTP ${status}`));
+      },
+    );
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error(`timed out after ${timeoutMs}ms`));
+    });
+    request.once("error", reject);
+    request.end();
+  });
 }
 
 export async function shouldCleanupManualLoginProfileState(
@@ -373,16 +397,22 @@ export async function cleanupStaleProfileState(
     }
   }
 
+  const pid = await readChromePid(userDataDir);
+  const chromePidAlive = pid ? isProcessAlive(pid) : false;
+  if (pid && !chromePidAlive) {
+    await rm(path.join(userDataDir, CHROME_PID_FILENAME), { force: true }).catch(() => undefined);
+    logger?.(`Removed stale Chrome pid hint ${pid}`);
+  }
+
   const lockRemovalMode = options.lockRemovalMode ?? "never";
   if (lockRemovalMode === "never") {
     return;
   }
 
-  const pid = await readChromePid(userDataDir);
   if (!pid) {
     return;
   }
-  if (isProcessAlive(pid)) {
+  if (chromePidAlive) {
     logger?.(`Chrome pid ${pid} still alive; skipping profile lock cleanup`);
     return;
   }

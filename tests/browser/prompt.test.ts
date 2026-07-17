@@ -166,7 +166,12 @@ describe("assembleBrowserPrompt", () => {
     expect(result.composerText).not.toContain("### File: a.txt");
     expect(tokenizedContents).toContain("### File: a.txt\n```\ntiny\n```");
     expect(tokenizedContents.some((content) => content.includes("1 | tiny"))).toBe(false);
-    expect(result.fallback).toBeNull();
+    expect(result.fallback).toEqual(
+      expect.objectContaining({
+        composerText: expect.stringContaining("### File: a.txt"),
+        attachments: [],
+      }),
+    );
   });
 
   test("legacy browserInlineFiles forces inline and disables auto fallback", async () => {

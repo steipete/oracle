@@ -43,6 +43,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   reuseChromeWaitMs: 10_000,
   profileLockTimeoutMs: 300_000,
   maxConcurrentTabs: DEFAULT_MAX_CONCURRENT_CHATGPT_TABS,
+  queueTimeoutMs: 1_200_000,
   autoReattachDelayMs: 0,
   autoReattachIntervalMs: 0,
   autoReattachTimeoutMs: 120_000,
@@ -81,6 +82,7 @@ export function resolveBrowserConfig(
   const envMaxConcurrentTabs = parseMaxConcurrentTabs(
     process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS,
   );
+  const envQueueTimeoutMs = parseNonNegativeDurationMs(process.env.ORACLE_BROWSER_QUEUE_TIMEOUT);
   const rawUrl = config?.chatgptUrl ?? config?.url ?? DEFAULT_BROWSER_CONFIG.url;
   const normalizedUrl = normalizeChatgptUrl(
     rawUrl ?? DEFAULT_BROWSER_CONFIG.url,
@@ -123,6 +125,8 @@ export function resolveBrowserConfig(
     maxConcurrentTabs: normalizeMaxConcurrentTabs(
       config?.maxConcurrentTabs ?? envMaxConcurrentTabs ?? DEFAULT_BROWSER_CONFIG.maxConcurrentTabs,
     ),
+    queueTimeoutMs:
+      config?.queueTimeoutMs ?? envQueueTimeoutMs ?? DEFAULT_BROWSER_CONFIG.queueTimeoutMs,
     autoReattachDelayMs: config?.autoReattachDelayMs ?? DEFAULT_BROWSER_CONFIG.autoReattachDelayMs,
     autoReattachIntervalMs:
       config?.autoReattachIntervalMs ?? DEFAULT_BROWSER_CONFIG.autoReattachIntervalMs,
@@ -188,6 +192,23 @@ function parseMaxConcurrentTabs(raw?: string | null): number | null {
     return null;
   }
   return value;
+}
+
+function parseNonNegativeDurationMs(raw?: string | null): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const match = /^(\d+)(ms|s|m|h)?$/i.exec(trimmed);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const multiplier =
+    match[2]?.toLowerCase() === "h"
+      ? 3_600_000
+      : match[2]?.toLowerCase() === "m"
+        ? 60_000
+        : match[2]?.toLowerCase() === "s"
+          ? 1_000
+          : 1;
+  return Number.isSafeInteger(value * multiplier) ? value * multiplier : null;
 }
 
 function resolveManualLoginProfileDir(...candidates: Array<string | null | undefined>): string {
