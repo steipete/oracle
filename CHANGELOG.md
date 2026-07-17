@@ -4,7 +4,6 @@
 
 ### Fixed
 
-- Browser: treat recoverable CDP client disconnects as reattachable when Chrome/target is still alive, and attempt a one-shot auto-reattach on `connection-lost` (same recovery idea as `assistant-timeout`) so completed answers are not left stranded. Fixes #326. Thanks @piyushbag!
 - CLI: avoid inheriting `browser.thinkingTime` from config when `--browser-model-strategy current` is explicit, while preserving an explicit `--browser-thinking-time` override. Thanks @jung0han!
 
 ## 0.16.0 — 2026-07-12
