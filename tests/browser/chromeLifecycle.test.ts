@@ -143,6 +143,25 @@ describe("hidden-window launch flags", () => {
     );
   });
 
+  test("adds no-sandbox flags only when ORACLE_CHROME_NO_SANDBOX=1", async () => {
+    const { buildChromeFlagsForTest } = await import("../../src/browser/chromeLifecycle.js");
+    const previous = process.env.ORACLE_CHROME_NO_SANDBOX;
+    try {
+      delete process.env.ORACLE_CHROME_NO_SANDBOX;
+      expect(buildChromeFlagsForTest(false)).not.toContain("--no-sandbox");
+      process.env.ORACLE_CHROME_NO_SANDBOX = "1";
+      const flags = buildChromeFlagsForTest(false);
+      expect(flags).toContain("--no-sandbox");
+      expect(flags).toContain("--disable-dev-shm-usage");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.ORACLE_CHROME_NO_SANDBOX;
+      } else {
+        process.env.ORACLE_CHROME_NO_SANDBOX = previous;
+      }
+    }
+  });
+
   test("moves a running macOS Chrome window without minimizing it", async () => {
     const { positionChromeWindowOffscreen } = await import("../../src/browser/chromeLifecycle.js");
     const browser = {
