@@ -20,8 +20,8 @@ import {
   connectToRemoteChrome,
   connectWithNewTab,
   closeTab,
+  createChromePageTarget,
   ensureChromePageTargetAfterClose,
-  closeRemoteChromeTarget,
   closeBlankChromeTabs,
 } from "./chromeLifecycle.js";
 import { clearStaleChatGptConversationCookies, syncCookies } from "./cookies.js";
@@ -75,6 +75,11 @@ import {
   writeChromePid,
   writeDevToolsActivePort,
 } from "./profileState.js";
+import {
+  connectionLostUserMessage,
+  isRecoverableChromeDisconnect,
+  probeChromeTargetLiveness,
+} from "./cdpLiveness.js";
 import {
   acquireBrowserTabLease,
   hasOtherActiveBrowserTabLeases,
@@ -864,6 +869,24 @@ function shouldCloseOwnedRunTargetAfterRun(options: {
   );
 }
 
+function shouldCleanupBlankTabsAfterLastLease(options: {
+  runStatus: "attempted" | "complete";
+  ownsTarget: boolean;
+  connectionClosedUnexpectedly: boolean;
+  manualLogin: boolean;
+  keepBrowser: boolean;
+  chromePort?: number;
+}): boolean {
+  return (
+    options.runStatus === "complete" &&
+    options.ownsTarget &&
+    !options.connectionClosedUnexpectedly &&
+    options.manualLogin &&
+    options.keepBrowser &&
+    Boolean(options.chromePort)
+  );
+}
+
 function buildSkippedModelSelectionEvidence(
   desiredModel: string | null | undefined,
   strategy: BrowserModelSelectionEvidence["strategy"],
@@ -1162,12 +1185,42 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const disconnectPromise = new Promise<never>((_, reject) => {
       client?.on("disconnect", () => {
         connectionClosedUnexpectedly = true;
-        logger("Chrome window closed; attempting to abort run.");
-        reject(
-          new Error(
-            "Chrome window closed before oracle finished. Please keep it open until completion.",
-          ),
-        );
+        void (async () => {
+          const liveness = await probeChromeTargetLiveness({
+            host: chromeHost,
+            port: chrome.port,
+            targetId: lastTargetId ?? isolatedTargetId,
+          });
+          const recoverable = isRecoverableChromeDisconnect(liveness);
+          if (recoverable) {
+            logger(
+              "CDP client disconnected; Chrome/target still reachable. Leaving run recoverable for reattach.",
+            );
+          } else {
+            logger("Chrome window closed; attempting to abort run.");
+          }
+          reject(
+            new BrowserAutomationError(connectionLostUserMessage({ recoverable }), {
+              stage: "connection-lost",
+              recoverableDisconnect: recoverable,
+              disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
+              runtime: {
+                chromePid: chrome.pid,
+                chromePort: chrome.port,
+                chromeHost,
+                userDataDir,
+                chromeTargetId: lastTargetId ?? isolatedTargetId ?? undefined,
+                tabUrl: liveness.matchedUrl ?? lastUrl,
+                conversationId:
+                  (liveness.matchedUrl ?? lastUrl)
+                    ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+                    : undefined,
+                promptSubmitted,
+                controllerPid: process.pid,
+              },
+            }),
+          );
+        })();
       });
     });
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
@@ -2279,21 +2332,39 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       throw normalizedError;
     }
     if ((config.debug || process.env.CHATGPT_DEVTOOLS_TRACE === "1") && normalizedError.stack) {
-      logger(`Chrome window closed before completion: ${normalizedError.message}`);
+      logger(`Chrome connection lost before completion: ${normalizedError.message}`);
       logger(normalizedError.stack);
     }
     await emitRuntimeHint();
+    if (
+      normalizedError instanceof BrowserAutomationError &&
+      (normalizedError.details as { stage?: string } | undefined)?.stage === "connection-lost"
+    ) {
+      throw normalizedError;
+    }
+    const liveness = await probeChromeTargetLiveness({
+      host: chromeHost,
+      port: chrome.port,
+      targetId: lastTargetId ?? isolatedTargetId,
+    });
+    const recoverable = isRecoverableChromeDisconnect(liveness);
     throw new BrowserAutomationError(
-      "Chrome window closed before oracle finished. Please keep it open until completion.",
+      connectionLostUserMessage({ recoverable }),
       {
         stage: "connection-lost",
+        recoverableDisconnect: recoverable,
+        disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
         runtime: {
           chromePid: chrome.pid,
           chromePort: chrome.port,
           chromeHost,
           userDataDir,
           chromeTargetId: lastTargetId,
-          tabUrl: lastUrl,
+          tabUrl: liveness.matchedUrl ?? lastUrl,
+          conversationId:
+            (liveness.matchedUrl ?? lastUrl)
+              ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+              : undefined,
           promptSubmitted,
           controllerPid: process.pid,
         },
@@ -2318,26 +2389,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       keepBrowser: effectiveKeepBrowser,
       closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
     });
-    let retainedChromeTargetId: string | undefined;
-    if (shouldCloseOwnedRunTarget && isolatedTargetId && chrome?.port) {
-      const safeToClose =
-        !effectiveKeepBrowser ||
-        Boolean(
-          (retainedChromeTargetId = await ensureChromePageTargetAfterClose(
-            chrome.port,
-            isolatedTargetId,
-            logger,
-            chromeHost,
-          )),
-        );
-      if (safeToClose) {
-        await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
-      } else {
-        logger(
-          `[browser] Leaving completed browser tab open because Chrome has no replacement page target.`,
-        );
-      }
-    }
     let keepBrowserOpen = shouldKeepLocalBrowserOpen({
       effectiveKeepBrowser,
       preserveBrowserOnError,
@@ -2358,21 +2409,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       }
       return otherActiveBrowserTabLeases;
     };
-    if (
-      runStatus === "complete" &&
-      manualLogin &&
-      !connectionClosedUnexpectedly &&
-      chrome?.port &&
-      ownsTarget
-    ) {
-      const otherLeasesActive = await hasOtherActiveLeases().catch(() => true);
-      if (!otherLeasesActive) {
-        await closeBlankChromeTabs(chrome.port, logger, chromeHost, {
-          excludeTargetIds: [isolatedTargetId, lastTargetId],
-          preserveOneBlank: Boolean(retainedChromeTargetId),
-        }).catch(() => undefined);
-      }
-    }
     if (!keepBrowserOpen && manualLogin && tabLease) {
       const cleanupLockTimeoutMs = Math.max(0, config.profileLockTimeoutMs ?? 0);
       if (cleanupLockTimeoutMs > 0) {
@@ -2392,10 +2428,63 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         ).catch(() => false);
       }
     }
+    const closeOwnedRunTarget = async () => {
+      if (!shouldCloseOwnedRunTarget || !isolatedTargetId || !chrome?.port) {
+        return;
+      }
+      const safeToClose =
+        !effectiveKeepBrowser ||
+        Boolean(
+          await ensureChromePageTargetAfterClose(chrome.port, isolatedTargetId, logger, chromeHost),
+        );
+      if (!safeToClose) {
+        logger(
+          `[browser] Leaving completed browser tab open because Chrome has no replacement page target.`,
+        );
+        return;
+      }
+      const closeConfirmed = await closeTab(chrome.port, isolatedTargetId, logger, chromeHost);
+      if (!closeConfirmed && effectiveKeepBrowser) {
+        const replacementTargetId = await createChromePageTarget(chrome.port, logger, chromeHost);
+        if (!replacementTargetId) {
+          logger(
+            `[browser] Chrome page retention could not be verified after closing ${isolatedTargetId}.`,
+          );
+        }
+      }
+    };
+    const cleanupBlankTabs = async () => {
+      if (
+        !shouldCleanupBlankTabsAfterLastLease({
+          runStatus,
+          ownsTarget,
+          connectionClosedUnexpectedly,
+          manualLogin,
+          keepBrowser: effectiveKeepBrowser,
+          chromePort: chrome?.port,
+        }) ||
+        !chrome?.port
+      ) {
+        return;
+      }
+      await closeBlankChromeTabs(chrome.port, logger, chromeHost, {
+        excludeTargetIds: [isolatedTargetId, lastTargetId],
+        preserveOneBlank: true,
+      });
+    };
     if (tabLease) {
       const handle = tabLease;
       tabLease = null;
-      await handle.release().catch(() => undefined);
+      const onRelease = async ({ isLastLease }: { isLastLease: boolean }) => {
+        await closeOwnedRunTarget();
+        if (isLastLease) {
+          await cleanupBlankTabs();
+        }
+      };
+      await handle.release({ onRelease }).catch(() => undefined);
+    } else {
+      await closeOwnedRunTarget();
+      await cleanupBlankTabs();
     }
     removeDialogHandler?.();
     removeTerminationHooks?.();
@@ -3678,15 +3767,28 @@ async function runRemoteBrowserMode(
       throw normalizedError;
     }
 
-    throw new BrowserAutomationError("Remote Chrome connection lost before Oracle finished.", {
+    const liveness = await probeChromeTargetLiveness({
+      host,
+      port,
+      targetId: remoteTargetId,
+      browserWSEndpoint,
+    });
+    const recoverable = isRecoverableChromeDisconnect(liveness);
+    throw new BrowserAutomationError(connectionLostUserMessage({ recoverable, remote: true }), {
       stage: "connection-lost",
+      recoverableDisconnect: recoverable,
+      disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
       runtime: {
         chromeHost: host,
         chromePort: port,
         chromeBrowserWSEndpoint: browserWSEndpoint,
         chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
-        tabUrl: lastUrl,
+        tabUrl: liveness.matchedUrl ?? lastUrl,
+        conversationId:
+          (liveness.matchedUrl ?? lastUrl)
+            ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+            : undefined,
         promptSubmitted,
         controllerPid: process.pid,
       },
@@ -3704,20 +3806,44 @@ async function runRemoteBrowserMode(
       // ignore
     }
     removeDialogHandler?.();
+    const keepRemoteBrowser = Boolean(config.keepBrowser);
+    const shouldCloseOwnedRemoteTarget = shouldCloseOwnedRunTargetAfterRun({
+      runStatus,
+      ownsTarget,
+      keepBrowser: keepRemoteBrowser,
+      closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
+    });
+    const closeOwnedRemoteTarget = async () => {
+      if (!shouldCloseOwnedRemoteTarget || !remoteTargetId) {
+        return;
+      }
+      const safeToClose =
+        !keepRemoteBrowser ||
+        Boolean(await ensureChromePageTargetAfterClose(port, remoteTargetId, logger, host));
+      if (!safeToClose) {
+        logger(
+          `[browser] Leaving completed remote browser tab open because Chrome has no replacement page target.`,
+        );
+        return;
+      }
+      const closeConfirmed = await closeTab(port, remoteTargetId, logger, host);
+      if (!closeConfirmed && keepRemoteBrowser) {
+        const replacementTargetId = await createChromePageTarget(port, logger, host);
+        if (!replacementTargetId) {
+          logger(
+            `[browser] Remote Chrome page retention could not be verified after closing ${remoteTargetId}.`,
+          );
+        }
+      }
+    };
     if (tabLease) {
       const handle = tabLease;
       tabLease = null;
-      await handle.release().catch(() => undefined);
-    }
-    if (
-      shouldCloseOwnedRunTargetAfterRun({
-        runStatus,
-        ownsTarget,
-        keepBrowser: Boolean(config.keepBrowser),
-        closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
-      })
-    ) {
-      await closeRemoteChromeTarget(host, port, remoteTargetId ?? undefined, logger);
+      await handle
+        .release({ onRelease: async () => closeOwnedRemoteTarget() })
+        .catch(() => undefined);
+    } else {
+      await closeOwnedRemoteTarget();
     }
     // Don't kill remote Chrome - it's not ours to manage
     const totalSeconds = (Date.now() - startedAt) / 1000;
@@ -3742,6 +3868,7 @@ export const __test__ = {
   isImageOnlyUiChromeText,
   listIgnoredRemoteChromeFlags,
   resolveManualLoginWaitMs,
+  shouldCleanupBlankTabsAfterLastLease,
   shouldCloseOwnedRunTargetAfterRun,
   shouldKeepLocalBrowserOpen,
 };

@@ -31,3 +31,34 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
       - run: pnpm run test:packed-cli
         if: matrix.os == 'ubuntu-latest'
+
+  # Linux parity smoke for recoverable CDP disconnect classification (issue #326 / PR #327).
+  # No ChatGPT auth; exercises real Chromium DevTools against the same probe path as macOS proof.
+  cdp-disconnect-proof-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v6
+      - name: Install Chromium
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq chromium-browser || sudo apt-get install -y -qq chromium
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Run CDP disconnect classification proof
+        env:
+          CHROME_PATH: /usr/bin/chromium-browser
+        run: |
+          if [[ ! -x "${CHROME_PATH}" ]]; then
+            if [[ -x /usr/bin/chromium ]]; then
+              export CHROME_PATH=/usr/bin/chromium
+            else
+              echo "Chromium binary not found" >&2
+              exit 1
+            fi
+          fi
+          echo "CHROME_PATH=${CHROME_PATH}"
+          node scripts/cdp-disconnect-proof.mjs

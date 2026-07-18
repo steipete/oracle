@@ -561,20 +561,49 @@ export async function closeTab(
   targetId: string,
   logger: BrowserLogger,
   host?: string,
-): Promise<void> {
+): Promise<boolean> {
   const effectiveHost = host ?? "127.0.0.1";
   try {
     await CDP.Close({ host: effectiveHost, port, id: targetId });
-    logger(`Closed isolated browser tab (target=${targetId})`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await delay(25);
+      let targets: Array<{ id?: string; targetId?: string }>;
+      try {
+        targets = (await CDP.List({ host: effectiveHost, port })) as Array<{
+          id?: string;
+          targetId?: string;
+        }>;
+      } catch {
+        continue;
+      }
+      if (!targets.some((target) => (target.targetId ?? target.id) === targetId)) {
+        logger(`Closed isolated browser tab (target=${targetId})`);
+        return true;
+      }
+    }
+    logger(`Browser tab close was not confirmed (target=${targetId})`);
+    return false;
   } catch (error) {
+    try {
+      const targets = (await CDP.List({ host: effectiveHost, port })) as Array<{
+        id?: string;
+        targetId?: string;
+      }>;
+      if (!targets.some((target) => (target.targetId ?? target.id) === targetId)) {
+        logger(`Closed isolated browser tab (target=${targetId})`);
+        return true;
+      }
+    } catch {
+      // Preserve the original close error below.
+    }
     const message = error instanceof Error ? error.message : String(error);
     logger(`Failed to close browser tab ${targetId}: ${message}`);
+    return false;
   }
 }
 
-export async function ensureChromePageTargetAfterClose(
+export async function createChromePageTarget(
   port: number,
-  closingTargetId: string,
   logger: BrowserLogger,
   host?: string,
 ): Promise<string | undefined> {
@@ -587,18 +616,43 @@ export async function ensureChromePageTargetAfterClose(
     })) as { id?: string; targetId?: string };
     const createdTargetId = created.targetId ?? created.id;
     if (!createdTargetId) {
-      logger(`Failed to create a replacement Chrome tab before closing ${closingTargetId}.`);
+      logger("Failed to create a replacement Chrome tab.");
       return undefined;
     }
     logger(`Opened replacement Chrome tab (target=${createdTargetId})`);
     return createdTargetId;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger(
-      `Failed to create a replacement Chrome tab before closing ${closingTargetId}: ${message}`,
-    );
+    logger(`Failed to create a replacement Chrome tab: ${message}`);
     return undefined;
   }
+}
+
+export async function ensureChromePageTargetAfterClose(
+  port: number,
+  closingTargetId: string,
+  logger: BrowserLogger,
+  host?: string,
+): Promise<string | undefined> {
+  const effectiveHost = host ?? "127.0.0.1";
+  try {
+    const targets = (await CDP.List({ host: effectiveHost, port })) as Array<{
+      id?: string;
+      targetId?: string;
+      type?: string;
+    }>;
+    const existingPageTargetId = targets
+      .filter((target) => target.type === "page")
+      .map((target) => target.targetId ?? target.id)
+      .find((targetId): targetId is string => Boolean(targetId) && targetId !== closingTargetId);
+    if (existingPageTargetId) {
+      return existingPageTargetId;
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`Failed to inspect Chrome tabs before closing ${closingTargetId}: ${message}`);
+  }
+  return await createChromePageTarget(port, logger, host);
 }
 
 export async function closeBlankChromeTabs(
@@ -710,6 +764,12 @@ function buildChromeFlags(
     // trusted CDP clicks and retain the prompt as a draft. Keeping the window
     // off-screen avoids desktop disruption while preserving normal rendering.
     flags.push("--window-position=-32000,-32000");
+  }
+
+  // Opt-in only: container/CI Chromium often cannot use the sandbox. Callers must
+  // set ORACLE_CHROME_NO_SANDBOX=1 explicitly (never default this on).
+  if (process.env.ORACLE_CHROME_NO_SANDBOX === "1") {
+    flags.push("--no-sandbox", "--disable-dev-shm-usage");
   }
 
   return flags;

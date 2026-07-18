@@ -124,4 +124,83 @@ describe("tabLeaseRegistry", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("runs cleanup exactly once when concurrent runs release their final lease", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    try {
+      const first = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 3,
+        timeoutMs: 500,
+      });
+      const second = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 3,
+        timeoutMs: 500,
+      });
+      const firstCleanup = vi.fn(async () => undefined);
+      const secondCleanup = vi.fn(async () => undefined);
+
+      await Promise.all([
+        first.release({
+          onRelease: async ({ isLastLease }) => {
+            if (isLastLease) await firstCleanup();
+          },
+        }),
+        second.release({
+          onRelease: async ({ isLastLease }) => {
+            if (isLastLease) await secondCleanup();
+          },
+        }),
+      ]);
+
+      expect(firstCleanup.mock.calls.length + secondCleanup.mock.calls.length).toBe(1);
+      const registry = JSON.parse(
+        await readFile(path.join(dir, "oracle-tab-leases.json"), "utf8"),
+      ) as { leases: unknown[] };
+      expect(registry.leases).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("blocks a new lease until final-lease cleanup completes", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-tab-leases-"));
+    try {
+      const current = await acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 3,
+        timeoutMs: 500,
+      });
+      let finishCleanup!: () => void;
+      const cleanupStarted = new Promise<void>((resolveStarted) => {
+        void current.release({
+          onRelease: async ({ isLastLease }) => {
+            expect(isLastLease).toBe(true);
+            resolveStarted();
+            await new Promise<void>((resolveCleanup) => {
+              finishCleanup = resolveCleanup;
+            });
+          },
+        });
+      });
+      await cleanupStarted;
+
+      let acquired = false;
+      const nextPromise = acquireBrowserTabLease(dir, {
+        maxConcurrentTabs: 3,
+        pollMs: 25,
+        timeoutMs: 1000,
+      }).then((lease) => {
+        acquired = true;
+        return lease;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(acquired).toBe(false);
+
+      finishCleanup();
+      const next = await nextPromise;
+      expect(acquired).toBe(true);
+      await next.release();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

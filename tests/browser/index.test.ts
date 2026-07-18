@@ -143,6 +143,59 @@ describe("browser run target cleanup", () => {
       }),
     ).toBe(false);
   });
+
+  test("schedules final blank cleanup for retained manual-login Chrome", () => {
+    expect(
+      __test__.shouldCleanupBlankTabsAfterLastLease({
+        runStatus: "complete",
+        ownsTarget: true,
+        connectionClosedUnexpectedly: false,
+        manualLogin: true,
+        keepBrowser: true,
+        chromePort: 9222,
+      }),
+    ).toBe(true);
+    expect(
+      __test__.shouldCleanupBlankTabsAfterLastLease({
+        runStatus: "complete",
+        ownsTarget: true,
+        connectionClosedUnexpectedly: false,
+        manualLogin: true,
+        keepBrowser: false,
+        chromePort: 9222,
+      }),
+    ).toBe(false);
+    expect(
+      __test__.shouldCleanupBlankTabsAfterLastLease({
+        runStatus: "attempted",
+        ownsTarget: true,
+        connectionClosedUnexpectedly: false,
+        manualLogin: true,
+        keepBrowser: true,
+        chromePort: 9222,
+      }),
+    ).toBe(false);
+    expect(
+      __test__.shouldCleanupBlankTabsAfterLastLease({
+        runStatus: "complete",
+        ownsTarget: false,
+        connectionClosedUnexpectedly: false,
+        manualLogin: true,
+        keepBrowser: true,
+        chromePort: 9222,
+      }),
+    ).toBe(false);
+    expect(
+      __test__.shouldCleanupBlankTabsAfterLastLease({
+        runStatus: "complete",
+        ownsTarget: true,
+        connectionClosedUnexpectedly: true,
+        manualLogin: true,
+        keepBrowser: true,
+        chromePort: 9222,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("manual-login profile setup gate", () => {
