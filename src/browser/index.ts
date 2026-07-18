@@ -20,6 +20,7 @@ import {
   connectToRemoteChrome,
   connectWithNewTab,
   closeTab,
+  ensureChromePageTargetAfterClose,
   closeRemoteChromeTarget,
   closeBlankChromeTabs,
 } from "./chromeLifecycle.js";
@@ -2311,17 +2312,31 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     // Close the isolated tab once the response has been fully captured to prevent
     // tab accumulation across repeated runs. Keep the tab open on incomplete runs
     // so reattach can recover the response.
-    if (
-      shouldCloseOwnedRunTargetAfterRun({
-        runStatus,
-        ownsTarget,
-        keepBrowser: effectiveKeepBrowser,
-        closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
-      }) &&
-      isolatedTargetId &&
-      chrome?.port
-    ) {
-      await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
+    const shouldCloseOwnedRunTarget = shouldCloseOwnedRunTargetAfterRun({
+      runStatus,
+      ownsTarget,
+      keepBrowser: effectiveKeepBrowser,
+      closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
+    });
+    let retainedChromeTargetId: string | undefined;
+    if (shouldCloseOwnedRunTarget && isolatedTargetId && chrome?.port) {
+      const safeToClose =
+        !effectiveKeepBrowser ||
+        Boolean(
+          (retainedChromeTargetId = await ensureChromePageTargetAfterClose(
+            chrome.port,
+            isolatedTargetId,
+            logger,
+            chromeHost,
+          )),
+        );
+      if (safeToClose) {
+        await closeTab(chrome.port, isolatedTargetId, logger, chromeHost).catch(() => undefined);
+      } else {
+        logger(
+          `[browser] Leaving completed browser tab open because Chrome has no replacement page target.`,
+        );
+      }
     }
     let keepBrowserOpen = shouldKeepLocalBrowserOpen({
       effectiveKeepBrowser,
@@ -2354,6 +2369,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       if (!otherLeasesActive) {
         await closeBlankChromeTabs(chrome.port, logger, chromeHost, {
           excludeTargetIds: [isolatedTargetId, lastTargetId],
+          preserveOneBlank: Boolean(retainedChromeTargetId),
         }).catch(() => undefined);
       }
     }

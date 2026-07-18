@@ -572,11 +572,43 @@ export async function closeTab(
   }
 }
 
+export async function ensureChromePageTargetAfterClose(
+  port: number,
+  closingTargetId: string,
+  logger: BrowserLogger,
+  host?: string,
+): Promise<string | undefined> {
+  const effectiveHost = host ?? "127.0.0.1";
+  try {
+    const created = (await CDP.New({
+      host: effectiveHost,
+      port,
+      url: "about:blank",
+    })) as { id?: string; targetId?: string };
+    const createdTargetId = created.targetId ?? created.id;
+    if (!createdTargetId) {
+      logger(`Failed to create a replacement Chrome tab before closing ${closingTargetId}.`);
+      return undefined;
+    }
+    logger(`Opened replacement Chrome tab (target=${createdTargetId})`);
+    return createdTargetId;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(
+      `Failed to create a replacement Chrome tab before closing ${closingTargetId}: ${message}`,
+    );
+    return undefined;
+  }
+}
+
 export async function closeBlankChromeTabs(
   port: number,
   logger: BrowserLogger,
   host?: string,
-  options?: { excludeTargetIds?: Iterable<string | null | undefined> },
+  options?: {
+    excludeTargetIds?: Iterable<string | null | undefined>;
+    preserveOneBlank?: boolean;
+  },
 ): Promise<void> {
   const effectiveHost = host ?? "127.0.0.1";
   const excluded = new Set(
@@ -598,10 +630,22 @@ export async function closeBlankChromeTabs(
     return;
   }
 
+  const preservedBlankTargetId = options?.preserveOneBlank
+    ? targets
+        .filter(isBlankPageTarget)
+        .map((target) => target.targetId ?? target.id)
+        .filter((targetId): targetId is string => Boolean(targetId))
+        .sort()[0]
+    : undefined;
   let closed = 0;
   for (const target of targets) {
     const targetId = target.targetId ?? target.id;
-    if (!targetId || excluded.has(targetId) || !isBlankPageTarget(target)) {
+    if (
+      !targetId ||
+      targetId === preservedBlankTargetId ||
+      excluded.has(targetId) ||
+      !isBlankPageTarget(target)
+    ) {
       continue;
     }
     try {
