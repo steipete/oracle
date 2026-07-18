@@ -49,7 +49,9 @@ describe("writeOwnerOnlyFile", () => {
     writeOwnerOnlyFile(filePath, JSON.stringify([{ name: "session", value: "secret" }]));
 
     expect(statSync(filePath).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual([{ name: "session", value: "secret" }]);
+    expect(JSON.parse(readFileSync(filePath, "utf8"))).toEqual([
+      { name: "session", value: "secret" },
+    ]);
   });
 
   test("secures 0600 before writing secret bytes when overwriting a 0644 file", () => {

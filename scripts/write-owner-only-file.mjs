@@ -25,11 +25,7 @@ import {
 export function writeOwnerOnlyFile(filePath, contents, options = {}) {
   let fd;
   try {
-    fd = openSync(
-      filePath,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC,
-      0o600,
-    );
+    fd = openSync(filePath, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC, 0o600);
 
     if (process.platform !== "win32") {
       fchmodSync(fd, 0o600);

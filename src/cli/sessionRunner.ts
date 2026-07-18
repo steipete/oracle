@@ -1150,7 +1150,9 @@ async function autoReattachUntilComplete({
   const maxTotalMs = 2 * 60 * 60 * 1000; // 2h hard cap; avoid infinite polling by default.
   const maxDeadline = Date.now() + maxTotalMs;
   const attemptLimit =
-    typeof maxAttempts === "number" && maxAttempts > 0 ? Math.floor(maxAttempts) : Number.POSITIVE_INFINITY;
+    typeof maxAttempts === "number" && maxAttempts > 0
+      ? Math.floor(maxAttempts)
+      : Number.POSITIVE_INFINITY;
 
   if (delayMs > 0) {
     log(dim(`Auto-reattach starting in ${formatElapsed(delayMs)}...`));
@@ -1159,7 +1161,9 @@ async function autoReattachUntilComplete({
   if (Number.isFinite(attemptLimit)) {
     log(dim(`Auto-reattach will try up to ${attemptLimit} attempt(s).`));
   } else {
-    log(dim(`Auto-reattach will stop after ${formatElapsed(maxTotalMs)} if no answer is captured.`));
+    log(
+      dim(`Auto-reattach will stop after ${formatElapsed(maxTotalMs)} if no answer is captured.`),
+    );
   }
 
   const logger: BrowserLogger = ((message?: string) => {

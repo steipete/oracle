@@ -24,9 +24,6 @@ import { createWriteStream } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -175,10 +172,7 @@ async function main() {
   await rm(sessionDir, { recursive: true, force: true }).catch(() => {});
   await mkdir(path.dirname(sessionDir), { recursive: true });
 
-  const logPath = path.join(
-    await mkdtemp(path.join(os.tmpdir(), "oracle-e2e-cdp-")),
-    "run.log",
-  );
+  const logPath = path.join(await mkdtemp(path.join(os.tmpdir(), "oracle-e2e-cdp-")), "run.log");
   const logStream = createWriteStream(logPath, { flags: "a" });
   log(`slug=${slug}`);
   log(`model=${model}`);
@@ -261,8 +255,7 @@ async function main() {
     const ready = await waitFor(
       (meta) =>
         Boolean(
-          meta?.browser?.runtime?.chromePort &&
-            meta?.browser?.runtime?.promptSubmitted === true,
+          meta?.browser?.runtime?.chromePort && meta?.browser?.runtime?.promptSubmitted === true,
         ),
       {
         timeoutMs: 240_000,
@@ -292,26 +285,17 @@ async function main() {
         `Oracle exited before forced CDP detach (code=${childExit.code}); answer finished too fast`,
       );
     }
-    await forceDetachOracleClient(
-      runtime.chromePort,
-      runtime.controllerPid || child.pid,
-    );
+    await forceDetachOracleClient(runtime.chromePort, runtime.controllerPid || child.pid);
     forcedDetach = true;
 
-    const completed = await waitFor(
-      (meta) => meta?.status === "completed",
-      {
-        timeoutMs: 300_000,
-        intervalMs: 1000,
-        label: "session status=completed after disconnect",
-      },
-    );
+    const completed = await waitFor((meta) => meta?.status === "completed", {
+      timeoutMs: 300_000,
+      intervalMs: 1000,
+      label: "session status=completed after disconnect",
+    });
 
     const answer =
-      completed?.response?.text ||
-      completed?.response?.markdown ||
-      completed?.answer ||
-      "";
+      completed?.response?.text || completed?.response?.markdown || completed?.answer || "";
     const answerPreview = String(answer).slice(0, 120).replace(/\s+/g, " ");
     log(`session completed; answerPreview=${JSON.stringify(answerPreview)}`);
 
@@ -320,9 +304,7 @@ async function main() {
     const fullLog = await readFile(logPath, "utf8");
     const signals = proofSignals(fullLog, completed);
     const harvested =
-      fullLog.includes(token) ||
-      String(answer).includes(token) ||
-      signals.sawAutoReattach;
+      fullLog.includes(token) || String(answer).includes(token) || signals.sawAutoReattach;
 
     if (!forcedDetach) {
       throw new Error("forced CDP detach never ran");

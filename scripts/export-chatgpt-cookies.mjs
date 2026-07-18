@@ -17,12 +17,22 @@ const { cookies } = await getCookies({
 });
 
 // CDP CookieParam shape only; drop sweet-cookie metadata that Oracle ignores.
-const payload = cookies.map(({ name, value, domain, path, secure, httpOnly, sameSite, expires }) => {
-  const cookie = { name, value, domain, path: path ?? "/", secure: secure ?? true, httpOnly: Boolean(httpOnly) };
-  if (sameSite === "Lax" || sameSite === "Strict" || sameSite === "None") cookie.sameSite = sameSite;
-  if (typeof expires === "number" && expires > 0) cookie.expires = expires;
-  return cookie;
-});
+const payload = cookies.map(
+  ({ name, value, domain, path, secure, httpOnly, sameSite, expires }) => {
+    const cookie = {
+      name,
+      value,
+      domain,
+      path: path ?? "/",
+      secure: secure ?? true,
+      httpOnly: Boolean(httpOnly),
+    };
+    if (sameSite === "Lax" || sameSite === "Strict" || sameSite === "None")
+      cookie.sameSite = sameSite;
+    if (typeof expires === "number" && expires > 0) cookie.expires = expires;
+    return cookie;
+  },
+);
 
 const hasSession = payload.some((c) => c.name.startsWith("__Secure-next-auth.session-token"));
 writeOwnerOnlyFile(out, JSON.stringify(payload));

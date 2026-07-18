@@ -16,16 +16,13 @@ import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { launch, Launcher } = require("chrome-launcher");
+const { Launcher } = require("chrome-launcher");
 const CDP = require("chrome-remote-interface");
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distRoot = path.resolve(here, "..", "dist", "src");
-const {
-  probeChromeTargetLiveness,
-  isRecoverableChromeDisconnect,
-  connectionLostUserMessage,
-} = await import(pathToFileURL(path.join(distRoot, "browser", "cdpLiveness.js")).href);
+const { probeChromeTargetLiveness, isRecoverableChromeDisconnect, connectionLostUserMessage } =
+  await import(pathToFileURL(path.join(distRoot, "browser", "cdpLiveness.js")).href);
 
 function log(step, detail) {
   console.log(`[${new Date().toISOString()}] ${step}${detail ? `: ${detail}` : ""}`);
@@ -77,7 +74,10 @@ async function run() {
   try {
     log("platform", `${process.platform}/${process.arch} chromePath=${chromePath}`);
     log("launch", "Chrome/Chromium headless with remote debugging");
-    chrome = await launch({
+    // Keep the launcher handle before awaiting readiness. If DevTools startup
+    // times out, the rejected promise otherwise loses the spawned Chrome pid
+    // and leaves the proof process behind.
+    chrome = new Launcher({
       chromePath,
       chromeFlags: [
         "--headless=new",
@@ -92,6 +92,7 @@ async function run() {
       userDataDir,
       handleSIGINT: false,
     });
+    await chrome.launch();
     port = chrome.port;
     log("chrome-up", `port=${port} pid=${chrome.pid}`);
 
@@ -211,3 +212,7 @@ async function run() {
 }
 
 await run();
+// chrome-launcher can retain an internal log descriptor after a failed startup
+// with a caller-owned profile. Cleanup above is complete, so terminate with the
+// recorded proof status instead of leaving CI waiting on that descriptor.
+process.exit(process.exitCode ?? 0);

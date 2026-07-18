@@ -1187,9 +1187,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
                 userDataDir,
                 chromeTargetId: lastTargetId ?? isolatedTargetId ?? undefined,
                 tabUrl: liveness.matchedUrl ?? lastUrl,
-                conversationId: (liveness.matchedUrl ?? lastUrl)
-                  ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
-                  : undefined,
+                conversationId:
+                  (liveness.matchedUrl ?? lastUrl)
+                    ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+                    : undefined,
                 promptSubmitted,
                 controllerPid: process.pid,
               },
@@ -2336,9 +2337,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           userDataDir,
           chromeTargetId: lastTargetId,
           tabUrl: liveness.matchedUrl ?? lastUrl,
-          conversationId: (liveness.matchedUrl ?? lastUrl)
-            ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
-            : undefined,
+          conversationId:
+            (liveness.matchedUrl ?? lastUrl)
+              ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+              : undefined,
           promptSubmitted,
           controllerPid: process.pid,
         },
@@ -3725,9 +3727,10 @@ async function runRemoteBrowserMode(
         chromeProfileRoot,
         chromeTargetId: remoteTargetId ?? undefined,
         tabUrl: liveness.matchedUrl ?? lastUrl,
-        conversationId: (liveness.matchedUrl ?? lastUrl)
-          ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
-          : undefined,
+        conversationId:
+          (liveness.matchedUrl ?? lastUrl)
+            ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+            : undefined,
         promptSubmitted,
         controllerPid: process.pid,
       },
