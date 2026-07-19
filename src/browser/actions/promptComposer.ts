@@ -23,6 +23,58 @@ const ENTER_KEY_EVENT = {
   nativeVirtualKeyCode: 13,
 } as const;
 const ENTER_KEY_TEXT = "\r";
+const PROMPT_COMMIT_DIAGNOSTIC_PREFIX = "ORACLE_PROMPT_COMMIT_DIAGNOSTIC ";
+
+interface PromptCommitDiagnostics {
+  trustedPointClick: boolean;
+  record: (phase: string, status: string, actionKind: string) => void;
+  immediateProbe: (Runtime: ChromeClient["Runtime"]) => Promise<void>;
+}
+
+function createPromptCommitDiagnostics(logger: BrowserLogger): PromptCommitDiagnostics | undefined {
+  if (process.env.ORACLE_PROMPT_COMMIT_DIAGNOSTICS !== "1") return undefined;
+  let sequence = 0;
+  const record = (phase: string, status: string, actionKind: string) => {
+    try {
+      logger(
+        PROMPT_COMMIT_DIAGNOSTIC_PREFIX +
+          JSON.stringify({ phase, sequence: sequence++, status, actionKind }),
+      );
+    } catch {
+      // Diagnostics must never affect submission behavior.
+    }
+  };
+  return {
+    trustedPointClick: false,
+    record,
+    immediateProbe: async (Runtime) => {
+      let status = "evaluate_rejected";
+      try {
+        const response = await Runtime.evaluate({
+          expression: `(() => {
+            const __oraclePromptCommitDiagnosticProbe = true;
+            return { probe: __oraclePromptCommitDiagnosticProbe };
+          })()`,
+          returnByValue: true,
+        });
+        if (response.exceptionDetails) {
+          status = "protocol_exception";
+        } else if (
+          response.result?.value !== null &&
+          typeof response.result?.value === "object" &&
+          response.result.value.probe === true
+        ) {
+          status = "observed";
+        } else {
+          status = "unexpected_result";
+        }
+      } catch {
+        // Diagnostics must never affect submission behavior.
+      }
+      record("immediate_post_click_probe", status, "point_click");
+    },
+  };
+}
 
 export interface AttachmentReadyExpectation {
   name: string;
@@ -45,6 +97,7 @@ export async function submitPrompt(
   logger: BrowserLogger,
 ): Promise<number | null> {
   const { runtime, input } = deps;
+  const diagnostics = createPromptCommitDiagnostics(logger);
 
   await waitForDomReady(runtime, logger, deps.inputTimeoutMs ?? undefined);
   const encodedPrompt = JSON.stringify(prompt);
@@ -219,6 +272,7 @@ export async function submitPrompt(
     logger,
     deps?.attachmentNames,
     deps?.attachmentTimeoutMs,
+    diagnostics,
   );
   if (!clicked) {
     await input.dispatchKeyEvent({
@@ -245,6 +299,7 @@ export async function submitPrompt(
     commitTimeoutMs,
     logger,
     deps.baselineTurns ?? undefined,
+    diagnostics,
   );
 }
 
@@ -651,6 +706,7 @@ async function attemptSendButton(
   _logger?: BrowserLogger,
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
+  diagnostics?: PromptCommitDiagnostics,
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
   const script = `(() => {
@@ -719,7 +775,8 @@ async function attemptSendButton(
       typeof value.x === "number" &&
       typeof value.y === "number"
     ) {
-      await clickTrustedPoint(Runtime, Input, value.x, value.y);
+      diagnostics?.record("candidate_selected", "selected", "point_click");
+      await clickTrustedPoint(Runtime, Input, value.x, value.y, diagnostics);
       return true;
     }
     if (status === "clicked") {
@@ -751,11 +808,15 @@ async function clickTrustedPoint(
   Input: ChromeClient["Input"],
   x: number,
   y: number,
+  diagnostics?: PromptCommitDiagnostics,
 ): Promise<void> {
   if (Input && typeof Input.dispatchMouseEvent === "function") {
     await Input.dispatchMouseEvent({ type: "mouseMoved", x, y });
     await Input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });
     await Input.dispatchMouseEvent({ type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    diagnostics?.record("trusted_click_dispatched", "dispatched", "point_click");
+    if (diagnostics) diagnostics.trustedPointClick = true;
+    await diagnostics?.immediateProbe(Runtime);
     return;
   }
   await Runtime.evaluate({
@@ -787,6 +848,7 @@ async function verifyPromptCommitted(
   timeoutMs: number,
   logger?: BrowserLogger,
   baselineTurns?: number,
+  diagnostics?: PromptCommitDiagnostics,
 ): Promise<number | null> {
   const deadline = Date.now() + timeoutMs;
   const encodedPrompt = JSON.stringify(prompt.trim());
@@ -901,6 +963,9 @@ async function verifyPromptCommitted(
     const baselineUnknown =
       typeof info?.baseline === "number" ? info.baseline < 0 : baselineLiteral < 0;
     if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
+      if (diagnostics?.trustedPointClick) {
+        diagnostics.record("commit_accepted", "accepted", "point_click");
+      }
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
     }
     const fallbackCommit =
@@ -908,6 +973,9 @@ async function verifyPromptCommitted(
       Boolean(info?.hasNewTurn) &&
       ((info?.stopVisible ?? false) || info?.assistantVisible || info?.inConversation);
     if (fallbackCommit) {
+      if (diagnostics?.trustedPointClick) {
+        diagnostics.record("commit_accepted", "accepted", "point_click");
+      }
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
     }
     await delay(100);
@@ -918,9 +986,12 @@ async function verifyPromptCommitted(
   const probe = finalProbe && typeof finalProbe === "object" ? finalProbe : lastProbe;
   if (logger) {
     logger(
-      `Prompt commit check failed; latest state: ${probe ? JSON.stringify(probe) : "unavailable"}`,
+      `Prompt commit check failed; latest state: ${probe ? JSON.stringify(summarizeCommitProbe(probe)) : "unavailable"}`,
     );
     await logDomFailure(Runtime, logger, "prompt-commit");
+  }
+  if (diagnostics?.trustedPointClick) {
+    diagnostics.record("commit_timeout", "timeout", "point_click");
   }
   if (prompt.trim().length >= 50_000) {
     throw new BrowserAutomationError(
