@@ -49,11 +49,32 @@ const GEMINI_UPLOAD_MIME_TYPES: Record<string, string> = {
   ".gif": "image/gif",
   ".jpeg": "image/jpeg",
   ".jpg": "image/jpeg",
+  ".mov": "video/quicktime",
+  ".mp4": "video/mp4",
   ".pdf": "application/pdf",
   ".png": "image/png",
   ".svg": "image/svg+xml",
+  ".webm": "video/webm",
   ".webp": "image/webp",
 };
+
+/**
+ * Resolve the MIME type Gemini should be told an upload carries.
+ *
+ * Gemini silently discards uploads it cannot type: the run still reports the file as
+ * attached, but the model never receives it and answers as though nothing was sent.
+ * Anything falling back to `application/octet-stream` is therefore invisible to the model.
+ *
+ * Only formats confirmed to work against the Gemini web upload endpoint are listed. The
+ * endpoint also gates on the file extension, not just the declared type — an `.m4v` byte
+ * for byte identical to a working `.mp4`, and declared `video/mp4`, is still dropped — so
+ * entries here cannot be extrapolated from what the Gemini API documents.
+ */
+export function resolveGeminiUploadMimeType(filePath: string): string {
+  return (
+    GEMINI_UPLOAD_MIME_TYPES[path.extname(filePath).toLowerCase()] ?? "application/octet-stream"
+  );
+}
 
 function getNestedValue<T>(value: unknown, pathParts: Array<string | number>, fallback: T): T {
   let current: unknown = value;
@@ -187,8 +208,7 @@ async function uploadGeminiFile(
   const absPath = path.resolve(process.cwd(), filePath);
   const data = await readFile(absPath);
   const fileName = path.basename(absPath);
-  const mimeType =
-    GEMINI_UPLOAD_MIME_TYPES[path.extname(absPath).toLowerCase()] ?? "application/octet-stream";
+  const mimeType = resolveGeminiUploadMimeType(absPath);
 
   const form = new FormData();
   form.append("file", new Blob([data], { type: mimeType }), fileName);
