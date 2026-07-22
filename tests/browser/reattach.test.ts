@@ -346,6 +346,11 @@ describe("reattach helpers", () => {
 
   test("extracts conversation id from a chat URL", () => {
     expect(extractConversationIdFromUrl("https://chatgpt.com/c/abc-123")).toBe("abc-123");
+    expect(
+      extractConversationIdFromUrl(
+        "https://chatgpt.com/c/WEB:32229414-5afa-4478-890c-9ca80aa82430",
+      ),
+    ).toBeUndefined();
     expect(extractConversationIdFromUrl("")).toBeUndefined();
   });
 

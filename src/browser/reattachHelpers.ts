@@ -1,6 +1,7 @@
 import type { BrowserLogger, ChromeClient } from "./types.js";
 import { CONVERSATION_TURN_SELECTOR } from "./constants.js";
 import { buildConversationTurnCountExpression } from "./conversationTurns.js";
+import { extractStableConversationIdFromUrl } from "./conversationUrl.js";
 import { delay } from "./utils.js";
 import { readAssistantSnapshot } from "./pageActions.js";
 
@@ -52,9 +53,7 @@ export function pickTarget(
 }
 
 export function extractConversationIdFromUrl(url: string): string | undefined {
-  if (!url) return undefined;
-  const match = url.match(/\/c\/([a-zA-Z0-9-]+)/);
-  return match?.[1];
+  return extractStableConversationIdFromUrl(url);
 }
 
 export function buildConversationUrl(
@@ -62,7 +61,7 @@ export function buildConversationUrl(
   baseUrl: string,
 ): string | null {
   if (runtime.tabUrl) {
-    if (runtime.tabUrl.includes("/c/")) {
+    if (extractConversationIdFromUrl(runtime.tabUrl)) {
       return runtime.tabUrl;
     }
     return null;
