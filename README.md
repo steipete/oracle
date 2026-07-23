@@ -69,6 +69,9 @@ npx -y @steipete/oracle --engine api --model gpt-5.2-pro --followup release-read
 # Follow up directly from an OpenAI Responses API id
 npx -y @steipete/oracle --engine api --model gpt-5.2-pro --followup resp_abc1234567890 -p "Continue from this response" --file docs/notes.md
 
+# Import a manual ChatGPT conversation so Oracle can follow up later
+npx -y @steipete/oracle import-chatgpt-url "https://chatgpt.com/c/abc123" --slug "manual browser review"
+
 # Preview without spending tokens
 npx -y @steipete/oracle --dry-run summary -p "Check release notes" --file docs/release-notes.md
 
@@ -181,6 +184,7 @@ npx -y @steipete/oracle oracle-mcp
 - Render/copy bundles for manual paste into ChatGPT when automation is blocked.
 - GPT‑5 Pro API runs detach by default; reattach via `oracle session <id>` / `oracle status` or block with `--wait`.
 - Saved ChatGPT browser conversations and OpenAI/Azure API runs can continue from `--followup <sessionId|responseId>`; for multi-model API parents, add `--followup-model <model>`.
+- Manual ChatGPT conversations can be imported with `oracle import-chatgpt-url <url> --slug "<words>"`, then continued with normal `--followup`.
 - Azure endpoints supported via `--azure-endpoint/--azure-deployment/--azure-api-version` or `AZURE_OPENAI_*` envs; use `--provider openai` / `--no-azure` to force first-party OpenAI when Azure env vars are present.
 - Redacted provider checks via `oracle doctor --providers`, `--route`, and `--preflight` before spending API time.
 - File safety: globs/excludes, size guards, `--files-report`.

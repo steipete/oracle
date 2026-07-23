@@ -13,6 +13,7 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 | `oracle status`                | List recent sessions (see [Sessions](sessions.md)).                |
 | `oracle session <id>`          | Replay or block on a stored session.                               |
 | `oracle restart <id>`          | Re-run with the same prompt + files.                               |
+| `oracle import-chatgpt-url`    | Import a manual ChatGPT conversation for later `--followup`.       |
 | `oracle docs check`            | Check documented flags against CLI help metadata.                  |
 | `oracle serve`                 | Run the remote browser host (see [Browser Mode](browser-mode.md)). |
 | `oracle bridge claude-config`  | Emit a `.mcp.json` for Claude Code (see [MCP](mcp.md)).            |
@@ -41,6 +42,16 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 | ------------------------------- | ----------------------------------------------------------------------- |
 | `--followup <id\|slug\|resp_…>` | Continue a saved ChatGPT browser or OpenAI/Azure Responses API session. |
 | `--followup-model <model>`      | Pick API lineage when the parent used `--models`.                       |
+
+Import a conversation that started in ChatGPT instead of Oracle:
+
+```bash
+oracle import-chatgpt-url "https://chatgpt.com/c/<conversation-id>" \
+  --slug "manual design review" \
+  --model gpt-5.5-pro
+```
+
+The command stores a completed browser session and prints the matching `oracle --followup <slug>` command. It validates the URL format during import; browser auth and prior-turn checks still happen on the first follow-up run.
 
 ## Run control
 

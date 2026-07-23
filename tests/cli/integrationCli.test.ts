@@ -269,6 +269,134 @@ module.exports = () => ({
   );
 
   test(
+    "imports a manual ChatGPT conversation URL as a browser follow-up session",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-import-chatgpt-"));
+      await writeFile(
+        path.join(oracleHome, "config.json"),
+        JSON.stringify(
+          {
+            browser: {
+              attachRunning: true,
+              manualLogin: true,
+              manualLoginProfileDir: "/tmp/oracle-import-profile",
+              modelStrategy: "select",
+              archiveConversations: "always",
+              researchMode: "deep",
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_BROWSER_COOKIES_JSON: JSON.stringify([
+          {
+            name: "__Secure-next-auth.session-token",
+            value: "secret-cookie",
+            domain: "chatgpt.com",
+            path: "/",
+            secure: true,
+            httpOnly: true,
+          },
+        ]),
+      };
+
+      const result = await execCli(
+        [
+          "import-chatgpt-url",
+          "https://chatgpt.com/c/import-test",
+          "--slug",
+          "manual import test",
+          "--model",
+          "GPT-5.5 Pro",
+        ],
+        { timeout: INTEGRATION_TIMEOUT, env },
+      );
+
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(
+        "Imported ChatGPT conversation as session manual-import-test",
+      );
+      expect(result.stdout).toContain("oracle --followup manual-import-test");
+
+      const metadata = JSON.parse(
+        await readFile(
+          path.join(oracleHome, "sessions", "manual-import-test", "meta.json"),
+          "utf8",
+        ),
+      );
+      expect(metadata.status).toBe("completed");
+      expect(metadata.mode).toBe("browser");
+      expect(metadata.model).toBe("gpt-5.5-pro");
+      expect(metadata.browser.runtime.tabUrl).toBe("https://chatgpt.com/c/import-test");
+      expect(metadata.browser.config.modelStrategy).toBe("current");
+      expect(metadata.browser.config.archiveConversations).toBe("never");
+      expect(metadata.browser.config.researchMode).toBe("off");
+      expect(metadata.browser.config.attachRunning).toBe(false);
+      expect(metadata.browser.config.inlineCookies).toBeNull();
+      expect(metadata.browser.config.inlineCookiesSource).toBeNull();
+      expect(metadata.browser.config.manualLogin).toBe(true);
+      expect(metadata.browser.config.manualLoginProfileDir).toBe("/tmp/oracle-import-profile");
+
+      const originalOracleHome = process.env.ORACLE_HOME_DIR;
+      process.env.ORACLE_HOME_DIR = oracleHome;
+      try {
+        const { resolveBrowserFollowupReference } = await import("../../src/cli/followup.js");
+        const { sessionStore } = await import("../../src/sessionStore.js");
+        await expect(
+          resolveBrowserFollowupReference("manual-import-test", sessionStore),
+        ).resolves.toMatchObject({
+          sessionId: "manual-import-test",
+          resumeConversationUrl: "https://chatgpt.com/c/import-test",
+        });
+      } finally {
+        if (originalOracleHome === undefined) {
+          delete process.env.ORACLE_HOME_DIR;
+        } else {
+          process.env.ORACLE_HOME_DIR = originalOracleHome;
+        }
+      }
+
+      const status = await execCli(["status", "--all"], {
+        timeout: INTEGRATION_TIMEOUT,
+        env,
+      });
+      expect(status.code).toBe(0);
+      expect(status.stdout).toContain("manual-import-test");
+
+      const forced = await execCli(
+        [
+          "import-chatgpt-url",
+          "https://chatgpt.com/c/import-test-2",
+          "--slug",
+          "manual import test",
+          "--force",
+        ],
+        { timeout: INTEGRATION_TIMEOUT, env },
+      );
+      expect(forced.code).toBe(0);
+      const forcedMetadata = JSON.parse(
+        await readFile(
+          path.join(oracleHome, "sessions", "manual-import-test", "meta.json"),
+          "utf8",
+        ),
+      );
+      expect(forcedMetadata.browser.runtime.conversationId).toBe("import-test-2");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "honors --provider openai by ignoring Azure env routing",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-openai-"));

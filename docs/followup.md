@@ -43,6 +43,23 @@ Oracle creates a child session, reopens the parent's exact ChatGPT conversation,
 
 Browser resume is fail-closed: Oracle refuses to submit if the saved URL is not a recoverable HTTPS ChatGPT conversation, the page has no stable prior turns, or the browser lands on a different conversation.
 
+## Importing Manual ChatGPT Conversations
+
+If you started a ChatGPT conversation outside Oracle, import its conversation URL first:
+
+```bash
+oracle import-chatgpt-url "https://chatgpt.com/c/<conversation-id>" \
+  --slug "manual design review" \
+  --model gpt-5.5-pro
+```
+
+The import is metadata-only. Oracle validates that the URL is a recoverable ChatGPT conversation URL, stores a completed browser session under the chosen slug, and prints the matching follow-up command. It does not launch a browser or verify authentication during import; the first `--followup` run still performs the normal fail-closed thread and prior-turn checks before submitting.
+
+```bash
+oracle --followup manual-design-review \
+  -p "Continue from the prior ChatGPT conversation with this new context."
+```
+
 ## Multi-model parents
 
 When the parent used `--models a,b,c`, pick which lineage to continue from with `--followup-model`:

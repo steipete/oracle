@@ -46,6 +46,7 @@
 
 - Bridge/Browser: transfer ChatGPT-generated files from the browser host back to the client over a token-protected artifact endpoint, with capability discovery, safe filenames, byte counts, SHA-256 metadata, ZIP validation, and manual fallback guidance for mixed-version bridge deployments. Thanks @DK625!
 - API: add user-only `modelOverrides` for remapping known models and their metadata on custom OpenAI-compatible gateways. Fixes #273. Thanks @wangwllu!
+- Browser: add `oracle import-chatgpt-url <url> --slug "<words>"` to register manually started ChatGPT conversations as browser sessions that can continue through the normal `--followup` path.
 
 ### Fixed
 

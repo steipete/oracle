@@ -1155,6 +1155,70 @@ docsCommand
   });
 
 program
+  .command("import-chatgpt-url <url>")
+  .description("Import a manual ChatGPT conversation URL as a follow-up capable browser session.")
+  .option("-s, --slug <words>", "Custom session slug (3-5 words).")
+  .option("-m, --model <model>", "Model to record for the imported session.", normalizeModelOption)
+  .option("--force", "Overwrite an existing imported session with the same slug.", false)
+  .action(async function (this: Command, url: string) {
+    const { runImportChatgptConversation } =
+      await import("../src/cli/importChatgptConversation.js");
+    const mergedOptions = this.optsWithGlobals() as CliOptions;
+    const options = {
+      ...mergedOptions,
+      force: Boolean(
+        mergedOptions.force ||
+        (this.opts() as CliOptions).force ||
+        (this.parent?.opts() as CliOptions | undefined)?.force,
+      ),
+      browserAttachRunning: false,
+      browserTab: undefined,
+      remoteChrome: undefined,
+      copyProfile: undefined,
+    };
+    const model = inferModelFromLabel(options.model ?? DEFAULT_MODEL);
+    const userConfig = (await loadUserConfig()).config;
+    const ignoredLiveBrowserKeys = new Set<keyof CliOptions>([
+      "browserAttachRunning",
+      "browserTab",
+      "remoteChrome",
+      "copyProfile",
+    ]);
+    const getSource = (key: keyof CliOptions) =>
+      ignoredLiveBrowserKeys.has(key)
+        ? "cli"
+        : (this.getOptionValueSource?.(key as string) ??
+          this.parent?.getOptionValueSource?.(key as string) ??
+          undefined);
+    const { applyBrowserDefaultsFromConfig } = await import("../src/cli/browserDefaults.js");
+    applyBrowserDefaultsFromConfig(options, userConfig, getSource);
+    const { buildBrowserConfig, resolveBrowserModelLabel } =
+      await import("../src/cli/browserConfig.js");
+    const browserConfig = await buildBrowserConfig({
+      ...options,
+      model,
+      browserModelLabel: resolveBrowserModelLabel(options.model, model),
+    });
+    await runImportChatgptConversation({
+      ...options,
+      url,
+      cwd: process.cwd(),
+      browserConfig: {
+        ...browserConfig,
+        attachRunning: false,
+        browserTabRef: null,
+        remoteChrome: null,
+        copyProfileSource: null,
+        inlineCookies: null,
+        inlineCookiesSource: null,
+        modelStrategy: "current",
+        archiveConversations: "never",
+        researchMode: "off",
+      },
+    });
+  });
+
+program
   .command("session [id]")
   .description("Attach to a stored session or list recent sessions when no ID is provided.")
   .option(
