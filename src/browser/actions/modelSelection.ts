@@ -440,7 +440,6 @@ function buildModelSelectionExpression(
         !configuredVersionLabel.includes(desiredModelVariant) &&
         !configuredVariant.includes(desiredModelVariant)
       ) return false;
-      if (desiredModelVariant === 'sol' && labelHasProWord(configuredVariant)) return false;
       if (wantsPro) return labelHasProWord(configuredVariant);
       if (wantsInstant) return configuredVariant.includes('instant');
       if (wantsThinking) {
@@ -452,6 +451,7 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) {
         const variant = getConfiguredVariantLabel();
         const version = formatModelOptionLabel(getConfiguredVersionLabel());
+        if (desiredModelVariant === 'sol' && labelHasProWord(normalizeText(variant))) return version;
         return [variant, version].filter(Boolean).join(' ');
       }
       const composerLabel = getComposerModelLabel();
@@ -462,6 +462,7 @@ function buildModelSelectionExpression(
         versionFromLabel(normalizedComposerLabel) === desiredVersion &&
         normalizedComposerLabel.split(' ').includes(desiredModelVariant)
       ) {
+        if (desiredModelVariant === 'sol' && hasProComposerPill()) return PRIMARY_LABEL;
         return withProPillSignal(composerLabel);
       }
       const buttonLabel = getButtonLabel();
@@ -472,6 +473,7 @@ function buildModelSelectionExpression(
         versionFromLabel(normalizedButton) === desiredVersion &&
         normalizedButton.split(' ').includes(desiredModelVariant)
       ) {
+        if (desiredModelVariant === 'sol' && hasProComposerPill()) return PRIMARY_LABEL;
         return withProPillSignal(buttonLabel);
       }
       const fallbackLabel = formatModelOptionLabel(fallback);
@@ -506,7 +508,6 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) return true;
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
-      if (desiredModelVariant === 'sol' && hasProComposerPill()) return false;
       if (wantsThinking && !wantsPro && hasProComposerPill()) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
@@ -553,7 +554,11 @@ function buildModelSelectionExpression(
       }
       if (wantsThinking && !normalizedLabel.includes('thinking')) return false;
       // Also reject if button has variants we DON'T want
-      if (!wantsPro && normalizedLabel.includes(' pro')) return false;
+      if (
+        !wantsPro &&
+        normalizedLabel.includes(' pro') &&
+        !(desiredModelVariant === 'sol' && hasProComposerPill())
+      ) return false;
       if (!wantsInstant && normalizedLabel.includes('instant')) return false;
       if (!wantsThinking && normalizedLabel.includes('thinking')) return false;
       return true;
@@ -567,13 +572,14 @@ function buildModelSelectionExpression(
       if (!signal) {
         return COMPOSER_SIGNAL_ALLOW_BLANK;
       }
-      if (desiredModelVariant === 'sol' && hasProComposerPill()) {
-        return false;
-      }
       if (wantsPro && labelHasLegacyProVersion(signal)) {
         return false;
       }
-      if (COMPOSER_SIGNAL_EXCLUDES.some((token) => token && signal.includes(token))) {
+      if (COMPOSER_SIGNAL_EXCLUDES.some((token) =>
+        token &&
+        signal.includes(token) &&
+        !(token === 'pro' && desiredModelVariant === 'sol' && hasProComposerPill())
+      )) {
         return false;
       }
       if (COMPOSER_SIGNAL_INCLUDES.length === 0) {
@@ -997,7 +1003,7 @@ function buildModelSelectionExpression(
         desiredModelVariant === 'sol' &&
         (labelHasProWord(normalizedText) || normalizeText(testid ?? '').includes('pro'))
       ) return false;
-      if (desiredVersion === '5-6') return !hasProComposerPill();
+      if (desiredVersion === '5-6') return true;
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };
