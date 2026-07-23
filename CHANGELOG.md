@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Dependencies: refresh Google GenAI, OpenAI, Clipboardy, Chrome DevTools protocol, Oxc tooling, and TSX.
+- Dependencies: refresh Google GenAI, OpenAI, Clipboardy, Chrome DevTools protocol, Hono/MCP runtime security fixes, Oxc tooling, and TSX.
 
 ### Fixed
 
