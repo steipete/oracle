@@ -60,6 +60,9 @@ const dim = (text: string): string => (isStdoutTty ? kleur.dim(text) : text);
 // Default timeout for non-pro API runs (fast models) — give them up to 120s.
 const DEFAULT_TIMEOUT_NON_PRO_MS = 120_000;
 const DEFAULT_TIMEOUT_PRO_MS = 60 * 60 * 1000;
+const GPT_5_6_API_MODELS = new Set(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
+const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
+const REASONING_MODES = new Set(["standard", "pro"]);
 
 const defaultWait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -106,6 +109,47 @@ function runtimeKeySource({
   if (route.model.startsWith("claude")) return "ANTHROPIC_API_KEY";
   if (route.model.startsWith("grok")) return "XAI_API_KEY";
   return optionsApiKey ? "apiKey option" : route.keySource;
+}
+
+function validateReasoningOptions(options: RunOracleOptions, route: ResolvedProviderRoute): void {
+  const { reasoningEffort, reasoningMode } = options;
+  if (!reasoningEffort && !reasoningMode) return;
+  if (reasoningEffort && !REASONING_EFFORTS.has(reasoningEffort)) {
+    throw new PromptValidationError(
+      `Invalid reasoning effort "${reasoningEffort}". Expected none, low, medium, high, xhigh, or max.`,
+      { model: options.model, reasoningEffort },
+    );
+  }
+  if (reasoningMode && !REASONING_MODES.has(reasoningMode)) {
+    throw new PromptValidationError(
+      `Invalid reasoning mode "${reasoningMode}". Expected standard or pro.`,
+      { model: options.model, reasoningMode },
+    );
+  }
+  if (!GPT_5_6_API_MODELS.has(options.model)) {
+    const option = reasoningMode
+      ? `Reasoning mode "${reasoningMode}"`
+      : `Reasoning effort "${reasoningEffort}"`;
+    const guidance = reasoningMode
+      ? `Use --model gpt-5.6-sol --reasoning-mode ${reasoningMode}.`
+      : `Use --model gpt-5.6-sol --reasoning-effort ${reasoningEffort}.`;
+    throw new PromptValidationError(
+      `${option} is available only for GPT-5.6 API models. ${guidance}`,
+      { model: options.model, reasoningEffort, reasoningMode },
+    );
+  }
+  if (
+    reasoningMode &&
+    !route.isAzureOpenAI &&
+    (route.openRouterFallback ||
+      isOpenRouterBaseUrl(route.baseUrl) ||
+      isCustomBaseUrl(route.baseUrl))
+  ) {
+    throw new PromptValidationError(
+      "--reasoning-mode requires the OpenAI or Azure OpenAI Responses API; OpenRouter and custom --base-url routes use the Chat Completions adapter.",
+      { model: options.model, reasoningMode },
+    );
+  }
 }
 
 export async function runOracle(
@@ -164,6 +208,7 @@ export async function runOracle(
   const { isAzureOpenAI, azureDeploymentName } = route;
   const baseUrl = route.baseUrl;
   const openRouterFallback = route.openRouterFallback;
+  validateReasoningOptions(options, route);
 
   const logVerbose = (message: string): void => {
     if (options.verbose) {
@@ -196,7 +241,7 @@ export async function runOracle(
   const minPromptLength = Number.parseInt(process.env.ORACLE_MIN_PROMPT_CHARS ?? "10", 10);
   const promptLength = options.prompt?.trim().length ?? 0;
   // Enforce the short-prompt guardrail on pro-tier models because they're costly; cheaper models can run short prompts without blocking.
-  const isProTierModel = isProModel(options.model);
+  const isProTierModel = isProModel(options.model) || options.reasoningMode === "pro";
   if (isProTierModel && !Number.isNaN(minPromptLength) && promptLength < minPromptLength) {
     throw new PromptValidationError(
       `Prompt is too short (<${minPromptLength} chars). This was likely accidental; please provide more detail.`,
@@ -285,6 +330,8 @@ export async function runOracle(
   }
   const requestBody = buildRequestBody({
     modelConfig,
+    reasoningEffort: options.reasoningEffort,
+    reasoningMode: options.reasoningMode,
     systemPrompt,
     userPrompt: promptWithFiles,
     searchEnabled,
@@ -341,6 +388,12 @@ export async function runOracle(
       log(
         dim("Background runs are not supported for this model; streaming in foreground instead."),
       );
+    }
+    if (options.reasoningMode) {
+      log(dim(`Reasoning mode: ${options.reasoningMode}`));
+    }
+    if (options.reasoningEffort) {
+      log(dim(`Reasoning effort: ${options.reasoningEffort}`));
     }
     if (!options.suppressTips) {
       if (pendingNoFilesTip) {
@@ -666,8 +719,9 @@ export async function runOracle(
       })?.totalUsd
     : undefined;
 
-  const effortLabel = modelConfig.reasoning?.effort;
-  const modelLabel = effortLabel ? `${modelConfig.model}[${effortLabel}]` : modelConfig.model;
+  const effortLabel = options.reasoningEffort ?? modelConfig.reasoning?.effort;
+  const reasoningLabel = [options.reasoningMode, effortLabel].filter(Boolean).join("/");
+  const modelLabel = reasoningLabel ? `${modelConfig.model}[${reasoningLabel}]` : modelConfig.model;
   const sessionIdContainsModel =
     typeof options.sessionId === "string" &&
     options.sessionId.toLowerCase().includes(modelConfig.model.toLowerCase());

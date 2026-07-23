@@ -48,6 +48,137 @@ describe("runOracle request payload", () => {
     expect(logs.join("\n")).toContain("OpenAI API uses `gpt-5.5-pro`");
   });
 
+  test("sends GPT-5.6 Pro + max as reasoning options instead of a model slug", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const logs: string[] = [];
+    await runOracle(
+      {
+        prompt: "Review this difficult architecture",
+        model: "gpt-5.6-sol",
+        reasoningEffort: "max",
+        reasoningMode: "pro",
+        background: false,
+      },
+      {
+        apiKey: "sk-test",
+        client,
+        log: (msg: string) => logs.push(msg),
+      },
+    );
+    expect(client.lastRequest?.model).toBe("gpt-5.6-sol");
+    expect(client.lastRequest?.reasoning).toEqual({ effort: "max", mode: "pro" });
+    expect(logs.join("\n")).toContain("Reasoning mode: pro");
+    expect(logs.join("\n")).toContain("Reasoning effort: max");
+    expect(logs.join("\n")).toContain("gpt-5.6-sol[pro/max]");
+  });
+
+  test("rejects reasoning mode for non-GPT-5.6 models", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    await expect(
+      runOracle(
+        {
+          prompt: "Invalid reasoning mode target",
+          model: "gpt-5.5",
+          reasoningMode: "pro",
+          background: false,
+        },
+        {
+          apiKey: "sk-test",
+          client,
+          log: () => {},
+        },
+      ),
+    ).rejects.toThrow("Use --model gpt-5.6-sol --reasoning-mode pro");
+    expect(client.lastRequest).toBeNull();
+  });
+
+  test("rejects invalid programmatic reasoning mode values", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    await expect(
+      runOracle(
+        {
+          prompt: "Invalid reasoning mode value",
+          model: "gpt-5.6-sol",
+          reasoningMode: "turbo" as "pro",
+          background: false,
+        },
+        {
+          apiKey: "sk-test",
+          client,
+          log: () => {},
+        },
+      ),
+    ).rejects.toThrow('Invalid reasoning mode "turbo"');
+    expect(client.lastRequest).toBeNull();
+  });
+
+  test("rejects invalid programmatic reasoning effort values", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    await expect(
+      runOracle(
+        {
+          prompt: "Invalid reasoning effort value",
+          model: "gpt-5.6-sol",
+          reasoningEffort: "extreme" as "max",
+          background: false,
+        },
+        {
+          apiKey: "sk-test",
+          client,
+          log: () => {},
+        },
+      ),
+    ).rejects.toThrow('Invalid reasoning effort "extreme"');
+    expect(client.lastRequest).toBeNull();
+  });
+
+  test("rejects reasoning effort for non-GPT-5.6 models", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    await expect(
+      runOracle(
+        {
+          prompt: "Invalid reasoning effort target",
+          model: "gpt-5.5",
+          reasoningEffort: "max",
+          background: false,
+        },
+        {
+          apiKey: "sk-test",
+          client,
+          log: () => {},
+        },
+      ),
+    ).rejects.toThrow("Use --model gpt-5.6-sol --reasoning-effort max");
+    expect(client.lastRequest).toBeNull();
+  });
+
+  test("rejects reasoning mode on Chat Completions proxy routes", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    await expect(
+      runOracle(
+        {
+          prompt: "Invalid proxy reasoning mode",
+          model: "gpt-5.6-sol",
+          reasoningMode: "pro",
+          baseUrl: "https://litellm.test/v1",
+          background: false,
+        },
+        {
+          apiKey: "sk-test",
+          client,
+          log: () => {},
+        },
+      ),
+    ).rejects.toThrow("requires the OpenAI or Azure OpenAI Responses API");
+    expect(client.lastRequest).toBeNull();
+  });
+
   test("search enabled by default", async () => {
     const stream = new MockStream([], buildResponse());
     const client = new MockClient(stream);

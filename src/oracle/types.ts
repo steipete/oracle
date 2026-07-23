@@ -34,7 +34,8 @@ export type ProModelName =
   | "claude-4.6-sonnet"
   | "claude-4.1-opus";
 
-export type ReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+export type ReasoningMode = "standard" | "pro";
 
 export type ThinkingTimeLevel = "light" | "standard" | "extended" | "heavy";
 
@@ -170,6 +171,10 @@ export interface RunOracleOptions {
   prompt: string;
   model: ModelName;
   models?: ModelName[];
+  /** Reasoning effort override. GPT-5.6 API models only. */
+  reasoningEffort?: ReasoningEffort;
+  /** Responses API reasoning execution mode. GPT-5.6 API models only. */
+  reasoningMode?: ReasoningMode;
   /**
    * Continue an OpenAI Responses API conversation by chaining from a prior response id.
    * This maps to the Responses API field `previous_response_id`.
@@ -283,6 +288,8 @@ export interface RunOracleDeps {
 
 export interface BuildRequestBodyParams {
   modelConfig: ModelConfig;
+  reasoningEffort?: ReasoningEffort;
+  reasoningMode?: ReasoningMode;
   systemPrompt: string;
   userPrompt: string;
   searchEnabled: boolean;
@@ -308,7 +315,7 @@ export interface OracleRequestBody {
     }>;
   }>;
   tools?: ToolConfig[];
-  reasoning?: { effort: ReasoningEffort };
+  reasoning?: { effort?: ReasoningEffort; mode?: ReasoningMode };
   max_output_tokens?: number;
   background?: boolean;
   store?: boolean;

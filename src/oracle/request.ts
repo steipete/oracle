@@ -23,6 +23,8 @@ export function buildPrompt(basePrompt: string, files: FileContent[], cwd = proc
 
 export function buildRequestBody({
   modelConfig,
+  reasoningEffort,
+  reasoningMode,
   systemPrompt,
   userPrompt,
   searchEnabled,
@@ -32,6 +34,14 @@ export function buildRequestBody({
   previousResponseId,
 }: BuildRequestBodyParams): OracleRequestBody {
   const searchToolType: ToolConfig["type"] = modelConfig.searchToolType ?? "web_search_preview";
+  const reasoning =
+    modelConfig.reasoning || reasoningEffort || reasoningMode
+      ? {
+          ...(modelConfig.reasoning ?? {}),
+          ...(reasoningEffort ? { effort: reasoningEffort } : {}),
+          ...(reasoningMode ? { mode: reasoningMode } : {}),
+        }
+      : undefined;
   return {
     model: modelConfig.apiModel ?? modelConfig.model,
     previous_response_id: previousResponseId ? previousResponseId : undefined,
@@ -48,7 +58,7 @@ export function buildRequestBody({
       },
     ],
     tools: searchEnabled ? [{ type: searchToolType }] : undefined,
-    reasoning: modelConfig.reasoning || undefined,
+    reasoning,
     max_output_tokens: maxOutputTokens,
     background: background ? true : undefined,
     store: storeResponse ? true : undefined,

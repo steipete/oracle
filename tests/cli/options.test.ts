@@ -261,6 +261,15 @@ describe("resolveApiModel", () => {
     expect(resolveApiModel("openai/gpt-5.6")).toBe("openai/gpt-5.6");
   });
 
+  test("rejects fake GPT-5.6 Pro model slugs with API-mode guidance", () => {
+    expect(() => resolveApiModel("gpt-5.6-pro")).toThrow(
+      "Use --model gpt-5.6-sol --reasoning-mode pro",
+    );
+    expect(() => resolveApiModel("gpt-5.6-sol-pro")).toThrow(
+      "Use --model gpt-5.6-sol --reasoning-mode pro",
+    );
+  });
+
   test("passes through unknown names (OpenRouter/custom)", () => {
     expect(resolveApiModel("instant")).toBe("instant");
     expect(resolveApiModel("openai/gpt-5.4")).toBe("openai/gpt-5.4");

@@ -67,6 +67,37 @@ oracle --provider openai --engine api --model gpt-5.5-pro -p "Review this"
 oracle --no-azure --engine api --model gpt-5.5-pro -p "Review this"
 ```
 
+## GPT-5.6 Pro reasoning mode
+
+GPT-5.6 Pro is a Responses API execution mode, not a separate model slug. Select
+the Sol model and enable Pro mode explicitly:
+
+```bash
+oracle --engine api \
+  --model gpt-5.6-sol \
+  --reasoning-mode pro \
+  --reasoning-effort max \
+  -p "Review this difficult architecture" \
+  --file "src/**"
+```
+
+Oracle sends `model: "gpt-5.6-sol"` with `reasoning.mode: "pro"` and
+`reasoning.effort: "max"`. Mode and effort are independent. GPT-5.6 supports
+`none`, `low`, `medium`, `high`, `xhigh`, and `max`; without an explicit effort,
+Oracle retains the model's configured effort. Pro-mode runs use Oracle's
+long-running API defaults: they detach unless `--wait` is supplied, default to a
+60-minute timeout, and use Responses background mode when the selected route
+supports it.
+
+`--reasoning-mode` accepts `standard` or `pro`; `--reasoning-effort` accepts all
+six GPT-5.6 effort levels. Both are API-only and restricted to the GPT-5.6
+family. Oracle rejects reasoning mode for OpenRouter and custom `--base-url`
+routes because those routes currently use Oracle's Chat Completions adapter,
+which cannot represent Responses API reasoning mode.
+
+Do not pass `--model gpt-5.6-pro` or `--model gpt-5.6-sol-pro`; Oracle rejects
+those fake slugs and points to `--reasoning-mode pro`.
+
 ## Custom Base URLs (LiteLLM, Localhost)
 
 For other compatible services that use the standard OpenAI protocol but a different URL:

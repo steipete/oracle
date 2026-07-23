@@ -1029,6 +1029,73 @@ module.exports = () => ({
   );
 
   test(
+    "forwards and persists GPT-5.6 Pro reasoning mode",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-reasoning-mode-"));
+      const env = {
+        ...process.env,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        OPENAI_API_KEY: "sk-integration",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_HOME_DIR: oracleHome,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_CLIENT_FACTORY: CLIENT_FACTORY,
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_NO_DETACH: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_DISABLE_KEYTAR: "1",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_TEST_REQUIRE_REASONING_MODE: "pro",
+        // biome-ignore lint/style/useNamingConvention: env var name
+        ORACLE_TEST_REQUIRE_REASONING_EFFORT: "max",
+      };
+
+      await execFileAsync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          CLI_ENTRY,
+          "--engine",
+          "api",
+          "--model",
+          "gpt-5.6-sol",
+          "--reasoning-effort",
+          "max",
+          "--reasoning-mode",
+          "pro",
+          "--no-background",
+          "--wait",
+          "--prompt",
+          "Verify GPT-5.6 Pro reasoning mode",
+        ],
+        { env },
+      );
+
+      const sessionsDir = path.join(oracleHome, "sessions");
+      const [sessionId] = await readdir(sessionsDir);
+      const metadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(metadata.options?.reasoningEffort).toBe("max");
+      expect(metadata.options?.reasoningMode).toBe("pro");
+
+      await execFileAsync(
+        process.execPath,
+        ["--import", "tsx", CLI_ENTRY, "--exec-session", sessionId],
+        { env },
+      );
+      const rerunMetadata = JSON.parse(
+        await readFile(path.join(sessionsDir, sessionId, "meta.json"), "utf8"),
+      );
+      expect(rerunMetadata.status).toBe("completed");
+
+      await rm(oracleHome, { recursive: true, force: true });
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "accepts direct response ids in --followup and persists chain metadata",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-followup-resp-"));

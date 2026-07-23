@@ -22,7 +22,8 @@ Recommended defaults:
 - Engine: browser (`--engine browser`)
 - Base Sol: `--model gpt-5.6-sol`
 - Base Sol maximum reasoning: `--browser-thinking-time heavy` (Extra High)
-- Pro: `--model gpt-5-pro`, without a thinking-time flag
+- Browser Pro: `--model gpt-5-pro`, without a thinking-time flag
+- API Pro maximum reasoning: `--model gpt-5.6-sol --reasoning-mode pro --reasoning-effort max`
 - Fallback: explicitly use `--model gpt-5.5-pro` when GPT-5.6 is unavailable
 - Attachments: directories/globs plus excludes; never attach secrets by default
 
@@ -32,11 +33,12 @@ selection but does not, by itself, prove the server-side Pro generation.
 
 ## GPT-5.6 model selection
 
-This version supports the same aliases in browser and API mode:
+This version supports GPT-5.6 on both surfaces, but Pro selection differs:
 
 - `gpt-5.6`: follow the GPT-5.6 family default
 - `gpt-5.6-sol`: pin ChatGPT's `GPT-5.6 Sol` entry
-- `gpt-5-pro`: select ChatGPT's `Pro` target
+- Browser: `gpt-5-pro` selects ChatGPT's `Pro` target
+- API: `--reasoning-mode pro` enables Pro execution on `gpt-5.6-sol`; pair it with `--reasoning-effort max` for maximum reasoning
 
 For base Sol, use:
 
@@ -46,8 +48,17 @@ oracle --engine browser --model gpt-5.6-sol \
   -p "<task>" --file "src/**"
 ```
 
+For GPT-5.6 Sol Pro through the Responses API, use:
+
+```bash
+oracle --engine api --model gpt-5.6-sol \
+  --reasoning-mode pro \
+  --reasoning-effort max \
+  -p "<task>" --file "src/**"
+```
+
 Do not use `--model "GPT-5.6 Sol Pro"`. Pro is intentionally handled as a
-distinct picker target. Browser label validation rejects unknown future
+browser picker target and an API reasoning mode. Browser label validation rejects unknown future
 variants such as `gpt-5.6-luna` instead of silently falling back to Sol; API
 runs preserve such provider model IDs unchanged.
 

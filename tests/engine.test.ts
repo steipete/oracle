@@ -100,6 +100,7 @@ describe("defaultWaitPreference", () => {
     expect(defaultWaitPreference("gpt-5.5-pro", "api")).toBe(false);
     expect(defaultWaitPreference("gpt-5.4-pro", "api")).toBe(false);
     expect(defaultWaitPreference("gpt-5.2-pro", "api")).toBe(false);
+    expect(defaultWaitPreference("gpt-5.6-sol", "api", "pro")).toBe(false);
   });
 
   it("keeps wait enabled for Codex and browser models", () => {

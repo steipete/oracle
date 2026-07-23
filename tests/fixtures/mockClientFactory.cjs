@@ -55,6 +55,12 @@ function mockClientFactory() {
         ) {
           throw new Error(`UNEXPECTED_REASONING_EFFORT:${body.reasoning?.effort}`);
         }
+        if (
+          process.env.ORACLE_TEST_REQUIRE_REASONING_MODE &&
+          body.reasoning?.mode !== process.env.ORACLE_TEST_REQUIRE_REASONING_MODE
+        ) {
+          throw new Error(`UNEXPECTED_REASONING_MODE:${body.reasoning?.mode}`);
+        }
         responseCounter += 1;
         const response = {
           id: `resp_mock${Date.now()}${responseCounter}`,

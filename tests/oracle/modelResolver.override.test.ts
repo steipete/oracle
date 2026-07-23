@@ -28,6 +28,15 @@ describe("applyModelOverride", () => {
     expect(baseConfig.apiModel).not.toBe("gateway-model");
   });
 
+  it("accepts GPT-5.6 max reasoning effort", () => {
+    const model = "gpt-5.6-sol";
+    const config = MODEL_CONFIGS[model] as ModelConfig;
+    const result = applyModelOverride(config, model, {
+      [model]: { reasoning: { effort: "max" } },
+    });
+    expect(result.reasoning).toEqual({ effort: "max" });
+  });
+
   it("clears reasoning when override sets reasoning: null", () => {
     const withReasoning: ModelConfig = { ...baseConfig, reasoning: { effort: "xhigh" } };
     const result = applyModelOverride(withReasoning, KNOWN_MODEL, {
