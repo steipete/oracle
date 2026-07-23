@@ -19,6 +19,11 @@ import {
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
 } from "./artifacts.js";
+import {
+  formatBrowserModelSelectionEvidence,
+  formatBrowserModelTarget,
+  resolveBrowserModelDisplayName,
+} from "./modelDisplay.js";
 
 export interface BrowserExecutionResult {
   usage: {
@@ -70,14 +75,6 @@ function buildUnavailableModelSelectionEvidence(
     source: "config",
     capturedAt: new Date().toISOString(),
   };
-}
-
-function formatModelSelectionEvidence(evidence: BrowserModelSelectionEvidence): string {
-  const requested = evidence.requestedModel ?? "(none)";
-  const resolved = evidence.resolvedLabel ?? "(unavailable)";
-  const strategy = evidence.strategy ?? "(default)";
-  const verified = evidence.verified ? "yes" : "no";
-  return `[browser] Model selection evidence: requested=${requested}; resolved=${resolved}; status=${evidence.status}; strategy=${strategy}; verified=${verified}.`;
 }
 
 function isRequestedProBrowserRun(
@@ -176,7 +173,12 @@ export async function runBrowserSessionExecution(
       ),
     );
   }
-  const headerLine = `Launching browser mode (${runOptions.model}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens.`;
+  const launchModel = formatBrowserModelTarget({
+    model: runOptions.model,
+    desiredModel: browserConfig.desiredModel,
+    modelStrategy: browserConfig.modelStrategy,
+  });
+  const headerLine = `Launching browser mode (${launchModel}) with ~${promptArtifacts.estimatedInputTokens.toLocaleString()} tokens.`;
   const automationLogger: BrowserLogger = ((message?: string) => {
     if (typeof message !== "string") return;
     const shouldAlwaysPrint =
@@ -240,7 +242,9 @@ export async function runBrowserSessionExecution(
   const modelSelection =
     browserResult.modelSelection ?? buildUnavailableModelSelectionEvidence(browserConfig);
   if (modelSelection) {
-    log(formatModelSelectionEvidence(modelSelection));
+    log(
+      `[browser] Model selection evidence: ${formatBrowserModelSelectionEvidence(modelSelection, runOptions.model)}`,
+    );
   }
   const warnings = buildBrowserRunWarnings({
     runOptions,
@@ -288,7 +292,7 @@ export async function runBrowserSessionExecution(
   })();
   const { line1, line2 } = formatFinishLine({
     elapsedMs: browserResult.tookMs,
-    model: `${runOptions.model}[browser]`,
+    model: `${resolveBrowserModelDisplayName({ model: runOptions.model, evidence: modelSelection })}[browser]`,
     tokensPart,
     detailParts: [
       runOptions.file && runOptions.file.length > 0 ? `files=${runOptions.file.length}` : null,

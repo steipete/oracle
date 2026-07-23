@@ -142,7 +142,7 @@ describe("formatBrowserEvidence", () => {
     };
 
     expect(formatBrowserEvidence(metadata)).toEqual([
-      "model requested=GPT-5.5 Pro; resolved=Pro; status=already-selected; strategy=select; verified=yes",
+      "model requestedKey=(none); target=GPT-5.5 Pro; resolvedLabel=Pro; status=already-selected; strategy=select; verified=yes; source=chatgpt-model-picker; capturedAt=2026-05-13T00:00:00.000Z",
       "warning browser-pro-fast-large-run: Large browser Pro run completed quickly.",
     ]);
   });

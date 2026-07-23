@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- Browser: distinguish requested CLI model keys from verified ChatGPT picker labels in launch logs, stored-session output, status tables, and completion summaries without inferring a server-side GPT version from the generic `Pro` label. Fixes #317.
 - Browser: scope the fallback stop-control selector to the composer so read-aloud, dictation, and voice controls cannot hold completed responses open until timeout. Thanks @StartupBros!
 - Browser: support ChatGPT GPT-5.6's unified Intelligence picker, where the menu wraps `composer-intelligence-picker-content` and the highest effort is labeled `Pro` instead of `Pro Extended`; recognize the current Chinese effort labels (`极速5.5`, `中`, `高`, and `极高`) without prefix collisions and verify switches against React-replaced composer pills. Fixes #303. Thanks @DragonFSKY!
 - GPT-5.6: add first-class `gpt-5.6` and `gpt-5.6-sol` aliases for the OpenAI API and ChatGPT's Sol picker entry, including navigation through the current-version submenu and strict selection evidence that cannot be replaced by a localized effort label. Fixes #305. Thanks @DragonFSKY!

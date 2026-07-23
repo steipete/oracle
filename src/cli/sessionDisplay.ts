@@ -31,6 +31,11 @@ import {
   resolveSessionLineage,
 } from "./sessionLineage.js";
 import { formatSessionExecutionLabel } from "./sessionLifecycle.js";
+import {
+  formatBrowserModelSelectionEvidence,
+  formatSessionBrowserModelWithRequestedKey,
+  resolveSessionBrowserModelDisplayName,
+} from "../browser/modelDisplay.js";
 
 const isTty = (): boolean => Boolean(process.stdout.isTTY);
 const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
@@ -422,10 +427,18 @@ export async function attachSession(
         const usage = run.usage
           ? ` tok=${formatTokenCount(run.usage.outputTokens ?? 0)}/${formatTokenCount(run.usage.totalTokens ?? 0)}`
           : "";
-        console.log(`- ${chalk.cyan(run.model)} — ${run.status}${usage}`);
+        const modelLabel =
+          (metadata.mode ?? metadata.options?.mode) === "browser"
+            ? formatSessionBrowserModelWithRequestedKey(metadata, run.model)
+            : run.model;
+        console.log(`- ${chalk.cyan(modelLabel)} — ${run.status}${usage}`);
       }
     } else if (metadata.model) {
-      console.log(`Model: ${metadata.model}`);
+      const modelLabel =
+        (metadata.mode ?? metadata.options?.mode) === "browser"
+          ? formatSessionBrowserModelWithRequestedKey(metadata)
+          : metadata.model;
+      console.log(`Model: ${modelLabel}`);
     }
     const browserEvidence = formatBrowserEvidence(metadata);
     if (browserEvidence) {
@@ -686,13 +699,7 @@ export function formatBrowserEvidence(metadata: SessionMetadata): string[] | nul
   const lines: string[] = [];
   const evidence = browser.modelSelection;
   if (evidence) {
-    const requested = evidence.requestedModel ?? "(none)";
-    const resolved = evidence.resolvedLabel ?? "(unavailable)";
-    const strategy = evidence.strategy ?? "(default)";
-    const verified = evidence.verified ? "yes" : "no";
-    lines.push(
-      `model requested=${requested}; resolved=${resolved}; status=${evidence.status}; strategy=${strategy}; verified=${verified}`,
-    );
+    lines.push(`model ${formatBrowserModelSelectionEvidence(evidence, metadata.model)}`);
   }
   for (const warning of browser.warnings ?? []) {
     lines.push(`warning ${warning.code}: ${warning.message}`);
@@ -998,7 +1005,9 @@ export function formatCompletionSummary(
     return null;
   }
   const modeLabel =
-    metadata.mode === "browser" ? `${metadata.model ?? "n/a"}[browser]` : (metadata.model ?? "n/a");
+    (metadata.mode ?? metadata.options?.mode) === "browser"
+      ? `${resolveSessionBrowserModelDisplayName(metadata)}[browser]`
+      : (metadata.model ?? "n/a");
   const usage = metadata.usage;
   const cost = resolveSessionCost(metadata);
   const tokensDisplay = [

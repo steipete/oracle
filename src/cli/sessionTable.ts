@@ -4,6 +4,7 @@ import { MODEL_CONFIGS } from "../oracle.js";
 import type { SessionMetadata } from "../sessionStore.js";
 import { estimateUsdCost } from "tokentally";
 import { formatSessionExecutionLabel } from "./sessionLifecycle.js";
+import { resolveSessionBrowserModelDisplayName } from "../browser/modelDisplay.js";
 
 const isRich = (rich?: boolean): boolean =>
   rich ?? Boolean(process.stdout.isTTY && chalk.level > 0);
@@ -34,7 +35,11 @@ export function formatSessionTableRow(
 ): string {
   const rich = isRich(options?.rich);
   const status = colorStatus(meta.status ?? "unknown", rich);
-  const modelLabel = (meta.model ?? "n/a").padEnd(MODEL_PAD);
+  const displayModel =
+    (meta.mode ?? meta.options?.mode) === "browser"
+      ? resolveSessionBrowserModelDisplayName(meta)
+      : (meta.model ?? "n/a");
+  const modelLabel = displayModel.padEnd(MODEL_PAD);
   const model = rich ? chalk.white(modelLabel) : modelLabel;
   const modeLabel = formatSessionExecutionLabel(meta).padEnd(MODE_PAD);
   const mode = rich ? chalk.gray(modeLabel) : modeLabel;

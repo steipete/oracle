@@ -184,4 +184,57 @@ describe("showSessionDetail", () => {
 
     consoleSpy.mockRestore();
   });
+
+  test("uses verified browser labels in detail views while retaining raw log action keys", async () => {
+    const { showSessionDetail } = await import("../../../src/cli/tui/index.ts");
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    promptMock.mockResolvedValueOnce({ next: "back" });
+
+    readSessionMock.mockResolvedValueOnce({
+      id: "browser-session",
+      createdAt: "2026-07-12T00:00:00.000Z",
+      status: "completed",
+      model: "gpt-5.5-pro",
+      options: { mode: "browser" },
+      models: [
+        { model: "gpt-5.5-pro", status: "completed" },
+        { model: "gpt-5.6-sol", status: "completed" },
+      ],
+      browser: {
+        modelSelection: {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-12T00:00:00.000Z",
+        },
+      },
+    });
+    readLogMock.mockResolvedValueOnce("Answer: hello");
+    getPathsMock.mockResolvedValueOnce({
+      dir: "/tmp",
+      metadata: "/tmp/meta.json",
+      log: "/tmp/output.log",
+      request: "/tmp/request.json",
+    });
+
+    await showSessionDetail("browser-session");
+
+    const output = consoleSpy.mock.calls.flat().join("\n");
+    expect(output).toContain("Model: Pro");
+    expect(output).toContain("Pro (requested gpt-5.5-pro)");
+    expect(output).toContain("gpt-5.6-sol");
+    expect(promptMock).toHaveBeenCalledWith([
+      expect.objectContaining({
+        choices: expect.arrayContaining([
+          expect.objectContaining({ value: "log:gpt-5.5-pro" }),
+          expect.objectContaining({ value: "log:gpt-5.6-sol" }),
+        ]),
+      }),
+    ]);
+
+    consoleSpy.mockRestore();
+  });
 });

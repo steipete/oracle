@@ -246,5 +246,43 @@ describe("sessionDisplay helpers", () => {
     const summary = formatCompletionSummary(summaryMeta, { includeSlug: true });
     expect(summary).toContain("↑10 ↓20 ↻0 Δ30");
     expect(summary).toContain("slug=s2");
+
+    const browserSummary = formatCompletionSummary({
+      ...summaryMeta,
+      mode: "browser",
+      model: "gpt-5.5-pro",
+      browser: {
+        modelSelection: {
+          requestedModel: "Pro",
+          resolvedLabel: "Pro",
+          strategy: "select",
+          status: "already-selected",
+          verified: true,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-12T00:00:00.000Z",
+        },
+      },
+    });
+    expect(browserSummary).toContain("Pro[browser]");
+    expect(browserSummary).not.toContain("GPT-5.6 Pro");
+
+    const unverifiedSummary = formatCompletionSummary({
+      ...summaryMeta,
+      mode: "browser",
+      model: "gpt-5.5-pro",
+      browser: {
+        modelSelection: {
+          requestedModel: "gpt-5.5-pro",
+          resolvedLabel: "Thinking 5.5 Heavy",
+          strategy: "current",
+          status: "already-selected",
+          verified: false,
+          source: "chatgpt-model-picker",
+          capturedAt: "2026-07-12T00:00:00.000Z",
+        },
+      },
+    });
+    expect(unverifiedSummary).toContain("gpt-5.5-pro[browser]");
+    expect(unverifiedSummary).not.toContain("Thinking 5.5 Heavy[browser]");
   });
 });

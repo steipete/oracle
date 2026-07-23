@@ -11,12 +11,7 @@ import {
   type RunOracleOptions,
 } from "../../oracle.js";
 import { renderMarkdownAnsi } from "../markdownRenderer.js";
-import type {
-  SessionMetadata,
-  SessionMode,
-  BrowserSessionConfig,
-  SessionModelRun,
-} from "../../sessionStore.js";
+import type { SessionMetadata, SessionMode, BrowserSessionConfig } from "../../sessionStore.js";
 import { sessionStore, pruneOldSessions } from "../../sessionStore.js";
 import { performSessionRun } from "../sessionRunner.js";
 import { MAX_RENDER_BYTES, trimBeforeFirstAnswer } from "../sessionDisplay.js";
@@ -26,6 +21,10 @@ import { resolveNotificationSettings } from "../notifier.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveConfiguredMaxFileSizeBytes } from "../fileSize.js";
 import { formatTokenCount } from "../../oracle/runUtils.js";
+import {
+  formatSessionBrowserModelWithRequestedKey,
+  resolveSessionBrowserModelDisplayName,
+} from "../../browser/modelDisplay.js";
 
 const isTty = (): boolean => Boolean(process.stdout.isTTY && chalk.level > 0);
 const dim = (text: string): string => (isTty() ? kleur.dim(text) : text);
@@ -203,7 +202,7 @@ async function showSessionDetail(sessionId: string): Promise<void> {
     console.clear();
     printSessionHeader(meta);
     if (meta.models && meta.models.length > 0) {
-      printModelSummaries(meta.models);
+      printModelSummaries(meta);
     }
     const prompt = await readStoredPrompt(sessionId);
     if (prompt) {
@@ -305,7 +304,11 @@ function printSessionHeader(meta: SessionMetadata): void {
   console.log(`${chalk.white("Status:")} ${meta.status}`);
   console.log(`${chalk.white("Created:")} ${meta.createdAt}`);
   if (meta.model) {
-    console.log(`${chalk.white("Model:")} ${meta.model}`);
+    const modelLabel =
+      (meta.mode ?? meta.options?.mode) === "browser"
+        ? resolveSessionBrowserModelDisplayName(meta)
+        : meta.model;
+    console.log(`${chalk.white("Model:")} ${modelLabel}`);
   }
   const mode = meta.mode ?? meta.options?.mode;
   if (mode) {
@@ -316,7 +319,8 @@ function printSessionHeader(meta: SessionMetadata): void {
   }
 }
 
-function printModelSummaries(models: SessionModelRun[]): void {
+function printModelSummaries(meta: SessionMetadata): void {
+  const models = meta.models ?? [];
   if (models.length === 0) {
     return;
   }
@@ -325,7 +329,11 @@ function printModelSummaries(models: SessionModelRun[]): void {
     const usage = run.usage
       ? ` tok=${formatTokenCount(run.usage.outputTokens ?? 0)}/${formatTokenCount(run.usage.totalTokens ?? 0)}`
       : "";
-    console.log(` - ${chalk.cyan(run.model)} — ${run.status}${usage}`);
+    const modelLabel =
+      (meta.mode ?? meta.options?.mode) === "browser"
+        ? formatSessionBrowserModelWithRequestedKey(meta, run.model)
+        : run.model;
+    console.log(` - ${chalk.cyan(modelLabel)} — ${run.status}${usage}`);
   }
   console.log("");
 }

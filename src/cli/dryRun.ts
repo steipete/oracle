@@ -17,6 +17,7 @@ import type { BrowserSessionConfig } from "../sessionStore.js";
 import { buildTokenEstimateSuffix, formatAttachmentLabel } from "../browser/promptSummary.js";
 import { buildCookiePlan } from "../browser/policies.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "../browser/controlPlan.js";
+import { formatBrowserModelTarget } from "../browser/modelDisplay.js";
 
 interface DryRunDeps {
   readFilesImpl?: typeof readFiles;
@@ -113,7 +114,12 @@ async function runBrowserDryRun(
   const assemblePromptImpl = deps.assembleBrowserPromptImpl ?? assembleBrowserPrompt;
   const artifacts = await assemblePromptImpl(runOptions, { cwd });
   const suffix = buildTokenEstimateSuffix(artifacts);
-  const headerLine = `[dry-run] Oracle (${version}) would launch browser mode (${runOptions.model}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
+  const displayModel = formatBrowserModelTarget({
+    model: runOptions.model,
+    desiredModel: browserConfig?.desiredModel,
+    modelStrategy: browserConfig?.modelStrategy,
+  });
+  const headerLine = `[dry-run] Oracle (${version}) would launch browser mode (${displayModel}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
   log(chalk.cyan(headerLine));
   logBrowserControlPlan(browserConfig, log, "dry-run");
   logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "dry-run");
@@ -206,7 +212,12 @@ export async function runBrowserPreview(
   const assemblePromptImpl = deps.assembleBrowserPromptImpl ?? assembleBrowserPrompt;
   const artifacts = await assemblePromptImpl(runOptions, { cwd });
   const suffix = buildTokenEstimateSuffix(artifacts);
-  const headerLine = `[preview] Oracle (${version}) browser mode (${runOptions.model}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
+  const displayModel = formatBrowserModelTarget({
+    model: runOptions.model,
+    desiredModel: browserConfig?.desiredModel,
+    modelStrategy: browserConfig?.modelStrategy,
+  });
+  const headerLine = `[preview] Oracle (${version}) browser mode (${displayModel}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
   log(chalk.cyan(headerLine));
   logBrowserControlPlan(browserConfig, log, "preview");
   logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "preview");
