@@ -1,27 +1,24 @@
 import { rm } from "node:fs/promises";
-import { readFileSync } from "node:fs";
-import os from "node:os";
 import net from "node:net";
 import CDP from "chrome-remote-interface";
 import { launch, Launcher, type LaunchedChrome } from "chrome-launcher";
 import type { BrowserLogger, ResolvedBrowserConfig, ChromeClient } from "./types.js";
 import { cleanupStaleProfileState } from "./profileState.js";
 import { delay } from "./utils.js";
+import { isWsl, resolveWslChromeLaunchRoute } from "./wslHost.js";
 
 export async function launchChrome(
   config: ResolvedBrowserConfig,
   userDataDir: string,
   logger: BrowserLogger,
 ) {
-  const connectHost = resolveRemoteDebugHost();
-  const debugBindAddress = connectHost && connectHost !== "127.0.0.1" ? "0.0.0.0" : connectHost;
+  const { connectHost, debugBindAddress, usePatchedLauncher } = resolveWslChromeLaunchRoute();
   const debugPort = config.debugPort ?? parseDebugPortEnv();
   const chromeFlags = buildChromeFlags(
     config.headless ?? false,
     debugBindAddress,
     config.hideWindow ?? false,
   );
-  const usePatchedLauncher = Boolean(connectHost && connectHost !== "127.0.0.1");
   // copy-profile reuses a copied signed-in profile whose cookies are
   // Keychain-encrypted, so it must launch with the real Keychain (not mocked):
   // strip the keychain-mocking flags from both chrome-launcher's defaults and
@@ -813,40 +810,6 @@ function parseDebugPortEnv(): number | null {
     return null;
   }
   return value;
-}
-
-function resolveRemoteDebugHost(): string | null {
-  const override =
-    process.env.ORACLE_BROWSER_REMOTE_DEBUG_HOST?.trim() || process.env.WSL_HOST_IP?.trim();
-  if (override) {
-    return override;
-  }
-  if (!isWsl()) {
-    return null;
-  }
-  try {
-    const resolv = readFileSync("/etc/resolv.conf", "utf8");
-    for (const line of resolv.split("\n")) {
-      const match = line.match(/^nameserver\s+([0-9.]+)/);
-      if (match?.[1]) {
-        return match[1];
-      }
-    }
-  } catch {
-    // ignore; fall back to localhost
-  }
-  return null;
-}
-
-function isWsl(): boolean {
-  if (process.platform !== "linux") {
-    return false;
-  }
-  if (process.env.WSL_DISTRO_NAME) {
-    return true;
-  }
-  const release = os.release();
-  return release.toLowerCase().includes("microsoft");
 }
 
 async function launchWithCustomHost({

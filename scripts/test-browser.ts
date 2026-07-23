@@ -8,8 +8,7 @@
 
 import { setTimeout as sleep } from "node:timers/promises";
 import { launch } from "chrome-launcher";
-import os from "node:os";
-import { readFileSync } from "node:fs";
+import { isWsl, resolveWslHost } from "../src/browser/wslHost.js";
 
 const DEFAULT_PORT = 45871;
 const port =
@@ -23,26 +22,6 @@ function normalizePort(raw?: string | null): number | null {
   const value = Number.parseInt(raw, 10);
   if (!Number.isFinite(value) || value <= 0 || value > 65535) return null;
   return value;
-}
-
-function isWsl(): boolean {
-  if (process.platform !== "linux") return false;
-  if (process.env.WSL_DISTRO_NAME) return true;
-  return os.release().toLowerCase().includes("microsoft");
-}
-
-function resolveWslHost(): string | null {
-  if (!isWsl()) return null;
-  try {
-    const resolv = readFileSync("/etc/resolv.conf", "utf8");
-    for (const line of resolv.split("\n")) {
-      const match = line.match(/^nameserver\s+([0-9.]+)/);
-      if (match?.[1]) return match[1];
-    }
-  } catch {
-    // ignore
-  }
-  return null;
 }
 
 function firewallHint(host: string, devtoolsPort: number): string | null {
