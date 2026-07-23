@@ -41,6 +41,8 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.maxConcurrentTabs).toBe(3);
     expect(resolved.researchMode).toBe("off");
     expect(resolved.archiveConversations).toBe("auto");
+    expect(resolved.scheduledTaskMode).toBe(false);
+    expect(resolved.pinConversation).toBe(false);
   });
 
   test("applies overrides", () => {
@@ -59,6 +61,7 @@ describe("resolveBrowserConfig", () => {
       maxConcurrentTabs: 5,
       researchMode: "deep",
       archiveConversations: "never",
+      pinConversation: true,
     });
     expect(resolved.url).toBe("https://example.com/");
     expect(resolved.timeoutMs).toBe(123);
@@ -74,6 +77,30 @@ describe("resolveBrowserConfig", () => {
     expect(resolved.maxConcurrentTabs).toBe(5);
     expect(resolved.researchMode).toBe("deep");
     expect(resolved.archiveConversations).toBe("never");
+    expect(resolved.scheduledTaskMode).toBe(false);
+    expect(resolved.pinConversation).toBe(true);
+  });
+
+  test("applies safe Scheduled task defaults at the browser library boundary", () => {
+    const resolved = resolveBrowserConfig({
+      scheduledTaskMode: true,
+      researchMode: "deep",
+      archiveConversations: "always",
+      modelStrategy: "select",
+    });
+    expect(resolved.url).toBe("https://chatgpt.com/scheduled");
+    expect(resolved.modelStrategy).toBe("ignore");
+    expect(resolved.researchMode).toBe("off");
+    expect(resolved.archiveConversations).toBe("never");
+  });
+
+  test("rejects a non-Scheduled URL at the browser library boundary", () => {
+    expect(() =>
+      resolveBrowserConfig({
+        scheduledTaskMode: true,
+        url: "https://chatgpt.com/",
+      }),
+    ).toThrow(/requires ChatGPT's \/scheduled page/i);
   });
 
   test("allows temporary chat URLs when desiredModel is Pro", () => {

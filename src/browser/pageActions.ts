@@ -11,6 +11,10 @@ export {
 export { ensureModelSelection } from "./actions/modelSelection.js";
 export { submitPrompt, clearPromptComposer } from "./actions/promptComposer.js";
 export {
+  pinCurrentConversation,
+  buildPinConversationExpressionForTest,
+} from "./actions/pinConversation.js";
+export {
   clearComposerAttachments,
   uploadAttachmentFile,
   waitForAttachmentCompletion,

@@ -12,6 +12,7 @@ import type {
   BrowserAttachment,
   ResolvedBrowserConfig,
   BrowserArchiveResult,
+  BrowserPinResult,
 } from "./types.js";
 import {
   launchChrome,
@@ -43,6 +44,7 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
   readAssistantSnapshot,
+  pinCurrentConversation,
 } from "./pageActions.js";
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
@@ -718,6 +720,19 @@ async function maybeArchiveCompletedConversation({
   });
 }
 
+async function maybePinCompletedConversation({
+  Runtime,
+  logger,
+  config,
+}: {
+  Runtime: ChromeClient["Runtime"];
+  logger: BrowserLogger;
+  config: ResolvedBrowserConfig;
+}): Promise<BrowserPinResult | undefined> {
+  if (!config.pinConversation) return undefined;
+  return pinCurrentConversation(Runtime, logger);
+}
+
 export function maybeArchiveCompletedConversationForTest(
   args: Parameters<typeof maybeArchiveCompletedConversation>[0],
 ): Promise<BrowserArchiveResult> {
@@ -932,6 +947,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         stage: "browser-follow-ups",
         details: { researchMode: "deep", followUps: followUpPrompts.length },
       },
+    );
+  }
+  if (config.scheduledTaskMode && followUpPrompts.length > 0) {
+    throw new BrowserAutomationError(
+      "Browser follow-ups are not supported when creating a Scheduled task.",
+      { stage: "browser-follow-ups" },
     );
   }
   const logger: BrowserLogger = options.log ?? ((_message: string) => {});
@@ -1605,6 +1626,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames: attachmentExpectations,
         onPromptSubmitted: markPromptSubmitted,
+        commitMode: config.scheduledTaskMode ? "scheduled-task" : "conversation",
       };
       const deepResearchTargetBaseline =
         deepResearch && client
@@ -1731,6 +1753,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         logger,
       );
       const savedArtifacts = appendArtifacts(undefined, [reportArtifact, transcriptArtifact]);
+      const pin = await maybePinCompletedConversation({ Runtime, logger, config });
       const archive = await maybeArchiveCompletedConversation({
         Runtime,
         logger,
@@ -1744,6 +1767,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         answerMarkdown: researchResult.text,
         answerHtml: researchResult.html,
         artifacts: savedArtifacts,
+        pin,
         archive,
         modelSelection: modelSelectionEvidence,
         tookMs: durationMs,
@@ -1764,7 +1788,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     const normalizeForComparison = (text: string): string =>
       text.toLowerCase().replace(/\s+/g, " ").trim();
     const expectedConversationId = () =>
-      lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
+      config.scheduledTaskMode
+        ? undefined
+        : lastUrl
+          ? extractConversationIdFromUrl(lastUrl)
+          : undefined;
     const waitForFreshAssistantResponse = async (baselineNormalized: string, timeoutMs: number) => {
       const baselinePrefix =
         baselineNormalized.length >= 80
@@ -1870,6 +1898,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
                 logger,
                 baselineTurns ?? undefined,
                 expectedConversationId(),
+                config.scheduledTaskMode ? "scheduled-task" : "strict",
               ),
             timeoutMs,
             logger,
@@ -1906,6 +1935,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
                   logger,
                   baselineTurns ?? undefined,
                   expectedConversationId(),
+                  config.scheduledTaskMode ? "scheduled-task" : "strict",
                 ),
               timeoutMs: config.timeoutMs,
               logger,
@@ -2230,6 +2260,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       logger,
     );
     const savedArtifacts = appendArtifacts(savedBrowserArtifacts, [transcriptArtifact]);
+    const pin = await maybePinCompletedConversation({ Runtime, logger, config });
     const archive = await maybeArchiveCompletedConversation({
       Runtime,
       logger,
@@ -2254,6 +2285,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       savedImages: imageArtifacts.savedImages,
       downloadableFiles: fileArtifacts.files,
       savedFiles: fileArtifacts.savedFiles,
+      pin,
       archive,
       modelSelection: modelSelectionEvidence,
       tookMs: durationMs,
@@ -3173,6 +3205,7 @@ async function runRemoteBrowserMode(
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames: attachmentExpectations,
         onPromptSubmitted: markPromptSubmitted,
+        commitMode: config.scheduledTaskMode ? "scheduled-task" : "conversation",
       };
       const deepResearchTargetBaseline =
         deepResearch && client
@@ -3264,6 +3297,7 @@ async function runRemoteBrowserMode(
         logger,
       );
       const savedArtifacts = appendArtifacts(undefined, [reportArtifact, transcriptArtifact]);
+      const pin = await maybePinCompletedConversation({ Runtime, logger, config });
       const archive = await maybeArchiveCompletedConversation({
         Runtime,
         logger,
@@ -3278,6 +3312,7 @@ async function runRemoteBrowserMode(
         answerMarkdown: researchResult.text,
         answerHtml: researchResult.html,
         artifacts: savedArtifacts,
+        pin,
         archive,
         modelSelection: modelSelectionEvidence,
         tookMs: durationMs,
@@ -3296,7 +3331,11 @@ async function runRemoteBrowserMode(
     const normalizeForComparison = (text: string): string =>
       text.toLowerCase().replace(/\s+/g, " ").trim();
     const expectedConversationId = () =>
-      lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
+      config.scheduledTaskMode
+        ? undefined
+        : lastUrl
+          ? extractConversationIdFromUrl(lastUrl)
+          : undefined;
     const waitForFreshAssistantResponse = async (baselineNormalized: string, timeoutMs: number) => {
       const baselinePrefix =
         baselineNormalized.length >= 80
@@ -3401,6 +3440,7 @@ async function runRemoteBrowserMode(
               logger,
               baselineTurns ?? undefined,
               expectedConversationId(),
+              config.scheduledTaskMode ? "scheduled-task" : "strict",
             ),
           timeoutMs,
           logger,
@@ -3435,6 +3475,7 @@ async function runRemoteBrowserMode(
                 logger,
                 baselineTurns ?? undefined,
                 expectedConversationId(),
+                config.scheduledTaskMode ? "scheduled-task" : "strict",
               ),
             timeoutMs: config.timeoutMs,
             logger,
@@ -3715,6 +3756,7 @@ async function runRemoteBrowserMode(
       logger,
     );
     const savedArtifacts = appendArtifacts(savedBrowserArtifacts, [transcriptArtifact]);
+    const pin = await maybePinCompletedConversation({ Runtime, logger, config });
     const archive = await maybeArchiveCompletedConversation({
       Runtime,
       logger,
@@ -3754,6 +3796,7 @@ async function runRemoteBrowserMode(
       savedImages: imageArtifacts.savedImages,
       downloadableFiles: fileArtifacts.files,
       savedFiles: fileArtifacts.savedFiles,
+      pin,
       archive,
       modelSelection: modelSelectionEvidence,
       controllerPid: process.pid,
@@ -3928,6 +3971,7 @@ async function waitForAssistantResponseWithReload(
   logger: BrowserLogger,
   minTurnIndex?: number,
   expectedConversationId?: string,
+  completionMode: "strict" | "scheduled-task" = "strict",
 ) {
   try {
     return await waitForAssistantResponse(
@@ -3936,6 +3980,7 @@ async function waitForAssistantResponseWithReload(
       logger,
       minTurnIndex,
       expectedConversationId,
+      completionMode,
     );
   } catch (error) {
     if (!shouldReloadAfterAssistantError(error)) {
@@ -3954,6 +3999,7 @@ async function waitForAssistantResponseWithReload(
       logger,
       minTurnIndex,
       expectedConversationId,
+      completionMode,
     );
   }
 }

@@ -116,6 +116,10 @@ export interface BrowserAutomationConfig {
   researchMode?: BrowserResearchMode;
   /** Archive completed ChatGPT conversations after local artifacts are saved. */
   archiveConversations?: BrowserArchiveMode;
+  /** Submit through ChatGPT's Scheduled page and verify its conversation handoff. */
+  scheduledTaskMode?: boolean;
+  /** Pin the resulting ChatGPT conversation after a successful browser run. */
+  pinConversation?: boolean;
   /** Existing ChatGPT conversation URL to open before submitting the prompt. */
   resumeConversationUrl?: string | null;
 }
@@ -162,6 +166,14 @@ export interface BrowserArchiveResult {
   error?: string;
 }
 
+export interface BrowserPinResult {
+  attempted: boolean;
+  pinned: boolean;
+  alreadyPinned?: boolean;
+  title?: string;
+  reason?: string;
+}
+
 export interface BrowserRunResult {
   answerText: string;
   answerMarkdown: string;
@@ -172,6 +184,7 @@ export interface BrowserRunResult {
   downloadableFiles?: BrowserDownloadableFile[];
   savedFiles?: SavedBrowserFile[];
   archive?: BrowserArchiveResult;
+  pin?: BrowserPinResult;
   modelSelection?: BrowserModelSelectionEvidence;
   warnings?: BrowserRunWarning[];
   tookMs: number;
@@ -206,6 +219,8 @@ export type ResolvedBrowserConfig = Required<
     | "maxConcurrentTabs"
     | "researchMode"
     | "copyProfileSource"
+    | "scheduledTaskMode"
+    | "pinConversation"
   >
 > & {
   chromeProfile?: string | null;
@@ -228,4 +243,6 @@ export type ResolvedBrowserConfig = Required<
   maxConcurrentTabs: number;
   researchMode: BrowserResearchMode;
   archiveConversations: BrowserArchiveMode;
+  scheduledTaskMode: boolean;
+  pinConversation: boolean;
 };

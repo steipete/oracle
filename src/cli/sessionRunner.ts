@@ -157,6 +157,7 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: result.runtime,
           archive: result.archive,
+          pin: result.pin,
           modelSelection: result.modelSelection,
           warnings: result.warnings,
         },

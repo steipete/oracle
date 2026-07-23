@@ -9,6 +9,7 @@ import {
   classifyTurnTerminal,
   createTerminalGateState,
   hasScopedCompletionProof,
+  isScheduledTaskConfirmationTerminal,
   matchesThinkingStatusLabelForTest,
   type TerminalGateConfig,
   type TerminalSample,
@@ -425,6 +426,50 @@ describe("classifyTurnTerminal", () => {
       { len: 200, barVisible: true },
     ]);
     expect(out.some(Boolean)).toBe(false);
+  });
+});
+
+describe("isScheduledTaskConfirmationTerminal", () => {
+  const config: TerminalGateConfig = { barConfirmCycles: 3, minStableMs: 200 };
+  const baseSample: TerminalSample = {
+    now: 0,
+    len: 120,
+    contentKey: "scheduled-confirmation",
+    stopVisible: false,
+    barVisible: false,
+    strongThinkingActive: false,
+  };
+
+  test("accepts stable Scheduled confirmation text without an action bar", () => {
+    const state = classifyTurnTerminal(createTerminalGateState(0), baseSample, config).state;
+    expect(isScheduledTaskConfirmationTerminal(state, { ...baseSample, now: 250 }, config)).toBe(
+      true,
+    );
+  });
+
+  test("rejects changing, streaming, or actively thinking confirmations", () => {
+    const state = classifyTurnTerminal(createTerminalGateState(0), baseSample, config).state;
+    expect(
+      isScheduledTaskConfirmationTerminal(
+        state,
+        { ...baseSample, now: 250, contentKey: "changed" },
+        config,
+      ),
+    ).toBe(false);
+    expect(
+      isScheduledTaskConfirmationTerminal(
+        state,
+        { ...baseSample, now: 250, stopVisible: true },
+        config,
+      ),
+    ).toBe(false);
+    expect(
+      isScheduledTaskConfirmationTerminal(
+        state,
+        { ...baseSample, now: 250, strongThinkingActive: true },
+        config,
+      ),
+    ).toBe(false);
   });
 });
 

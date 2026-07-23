@@ -13,7 +13,7 @@ import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
-import type { BrowserArchiveResult, BrowserLogger } from "./types.js";
+import type { BrowserArchiveResult, BrowserLogger, BrowserPinResult } from "./types.js";
 import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
@@ -30,6 +30,7 @@ export interface BrowserExecutionResult {
   elapsedMs: number;
   runtime: BrowserRuntimeMetadata;
   archive?: BrowserArchiveResult;
+  pin?: BrowserPinResult;
   modelSelection?: BrowserModelSelectionEvidence;
   warnings?: BrowserRunWarning[];
   answerText: string;
@@ -181,7 +182,7 @@ export async function runBrowserSessionExecution(
     if (typeof message !== "string") return;
     const shouldAlwaysPrint =
       message.startsWith("[browser] ") &&
-      /archive|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot|browser control|browser guidance|model selection|model picker/i.test(
+      /archive|pin|fallback|follow-up|retry|thinking|waiting for chatgpt|browser slot|browser control|browser guidance|model selection|model picker/i.test(
         message,
       );
     if (!runOptions.verbose && !shouldAlwaysPrint) return;
@@ -316,6 +317,7 @@ export async function runBrowserSessionExecution(
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
     archive: browserResult.archive,
+    pin: browserResult.pin,
     modelSelection,
     warnings,
     answerText,

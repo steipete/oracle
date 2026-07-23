@@ -148,6 +148,9 @@ interface CliOptions extends OptionValues {
   copyProfile?: string;
   browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
   browserResearch?: "off" | "deep";
+  browserArchive?: "auto" | "always" | "never";
+  browserScheduledTask?: boolean;
+  browserPinConversation?: boolean;
   browserFollowUp?: string[];
   browserAllowCookieErrors?: boolean;
   browserAttachments?: string;
@@ -797,6 +800,18 @@ program
       "--browser-archive <mode>",
       "Archive completed ChatGPT browser conversations after local artifacts are saved (auto archives successful non-project one-shots only).",
     ).choices(["auto", "always", "never"]),
+  )
+  .addOption(
+    new Option(
+      "--browser-scheduled-task",
+      "Create a task through ChatGPT's Scheduled page and verify the resulting conversation handoff.",
+    ),
+  )
+  .addOption(
+    new Option(
+      "--browser-pin-conversation",
+      "Pin the resulting ChatGPT conversation after a successful browser run.",
+    ),
   )
   .addOption(
     new Option(
@@ -1908,6 +1923,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   if (options.browserTab && engine !== "browser") {
     throw new Error("--browser-tab requires --engine browser.");
   }
+  if (options.browserScheduledTask && engine !== "browser") {
+    throw new Error("--browser-scheduled-task requires --engine browser.");
+  }
+  if (options.browserPinConversation && engine !== "browser") {
+    throw new Error("--browser-pin-conversation requires --engine browser.");
+  }
 
   const normalizedMultiModels: ModelName[] = multiModelProvided
     ? Array.from(new Set(options.models!.map((entry) => resolveApiModel(entry))))
@@ -2099,6 +2120,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     options.browserFollowUp?.filter((entry) => entry.trim().length > 0).length ?? 0;
   if (engine !== "browser" && browserFollowUpCount > 0) {
     throw new Error("--browser-follow-up requires --engine browser.");
+  }
+  if (options.browserScheduledTask && browserFollowUpCount > 0) {
+    throw new Error("--browser-scheduled-task cannot be combined with --browser-follow-up.");
   }
 
   const sessionMode: SessionMode = engine === "browser" ? "browser" : "api";

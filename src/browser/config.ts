@@ -25,6 +25,7 @@ export const DEFAULT_CHATGPT_COOKIE_NAMES = [
   "CF_Authorization",
   "__cflb",
 ];
+const CHATGPT_SCHEDULED_URL = "https://chatgpt.com/scheduled";
 
 export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   chromeProfile: null,
@@ -66,12 +67,15 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   manualLoginCookieSync: false,
   researchMode: "off",
   archiveConversations: "auto",
+  scheduledTaskMode: false,
+  pinConversation: false,
   resumeConversationUrl: null,
 };
 
 export function resolveBrowserConfig(
   config: BrowserAutomationConfig | undefined,
 ): ResolvedBrowserConfig {
+  const scheduledTaskMode = config?.scheduledTaskMode === true;
   const debugPortEnv = parseDebugPort(
     process.env.ORACLE_BROWSER_PORT ?? process.env.ORACLE_BROWSER_DEBUG_PORT,
   );
@@ -81,17 +85,24 @@ export function resolveBrowserConfig(
   const envMaxConcurrentTabs = parseMaxConcurrentTabs(
     process.env.ORACLE_BROWSER_MAX_CONCURRENT_TABS,
   );
-  const rawUrl = config?.chatgptUrl ?? config?.url ?? DEFAULT_BROWSER_CONFIG.url;
+  const rawUrl =
+    config?.chatgptUrl ??
+    config?.url ??
+    (scheduledTaskMode ? CHATGPT_SCHEDULED_URL : DEFAULT_BROWSER_CONFIG.url);
   const normalizedUrl = normalizeChatgptUrl(
     rawUrl ?? DEFAULT_BROWSER_CONFIG.url,
     DEFAULT_BROWSER_CONFIG.url,
   );
+  if (scheduledTaskMode && new URL(normalizedUrl).pathname.replace(/\/$/, "") !== "/scheduled") {
+    throw new Error("Scheduled task mode requires ChatGPT's /scheduled page.");
+  }
   const desiredModel =
     config?.desiredModel ?? DEFAULT_BROWSER_CONFIG.desiredModel ?? DEFAULT_MODEL_TARGET;
-  const modelStrategy =
-    normalizeBrowserModelStrategy(config?.modelStrategy) ??
-    DEFAULT_BROWSER_CONFIG.modelStrategy ??
-    DEFAULT_MODEL_STRATEGY;
+  const modelStrategy = scheduledTaskMode
+    ? "ignore"
+    : (normalizeBrowserModelStrategy(config?.modelStrategy) ??
+      DEFAULT_BROWSER_CONFIG.modelStrategy ??
+      DEFAULT_MODEL_STRATEGY);
   const isWindows = process.platform === "win32";
   const manualLogin =
     config?.manualLogin ?? (isWindows ? true : DEFAULT_BROWSER_CONFIG.manualLogin);
@@ -100,8 +111,10 @@ export function resolveBrowserConfig(
     config?.manualLoginProfileDir,
     process.env.ORACLE_BROWSER_PROFILE_DIR,
   );
-  const researchMode = normalizeResearchMode(config?.researchMode);
-  const archiveConversations = normalizeArchiveMode(config?.archiveConversations);
+  const researchMode = scheduledTaskMode ? "off" : normalizeResearchMode(config?.researchMode);
+  const archiveConversations = scheduledTaskMode
+    ? "never"
+    : normalizeArchiveMode(config?.archiveConversations);
   const defaultTimeoutMs =
     researchMode === "deep" ? DEEP_RESEARCH_DEFAULT_TIMEOUT_MS : DEFAULT_BROWSER_CONFIG.timeoutMs;
   return {
@@ -153,6 +166,8 @@ export function resolveBrowserConfig(
     thinkingTime: config?.thinkingTime,
     researchMode,
     archiveConversations,
+    scheduledTaskMode,
+    pinConversation: config?.pinConversation ?? DEFAULT_BROWSER_CONFIG.pinConversation,
     resumeConversationUrl:
       config?.resumeConversationUrl ?? DEFAULT_BROWSER_CONFIG.resumeConversationUrl,
     manualLogin,
