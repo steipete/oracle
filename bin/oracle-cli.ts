@@ -23,6 +23,8 @@ import type {
   ModelName,
   ModelOverridesConfig,
   PreviewMode,
+  ReasoningEffort,
+  ReasoningMode,
   RunOracleOptions,
 } from "../src/oracle/types.js";
 import { CHATGPT_URL } from "../src/browser/constants.js";
@@ -96,6 +98,8 @@ interface CliOptions extends OptionValues {
   render?: boolean;
   model: string;
   models?: string[];
+  reasoningEffort?: ReasoningEffort;
+  reasoningMode?: ReasoningMode;
   force?: boolean;
   slug?: string;
   filesReport?: boolean;
@@ -445,6 +449,22 @@ program
     )
       .argParser(collectModelList)
       .default([]),
+  )
+  .addOption(
+    new Option("--reasoning-effort <effort>", "Reasoning effort for GPT-5.6 API models.").choices([
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]),
+  )
+  .addOption(
+    new Option(
+      "--reasoning-mode <mode>",
+      'Responses API reasoning execution mode for GPT-5.6 models ("standard" or "pro").',
+    ).choices(["standard", "pro"]),
   )
   .addOption(
     new Option(
@@ -1326,6 +1346,8 @@ function buildRunOptions(
     prompt: options.prompt,
     model: options.model,
     models: overrides.models ?? options.models,
+    reasoningEffort: overrides.reasoningEffort ?? options.reasoningEffort,
+    reasoningMode: overrides.reasoningMode ?? options.reasoningMode,
     previousResponseId: overrides.previousResponseId ?? options.previousResponseId,
     browserResumeConversationUrl:
       overrides.browserResumeConversationUrl ?? options.browserResumeConversationUrl,
@@ -1636,6 +1658,8 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserResumeConversationUrl: stored.browserResumeConversationUrl,
     effectiveModelId: stored.effectiveModelId ?? stored.model,
     modelOverrides: stored.modelOverrides,
+    reasoningEffort: stored.reasoningEffort,
+    reasoningMode: stored.reasoningMode,
     file: stored.file ?? [],
     maxFileSizeBytes: stored.maxFileSizeBytes,
     slug: stored.slug,
@@ -2094,6 +2118,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
   }
   const activeModel = resolvedOptions.model;
+  if (options.reasoningMode && engine !== "api") {
+    throw new Error("--reasoning-mode requires --engine api.");
+  }
+  if (options.reasoningEffort && engine !== "api") {
+    throw new Error("--reasoning-effort requires --engine api.");
+  }
 
   const browserFollowUpCount =
     options.browserFollowUp?.filter((entry) => entry.trim().length > 0).length ?? 0;
@@ -2272,6 +2302,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     waitFlag: options.wait,
     model: activeModel,
     engine,
+    reasoningMode: resolvedOptions.reasoningMode,
   });
   if (remoteHost && waitPreference === false) {
     console.log(chalk.dim("Remote browser runs require --wait; ignoring --no-wait."));
@@ -2325,6 +2356,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     : shouldDetachSession({
         engine,
         model: activeModel,
+        reasoningMode: resolvedOptions.reasoningMode,
         waitPreference,
         disableDetachEnv,
       });
@@ -2518,6 +2550,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     storedPreference: storedOptions.waitPreference,
     model: runOptions.model,
     engine,
+    reasoningMode: runOptions.reasoningMode,
   });
 
   const remoteConfig = resolveRemoteServiceConfig({
@@ -2607,6 +2640,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     : shouldDetachSession({
         engine,
         model: runOptions.model,
+        reasoningMode: runOptions.reasoningMode,
         waitPreference,
         disableDetachEnv,
       });
@@ -2773,14 +2807,16 @@ function resolveWaitFlag({
   waitFlag,
   model,
   engine,
+  reasoningMode,
 }: {
   waitFlag?: boolean;
   model: ModelName;
   engine: EngineMode;
+  reasoningMode?: ReasoningMode;
 }): boolean {
   if (waitFlag === true) return true;
   if (waitFlag === false) return false;
-  return defaultWaitPreference(model, engine);
+  return defaultWaitPreference(model, engine, reasoningMode);
 }
 
 function resolveRestartWaitPreference({
@@ -2788,16 +2824,18 @@ function resolveRestartWaitPreference({
   storedPreference,
   model,
   engine,
+  reasoningMode,
 }: {
   waitFlag?: boolean;
   storedPreference?: boolean;
   model: ModelName;
   engine: EngineMode;
+  reasoningMode?: ReasoningMode;
 }): boolean {
   if (waitFlag === true) return true;
   if (waitFlag === false) return false;
   if (typeof storedPreference === "boolean") return storedPreference;
-  return defaultWaitPreference(model, engine);
+  return defaultWaitPreference(model, engine, reasoningMode);
 }
 
 function resolveEffectiveModelIdForRun(model: ModelName, stored?: string): string {

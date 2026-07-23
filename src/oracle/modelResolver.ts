@@ -256,7 +256,14 @@ export function isProModel(model: ModelName): boolean {
   return isKnownModel(model) && PRO_MODELS.has(model as KnownModelName & ProModelName);
 }
 
-const VALID_REASONING_EFFORTS: readonly ReasoningEffort[] = ["low", "medium", "high", "xhigh"];
+const VALID_REASONING_EFFORTS: readonly ReasoningEffort[] = [
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
