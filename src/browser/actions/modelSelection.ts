@@ -9,6 +9,9 @@ import {
 import { logDomFailure } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { delay } from "../utils.js";
+import { enumerateModelInventory, applyInventorySelection, readCurrentSelection } from "./modelInventoryScrape.js";
+import { matchModelToInventory } from "../../oracle/modelMatch.js";
+import { normalizeText } from "../../oracle/modelInventory.js";
 
 const LEGACY_PRO_VERSION_WORD_TOKENS = ["5 4", "5 2", "5 1", "5 0", "gpt 5 pro"] as const;
 const LEGACY_PRO_VERSION_COMPACT_TOKENS = ["gpt54", "gpt52", "gpt51", "gpt50"] as const;
@@ -36,8 +39,24 @@ export async function ensureModelSelection(
   desiredModel: string,
   logger: BrowserLogger,
   strategy: BrowserModelStrategy = "select",
-  options: { buttonWaitMs?: number; buttonPollMs?: number } = {},
+  options: { buttonWaitMs?: number; buttonPollMs?: number; modelRequest?: string } = {},
 ): Promise<BrowserModelSelectionEvidence> {
+  // Preferred path: read the picker's live options and match the raw request
+  // against them (robust to new models / UI changes). Any failure returns null
+  // and falls through to the legacy label-scoring engine below — so this can
+  // only improve outcomes, never regress them.
+  if (strategy === "select" && options.modelRequest) {
+    const viaInventory = await selectViaInventory(Runtime, options.modelRequest, logger).catch(
+      (err: unknown) => {
+        logger(
+          `Inventory selection error (${err instanceof Error ? err.message : String(err)}); using legacy picker.`,
+        );
+        return null;
+      },
+    );
+    if (viaInventory) return viaInventory;
+  }
+
   const buttonWaitMs = options.buttonWaitMs ?? MODEL_BUTTON_WAIT_MS;
   const buttonPollMs = options.buttonPollMs ?? MODEL_BUTTON_POLL_MS;
   const deadline = Date.now() + Math.max(0, buttonWaitMs);
@@ -102,6 +121,98 @@ export async function ensureModelSelection(
       );
     }
   }
+}
+
+/**
+ * Data-driven selection: discover the live picker options, match the raw request
+ * against them, apply, and verify. Returns evidence on success, or null to fall
+ * back to the legacy engine (empty inventory, unmatched request, apply/verify
+ * failure). Never throws — errors surface as null via the caller's catch.
+ */
+async function selectViaInventory(
+  Runtime: ChromeClient["Runtime"],
+  modelRequest: string,
+  logger: BrowserLogger,
+): Promise<BrowserModelSelectionEvidence | null> {
+  const inventory = await enumerateModelInventory(Runtime);
+  if (inventory.versions.length === 0 && inventory.efforts.length === 0) {
+    logger("Model inventory: picker not readable yet; using legacy picker.");
+    return null; // discovery didn't find a picker we understand → legacy path
+  }
+
+  const match = matchModelToInventory(modelRequest, inventory);
+  if (match.status !== "matched") {
+    const hint = match.candidates.length ? ` (available: ${match.candidates.join(", ")})` : "";
+    logger(`Model inventory: "${modelRequest}" → ${match.status}${hint}; using legacy picker.`);
+    return null;
+  }
+
+  const wantVersion = match.version ?? null;
+  const wantEffort = match.effort ?? null;
+  const sameVersion =
+    !wantVersion ||
+    (inventory.currentVersion != null &&
+      normalizeText(inventory.currentVersion.text) === normalizeText(wantVersion.text));
+  const sameEffort =
+    !wantEffort ||
+    (inventory.currentEffort != null &&
+      normalizeText(inventory.currentEffort.text) === normalizeText(wantEffort.text));
+
+  let currentVersion = inventory.currentVersion?.text ?? null;
+  let currentEffort = inventory.currentEffort?.text ?? null;
+  let switched = false;
+
+  if (!(sameVersion && sameEffort)) {
+    const applied = await applyInventorySelection(
+      Runtime,
+      wantVersion?.raw ?? null,
+      wantEffort?.raw ?? null,
+    );
+    if (!applied.ok) {
+      logger(`Model inventory apply failed (${applied.error ?? "unknown"}); using legacy picker.`);
+      return null;
+    }
+    switched = (applied.actions ?? []).some(
+      (a) => a.startsWith("effort:") || a.startsWith("version:"),
+    );
+    // Verify from the top menu (version-trigger label + checked effort). This avoids
+    // re-opening the version submenu, which is flaky, and beats the composer pill
+    // (which merges version+effort for non-default versions, e.g. "5.5Pro").
+    const after = await readCurrentSelection(Runtime);
+    currentVersion = after.version ?? applied.currentVersion ?? currentVersion;
+    currentEffort = after.effort ?? applied.currentEffort ?? currentEffort;
+  }
+
+  // Verify the live state now reflects the request.
+  const versionOk = !wantVersion || labelsAgree(currentVersion, wantVersion.text);
+  const effortOk = !wantEffort || labelsAgree(currentEffort, wantEffort.text);
+  if (!versionOk || !effortOk) {
+    logger(
+      `Model inventory verify mismatch (version="${currentVersion}", effort="${currentEffort}"); using legacy picker.`,
+    );
+    return null;
+  }
+
+  const label =
+    [wantEffort?.text, wantVersion?.text].filter(Boolean).join(" ") || currentEffort || modelRequest;
+  logger(`Model picker (inventory): ${label}`);
+  return {
+    requestedModel: modelRequest,
+    resolvedLabel: label,
+    strategy: "select",
+    status: switched ? "switched" : "already-selected",
+    verified: true,
+    source: "chatgpt-model-picker",
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+/** True when two labels refer to the same option (tolerant of subscripts/notes). */
+function labelsAgree(observed: string | null, want: string): boolean {
+  const a = normalizeText(observed ?? "");
+  const b = normalizeText(want);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
 }
 
 function assertResolvedModelSelection(desiredModel: string, resolvedLabel: string): void {

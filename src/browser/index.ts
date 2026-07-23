@@ -1460,7 +1460,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     if (config.desiredModel && modelStrategy !== "ignore" && !isResumingConversation) {
       modelSelectionEvidence = await raceWithDisconnect(
         withRetries(
-          () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
+          () =>
+            ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy, {
+              modelRequest: config.modelRequest ?? undefined,
+            }),
           {
             retries: 2,
             delayMs: 300,
@@ -3066,7 +3069,10 @@ async function runRemoteBrowserMode(
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
     if (config.desiredModel && modelStrategy !== "ignore" && !config.resumeConversationUrl) {
       modelSelectionEvidence = await withRetries(
-        () => ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy),
+        () =>
+          ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy, {
+            modelRequest: config.modelRequest ?? undefined,
+          }),
         {
           retries: 2,
           delayMs: 300,
