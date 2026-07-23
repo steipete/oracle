@@ -37,5 +37,11 @@ describe("hasRecoverableChatGptConversation", () => {
   test("rejects malformed or non-ChatGPT URLs", () => {
     expect(hasRecoverableChatGptConversation({ tabUrl: "not a url" })).toBe(false);
     expect(hasRecoverableChatGptConversation({ tabUrl: "https://example.com/c/abc" })).toBe(false);
+    expect(hasRecoverableChatGptConversation({ tabUrl: "https://chatgpt.com/?next=/c/abc" })).toBe(
+      false,
+    );
+    expect(hasRecoverableChatGptConversation({ tabUrl: "https://chatgpt.com/#/c/abc" })).toBe(
+      false,
+    );
   });
 });

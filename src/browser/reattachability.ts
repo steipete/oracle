@@ -20,7 +20,7 @@ export function isRecoverableChatGptConversationUrl(candidate: string | null | u
     if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") {
       return false;
     }
-    return isStableConversationUrl(url.href);
+    return isStableConversationUrl(url.pathname);
   } catch {
     return false;
   }
