@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { buildBrowserConfig, resolveBrowserModelLabel } from "../../src/cli/browserConfig.js";
+import {
+  buildBrowserConfig,
+  mapModelToBrowserLabel,
+  normalizeChatGptModelForBrowser,
+  resolveBrowserModelLabel,
+} from "../../src/cli/browserConfig.js";
+import type { ModelName } from "../../src/oracle/types.js";
 
 describe("buildBrowserConfig", () => {
   test("uses defaults when optional flags omitted", async () => {
@@ -419,6 +425,21 @@ describe("resolveBrowserModelLabel", () => {
   test("trims descriptive labels before returning them", () => {
     expect(resolveBrowserModelLabel("  ChatGPT 5.1 Thinking ", "gpt-5.1")).toBe(
       "ChatGPT 5.1 Thinking",
+    );
+  });
+});
+
+describe("GPT-5.6 Sol Pro browser target", () => {
+  test("maps to the Pro effort label, like the other Pro tiers", () => {
+    // The picker exposes Pro as a radio (Instant5.5 / Medium / High / Extra High / Pro)
+    // rather than as its own model entry - measured against ChatGPT on 2026-07-27.
+    expect(mapModelToBrowserLabel("gpt-5.6-sol-pro" as ModelName)).toBe("Pro");
+    expect(mapModelToBrowserLabel("gpt-5.6-sol" as ModelName)).toBe("GPT-5.6 Sol");
+  });
+
+  test("survives browser normalization instead of collapsing to gpt-5.5-pro", () => {
+    expect(normalizeChatGptModelForBrowser("gpt-5.6-sol-pro" as ModelName)).toBe(
+      "gpt-5.6-sol-pro",
     );
   });
 });

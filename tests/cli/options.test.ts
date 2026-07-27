@@ -296,8 +296,17 @@ describe("inferModelFromLabel", () => {
   });
 
   test("rejects unknown bare GPT-5.6 browser variants", () => {
-    expect(() => inferModelFromLabel("gpt-5.6-pro")).toThrow("Unknown GPT-5.6 browser variant");
     expect(() => inferModelFromLabel("GPT-5.6 Luna")).toThrow("Unknown GPT-5.6 browser variant");
+    expect(() => inferModelFromLabel("GPT-5.6 Terra")).toThrow("Unknown GPT-5.6 browser variant");
+  });
+
+  test("resolves the GPT-5.6 Sol Pro effort tier", () => {
+    // Sol is the only 5.6 model ChatGPT offers a Pro effort for, so a bare "gpt-5.6-pro"
+    // is unambiguous and resolves to the same target as the explicit spelling.
+    expect(inferModelFromLabel("gpt-5.6-sol-pro")).toBe("gpt-5.6-sol-pro");
+    expect(inferModelFromLabel("gpt-5.6-pro")).toBe("gpt-5.6-sol-pro");
+    expect(inferModelFromLabel("GPT-5.6 Sol Pro")).toBe("gpt-5.6-sol-pro");
+    expect(inferModelFromLabel("gpt-5.6-sol")).toBe("gpt-5.6-sol");
   });
 
   test("preserves provider-qualified ids instead of remapping them to built-ins", () => {

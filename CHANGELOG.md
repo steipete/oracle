@@ -6,6 +6,7 @@
 
 - Browser: run long local Pro consultations in a detached worker while the CLI remains attached to its session log, so unexpected foreground termination cannot stop answer capture; Ctrl-C still cancels the worker. Thanks @Rokurolize!
 - Browser: recognize ChatGPT's separate Pro effort control as the selected maximum effort for GPT-5.6 Sol when `--browser-thinking-time heavy` is requested. Thanks @Rokurolize!
+- Browser: accept `gpt-5.6-sol-pro` (also spelled `gpt-5.6-pro` / `GPT-5.6 Sol Pro`) as a selectable target so Sol's Pro effort can be requested directly, instead of being rejected as an unknown variant and then vetoed by the Pro-pill guard.
 
 ## 0.16.1 — 2026-07-23
 

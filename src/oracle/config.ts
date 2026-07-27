@@ -68,6 +68,21 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
     },
     reasoning: { effort: "xhigh" },
   },
+  // Browser-only target: ChatGPT exposes Pro as an effort control on top of GPT-5.6 Sol,
+  // while the API has no gpt-5.6-*-pro model id (verified 2026-07-27: /v1/models/gpt-5.6-pro
+  // and /v1/models/gpt-5.6-sol-pro both 404 "does not exist"). API runs therefore fall back
+  // to Sol at the highest effort the API does expose.
+  "gpt-5.6-sol-pro": {
+    model: "gpt-5.6-sol",
+    provider: "openai",
+    tokenizer: countTokensGpt5 as TokenizerFn,
+    inputLimit: GPT_5_6_BASE_RATE_INPUT_LIMIT,
+    pricing: {
+      inputPerToken: 5 / 1_000_000,
+      outputPerToken: 30 / 1_000_000,
+    },
+    reasoning: { effort: "xhigh" },
+  },
   "gpt-5.5-pro": {
     model: "gpt-5.5-pro",
     provider: "openai",

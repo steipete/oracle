@@ -368,8 +368,13 @@ export function inferModelFromLabel(modelValue: string): ModelName {
     const { variant } = gpt56Label;
     if (!variant) return "gpt-5.6" as ModelName;
     if (variant === "sol") return "gpt-5.6-sol" as ModelName;
+    // ChatGPT exposes Pro as a separate effort control alongside Medium/High/Extra High
+    // once GPT-5.6 Sol is the active model, so "sol pro" is a real, selectable target.
+    if (variant === "sol pro" || variant === "sol-pro" || variant === "pro") {
+      return "gpt-5.6-sol-pro" as ModelName;
+    }
     throw new InvalidArgumentError(
-      `Unknown GPT-5.6 browser variant "${variant}". Use gpt-5.6 or gpt-5.6-sol.`,
+      `Unknown GPT-5.6 browser variant "${variant}". Use gpt-5.6, gpt-5.6-sol, or gpt-5.6-sol-pro.`,
     );
   }
   if (normalized.includes("thinking") && normalized.includes("heavy")) {

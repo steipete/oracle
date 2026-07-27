@@ -384,6 +384,18 @@ describe("resolveRunOptionsFromConfig", () => {
     });
     expect(sol.resolvedEngine).toBe("browser");
     expect(sol.runOptions.model).toBe("gpt-5.6-sol");
+
+    // ChatGPT lists Pro as an effort radio next to Medium/High/Extra High once Sol is the
+    // active model, so Sol Pro is a real target rather than an unknown variant.
+    for (const spelling of ["gpt-5.6-sol-pro", "gpt-5.6-pro", "GPT-5.6 Sol Pro"]) {
+      const solPro = resolveRunOptionsFromConfig({
+        prompt: basePrompt,
+        model: spelling,
+        engine: "browser",
+      });
+      expect(solPro.resolvedEngine).toBe("browser");
+      expect(solPro.runOptions.model).toBe("gpt-5.6-sol-pro");
+    }
   });
 
   it("keeps GPT-5.6 aliases in API and multi-model runs", () => {

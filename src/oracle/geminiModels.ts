@@ -7,6 +7,8 @@ const MODEL_ID_MAP: Record<ModelName, string> = {
   "gemini-3-pro": "gemini-3-pro-preview",
   "gpt-5.6": "gpt-5.6",
   "gpt-5.6-sol": "gpt-5.6-sol",
+  // No API-side Pro variant exists; browser runs select the Pro effort control.
+  "gpt-5.6-sol-pro": "gpt-5.6-sol",
   "gpt-5.5": "gpt-5.5",
   "gpt-5.5-pro": "gpt-5.5-pro",
   "gpt-5.4": "gpt-5.4",

@@ -440,7 +440,7 @@ function buildModelSelectionExpression(
         !configuredVersionLabel.includes(desiredModelVariant) &&
         !configuredVariant.includes(desiredModelVariant)
       ) return false;
-      if (desiredModelVariant === 'sol' && labelHasProWord(configuredVariant)) return false;
+      if (desiredModelVariant === 'sol' && !wantsPro && labelHasProWord(configuredVariant)) return false;
       if (wantsPro) return labelHasProWord(configuredVariant);
       if (wantsInstant) return configuredVariant.includes('instant');
       if (wantsThinking) {
@@ -506,7 +506,7 @@ function buildModelSelectionExpression(
       if (configuredSelectionMatchesTarget()) return true;
       const normalizedLabel = normalizeText(getButtonLabel());
       if (!normalizedLabel) return false;
-      if (desiredModelVariant === 'sol' && hasProComposerPill()) return false;
+      if (desiredModelVariant === 'sol' && !wantsPro && hasProComposerPill()) return false;
       if (wantsThinking && !wantsPro && hasProComposerPill()) return false;
       if (isTargetGpt55VisibleAlias(normalizedLabel)) return true;
       if (
@@ -567,7 +567,7 @@ function buildModelSelectionExpression(
       if (!signal) {
         return COMPOSER_SIGNAL_ALLOW_BLANK;
       }
-      if (desiredModelVariant === 'sol' && hasProComposerPill()) {
+      if (desiredModelVariant === 'sol' && !wantsPro && hasProComposerPill()) {
         return false;
       }
       if (wantsPro && labelHasLegacyProVersion(signal)) {
@@ -995,9 +995,12 @@ function buildModelSelectionExpression(
       if (desiredModelVariant && !normalizedText.includes(desiredModelVariant)) return false;
       if (
         desiredModelVariant === 'sol' &&
+        !wantsPro &&
         (labelHasProWord(normalizedText) || normalizeText(testid ?? '').includes('pro'))
       ) return false;
-      if (desiredVersion === '5-6') return !hasProComposerPill();
+      // Pro is an effort control layered on GPT-5.6 Sol, so the pill is REQUIRED when the
+      // caller asked for Sol Pro and disqualifying only when they asked for plain Sol.
+      if (desiredVersion === '5-6') return wantsPro ? hasProComposerPill() : !hasProComposerPill();
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };
