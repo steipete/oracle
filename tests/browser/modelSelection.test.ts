@@ -989,17 +989,26 @@ describe("browser model selection matchers", () => {
     expect(result).toBeInstanceOf(Promise);
   });
 
-  it("keeps base Sol distinct from the Pro target", () => {
+  it("keeps an inline Sol Pro model label distinct", () => {
     const inlinePro = evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Sol Pro");
     expect(inlinePro).toBeInstanceOf(Promise);
+  });
 
-    const separateProPill = evaluateImmediateModelSelectionExpression(
-      "GPT-5.6 Sol",
-      "GPT-5.6 Sol",
-      "5.6 Sol",
-      "Pro",
-    );
-    expect(separateProPill).toBeInstanceOf(Promise);
+  it("accepts GPT-5.6 Sol with an independent Pro effort pill", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression("GPT-5.6 Sol", "GPT-5.6 Sol", "5.6 Sol", "Pro"),
+    ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
+  });
+
+  it("accepts an aggregated Sol label only with an independent Pro effort pill", () => {
+    expect(
+      evaluateImmediateModelSelectionExpression(
+        "GPT-5.6 Sol",
+        "GPT-5.6 Sol Pro",
+        "GPT-5.6 Sol Pro",
+        "Pro",
+      ),
+    ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
   });
 
   it("includes real pointer coordinates when opening version submenus", () => {
@@ -1516,6 +1525,15 @@ describe("browser model selection matchers", () => {
       status: "switched",
       label: "Thinking 5.6 Sol",
     });
+  });
+
+  it("accepts configured GPT-5.6 Sol with independent Pro effort", async () => {
+    await expect(evaluateConfiguredModelSelectionExpression("GPT-5.6 Sol", "Pro")).resolves.toEqual(
+      {
+        status: "switched",
+        label: "5.6 Sol",
+      },
+    );
   });
 
   it("selects the requested variant after changing Configure versions", async () => {
