@@ -9,6 +9,7 @@ let countTokensAnthropicImpl: ((input: string) => number) | undefined;
 
 export const DEFAULT_MODEL: ModelName = "gpt-5.5-pro";
 export const PRO_MODELS = new Set<ProModelName>([
+  "gpt-5.6-sol-pro",
   "gpt-5.5-pro",
   "gpt-5.4-pro",
   "gpt-5.1-pro",
@@ -73,7 +74,11 @@ export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
   // and /v1/models/gpt-5.6-sol-pro both 404 "does not exist"). API runs therefore fall back
   // to Sol at the highest effort the API does expose.
   "gpt-5.6-sol-pro": {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-sol-pro",
+    // resolveEffectiveModelId returns `apiModel ?? model` and that id goes on the wire, so
+    // the API fallback has to live here - otherwise an API run would send the browser-only
+    // alias and 404.
+    apiModel: "gpt-5.6-sol",
     provider: "openai",
     tokenizer: countTokensGpt5 as TokenizerFn,
     inputLimit: GPT_5_6_BASE_RATE_INPUT_LIMIT,

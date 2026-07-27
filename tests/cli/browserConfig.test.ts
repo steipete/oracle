@@ -5,6 +5,8 @@ import {
   normalizeChatGptModelForBrowser,
   resolveBrowserModelLabel,
 } from "../../src/cli/browserConfig.js";
+import { MODEL_CONFIGS } from "../../src/oracle/config.js";
+import { isProModel } from "../../src/oracle/modelResolver.js";
 import type { ModelName } from "../../src/oracle/types.js";
 
 describe("buildBrowserConfig", () => {
@@ -430,11 +432,21 @@ describe("resolveBrowserModelLabel", () => {
 });
 
 describe("GPT-5.6 Sol Pro browser target", () => {
-  test("maps to the Pro effort label, like the other Pro tiers", () => {
-    // The picker exposes Pro as a radio (Instant5.5 / Medium / High / Extra High / Pro)
-    // rather than as its own model entry - measured against ChatGPT on 2026-07-27.
-    expect(mapModelToBrowserLabel("gpt-5.6-sol-pro" as ModelName)).toBe("Pro");
+  test("keeps version and variant in the label instead of collapsing to bare Pro", () => {
+    // A bare "Pro" label would strip desiredVersion/desiredModelVariant, so the picker
+    // would accept whatever Pro effort is showing - including another model's.
+    expect(mapModelToBrowserLabel("gpt-5.6-sol-pro" as ModelName)).toBe("GPT-5.6 Sol Pro");
     expect(mapModelToBrowserLabel("gpt-5.6-sol" as ModelName)).toBe("GPT-5.6 Sol");
+  });
+
+  test("is classified as a Pro model so long runs get the detached worker", () => {
+    expect(isProModel("gpt-5.6-sol-pro" as ModelName)).toBe(true);
+  });
+
+  test("resolves to a real API model id rather than the browser-only alias", () => {
+    // resolveEffectiveModelId returns `apiModel ?? model`; without apiModel an API run
+    // would put "gpt-5.6-sol-pro" on the wire, which does not exist.
+    expect(MODEL_CONFIGS["gpt-5.6-sol-pro"].apiModel).toBe("gpt-5.6-sol");
   });
 
   test("survives browser normalization instead of collapsing to gpt-5.5-pro", () => {

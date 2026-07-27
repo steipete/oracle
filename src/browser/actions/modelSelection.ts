@@ -113,13 +113,17 @@ function assertResolvedModelSelection(desiredModel: string, resolvedLabel: strin
     /(?:^| )5 6(?: |$)/.test(normalizedDesired) && normalizedDesired.split(" ").includes("sol");
   if (wantsGpt56Sol) {
     const resolvedTokens = normalizedResolved.split(" ");
+    // "pro" disqualifies a plain Sol target and is REQUIRED for a Sol Pro one - the same
+    // token means opposite things depending on which effort tier was asked for.
+    const wantsSolPro = normalizedDesired.split(" ").includes("pro");
     if (
       !/(?:^| )5 6(?: |$)/.test(normalizedResolved) ||
       !resolvedTokens.includes("sol") ||
-      resolvedTokens.includes("pro")
+      resolvedTokens.includes("pro") !== wantsSolPro
     ) {
       throw new Error(
-        `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires GPT-5.6 Sol.`,
+        `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires ` +
+          `${wantsSolPro ? "GPT-5.6 Sol Pro" : "GPT-5.6 Sol"}.`,
       );
     }
     return;
@@ -271,6 +275,19 @@ function buildModelSelectionExpression(
       }
       return false;
     };
+    // GPT-5.6 Sol Pro is an effort radio, and that radio's own label carries neither the
+    // version nor the variant ("Pro"). Identity therefore has to be read from the surrounding
+    // picker: without this, the bare Pro radio of ANY active model would satisfy the target
+    // and verify as a successful Sol Pro selection.
+    const targetIsSolProEffort = () => desiredVersion === '5-6' && wantsPro;
+    const pickerShowsGpt56Sol = () =>
+      Array.from(document.querySelectorAll(${menuContainerLiteral})).some((root) => {
+        const text = normalizeText(root?.textContent ?? '');
+        return text.includes('5 6') && text.includes('sol');
+      }) || (() => {
+        const signal = readComposerModelSignal();
+        return Boolean(signal) && signal.includes('5 6') && signal.includes('sol');
+      })();
     const hasProComposerPill = () => Boolean(
       Array.from(document.querySelectorAll('button.__composer-pill, button[aria-label]'))
         .filter((node) => {
@@ -531,7 +548,10 @@ function buildModelSelectionExpression(
         return true;
       }
       if (desiredVersion) {
-        if (desiredVersion === '5-6' && !normalizedLabel.includes('5 6')) return false;
+        if (targetIsSolProEffort()) {
+          // The Pro radio is unlabelled for model identity; require the picker to evidence Sol.
+          if (!pickerShowsGpt56Sol()) return false;
+        } else if (desiredVersion === '5-6' && !normalizedLabel.includes('5 6')) return false;
         if (desiredVersion === '5-5' && !normalizedLabel.includes('5 5')) return false;
         if (desiredVersion === '5-4' && !normalizedLabel.includes('5 4')) return false;
         if (desiredVersion === '5-3' && !normalizedLabel.includes('5 3')) return false;
@@ -539,7 +559,11 @@ function buildModelSelectionExpression(
         if (desiredVersion === '5-1' && !normalizedLabel.includes('5 1')) return false;
         if (desiredVersion === '5-0' && !normalizedLabel.includes('5 0')) return false;
       }
-      if (desiredModelVariant && !normalizedLabel.includes(desiredModelVariant)) return false;
+      if (
+        desiredModelVariant &&
+        !targetIsSolProEffort() &&
+        !normalizedLabel.includes(desiredModelVariant)
+      ) return false;
       if (wantsPro && labelHasLegacyProVersion(normalizedLabel)) return false;
       if (wantsPro && !labelHasProWord(normalizedLabel)) return false;
       if (wantsInstant && !normalizedLabel.includes('instant')) return false;
@@ -1000,7 +1024,11 @@ function buildModelSelectionExpression(
       ) return false;
       // Pro is an effort control layered on GPT-5.6 Sol, so the pill is REQUIRED when the
       // caller asked for Sol Pro and disqualifying only when they asked for plain Sol.
-      if (desiredVersion === '5-6') return wantsPro ? hasProComposerPill() : !hasProComposerPill();
+      if (desiredVersion === '5-6') {
+        return wantsPro
+          ? hasProComposerPill() && pickerShowsGpt56Sol()
+          : !hasProComposerPill();
+      }
       const currentButtonLabel = normalizeText(getButtonLabel());
       return !labelHasProWord(currentButtonLabel) && !hasProComposerPill();
     };
