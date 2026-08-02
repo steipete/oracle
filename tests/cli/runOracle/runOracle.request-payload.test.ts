@@ -265,6 +265,50 @@ describe("runOracle request payload", () => {
     expect(captured).toEqual([{ apiKey: "sk-test", baseUrl: "https://litellm.test/v1" }]);
   });
 
+  test("uses the Atlas Cloud key, endpoint, and model id", async () => {
+    const originalAtlasKey = process.env.ATLASCLOUD_API_KEY;
+    const originalAtlasBaseUrl = process.env.ATLASCLOUD_BASE_URL;
+    process.env.ATLASCLOUD_API_KEY = "atlas-test-key";
+    delete process.env.ATLASCLOUD_BASE_URL;
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    const captured: Array<{ apiKey: string; baseUrl?: string }> = [];
+    const logs: string[] = [];
+
+    try {
+      await runOracle(
+        {
+          prompt: "Atlas endpoint check",
+          model: "deepseek-ai/deepseek-v4-pro",
+          provider: "atlas",
+          background: false,
+          search: false,
+        },
+        {
+          clientFactory: (apiKey, options) => {
+            captured.push({ apiKey, baseUrl: options?.baseUrl });
+            return client;
+          },
+          log: (message: string) => logs.push(message),
+          write: () => true,
+        },
+      );
+    } finally {
+      if (originalAtlasKey === undefined) delete process.env.ATLASCLOUD_API_KEY;
+      else process.env.ATLASCLOUD_API_KEY = originalAtlasKey;
+      if (originalAtlasBaseUrl === undefined) delete process.env.ATLASCLOUD_BASE_URL;
+      else process.env.ATLASCLOUD_BASE_URL = originalAtlasBaseUrl;
+    }
+
+    expect(captured).toEqual([
+      { apiKey: "atlas-test-key", baseUrl: "https://api.atlascloud.ai/v1" },
+    ]);
+    expect(client.lastRequest?.model).toBe("deepseek-ai/deepseek-v4-pro");
+    expect(logs.join("\n")).toContain(
+      "Provider: Atlas Cloud | base: api.atlascloud.ai/v1 | key: ATLASCLOUD_API_KEY",
+    );
+  });
+
   test("does not fallback to OpenRouter for first-party models with explicit proxy baseUrl", async () => {
     const originalOpenai = process.env.OPENAI_API_KEY;
     const originalOpenRouter = process.env.OPENROUTER_API_KEY;

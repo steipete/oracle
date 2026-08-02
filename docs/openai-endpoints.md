@@ -45,6 +45,20 @@ oracle --route --model gpt-5.4
 
 The output is redacted and local: provider, base host, key source, Azure status, and missing-route errors. These commands exit before sending a prompt or creating a session.
 
+## Atlas Cloud
+
+Atlas Cloud exposes an OpenAI-compatible Chat Completions endpoint. Select it explicitly so
+Oracle uses the Atlas Cloud key and endpoint instead of treating provider-qualified model IDs as
+OpenRouter routes:
+
+```bash
+export ATLASCLOUD_API_KEY="..."
+oracle --provider atlas --model deepseek-ai/deepseek-v4-pro -p "Review this"
+```
+
+The default base URL is `https://api.atlascloud.ai/v1`. Set `ATLASCLOUD_BASE_URL` or pass
+`--base-url` to use a compatible proxy.
+
 When Azure env/config is present, GPT-family API models route through Azure unless you force first-party OpenAI:
 
 ```bash

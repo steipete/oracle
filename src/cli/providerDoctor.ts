@@ -88,8 +88,8 @@ function resolveModels(options: ProviderDoctorCliOptions, userConfig: UserConfig
 
 function resolveProviderMode(options: ProviderDoctorCliOptions): ApiProviderMode {
   const provider = options.provider ?? "auto";
-  if (provider === "azure" && options.azure === false) {
-    throw new Error("--provider azure cannot be combined with --no-azure.");
+  if ((provider === "azure" || provider === "atlas") && options.azure === false) {
+    throw new Error(`--provider ${provider} cannot be combined with --no-azure.`);
   }
   if (options.azure === false) {
     return "openai";

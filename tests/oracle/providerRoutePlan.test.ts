@@ -37,6 +37,39 @@ describe("provider route plan", () => {
     expect(plan.azureNote).toContain("ignored");
   });
 
+  test("routes arbitrary model ids through Atlas Cloud when explicitly selected", () => {
+    const plan = buildProviderRoutePlan({
+      model: "deepseek-ai/deepseek-v4-pro",
+      providerMode: "atlas",
+      env: {
+        ATLASCLOUD_API_KEY: "atlas-test-key",
+        OPENROUTER_API_KEY: "or-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.provider).toBe("atlas");
+    expect(plan.providerLabel).toBe("Atlas Cloud");
+    expect(plan.base).toBe("api.atlascloud.ai/v1");
+    expect(plan.keySource).toBe("ATLASCLOUD_API_KEY");
+  });
+
+  test("allows overriding the Atlas Cloud compatible endpoint", () => {
+    const plan = buildProviderRoutePlan({
+      model: "qwen/qwen3.5-397b-a17b",
+      providerMode: "atlas",
+      baseUrl: "https://atlas-proxy.test/v1",
+      env: {
+        ATLASCLOUD_API_KEY: "atlas-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("Atlas Cloud");
+    expect(plan.base).toBe("atlas-proxy.test/v1");
+    expect(plan.keySource).toBe("ATLASCLOUD_API_KEY");
+  });
+
   test("auto Azure route reports missing deployment before request dispatch", () => {
     const plan = buildProviderRoutePlan({
       model: "gpt-5.4",

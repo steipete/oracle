@@ -47,7 +47,7 @@ export interface AzureOptions {
   deployment?: string;
 }
 
-export type ApiProviderMode = "auto" | "openai" | "azure";
+export type ApiProviderMode = "auto" | "openai" | "azure" | "atlas";
 export type PartialMode = "fail" | "ok";
 
 export type ClientFactory = (
@@ -66,7 +66,7 @@ export interface ModelConfig {
   /** Provider-specific model id used for API calls (defaults to `model`). */
   apiModel?: string;
   /** Upstream provider to help with OpenRouter mapping and auth precedence. */
-  provider?: "openai" | "anthropic" | "google" | "xai" | "other";
+  provider?: "openai" | "anthropic" | "google" | "xai" | "atlas" | "other";
   /** Explicit OpenRouter model id when it differs from apiModel/model. */
   openRouterId?: string;
   tokenizer: TokenizerFn;

@@ -207,6 +207,8 @@ function keyEnvForProvider(provider: string): string | undefined {
       return "XAI_API_KEY";
     case "azure":
       return "AZURE_OPENAI_API_KEY";
+    case "atlas":
+      return "ATLASCLOUD_API_KEY";
     case "openrouter":
       return "OPENROUTER_API_KEY";
     case "openai":

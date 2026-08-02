@@ -611,9 +611,9 @@ program
   .addOption(
     new Option(
       "--provider <provider>",
-      "Choose API provider routing: auto, openai, or azure. Use openai to ignore Azure env/config.",
+      "Choose API provider routing: auto, openai, azure, or atlas. Use openai to ignore Azure env/config.",
     )
-      .choices(["auto", "openai", "azure"])
+      .choices(["auto", "openai", "azure", "atlas"])
       .default("auto"),
   )
   .option("--no-azure", "Disable Azure OpenAI routing for this run (same as --provider openai).")
@@ -1141,8 +1141,11 @@ program
   .option("--models <models>", "Comma-separated API model list to inspect.")
   .option("-m, --model <model>", "Single API model to inspect.")
   .addOption(
-    new Option("--provider <provider>", "Choose API provider routing: auto, openai, or azure.")
-      .choices(["auto", "openai", "azure"])
+    new Option(
+      "--provider <provider>",
+      "Choose API provider routing: auto, openai, azure, or atlas.",
+    )
+      .choices(["auto", "openai", "azure", "atlas"])
       .default("auto"),
   )
   .option("--no-azure", "Disable Azure OpenAI routing for this inspection.")
@@ -1395,8 +1398,8 @@ function buildRunOptions(
 
 function resolveApiProviderMode(options: Pick<CliOptions, "provider" | "azure">): ApiProviderMode {
   const provider = options.provider ?? "auto";
-  if (provider === "azure" && options.azure === false) {
-    throw new Error("--provider azure cannot be combined with --no-azure.");
+  if ((provider === "azure" || provider === "atlas") && options.azure === false) {
+    throw new Error(`--provider ${provider} cannot be combined with --no-azure.`);
   }
   if (options.azure === false) {
     return "openai";
@@ -1860,9 +1863,9 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const retentionHours = typeof options.retainHours === "number" ? options.retainHours : undefined;
   await sessionStore.ensureStorage();
   await pruneOldSessions(retentionHours, (message) => console.log(chalk.dim(message)));
-  if (providerMode === "openai") {
+  if (providerMode === "openai" || providerMode === "atlas") {
     if (hasExplicitAzureOption(optionUsesDefault)) {
-      throw new Error("--provider openai/--no-azure cannot be combined with Azure options.");
+      throw new Error(`--provider ${providerMode} cannot be combined with Azure options.`);
     }
     options.azureEndpoint = undefined;
     options.azureDeployment = undefined;
@@ -1896,6 +1899,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   const azureAutoApiRequested =
     providerMode !== "openai" &&
+    providerMode !== "atlas" &&
     Boolean(options.azureEndpoint?.trim()) &&
     engineModels.some((model) => isAzureOpenAICandidateModel(model));
   const explicitApiProviderRequested =

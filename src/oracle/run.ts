@@ -90,7 +90,9 @@ function runtimeKeySource({
     optionsApiKey &&
     (route.isAzureOpenAI ||
       providerMode === "openai" ||
+      providerMode === "atlas" ||
       route.provider === "openai" ||
+      route.provider === "atlas" ||
       route.providerLabel === "OpenAI-compatible")
   ) {
     return "apiKey option";
@@ -100,6 +102,9 @@ function runtimeKeySource({
   }
   if (providerMode === "openai") {
     return "OPENAI_API_KEY";
+  }
+  if (providerMode === "atlas") {
+    return "ATLASCLOUD_API_KEY";
   }
   if (isOpenRouterBaseUrl(route.baseUrl) || route.openRouterFallback || route.model.includes("/")) {
     return "OPENROUTER_API_KEY";

@@ -10,6 +10,7 @@ import type { ApiProviderMode, AzureOptions, ModelConfig, ModelName } from "./ty
 
 const DEFAULT_PROVIDER_HOSTS: Record<string, string> = {
   anthropic: "api.anthropic.com",
+  atlas: "api.atlascloud.ai",
   google: "generativelanguage.googleapis.com",
   openai: "api.openai.com",
   xai: "api.x.ai",
@@ -83,7 +84,11 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     });
     const provider =
       state?.provider ??
-      (providerMode === "openai" ? "openai" : inferProviderFromModel(input.model));
+      (providerMode === "openai"
+        ? "openai"
+        : providerMode === "atlas"
+          ? "atlas"
+          : inferProviderFromModel(input.model));
     const isAzureOpenAI = state?.isAzureOpenAI ?? providerMode === "azure";
     const key = getKeyForRoute({
       model: input.model,
@@ -128,7 +133,10 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
   const isAzureOpenAI = state.isAzureOpenAI;
   let baseUrl = input.baseUrl?.trim();
   const providerQualifiedOpenRouterCandidate =
-    !isAzureOpenAI && providerMode !== "openai" && input.model.includes("/");
+    !isAzureOpenAI &&
+    providerMode !== "openai" &&
+    providerMode !== "atlas" &&
+    input.model.includes("/");
   if (
     baseUrl &&
     providerQualifiedOpenRouterCandidate &&
@@ -139,7 +147,9 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
   }
   if (!baseUrl) {
     let envBaseUrl: string | undefined;
-    if (input.model.startsWith("grok")) {
+    if (providerMode === "atlas") {
+      envBaseUrl = env.ATLASCLOUD_BASE_URL?.trim() || "https://api.atlascloud.ai/v1";
+    } else if (input.model.startsWith("grok")) {
       envBaseUrl = env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1";
     } else if (provider === "anthropic") {
       envBaseUrl = env.ANTHROPIC_BASE_URL?.trim();
@@ -176,6 +186,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     !baseUrl &&
     (providerQualifiedOpenRouterRoute ||
       (providerMode !== "openai" &&
+        providerMode !== "atlas" &&
         providerKeyMissing &&
         (provider === "other" || openRouterKey.present)));
 
@@ -285,6 +296,9 @@ function getKeyForRoute({
   if (isAzureOpenAI) {
     return readKey(["AZURE_OPENAI_API_KEY", "OPENAI_API_KEY"], env);
   }
+  if (providerMode === "atlas") {
+    return readKey(["ATLASCLOUD_API_KEY"], env);
+  }
   if (providerMode === "openai") {
     return readKey(["OPENAI_API_KEY"], env);
   }
@@ -342,6 +356,7 @@ function routeProviderLabel({
   isAzureOpenAI: boolean;
 }): string {
   if (isAzureOpenAI) return "Azure OpenAI";
+  if (provider === "atlas") return "Atlas Cloud";
   if (isOpenRouterBaseUrl(baseUrl) || openRouterFallback) return "OpenRouter";
   if (baseUrl && isCustomBaseUrl(baseUrl)) return "OpenAI-compatible";
   return providerLabel(provider);
@@ -349,6 +364,7 @@ function routeProviderLabel({
 
 function providerLabel(provider: NonNullable<ModelConfig["provider"]>): string {
   if (provider === "anthropic") return "Anthropic";
+  if (provider === "atlas") return "Atlas Cloud";
   if (provider === "google") return "Google Gemini";
   if (provider === "xai") return "xAI";
   return "OpenAI";
@@ -370,6 +386,7 @@ function inferProviderFromModel(model: ModelName): NonNullable<ModelConfig["prov
   const prefix = model.includes("/") ? model.split("/", 1)[0] : undefined;
   if (prefix === "openai") return "openai";
   if (prefix === "anthropic") return "anthropic";
+  if (prefix === "atlas") return "atlas";
   if (prefix === "google") return "google";
   if (prefix === "xai") return "xai";
   if (model.startsWith("claude")) return "anthropic";
@@ -385,6 +402,7 @@ function azureNote(
 ): string | undefined {
   if (!azureConfigured) return undefined;
   if (providerMode === "openai") return "ignored, --provider openai/--no-azure is active";
+  if (providerMode === "atlas") return "ignored, --provider atlas is active";
   if (isAzureOpenAI) return "active because Azure endpoint is configured";
   return "configured, not used for this model";
 }

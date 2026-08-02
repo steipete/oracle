@@ -29,10 +29,12 @@ export function resolveProviderRoutingState({
   azure,
 }: ProviderRoutingInput): ProviderRoutingState {
   const knownModelConfig = isKnownModel(model) ? MODEL_CONFIGS[model] : undefined;
-  const provider = knownModelConfig?.provider ?? inferNativeProviderFromModelId(model) ?? "other";
+  const nativeProvider =
+    knownModelConfig?.provider ?? inferNativeProviderFromModelId(model) ?? "other";
+  const provider = providerMode === "atlas" ? "atlas" : nativeProvider;
   const azureEndpoint = azure?.endpoint?.trim();
   const azureDeploymentOption = azure?.deployment?.trim();
-  const isNonOpenAIModel = provider !== "openai" && provider !== "other";
+  const isNonOpenAIModel = nativeProvider !== "openai" && nativeProvider !== "other";
   const isProviderQualifiedModelId = model.includes("/");
 
   if (providerMode === "azure" && !azureEndpoint) {
@@ -65,11 +67,12 @@ export function resolveProviderRoutingState({
     );
   }
 
-  const isOpenAIFamilyModel = provider === "openai" || model.startsWith("gpt");
-  const isCustomAzureModelId = provider === "other" && !model.includes("/");
+  const isOpenAIFamilyModel = nativeProvider === "openai" || model.startsWith("gpt");
+  const isCustomAzureModelId = nativeProvider === "other" && !model.includes("/");
   const isAzureOpenAI = Boolean(
     azureEndpoint &&
     providerMode !== "openai" &&
+    providerMode !== "atlas" &&
     !isNonOpenAIModel &&
     (providerMode === "azure" ||
       (!isProviderQualifiedModelId &&

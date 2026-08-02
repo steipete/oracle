@@ -5,6 +5,7 @@
 ### Added
 
 - API: add explicit GPT-5.6 reasoning mode and effort controls, including Pro mode, session persistence, long-run handling, and fail-closed route validation. Thanks @enki!
+- API: add explicit Atlas Cloud routing with `ATLASCLOUD_API_KEY`, a default compatible endpoint, and arbitrary model ID passthrough.
 
 ### Changed
 
