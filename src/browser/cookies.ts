@@ -297,12 +297,14 @@ function normalizeExpiration(expires?: number): number | undefined {
   if (value <= 0) {
     return undefined;
   }
-  if (value > 1_000_000_000_000) {
-    // Learned: Chrome may store WebKit microseconds since 1601; convert to Unix seconds.
+  // Units by magnitude (do not treat Unix seconds ~1.7e9 as milliseconds):
+  // - >= 1e15: Chrome/WebKit FILETIME microseconds since 1601
+  // - >= 1e12: Unix milliseconds
+  // - else: Unix seconds (sweet-cookie / Chromium Cookie.expires)
+  if (value >= 1_000_000_000_000_000) {
     return Math.round(value / 1_000_000 - 11644473600);
   }
-  if (value > 1_000_000_000) {
-    // Likely milliseconds; normalize to seconds for CDP.
+  if (value >= 1_000_000_000_000) {
     return Math.round(value / 1000);
   }
   return Math.round(value);

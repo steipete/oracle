@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe("browser reattach end-to-end (simulated)", () => {
-  test("reattaches a terminal chrome-disconnected session and marks it completed", async () => {
+  test("marks session completed after reconnection", async () => {
     const tmpHome = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-reattach-"));
     const { setOracleHomeDirOverrideForTest } = await import("../../src/oracleHome.js");
     setOracleHomeDirOverrideForTest(tmpHome);
@@ -41,14 +41,12 @@ describe("browser reattach end-to-end (simulated)", () => {
         "/repo",
       );
       await sessionStore.updateModelRun(sessionMeta.id, "gpt-5.2-pro", {
-        status: "error",
+        status: "running",
         startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
       });
       await sessionStore.updateSession(sessionMeta.id, {
-        status: "error",
+        status: "running",
         startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
         mode: "browser",
         browser: {
           config: {},
@@ -59,7 +57,7 @@ describe("browser reattach end-to-end (simulated)", () => {
             tabUrl: "https://chatgpt.com/c/demo",
           },
         },
-        response: { status: "error", incompleteReason: "chrome-disconnected" },
+        response: { status: "running", incompleteReason: "chrome-disconnected" },
       });
 
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});

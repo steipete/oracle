@@ -29,6 +29,32 @@ describe("createConversationUrlMonitor", () => {
     );
   });
 
+  test("ignores transient WEB request routes until the durable conversation URL appears", async () => {
+    const readUrl = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce("https://chatgpt.com/c/WEB:32229414-5afa-4478-890c-9ca80aa82430")
+      .mockResolvedValue("https://chatgpt.com/c/6a61036f-4cc4-83e8-8415-efb820f52db9");
+    const persistUrl = vi.fn(async () => {});
+    let now = 0;
+    const monitor = createConversationUrlMonitor({
+      readUrl,
+      persistUrl,
+      logger: vi.fn() as BrowserLogger,
+      wait: async () => {
+        now += 250;
+      },
+      now: () => now,
+    });
+
+    await expect(monitor.update("assistant-wait", 1_000)).resolves.toBe(true);
+
+    expect(readUrl).toHaveBeenCalledTimes(2);
+    expect(persistUrl).toHaveBeenCalledOnce();
+    expect(persistUrl).toHaveBeenCalledWith(
+      "https://chatgpt.com/c/6a61036f-4cc4-83e8-8415-efb820f52db9",
+    );
+  });
+
   test("keeps polling through read errors until the URL appears", async () => {
     let reads = 0;
     const persistUrl = vi.fn(async () => {});

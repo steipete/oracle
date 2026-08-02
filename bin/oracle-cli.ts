@@ -49,7 +49,7 @@ import {
 } from "../src/cli/options.js";
 import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
-import { shouldDetachSession } from "../src/cli/detach.js";
+import { shouldDetachSession, stopDetachedWorker } from "../src/cli/detach.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
@@ -1671,6 +1671,8 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserInlineFiles: stored.browserInlineFiles,
     browserBundleFiles: stored.browserBundleFiles,
     browserBundleFormat: stored.browserBundleFormat,
+    generateImage: stored.generateImage,
+    outputPath: stored.outputPath,
     browserFollowUps: stored.browserFollowUps,
     background: stored.background,
     renderPlain: stored.renderPlain,
@@ -2007,6 +2009,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   if (options.execSession) {
+    await waitForDetachedStartGate();
     await executeSession(options.execSession);
     return;
   }
@@ -2273,9 +2276,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     return;
   }
 
-  // Decide whether to block until completion:
+  // Decide whether the original CLI stays attached until completion:
   // - explicit --wait / --no-wait wins
-  // - otherwise block for fast models (gpt-5.1, browser) and detach by default for pro API runs
+  // - otherwise stay attached for fast models and browser runs
+  // Local Pro browser work may still use a detached worker so CLI interruption
+  // cannot terminate the browser controller.
   let waitPreference = resolveWaitFlag({
     waitFlag: options.wait,
     model: activeModel,
@@ -2336,21 +2341,32 @@ async function runRootCommand(options: CliOptions): Promise<void> {
         waitPreference,
         disableDetachEnv,
       });
-  const detached = !detachAllowed
-    ? false
-    : await launchDetachedSession(sessionMeta.id).catch((error) => {
+  let lifecycle = buildSessionLifecycle({
+    engine,
+    detached: false,
+    reattachCommand: `oracle session ${sessionMeta.id}`,
+  });
+  const workerPid = !detachAllowed
+    ? undefined
+    : await launchDetachedSession(sessionMeta.id, async (pid) => {
+        lifecycle = buildSessionLifecycle({
+          engine,
+          detached: true,
+          workerPid: pid,
+          reattachCommand: `oracle session ${sessionMeta.id}`,
+        });
+        await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+      }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
           chalk.yellow(`Unable to detach session runner (${message}). Running inline...`),
         );
-        return false;
+        return undefined;
       });
-  const lifecycle = buildSessionLifecycle({
-    engine,
-    detached,
-    reattachCommand: `oracle session ${sessionMeta.id}`,
-  });
-  await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+  const detached = workerPid !== undefined;
+  if (!detached) {
+    await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+  }
   const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
 
   if (!waitPreference) {
@@ -2384,8 +2400,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
   if (detached) {
     console.log(chalk.blue(`Reattach via: oracle session ${sessionMeta.id}`));
-    const { attachSession } = await import("../src/cli/sessionDisplay.js");
-    await attachSession(sessionMeta.id, { suppressMetadata: true });
+    await attachToDetachedSession(sessionMeta.id, workerPid);
   }
 }
 
@@ -2456,25 +2471,85 @@ async function runInteractiveSession(
   }
 }
 
-async function launchDetachedSession(sessionId: string): Promise<boolean> {
+async function launchDetachedSession(
+  sessionId: string,
+  prepare: (pid: number) => Promise<void>,
+): Promise<number> {
   return new Promise((resolve, reject) => {
     try {
       const args = ["--", CLI_ENTRYPOINT, "--exec-session", sessionId];
-      const env = buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId);
+      const env = {
+        ...buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId),
+        ORACLE_DETACHED_START_GATE: "1",
+      };
       const child = spawn(process.execPath, args, {
         detached: true,
-        stdio: "ignore",
+        stdio: ["pipe", "ignore", "ignore"],
         env,
       });
       child.once("error", reject);
-      child.once("spawn", () => {
-        child.unref();
-        resolve(true);
+      child.once("spawn", async () => {
+        if (child.pid === undefined) {
+          reject(new Error("Detached session worker started without a process ID."));
+          return;
+        }
+        try {
+          await prepare(child.pid);
+          child.stdin.end("ready\n");
+          child.unref();
+          resolve(child.pid);
+        } catch (error) {
+          child.kill();
+          reject(error);
+        }
       });
     } catch (error) {
       reject(error);
     }
   });
+}
+
+async function waitForDetachedStartGate(): Promise<void> {
+  if (process.env.ORACLE_DETACHED_START_GATE !== "1") {
+    return;
+  }
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    process.stdin.on("data", (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.once("end", resolve);
+    process.stdin.once("error", reject);
+    process.stdin.resume();
+  });
+  if (Buffer.concat(chunks).toString("utf8") !== "ready\n") {
+    throw new Error("Detached session worker start gate closed before lifecycle handoff.");
+  }
+}
+
+async function attachToDetachedSession(sessionId: string, workerPid: number): Promise<void> {
+  let cancelled = false;
+  const cancelWorker = (): void => {
+    cancelled = true;
+    try {
+      stopDetachedWorker(workerPid);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red(`Unable to stop detached worker ${workerPid}: ${message}`));
+    }
+  };
+  process.once("SIGINT", cancelWorker);
+  try {
+    const { attachSession } = await import("../src/cli/sessionDisplay.js");
+    await attachSession(sessionId, {
+      suppressMetadata: true,
+      renderPrompt: false,
+      propagateFailure: true,
+    });
+  } finally {
+    process.off("SIGINT", cancelWorker);
+    if (cancelled) {
+      process.exitCode = 130;
+    }
+  }
 }
 
 async function restartSession(sessionId: string, options: RestartCommandOptions): Promise<void> {
@@ -2618,21 +2693,32 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
         waitPreference,
         disableDetachEnv,
       });
-  const detached = !detachAllowed
-    ? false
-    : await launchDetachedSession(sessionMeta.id).catch((error) => {
+  let lifecycle = buildSessionLifecycle({
+    engine,
+    detached: false,
+    reattachCommand: `oracle session ${sessionMeta.id}`,
+  });
+  const workerPid = !detachAllowed
+    ? undefined
+    : await launchDetachedSession(sessionMeta.id, async (pid) => {
+        lifecycle = buildSessionLifecycle({
+          engine,
+          detached: true,
+          workerPid: pid,
+          reattachCommand: `oracle session ${sessionMeta.id}`,
+        });
+        await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+      }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
           chalk.yellow(`Unable to detach session runner (${message}). Running inline...`),
         );
-        return false;
+        return undefined;
       });
-  const lifecycle = buildSessionLifecycle({
-    engine,
-    detached,
-    reattachCommand: `oracle session ${sessionMeta.id}`,
-  });
-  await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+  const detached = workerPid !== undefined;
+  if (!detached) {
+    await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+  }
   const sessionWithLifecycle: SessionMetadata = { ...sessionMeta, lifecycle };
 
   if (!waitPreference) {
@@ -2667,29 +2753,34 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   }
   if (detached) {
     console.log(chalk.blue(`Reattach via: oracle session ${sessionMeta.id}`));
-    const { attachSession } = await import("../src/cli/sessionDisplay.js");
-    await attachSession(sessionMeta.id, { suppressMetadata: true });
+    await attachToDetachedSession(sessionMeta.id, workerPid);
   }
 }
 
 async function executeSession(sessionId: string) {
-  const metadata = await sessionStore.readSession(sessionId);
-  if (!metadata) {
-    console.error(chalk.red(`No session found with ID ${sessionId}`));
-    process.exitCode = 1;
-    return;
-  }
-  const runOptions = buildRunOptionsFromMetadata(metadata);
-  const sessionMode = getSessionMode(metadata);
-  const browserConfig = getBrowserConfigFromMetadata(metadata);
-  const { logLine, writeChunk, stream } = sessionStore.createLogWriter(sessionId);
-  const userConfig = (await loadUserConfig()).config;
-  const notifications = deriveNotificationSettingsFromMetadata(
-    metadata,
-    process.env,
-    userConfig.notify,
-  );
+  let metadata: SessionMetadata | null = null;
+  let writer: ReturnType<typeof sessionStore.createLogWriter> | null = null;
   try {
+    metadata = await sessionStore.readSession(sessionId);
+    if (!metadata) {
+      throw new Error(`No session found with ID ${sessionId}`);
+    }
+    if (
+      process.env.ORACLE_DETACHED_START_GATE === "1" &&
+      metadata.lifecycle?.workerPid !== process.pid
+    ) {
+      throw new Error("Detached session worker started without a matching lifecycle handoff.");
+    }
+    const runOptions = buildRunOptionsFromMetadata(metadata);
+    const sessionMode = getSessionMode(metadata);
+    const browserConfig = getBrowserConfigFromMetadata(metadata);
+    writer = sessionStore.createLogWriter(sessionId);
+    const userConfig = (await loadUserConfig()).config;
+    const notifications = deriveNotificationSettingsFromMetadata(
+      metadata,
+      process.env,
+      userConfig.notify,
+    );
     const { performSessionRun } = await import("../src/cli/sessionRunner.js");
     await performSessionRun({
       sessionMeta: metadata,
@@ -2697,15 +2788,34 @@ async function executeSession(sessionId: string) {
       mode: sessionMode,
       browserConfig,
       cwd: metadata.cwd ?? process.cwd(),
-      log: logLine,
-      write: writeChunk,
+      log: writer.logLine,
+      write: writer.writeChunk,
       version: VERSION,
       notifications,
     });
-  } catch {
-    // Errors are already logged to the session log; keep quiet to mirror stored-session behavior.
+  } catch (error) {
+    process.exitCode = 1;
+    const message = error instanceof Error ? error.message : String(error);
+    if (!metadata) {
+      console.error(chalk.red(message));
+      return;
+    }
+    writer?.logLine(`ERROR: Detached session worker failed: ${message}`);
+    const latest = await sessionStore.readSession(sessionId).catch(() => null);
+    if (latest && !["completed", "partial", "error"].includes(latest.status)) {
+      await sessionStore.updateSession(sessionId, {
+        status: "error",
+        completedAt: new Date().toISOString(),
+        errorMessage: message,
+        response: { status: "error" },
+        error: {
+          category: "internal",
+          message,
+        },
+      });
+    }
   } finally {
-    stream.end();
+    writer?.stream.end();
   }
 }
 

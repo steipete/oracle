@@ -46,7 +46,7 @@ This is the curated cheatsheet. The authoritative source is always `oracle --hel
 
 | Flag                                       | Purpose                                                                                |
 | ------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `--wait`                                   | Block on background API runs.                                                          |
+| `--wait`                                   | Keep the original CLI attached until the session completes.                            |
 | `--timeout <seconds\|duration\|auto>`      | Overall API deadline. `auto` = 60m for Pro, 120s otherwise; accepts values like `10m`. |
 | `--background`, `--no-background`          | Force Responses API background mode on/off.                                            |
 | `--http-timeout <ms\|s\|m\|h>`             | Override the HTTP client timeout; explicit `--timeout` values are reused when omitted. |
@@ -59,7 +59,7 @@ Notes:
 
 - `--dry-run` is mutually exclusive with `--render` / `--render-markdown`; choose the preview or rendered bundle path.
 - Missing root prompts exit nonzero after help so scripts fail closed.
-- Ctrl-C exits foreground API runs with code 130. Browser runs still keep their cleanup / reattach path.
+- Ctrl-C exits foreground API runs with code 130 and stops an attached local Pro browser worker. Unexpected foreground termination leaves the detached browser worker running so the session can still finish.
 - `--perf-trace=/tmp/oracle.json` is accepted in addition to `--perf-trace-path`; `ORACLE_PERF_TRACE=1` writes a local `.oracle-perf-…json` file.
 
 ## API endpoints

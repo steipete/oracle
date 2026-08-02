@@ -244,6 +244,37 @@ describe("syncCookies", () => {
     vi.useRealTimers();
   });
 
+  test("keeps Unix-second inline cookie expirations (does not treat them as ms)", async () => {
+    const setCookie = vi.fn().mockResolvedValue({ success: true });
+    const unixSeconds = 1_792_075_178; // ~2026-10
+    const applied = await syncCookies(
+      { setCookie } as unknown as ChromeClient["Network"],
+      "https://chatgpt.com",
+      null,
+      logger,
+      {
+        inlineCookies: [
+          {
+            name: "__Secure-next-auth.session-token",
+            value: "tok",
+            domain: "chatgpt.com",
+            path: "/",
+            secure: true,
+            httpOnly: true,
+            expires: unixSeconds,
+          },
+        ],
+      },
+    );
+    expect(applied).toBe(1);
+    expect(setCookie).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "__Secure-next-auth.session-token",
+        expires: unixSeconds,
+      }),
+    );
+  });
+
   test("retries once after an empty cookie read when wait is set", async () => {
     vi.useFakeTimers();
     getCookies.mockResolvedValueOnce({ cookies: [], warnings: [] }).mockResolvedValueOnce({

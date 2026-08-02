@@ -1,10 +1,28 @@
 # Changelog
 
-## 0.16.1 — Unreleased
+## 0.16.2 — Unreleased
+
+### Changed
+
+- Dependencies: update Google GenAI, MCP SDK, OpenAI, Chalk, Shiki, TokenTally, Puppeteer, Chrome DevTools protocol, Oxc tooling, and related packages.
 
 ### Fixed
 
+- Browser: run long local Pro consultations in a detached worker while the CLI remains attached to its session log, so unexpected foreground termination cannot stop answer capture; Ctrl-C still cancels the worker. Thanks @Rokurolize!
+- Browser: recognize ChatGPT's separate Pro effort control as the selected maximum effort for GPT-5.6 Sol when `--browser-thinking-time heavy` is requested. Thanks @Rokurolize!
+
+## 0.16.1 — 2026-07-23
+
+### Changed
+
+- Dependencies: refresh Google GenAI, OpenAI, Clipboardy, Chrome DevTools protocol, Hono/MCP runtime security fixes, Oxc tooling, and TSX.
+
+### Fixed
+
+- Browser: ignore transient `/c/WEB:<request-id>` routes until ChatGPT exposes the durable conversation URL, preventing completed GPT-5.6 and Pro answers from hanging until timeout under a mismatched response scope. Fixes #333. Thanks @dbachko and @kesslerio!
+- Browser: recover completed answers after a recoverable DevTools disconnect by confirming target liveness and attempting bounded reattachment, while preserving fail-closed handling for unavailable targets. Fixes #326. Thanks @piyushbag!
 - CLI: avoid inheriting `browser.thinkingTime` from config when `--browser-model-strategy current` is explicit, while preserving an explicit `--browser-thinking-time` override. Thanks @jung0han!
+- Browser/Serve: keep the authenticated manual-login Chrome process alive while closing each successfully captured service-owned run tab, preventing renderer and memory accumulation across repeated remote consultations without changing explicit `--browser-keep-browser`, attached-tab, or incomplete-run recovery behavior. Thanks @rtl-ai!
 
 ## 0.16.0 — 2026-07-12
 

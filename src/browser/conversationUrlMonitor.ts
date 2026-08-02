@@ -1,5 +1,6 @@
 import type { BrowserLogger } from "./types.js";
 import { delay } from "./utils.js";
+import { isStableConversationUrl } from "./conversationUrl.js";
 
 export interface ConversationUrlMonitor {
   update: (label: string, timeoutMs?: number) => Promise<boolean>;
@@ -31,7 +32,7 @@ export function createConversationUrlMonitor(options: {
         if (stopped) {
           return false;
         }
-        if (url && isConversationUrl(url)) {
+        if (url && isStableConversationUrl(url)) {
           options.logger(`[browser] conversation url (${label}) = ${url}`);
           const persist = options.persistUrl(url);
           activePersists.add(persist);
@@ -75,8 +76,4 @@ export function createConversationUrlMonitor(options: {
       await Promise.allSettled(activePersists);
     },
   };
-}
-
-function isConversationUrl(url: string): boolean {
-  return /\/c\/[a-z0-9-]+/i.test(url);
 }

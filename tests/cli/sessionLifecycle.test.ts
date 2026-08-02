@@ -12,6 +12,7 @@ describe("session lifecycle formatting", () => {
     const lifecycle = buildSessionLifecycle({
       engine: "api",
       detached: true,
+      workerPid: 1234,
       reattachCommand: "oracle session sess-123",
     });
     const meta = {
@@ -35,6 +36,7 @@ describe("session lifecycle formatting", () => {
       "Reattach: oracle session sess-123",
     ]);
     expect(formatSessionExecutionLabel(meta)).toBe("api/bg");
+    expect(lifecycle.workerPid).toBe(1234);
   });
 
   test("formats attached browser runs compactly", () => {

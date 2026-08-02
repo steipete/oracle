@@ -4,12 +4,14 @@ import type { EngineMode } from "./engine.js";
 export interface BuildSessionLifecycleOptions {
   engine: EngineMode;
   detached: boolean;
+  workerPid?: number;
   reattachCommand: string;
 }
 
 export function buildSessionLifecycle({
   engine,
   detached,
+  workerPid,
   reattachCommand,
 }: BuildSessionLifecycleOptions): SessionLifecycleMetadata {
   return {
@@ -17,6 +19,7 @@ export function buildSessionLifecycle({
     execution: detached ? "background" : "foreground",
     attached: !detached,
     detached,
+    workerPid,
     reattachCommand,
   };
 }

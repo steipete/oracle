@@ -129,3 +129,69 @@ pnpm run check: passed
 pnpm run build: passed
 git diff --check: passed
 ```
+
+## Post-merge exact-tree refresh
+
+Date: 2026-08-02 (UTC)
+
+The PR head `9d15d2e67ea168fd6b1c7ad270645785c3b1b222` was merged without
+rebasing with `upstream/main` at
+`0ce8f2be62ace9c86fb9f00af1b12f1bfc0edea3`. The semantic conflict
+resolution preserves registry v2 FIFO waiters and the current-main
+`recoverableDisconnect` state machine.
+
+Two fresh independent CLI clients used Oracle `0.16.1`, browser-only Pro,
+`maxConcurrentTabs=1`, and the same neutral 96-byte text fixture. Client A
+acquired first; client B logged a queue wait before acquiring after A released:
+
+```text
+A  Acquired ChatGPT browser slot 767f6b08
+A  Released ChatGPT browser slot 767f6b08
+A  PR325_QUEUE_A_OK
+
+B  Waiting for ChatGPT browser slot (1 max, 0s elapsed)
+B  Acquired ChatGPT browser slot d0b4c5d7
+B  Released ChatGPT browser slot d0b4c5d7
+B  PR325_QUEUE_B_OK
+```
+
+Both sessions exited `0`, persisted `completed/completed`, recorded
+`promptSubmitted=true`, and independently verified the Pro picker. They reused
+Chrome PID `29902` and DevTools port `56259`; each saved a 377-byte transcript
+and a 17-byte answer-only output.
+
+The canonical MCP live smoke then acquired and released the same one-slot queue,
+verified Pro, returned `{"status":"OK"}`, persisted `completed/completed`, and
+saved a 180-byte transcript. The registry after CLI and MCP proof was:
+
+```json
+{
+  "version": 2,
+  "leaseCount": 0,
+  "waiterCount": 0
+}
+```
+
+The no-login real-Chrome CDP proof also passed both lifecycle outcomes:
+
+```text
+live Chrome and target after client disconnect: recoverable=true
+closed Chrome endpoint: recoverable=false
+PROOF_OK both disconnect outcomes demonstrated against real Chrome CDP
+```
+
+Validation on the merged tree:
+
+```text
+focused browser/session/MCP suite: 236 passed
+full test suite: 1624 passed, 43 skipped
+pnpm run check: passed
+pnpm run build: passed
+pnpm run docs:check: passed
+node scripts/cdp-disconnect-proof.mjs: passed
+git diff --check: passed
+```
+
+One initial full-suite run hit the unrelated 15-second timeout in
+`tests/cli/perfTrace.test.ts`. Its isolated rerun passed 13/13, and the immediate
+full-suite rerun passed 1624/1624 executed tests.

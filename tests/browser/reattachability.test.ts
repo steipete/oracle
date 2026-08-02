@@ -27,10 +27,21 @@ describe("hasRecoverableChatGptConversation", () => {
         tabUrl: "https://chatgpt.com/g/g-p-demo/project",
       }),
     ).toBe(false);
+    expect(
+      hasRecoverableChatGptConversation({
+        tabUrl: "https://chatgpt.com/c/WEB:32229414-5afa-4478-890c-9ca80aa82430",
+      }),
+    ).toBe(false);
   });
 
   test("rejects malformed or non-ChatGPT URLs", () => {
     expect(hasRecoverableChatGptConversation({ tabUrl: "not a url" })).toBe(false);
     expect(hasRecoverableChatGptConversation({ tabUrl: "https://example.com/c/abc" })).toBe(false);
+    expect(hasRecoverableChatGptConversation({ tabUrl: "https://chatgpt.com/?next=/c/abc" })).toBe(
+      false,
+    );
+    expect(hasRecoverableChatGptConversation({ tabUrl: "https://chatgpt.com/#/c/abc" })).toBe(
+      false,
+    );
   });
 });

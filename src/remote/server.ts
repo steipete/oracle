@@ -268,6 +268,10 @@ export async function createRemoteServer(
       }) as BrowserLogger;
       automationLogger.verbose = Boolean(payload.options.verbose);
 
+      // Preserve an explicit request to leave the completed conversation tab
+      // open before the service forces `keepBrowser` for process lifetime.
+      const clientRequestedKeepBrowser = payload.browserConfig?.keepBrowser === true;
+
       // Remote runs always rely on the host's own Chrome profile; ignore any inline cookie transfer.
       if (payload.browserConfig) {
         payload.browserConfig.inlineCookies = null;
@@ -294,6 +298,11 @@ export async function createRemoteServer(
         attachments,
         fallbackSubmission,
         config: payload.browserConfig,
+        // `keepBrowser` above preserves the authenticated shared Chrome
+        // process. This separate service policy closes only a successfully
+        // captured tab owned by this run, preventing one renderer leak per
+        // request while incomplete/reattachable tabs remain untouched.
+        closeOwnedTabOnComplete: Boolean(options.manualLoginDefault && !clientRequestedKeepBrowser),
         log: automationLogger,
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
         verbose: payload.options.verbose,

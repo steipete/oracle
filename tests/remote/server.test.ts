@@ -148,6 +148,64 @@ describe("remote browser service", () => {
   );
 
   test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "keeps manual-login Chrome but requests completed run-tab cleanup",
+    async () => {
+      const manualLoginProfileDir = "/tmp/oracle-manual-login-profile-test";
+      const cleanupPolicies: Array<boolean | undefined> = [];
+      const server = await createRemoteServer(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          token: "secret",
+          logger: () => {},
+          manualLoginDefault: true,
+          manualLoginProfileDir,
+        },
+        {
+          runBrowser: async (options) => {
+            expect(options.config).toMatchObject({
+              manualLogin: true,
+              manualLoginProfileDir,
+              keepBrowser: true,
+            });
+            cleanupPolicies.push(options.closeOwnedTabOnComplete);
+            return {
+              answerText: "done",
+              answerMarkdown: "done",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 4,
+            };
+          },
+        },
+      );
+
+      try {
+        const executor = createRemoteBrowserExecutor({
+          host: `127.0.0.1:${server.port}`,
+          token: "secret",
+        });
+        const result = await executor({
+          prompt: "remote manual-login cleanup",
+          config: {},
+        });
+
+        expect(result.answerText).toBe("done");
+
+        const explicitlyKept = await executor({
+          prompt: "remote manual-login explicit keep",
+          config: { keepBrowser: true },
+        });
+
+        expect(explicitlyKept.answerText).toBe("done");
+        expect(cleanupPolicies).toEqual([true, false]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
     "transfers saved browser file artifacts to the client session directory",
     async () => {
       const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-artifact-test-"));

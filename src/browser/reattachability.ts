@@ -1,4 +1,5 @@
 import type { BrowserRuntimeMetadata } from "../sessionStore.js";
+import { isStableConversationUrl } from "./conversationUrl.js";
 
 /**
  * True when the URL points at a specific ChatGPT conversation (`/c/<id>`) on
@@ -19,7 +20,7 @@ export function isRecoverableChatGptConversationUrl(candidate: string | null | u
     if (url.hostname !== "chatgpt.com" && url.hostname !== "chat.openai.com") {
       return false;
     }
-    return /(?:^|\/)c\/[^/]+/.test(url.pathname);
+    return isStableConversationUrl(url.pathname);
   } catch {
     return false;
   }

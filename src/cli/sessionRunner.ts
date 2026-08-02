@@ -150,6 +150,20 @@ export async function performSessionRun({
         },
         runnerDeps,
       );
+      await writeAssistantOutput(runOptions.writeOutputPath, result.answerText ?? "", log);
+      await sendSessionNotification(
+        {
+          sessionId: sessionMeta.id,
+          sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
+          mode,
+          model: sessionMeta.model,
+          usage: result.usage,
+          characters: result.answerText?.length,
+        },
+        notificationSettings,
+        log,
+        result.answerText?.slice(0, 140),
+      );
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "completed",
@@ -175,20 +189,6 @@ export async function performSessionRun({
         transport: undefined,
         error: undefined,
       });
-      await writeAssistantOutput(runOptions.writeOutputPath, result.answerText ?? "", log);
-      await sendSessionNotification(
-        {
-          sessionId: sessionMeta.id,
-          sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
-          mode,
-          model: sessionMeta.model,
-          usage: result.usage,
-          characters: result.answerText?.length,
-        },
-        notificationSettings,
-        log,
-        result.answerText?.slice(0, 140),
-      );
       return;
     }
     const multiModels = Array.isArray(runOptions.models) ? runOptions.models.filter(Boolean) : [];
@@ -486,16 +486,6 @@ export async function performSessionRun({
     if (result.mode !== "live") {
       throw new Error("Unexpected preview result while running a session.");
     }
-    await sessionStore.updateSession(sessionMeta.id, {
-      status: "completed",
-      completedAt: new Date().toISOString(),
-      usage: result.usage,
-      elapsedMs: result.elapsedMs,
-      errorMessage: undefined,
-      response: extractResponseMetadata(result.response),
-      transport: undefined,
-      error: undefined,
-    });
     if (modelForStatus && singleModelOverride == null) {
       await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
         status: "completed",
@@ -518,6 +508,16 @@ export async function performSessionRun({
       log,
       answerText.slice(0, 140),
     );
+    await sessionStore.updateSession(sessionMeta.id, {
+      status: "completed",
+      completedAt: new Date().toISOString(),
+      usage: result.usage,
+      elapsedMs: result.elapsedMs,
+      errorMessage: undefined,
+      response: extractResponseMetadata(result.response),
+      transport: undefined,
+      error: undefined,
+    });
   } catch (error: unknown) {
     const message = formatError(error);
     log(`ERROR: ${message}`);
@@ -588,23 +588,15 @@ export async function performSessionRun({
         });
         throw error;
       }
-      const completedAt = new Date().toISOString();
-      log(dim("Chrome disconnected before completion; marking session error for reattach."));
+      log(dim("Chrome disconnected before completion; keeping session running for reattach."));
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
-          status: "error",
-          completedAt,
-          response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
-          error: {
-            category: userError.category,
-            message: userError.message,
-            details: userError.details,
-          },
+          status: "running",
+          completedAt: undefined,
         });
       }
       await sessionStore.updateSession(sessionMeta.id, {
-        status: "error",
-        completedAt,
+        status: "running",
         errorMessage: message,
         mode,
         browser: {
@@ -612,30 +604,107 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: runtime ?? currentBrowser?.runtime,
         },
-        response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
-        error: {
-          category: userError.category,
-          message: userError.message,
-          details: userError.details,
-        },
+        response: { status: "running", incompleteReason: "chrome-disconnected" },
       });
       logBrowserReattachGuidance(recoverableRuntime);
+      // Only auto-reattach when liveness classified the target as still alive.
+      // Closed-Chrome disconnects stay running + guidance but must not enter a
+      // futile resume loop (fail closed on availability).
+      const recoverableDisconnect =
+        (userError.details as { recoverableDisconnect?: boolean } | undefined)
+          ?.recoverableDisconnect === true;
+      if (!recoverableDisconnect) {
+        log(dim("Skipping auto-reattach: disconnect classified as non-recoverable."));
+        return;
+      }
+      // Connection-lost should attempt the same recovery path as assistant-timeout.
+      // When auto-reattach interval is unset, still try a single resume so a live
+      // Chrome/target can be harvested instead of leaving the session permanently running.
+      const configuredIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
+      const connectionLostIntervalMs =
+        configuredIntervalMs > 0
+          ? configuredIntervalMs
+          : Math.max(1_000, Math.min(browserConfig?.timeoutMs ?? 30_000, 30_000));
+      const success = await autoReattachUntilComplete({
+        sessionMeta,
+        runtime: recoverableRuntime ?? undefined,
+        browserConfig: {
+          ...browserConfig,
+          autoReattachIntervalMs: connectionLostIntervalMs,
+          autoReattachDelayMs: browserConfig?.autoReattachDelayMs ?? 0,
+          autoReattachTimeoutMs:
+            browserConfig?.autoReattachTimeoutMs ?? browserConfig?.timeoutMs ?? 120_000,
+        },
+        browserMetadata: currentBrowser,
+        runOptions,
+        modelForStatus,
+        notificationSettings,
+        log,
+        maxAttempts: configuredIntervalMs > 0 ? undefined : 1,
+      });
+      if (success) {
+        return;
+      }
       return;
     }
     if (assistantTimeout && mode === "browser" && browserCanReattach) {
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
       log(dim("Assistant response timed out; marking capture incomplete for reattach."));
+      const timeoutResponse = {
+        status: "incomplete",
+        incompleteReason: "incomplete-capture",
+      } as const;
+      const timeoutError = {
+        category: userError.category,
+        message: userError.message,
+        details: userError.details,
+      };
+      const autoReattachIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
+      const autoRuntime = runtime ?? currentBrowser?.runtime;
+      const willAutoReattach = autoReattachIntervalMs > 0 && Boolean(autoRuntime);
+      if (willAutoReattach) {
+        if (modelForStatus) {
+          await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+            status: "running",
+            completedAt: undefined,
+            response: timeoutResponse,
+            error: timeoutError,
+          });
+        }
+        await sessionStore.updateSession(sessionMeta.id, {
+          status: "running",
+          completedAt: undefined,
+          errorMessage: message,
+          mode,
+          browser: {
+            ...currentBrowser,
+            config: browserConfig,
+            runtime: autoRuntime,
+          },
+          response: timeoutResponse,
+          error: timeoutError,
+        });
+        const success = await autoReattachUntilComplete({
+          sessionMeta,
+          runtime: autoRuntime,
+          browserConfig,
+          browserMetadata: currentBrowser,
+          runOptions,
+          modelForStatus,
+          notificationSettings,
+          log,
+        });
+        if (success) {
+          return;
+        }
+      }
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "error",
           completedAt: new Date().toISOString(),
-          response: { status: "incomplete", incompleteReason: "incomplete-capture" },
-          error: {
-            category: userError.category,
-            message: userError.message,
-            details: userError.details,
-          },
+          response: timeoutResponse,
+          error: timeoutError,
         });
       }
       await sessionStore.updateSession(sessionMeta.id, {
@@ -648,30 +717,9 @@ export async function performSessionRun({
           config: browserConfig,
           runtime: runtime ?? currentBrowser?.runtime,
         },
-        response: { status: "incomplete", incompleteReason: "incomplete-capture" },
-        error: {
-          category: userError.category,
-          message: userError.message,
-          details: userError.details,
-        },
+        response: timeoutResponse,
+        error: timeoutError,
       });
-      const autoReattachIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
-      if (autoReattachIntervalMs > 0) {
-        const autoRuntime = runtime ?? currentBrowser?.runtime;
-        const success = await autoReattachUntilComplete({
-          sessionMeta,
-          runtime: autoRuntime ?? undefined,
-          browserConfig,
-          browserMetadata: currentBrowser,
-          runOptions,
-          modelForStatus,
-          notificationSettings,
-          log,
-        });
-        if (success) {
-          return;
-        }
-      }
       logBrowserReattachGuidance(runtime ?? currentBrowser?.runtime);
       return;
     }
@@ -1107,6 +1155,7 @@ async function autoReattachUntilComplete({
   modelForStatus,
   notificationSettings,
   log,
+  maxAttempts,
 }: {
   sessionMeta: SessionMetadata;
   runtime?: BrowserRuntimeMetadata;
@@ -1116,6 +1165,7 @@ async function autoReattachUntilComplete({
   modelForStatus?: string;
   notificationSettings: NotificationSettings;
   log: (message?: string) => void;
+  maxAttempts?: number;
 }): Promise<boolean> {
   if (!runtime || !browserConfig) {
     log(dim("Auto-reattach disabled: missing runtime or browser config."));
@@ -1132,12 +1182,22 @@ async function autoReattachUntilComplete({
     120_000;
   const maxTotalMs = 2 * 60 * 60 * 1000; // 2h hard cap; avoid infinite polling by default.
   const maxDeadline = Date.now() + maxTotalMs;
+  const attemptLimit =
+    typeof maxAttempts === "number" && maxAttempts > 0
+      ? Math.floor(maxAttempts)
+      : Number.POSITIVE_INFINITY;
 
   if (delayMs > 0) {
     log(dim(`Auto-reattach starting in ${formatElapsed(delayMs)}...`));
     await wait(delayMs);
   }
-  log(dim(`Auto-reattach will stop after ${formatElapsed(maxTotalMs)} if no answer is captured.`));
+  if (Number.isFinite(attemptLimit)) {
+    log(dim(`Auto-reattach will try up to ${attemptLimit} attempt(s).`));
+  } else {
+    log(
+      dim(`Auto-reattach will stop after ${formatElapsed(maxTotalMs)} if no answer is captured.`),
+    );
+  }
 
   const logger: BrowserLogger = ((message?: string) => {
     if (message) {
@@ -1159,6 +1219,7 @@ async function autoReattachUntilComplete({
     }
     attempt += 1;
     log(dim(`Auto-reattach attempt ${attempt}...`));
+    let captureSucceeded = false;
     try {
       const reattachConfig: BrowserSessionConfig = {
         ...browserConfig,
@@ -1167,6 +1228,7 @@ async function autoReattachUntilComplete({
       const result = await resumeBrowserSession(runtime, reattachConfig, logger, {
         promptPreview: sessionMeta.promptPreview,
       });
+      captureSucceeded = true;
       const answerText = result.answerMarkdown || result.answerText || "";
       const outputTokens = estimateTokenCount(answerText);
       const artifacts = await ensureSessionArtifacts({
@@ -1195,6 +1257,23 @@ async function autoReattachUntilComplete({
           },
         });
       }
+      await writeAssistantOutput(runOptions.writeOutputPath, answerText, log);
+      await sendSessionNotification(
+        {
+          sessionId: sessionMeta.id,
+          sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
+          mode: sessionMeta.mode ?? "browser",
+          model: sessionMeta.model ?? runOptions.model,
+          usage: {
+            inputTokens: 0,
+            outputTokens,
+          },
+          characters: answerText.length,
+        },
+        notificationSettings,
+        log,
+        answerText.slice(0, 140),
+      );
       await sessionStore.updateSession(sessionMeta.id, {
         status: "completed",
         completedAt: new Date().toISOString(),
@@ -1215,28 +1294,40 @@ async function autoReattachUntilComplete({
         error: undefined,
         transport: undefined,
       });
-      await writeAssistantOutput(runOptions.writeOutputPath, answerText, log);
-      await sendSessionNotification(
-        {
-          sessionId: sessionMeta.id,
-          sessionName: sessionMeta.options?.slug ?? sessionMeta.id,
-          mode: sessionMeta.mode ?? "browser",
-          model: sessionMeta.model ?? runOptions.model,
-          usage: {
-            inputTokens: 0,
-            outputTokens,
-          },
-          characters: answerText.length,
-        },
-        notificationSettings,
-        log,
-        answerText.slice(0, 140),
-      );
       log(kleur.green("Auto-reattach succeeded; session marked completed."));
       return true;
     } catch (error) {
+      if (captureSucceeded) {
+        const message = formatError(error);
+        if (modelForStatus) {
+          await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+            status: "error",
+            completedAt: new Date().toISOString(),
+          });
+        }
+        await sessionStore.updateSession(sessionMeta.id, {
+          status: "error",
+          completedAt: new Date().toISOString(),
+          errorMessage: message,
+          browser: {
+            ...browserMetadata,
+            config: browserConfig,
+            runtime,
+          },
+          response: { status: "error", incompleteReason: "incomplete-capture" },
+          error: {
+            category: "internal",
+            message,
+          },
+        });
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       log(dim(`Auto-reattach attempt ${attempt} failed: ${message}`));
+    }
+    if (attempt >= attemptLimit) {
+      log(dim(`Auto-reattach stopped after ${attempt} attempt(s) without capturing an answer.`));
+      return false;
     }
     const remainingAfterAttemptMs = maxDeadline - Date.now();
     if (remainingAfterAttemptMs <= 0) {

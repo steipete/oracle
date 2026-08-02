@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { mkdtemp, rm, readFile, stat } from "node:fs/promises";
+import { mkdtemp, rm, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { setOracleHomeDirOverrideForTest } from "../src/oracleHome.js";
@@ -108,6 +108,9 @@ describe("session lifecycle", () => {
     expect(perModelLog).toBe("");
     const logContent = await readFile(path.join(baseDir, "output.log"), "utf8");
     expect(logContent).toBe("");
+    if (process.platform !== "win32") {
+      expect((await stat(path.join(baseDir, "meta.json"))).mode & 0o777).toBe(0o600);
+    }
   });
 
   test("readSessionMetadata returns null for missing sessions and updateSessionMetadata persists changes", async () => {
@@ -123,6 +126,8 @@ describe("session lifecycle", () => {
     const updated = await sessionModule.readSessionMetadata(meta.id);
     expect(updated?.status).toBe("complete");
     expect(updated?.promptPreview).toBe("value");
+    const sessionFiles = await readdir(path.join(sessionModule.getSessionsDir(), meta.id));
+    expect(sessionFiles.filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   test("createSessionLogWriter appends logs and supports chunk writes", async () => {
@@ -248,6 +253,41 @@ describe("session lifecycle", () => {
     });
     const refreshed = await sessionModule.readSessionMetadata(meta.id);
     expect(refreshed?.status).toBe("running");
+  });
+
+  test("keeps running browser sessions while their detached worker is alive", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Browser worker live", model: "gpt-5.2-pro", mode: "browser" },
+      "/tmp/cwd",
+    );
+    await sessionModule.updateSessionMetadata(meta.id, {
+      status: "running",
+      startedAt: "2000-01-01T00:00:00.000Z",
+      mode: "browser",
+      lifecycle: {
+        engine: "browser",
+        execution: "background",
+        attached: false,
+        detached: true,
+        workerPid: process.pid,
+        reattachCommand: `oracle session ${meta.id}`,
+      },
+      browser: {
+        runtime: {
+          chromePid: 999999,
+          chromePort: 1,
+          chromeHost: "127.0.0.1",
+        },
+      },
+    });
+    const refreshed = await sessionModule.readSessionMetadata(meta.id);
+    expect(refreshed?.status).toBe("running");
+    const listed = await sessionModule.listSessionsMetadata();
+    expect(listed.find((entry) => entry.id === meta.id)?.status).toBe("running");
+    const stored = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
+    );
+    expect(stored.status).toBe("running");
   });
 
   test("marks running browser sessions as error when Chrome runtime is gone", async () => {

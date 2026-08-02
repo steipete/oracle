@@ -11,6 +11,7 @@ import {
 } from "./constants.js";
 import { captureAssistantMarkdown, readAssistantSnapshot } from "./actions/assistantResponse.js";
 import { buildConversationTurnListExpression } from "./conversationTurns.js";
+import { extractStableConversationIdFromUrl } from "./conversationUrl.js";
 import { delay } from "./utils.js";
 
 export const DEFAULT_REMOTE_CHROME_HOST = "127.0.0.1";
@@ -631,8 +632,7 @@ export async function harvestChatGptTab(
 }
 
 export function extractConversationIdFromUrl(url: string): string | undefined {
-  const match = normalizeUrl(url).match(/\/c\/([^/?#]+)/);
-  return match?.[1] ?? undefined;
+  return extractStableConversationIdFromUrl(normalizeUrl(url));
 }
 
 export function formatBrowserTabState(

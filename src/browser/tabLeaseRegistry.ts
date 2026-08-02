@@ -27,7 +27,9 @@ export interface BrowserTabLeaseRecord {
 
 export interface BrowserTabLease {
   id: string;
-  release: () => Promise<void>;
+  release: (options?: {
+    onRelease?: (context: { isLastLease: boolean }) => Promise<void>;
+  }) => Promise<void>;
   update: (patch: Partial<BrowserTabLeaseRecord>) => Promise<void>;
 }
 
@@ -157,7 +159,8 @@ export async function acquireBrowserTabLease(
         );
         return {
           id: leaseId,
-          release: async () => releaseBrowserTabLease(profileDir, leaseId, options.logger),
+          release: async (releaseOptions) =>
+            releaseBrowserTabLease(profileDir, leaseId, options.logger, releaseOptions),
           update: async (patch) => updateBrowserTabLease(profileDir, leaseId, patch),
         };
       }
@@ -204,11 +207,24 @@ export async function releaseBrowserTabLease(
   profileDir: string,
   leaseId: string,
   logger?: BrowserLogger,
+  options: { onRelease?: (context: { isLastLease: boolean }) => Promise<void> } = {},
 ): Promise<void> {
   await withRegistryLock(profileDir, async () => {
     const registry = await readRegistry(profileDir);
-    const leases = registry.leases.filter((lease) => lease.id !== leaseId);
-    await writeRegistry(profileDir, { ...registry, version: 2, leases });
+    const nowMs = Date.now();
+    const active = pruneStaleLeases(registry.leases, {
+      nowMs,
+      staleMs: DEFAULT_STALE_MS,
+      isProcessAlive,
+    });
+    const waiters = pruneStaleWaiters(registry.waiters, {
+      nowMs,
+      staleMs: DEFAULT_STALE_MS,
+      isProcessAlive,
+    });
+    const leases = active.filter((lease) => lease.id !== leaseId);
+    await writeRegistry(profileDir, { version: 2, leases, waiters });
+    await options.onRelease?.({ isLastLease: leases.length === 0 });
   }).catch(() => undefined);
   logger?.(`[browser] Released ChatGPT browser slot ${leaseId.slice(0, 8)}.`);
 }

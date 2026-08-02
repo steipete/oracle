@@ -64,13 +64,15 @@ Detach: yes, polling
 Reattach: oracle session 20260515-name-panel
 ```
 
-`oracle status` uses compact mode labels such as `api/fg`, `api/bg`, and `br/fg`; `oracle session <id>` shows the persisted execution state.
+`oracle status` uses compact mode labels such as `api/fg`, `api/bg`, `br/fg`, and `br/bg`; `oracle session <id>` shows the persisted execution state.
 
-To block in the original command, pass `--wait`:
+To keep the original CLI attached until completion, pass `--wait`:
 
 ```bash
 oracle --wait --model gpt-5.5-pro -p "Long architecture review" --file "src/**"
 ```
+
+For API runs, `--wait` executes the request in the foreground. Local Pro browser runs use a detached worker even with `--wait`, while the original CLI stays attached to the session log. This lets the browser worker capture and save the answer if the foreground CLI exits unexpectedly. Pressing Ctrl-C still cancels the worker and exits with code 130.
 
 For browser runs, ChatGPT sometimes redirects mid-page-load. The auto-reattach flags poll the existing tab without manual intervention:
 
