@@ -150,7 +150,7 @@ interface CliOptions extends OptionValues {
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string;
   copyProfile?: string;
-  browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  browserThinkingTime?: "light" | "standard" | "extended" | "extra-high" | "heavy";
   browserResearch?: "off" | "deep";
   browserFollowUp?: string[];
   browserAllowCookieErrors?: boolean;
@@ -801,7 +801,7 @@ program
   .addOption(
     new Option(
       "--browser-thinking-time <level>",
-      "Thinking time intensity for Thinking/Pro models: light, standard, extended, heavy, or ChatGPT UI aliases.",
+      "Thinking time intensity for Thinking/Pro models: light, standard, extended, extra-high (Extra High), heavy (Pro), or ChatGPT UI aliases.",
     )
       .argParser(parseThinkingTimeOption)
       .hideHelp(),

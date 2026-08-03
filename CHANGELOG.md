@@ -2,6 +2,9 @@
 
 ## 0.17.1 — Unreleased
 
+### Fixed
+
+- Browser: keep `--browser-thinking-time extra-high` as Extra High (non-Pro) on GPT-5.6 Sol; reserve `heavy` for explicit Pro selection. Fixes #353.
 ## 0.17.0 — 2026-08-02
 
 ### Added

@@ -74,7 +74,7 @@ describe("chatgpt_image MCP tool", () => {
     })) as {
       structuredContent: { resolved: { browser?: { thinkingTime?: string } } };
     };
-    expect(result.structuredContent.resolved.browser?.thinkingTime).toBe("heavy");
+    expect(result.structuredContent.resolved.browser?.thinkingTime).toBe("extra-high");
   });
 
   test("uses a unique default output path when agents only provide a prompt", () => {

@@ -80,7 +80,7 @@ export interface BrowserFlagOptions {
   browserManualLoginProfileDir?: string | null;
   copyProfile?: string;
   remoteHost?: string;
-  /** Thinking time intensity: 'light', 'standard', 'extended', 'heavy' */
+  /** Thinking time intensity: 'light', 'standard', 'extended', 'extra-high', 'heavy' */
   browserThinkingTime?: ThinkingTimeLevel;
   browserResearch?: BrowserResearchMode;
   browserArchive?: BrowserArchiveMode;

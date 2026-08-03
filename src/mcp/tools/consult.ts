@@ -328,7 +328,7 @@ export function buildConsultBrowserConfig({
   runModel: string;
   inputModel?: string;
   browserModelLabel?: string;
-  browserThinkingTime?: "light" | "standard" | "extended" | "heavy";
+  browserThinkingTime?: "light" | "standard" | "extended" | "extra-high" | "heavy";
   browserModelStrategy?: BrowserModelStrategy;
   browserResearchMode?: "deep";
   browserArchive?: "auto" | "always" | "never";

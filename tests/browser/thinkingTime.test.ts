@@ -20,7 +20,7 @@ describe("browser thinking-time selection expression", () => {
   });
 
   it("targets the requested thinking time level", () => {
-    const levels = ["light", "standard", "extended", "heavy"] as const;
+    const levels = ["light", "standard", "extended", "extra-high", "heavy"] as const;
     for (const level of levels) {
       const expression = buildThinkingTimeExpressionForTest(level);
       expect(expression).toContain("const TARGET_LEVEL");
@@ -46,7 +46,13 @@ describe("browser thinking-time selection expression", () => {
     expect(buildThinkingTimeExpressionForTest("extended")).toContain(
       "extended: ['extended', 'high'",
     );
-    expect(buildThinkingTimeExpressionForTest("heavy")).toContain("heavy: ['heavy', 'extra high'");
+    expect(buildThinkingTimeExpressionForTest("extra-high")).toContain(
+      "'extra-high': ['extra high'",
+    );
+    expect(buildThinkingTimeExpressionForTest("heavy")).toContain("heavy: ['heavy'");
+    expect(buildThinkingTimeExpressionForTest("heavy")).not.toContain(
+      "heavy: ['heavy', 'extra high'",
+    );
   });
 
   it("accepts standard selected-state markers when verifying effort", () => {
@@ -66,9 +72,9 @@ describe("browser thinking-time selection expression", () => {
   });
 
   it("preserves Chinese thinking-effort labels while normalizing", () => {
-    const expression = buildThinkingTimeExpressionForTest("heavy");
+    const expression = buildThinkingTimeExpressionForTest("extra-high");
     expect(expression).toContain("\\u4e00-\\u9fa5");
-    expect(expression).toContain("'重度'");
+    expect(expression).toContain("'极高'");
   });
 
   it("infers target model kind with token matching", () => {
@@ -670,6 +676,158 @@ describe("browser thinking-time selection expression", () => {
         FakeElement,
       ),
     ).resolves.toEqual({ status: "switched", label: "Pro" });
+
+    const extraHighAttributes: Record<string, string> = {
+      role: "menuitemradio",
+      "aria-checked": "false",
+      "data-state": "unchecked",
+    };
+    const selectableExtraHigh = new FakeElement(
+      "Extra High",
+      extraHighAttributes,
+      [],
+      null,
+      () => {
+        extraHighAttributes["aria-checked"] = "true";
+        extraHighAttributes["data-state"] = "checked";
+      },
+    );
+    const extraHighItems = [
+      selectableExtraHigh,
+      new FakeElement("Pro", {
+        role: "menuitemradio",
+        "aria-checked": "false",
+        "data-state": "unchecked",
+      }),
+      new FakeElement("GPT-5.6 Sol", { role: "menuitem", "aria-haspopup": "menu" }),
+    ];
+    const extraHighGroup = new FakeElement(
+      "Extra High Pro GPT-5.6 Sol",
+      { "data-testid": "composer-intelligence-picker-content", role: "group" },
+      extraHighItems,
+    );
+    const extraHighMenu = new FakeElement(
+      extraHighGroup.textContent,
+      { role: "menu" },
+      extraHighItems,
+      extraHighGroup,
+    );
+    const mediumPill = new FakeElement("High", {
+      class: "__composer-pill",
+      "aria-expanded": "true",
+      "aria-haspopup": "menu",
+    });
+    const extraHighDocumentStub = {
+      ...documentStub,
+      querySelector: (selector: string) => {
+        if (selector.includes("composer-intelligence-pro-thinking-effort-trigger")) return null;
+        if (selector.includes("composer-intelligence-picker-content")) return extraHighGroup;
+        if (
+          selector.includes("model-switcher-dropdown-button") ||
+          selector.includes("__composer-pill")
+        ) {
+          return mediumPill;
+        }
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [mediumPill];
+        if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+          return [extraHighMenu];
+        }
+        return [];
+      },
+    };
+    const evaluateSolExtraHigh = new Function(
+      "document",
+      "performance",
+      "setTimeout",
+      "window",
+      "EventTarget",
+      "PointerEvent",
+      "MouseEvent",
+      "HTMLElement",
+      `return ${buildThinkingTimeExpressionForTest("extra-high", "gpt-5.6-sol")};`,
+    ) as typeof evaluate;
+
+    await expect(
+      evaluateSolExtraHigh(
+        extraHighDocumentStub,
+        performanceStub,
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "switched", label: "Extra High" });
+
+    const alreadyExtraHighPill = new FakeElement("Extra High", {
+      class: "__composer-pill",
+      "aria-expanded": "false",
+      "aria-haspopup": "menu",
+    });
+    const alreadyExtraHighItems = [
+      new FakeElement("Extra High", {
+        role: "menuitemradio",
+        "aria-checked": "true",
+        "data-state": "checked",
+      }),
+      new FakeElement("Pro", {
+        role: "menuitemradio",
+        "aria-checked": "false",
+        "data-state": "unchecked",
+      }),
+      new FakeElement("GPT-5.6 Sol", { role: "menuitem", "aria-haspopup": "menu" }),
+    ];
+    const alreadyExtraHighGroup = new FakeElement(
+      "Extra High Pro GPT-5.6 Sol",
+      { "data-testid": "composer-intelligence-picker-content", role: "group" },
+      alreadyExtraHighItems,
+    );
+    const alreadyExtraHighMenu = new FakeElement(
+      alreadyExtraHighGroup.textContent,
+      { role: "menu" },
+      alreadyExtraHighItems,
+      alreadyExtraHighGroup,
+    );
+    const alreadyExtraHighDocumentStub = {
+      ...documentStub,
+      querySelector: (selector: string) => {
+        if (selector.includes("composer-intelligence-pro-thinking-effort-trigger")) return null;
+        if (selector.includes("composer-intelligence-picker-content")) {
+          return alreadyExtraHighGroup;
+        }
+        if (
+          selector.includes("model-switcher-dropdown-button") ||
+          selector.includes("__composer-pill")
+        ) {
+          return alreadyExtraHighPill;
+        }
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("__composer-pill")) return [alreadyExtraHighPill];
+        if (selector.includes('role="menu"') || selector.includes("data-radix")) {
+          return [alreadyExtraHighMenu];
+        }
+        return [];
+      },
+    };
+
+    await expect(
+      evaluateSolExtraHigh(
+        alreadyExtraHighDocumentStub,
+        performanceStub,
+        (callback: () => void) => callback(),
+        { PointerEvent: FakeMouseEvent, MouseEvent: FakeMouseEvent, Event: FakeMouseEvent },
+        FakeEventTarget,
+        FakeMouseEvent,
+        FakeMouseEvent,
+        FakeElement,
+      ),
+    ).resolves.toEqual({ status: "already-selected", label: "Extra High" });
   });
 
   it("selects exact Chinese Intelligence tiers without prefix collisions", async () => {
@@ -729,7 +887,7 @@ describe("browser thinking-time selection expression", () => {
     }
 
     const cases: Array<{
-      level: "light" | "standard" | "extended" | "heavy";
+      level: "light" | "standard" | "extended" | "extra-high" | "heavy";
       label: string;
       reverseAmbiguousPair?: boolean;
       omitExtraHigh?: boolean;
@@ -737,9 +895,9 @@ describe("browser thinking-time selection expression", () => {
       { level: "light", label: "极速5.5" },
       { level: "standard", label: "中" },
       { level: "extended", label: "高", reverseAmbiguousPair: true },
-      { level: "heavy", label: "极高" },
-      { level: "heavy", label: "极高", reverseAmbiguousPair: true },
-      { level: "heavy", label: "高", omitExtraHigh: true },
+      { level: "extra-high", label: "极高" },
+      { level: "extra-high", label: "极高", reverseAmbiguousPair: true },
+      { level: "extra-high", label: "高", omitExtraHigh: true },
     ];
 
     for (const testCase of cases) {
@@ -1303,7 +1461,7 @@ describe("browser thinking-time selection expression", () => {
       extraHigh.setAttribute("data-state", "unchecked");
       let now = 0;
       let timers = 0;
-      const expression = buildThinkingTimeExpressionForTest("heavy", targetModel);
+      const expression = buildThinkingTimeExpressionForTest("extra-high", targetModel);
       const evaluate = new Function(
         "document",
         "performance",
@@ -2061,7 +2219,7 @@ describe("browser thinking-time selection expression", () => {
     };
     let now = 0;
     const performanceStub = { now: () => (now += 100) };
-    const expression = buildThinkingTimeExpressionForTest("heavy", "Thinking 5.5");
+    const expression = buildThinkingTimeExpressionForTest("extra-high", "Thinking 5.5");
     const evaluate = new Function(
       "document",
       "performance",

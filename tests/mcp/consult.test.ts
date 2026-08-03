@@ -65,7 +65,7 @@ describe("summarizeModelRunsForConsult", () => {
         browserThinkingTime: "xhigh",
       }),
     ).toMatchObject({
-      browserThinkingTime: "heavy",
+      browserThinkingTime: "extra-high",
     });
   });
 
