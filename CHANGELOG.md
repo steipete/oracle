@@ -10,6 +10,10 @@
 
 - Dependencies: update Google GenAI, MCP SDK, OpenAI, Chalk, Shiki, TokenTally, Puppeteer, Chrome DevTools protocol, Oxc tooling, and related packages.
 
+### Docs
+
+- Rewrite the README around a verified install and quickstart, with detailed workflows linked to the docs site.
+
 ### Fixed
 
 - Browser: preserve authenticated model-picker errors instead of appending a misleading cookie/login hint after login has already been verified.
