@@ -164,7 +164,7 @@ export function parseThinkingTimeOption(value: string): ThinkingTimeLevel {
     return normalized;
   }
   throw new InvalidArgumentError(
-    'Thinking time must be one of "light", "standard", "extended", "extra-high" (Extra High UI), "heavy" (Pro UI), or a ChatGPT UI alias like "instant", "medium", "high", or "xhigh".',
+    'Thinking time must be one of "light", "standard", "extended", "extra-high", "heavy", or a ChatGPT UI alias like "instant", "medium", "high", or "xhigh".',
   );
 }
 

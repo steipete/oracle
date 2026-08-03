@@ -202,8 +202,6 @@ function buildThinkingTimeExpression(
     const TARGET_IS_GPT56_MODEL = ${targetIsGpt56ModelLiteral};
 
     // Bilingual matchers: English level token + observed Chinese variants.
-    // Keep Extra High distinct from Pro: 'extra-high' never matches 'pro',
-    // and 'heavy' is reserved for explicit Pro / heavy selection.
     const LEVEL_TOKENS = {
       light: ['light', 'instant', '轻', '极速'],
       standard: ['standard', 'medium', '标准', '中'],
