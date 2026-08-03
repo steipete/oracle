@@ -101,7 +101,7 @@ Notes:
 - If an assistant response still times out (common with long Pro runs), Oracle marks the session as an incomplete capture, stores reattach/runtime diagnostics, and keeps enough browser metadata for `oracle session <id>` to recover the final answer. Visible ChatGPT rate-limit, temporary-unavailable, and authentication/challenge warnings are included in the error and session metadata instead of being reduced to a generic timeout. Increase `--browser-timeout` only when the browser session is truly unrecoverable.
 - `--browser-model-strategy <select|current|ignore>`: control ChatGPT model selection. `select` (default) switches to the requested model; `current` keeps the active model and logs its label; `ignore` skips the picker entirely. (Ignored for Gemini web runs.)
 - Temporary Chat can reduce account-sidebar clutter for one-shot browser consults, but it is a different ChatGPT workflow: Oracle skips archive attempts there and the local transcript/artifacts are the durable record. Verify live behavior before relying on Project Sources, Deep Research reports, or multi-turn persistence.
-- `--browser-thinking-time <light|standard|extended|heavy>`: set the ChatGPT thinking-time intensity (Thinking/Pro models only). You can also set a default in `~/.oracle/config.json` via `browser.thinkingTime`.
+- `--browser-thinking-time <light|standard|extended|extra-high|heavy>`: set the ChatGPT thinking-time intensity (Thinking/Pro models only). On GPT-5.6 Sol, `extra-high` selects Extra High and `heavy` selects Pro. You can also set a default in `~/.oracle/config.json` via `browser.thinkingTime`.
 - GPT-5.5 Pro Extended is verified from the selected item in ChatGPT's standalone Pro/Thinking effort pill or compatible Intelligence/model-picker menu. A run **fails closed** if Extended cannot be confirmed rather than silently submitting at a weaker effort. Detection failures write a bounded, redacted model-picker diagnostic to the normal session log.
 - `--browser-research deep`: activate ChatGPT Deep Research before submitting the prompt. Use this for broad public-web research and final cited reports, not as a replacement for GPT-5.x Pro Heavy code review or pure reasoning.
 - `--browser-follow-up <prompt>`: submit another prompt in the same ChatGPT conversation after the initial answer. Repeat the flag for multi-turn reviews such as “challenge your recommendation”, “compare against this constraint”, then “give the final decision”. Deep Research has its own report lifecycle, so browser follow-ups are rejected when `--browser-research deep` is enabled.
@@ -167,7 +167,7 @@ Oracle activates ChatGPT Deep Research through the composer tools menu, recogniz
 
 If ChatGPT initially exposes only `Called tool` / `Used tool`, Oracle treats that as an incomplete capture for Deep Research rather than a final answer. Reattach the existing session with `oracle session <id> --render` so Oracle can recover the lazy-loaded report from the existing Chrome tab; do not rerun the research unless the browser session is unrecoverable.
 
-Deep Research is browser-only. It does not use connected apps in v1; give it public-web scope, uploaded files, and any domain/source guidance in the prompt. For deep thinking over code or architecture without web search, prefer a normal browser run with a Pro/Thinking model and `--browser-thinking-time heavy`.
+Deep Research is browser-only. It does not use connected apps in v1; give it public-web scope, uploaded files, and any domain/source guidance in the prompt. For deep thinking over code or architecture without web search, prefer a normal browser run with GPT-5.6 Sol and `--browser-thinking-time extra-high`, or a Pro model with `--browser-thinking-time extended`.
 
 Completed browser sessions also save durable artifacts under `~/.oracle/sessions/<id>/artifacts/`. Deep Research writes the extracted report to `deep-research-report.md`, and every browser run writes `transcript.md` with the prompt, final answer, conversation URL, and saved artifact references. Use `--write-output <path>` when you also need a copy of just the final answer at a specific path.
 
@@ -214,7 +214,7 @@ Use browser follow-ups when a one-shot review would be too easy for the model to
 ```bash
 oracle --engine browser \
   --model gpt-5.5-pro \
-  --browser-thinking-time heavy \
+  --browser-thinking-time extended \
   -p "Review this migration plan and identify the top risks." \
   --file docs/migration-plan.md \
   --browser-follow-up "Challenge your previous recommendation. What would fail in production?" \

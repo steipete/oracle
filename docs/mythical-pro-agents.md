@@ -86,12 +86,13 @@ The captured report lands at `~/.oracle/sessions/<id>/artifacts/deep-research-re
 
 Pro / Thinking models in browser mode accept a `--browser-thinking-time` knob:
 
-| Level      | What it maps to in ChatGPT       |
-| ---------- | -------------------------------- |
-| `light`    | Quick                            |
-| `standard` | Default                          |
-| `extended` | Pro Extended / Thinking Extended |
-| `heavy`    | Heavy thinking                   |
+| Level         | What it maps to in ChatGPT                          |
+| ------------- | --------------------------------------------------- |
+| `light`       | Instant / Quick                                     |
+| `standard`    | Medium / Standard                                   |
+| `extended`    | High / Pro Extended / Thinking Extended             |
+| `extra-high`  | Extra High (GPT-5.6 Sol non-Pro max)                |
+| `heavy`       | Pro (GPT-5.6 Sol) / Heavy thinking on older layouts |
 
 ```bash
 oracle --engine browser --model gpt-5.5-pro \

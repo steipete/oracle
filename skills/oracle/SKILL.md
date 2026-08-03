@@ -21,7 +21,8 @@ Recommended defaults:
 
 - Engine: browser (`--engine browser`)
 - Base Sol: `--model gpt-5.6-sol`
-- Base Sol maximum reasoning: `--browser-thinking-time heavy` (Extra High)
+- Base Sol maximum reasoning: `--browser-thinking-time extra-high` (Extra High)
+- Explicit Pro effort on GPT-5.6 Sol: `--browser-thinking-time heavy` (Pro UI)
 - Browser Pro: `--model gpt-5-pro`, without a thinking-time flag
 - API Pro maximum reasoning: `--model gpt-5.6-sol --reasoning-mode pro --reasoning-effort max`
 - Fallback: explicitly use `--model gpt-5.5-pro` when GPT-5.6 is unavailable
@@ -44,7 +45,7 @@ For base Sol, use:
 
 ```bash
 oracle --engine browser --model gpt-5.6-sol \
-  --browser-thinking-time heavy \
+  --browser-thinking-time extra-high \
   -p "<task>" --file "src/**"
 ```
 
@@ -108,7 +109,7 @@ and a live browser run records strict GPT-5.6 selection evidence.
   - `npx -y @steipete/oracle --dry-run summary --files-report -p "<task>" --file "src/**"`
 
 - Browser run:
-  - `oracle --engine browser --model gpt-5.6-sol --browser-thinking-time heavy -p "<task>" --file "src/**"`
+  - `oracle --engine browser --model gpt-5.6-sol --browser-thinking-time extra-high -p "<task>" --file "src/**"`
 
 - Manual paste fallback:
   - `npx -y @steipete/oracle --render-markdown --copy-markdown -p "<task>" --file "src/**"`
