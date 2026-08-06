@@ -113,6 +113,31 @@ describe("session lifecycle", () => {
     }
   });
 
+  test("session directory and log artifacts are owner-only (no world/group read)", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const meta = await sessionModule.initializeSession(
+      { prompt: "sensitive prompt", model: "gpt-5.2-pro" },
+      "/tmp/cwd",
+    );
+    const baseDir = path.join(sessionModule.getSessionsDir(), meta.id);
+    // The output log receives the full prompt + attached file contents + model response,
+    // so it must not be readable by other local users.
+    const writer = sessionModule.createSessionLogWriter(meta.id);
+    writer.writeChunk("SENSITIVE MODEL RESPONSE\n");
+    writer.stream.end();
+    await new Promise((resolve) => writer.stream.on("close", resolve));
+
+    const mode = async (p: string) => (await stat(p)).mode & 0o777;
+    expect(await mode(sessionModule.getSessionsDir())).toBe(0o700);
+    expect(await mode(baseDir)).toBe(0o700);
+    expect(await mode(path.join(baseDir, "models"))).toBe(0o700);
+    expect(await mode(path.join(baseDir, "output.log"))).toBe(0o600);
+    expect(await mode(path.join(baseDir, "models", "gpt-5.2-pro.json"))).toBe(0o600);
+    expect(await mode(path.join(baseDir, "models", "gpt-5.2-pro.log"))).toBe(0o600);
+  });
+
   test("readSessionMetadata returns null for missing sessions and updateSessionMetadata persists changes", async () => {
     expect(await sessionModule.readSessionMetadata("missing")).toBeNull();
     const meta = await sessionModule.initializeSession(
