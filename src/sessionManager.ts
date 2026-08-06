@@ -359,9 +359,13 @@ const DEFAULT_SLUG = "session";
 const MAX_SLUG_WORDS = 5;
 const MIN_CUSTOM_SLUG_WORDS = 3;
 const MAX_SLUG_WORD_LENGTH = 10;
+// Session artifacts (prompt, attached file contents, model responses) are sensitive.
+// Keep them owner-only, matching the meta.json / bridge-config posture (0o600/0o700).
+const SESSION_DIR_MODE = 0o700;
+const SESSION_FILE_MODE = 0o600;
 
 async function ensureDir(dirPath: string): Promise<void> {
-  await fs.mkdir(dirPath, { recursive: true });
+  await fs.mkdir(dirPath, { recursive: true, mode: SESSION_DIR_MODE });
 }
 
 export async function ensureSessionStorage(): Promise<void> {
@@ -467,7 +471,7 @@ async function reserveUniqueSessionDir(baseSlug: string): Promise<string> {
   for (;;) {
     const dir = sessionDir(candidate);
     try {
-      await fs.mkdir(dir, { recursive: false });
+      await fs.mkdir(dir, { recursive: false, mode: SESSION_DIR_MODE });
       return candidate;
     } catch (error) {
       if (!isFileExistsError(error)) {
@@ -534,7 +538,10 @@ export async function updateModelRunMetadata(
     ...updates,
     model,
   });
-  await fs.writeFile(modelJsonPath(sessionId, model), JSON.stringify(next, null, 2), "utf8");
+  await fs.writeFile(modelJsonPath(sessionId, model), JSON.stringify(next, null, 2), {
+    encoding: "utf8",
+    mode: SESSION_FILE_MODE,
+  });
   return next;
 }
 
@@ -639,12 +646,15 @@ export async function initializeSession(
           status: "pending",
           log: { path: path.relative(sessionDir(sessionId), logFilePath) },
         };
-        await fs.writeFile(jsonPath, JSON.stringify(modelRecord, null, 2), "utf8");
-        await fs.writeFile(logFilePath, "", "utf8");
+        await fs.writeFile(jsonPath, JSON.stringify(modelRecord, null, 2), {
+          encoding: "utf8",
+          mode: SESSION_FILE_MODE,
+        });
+        await fs.writeFile(logFilePath, "", { encoding: "utf8", mode: SESSION_FILE_MODE });
       },
     ),
   );
-  await fs.writeFile(logPath(sessionId), "", "utf8");
+  await fs.writeFile(logPath(sessionId), "", { encoding: "utf8", mode: SESSION_FILE_MODE });
   return metadata;
 }
 
@@ -759,9 +769,9 @@ async function attachModelRuns(meta: SessionMetadata, sessionId: string): Promis
 export function createSessionLogWriter(sessionId: string, model?: string): SessionLogWriter {
   const targetPath = model ? modelLogPath(sessionId, model) : logPath(sessionId);
   if (model) {
-    mkdirSync(modelsDir(sessionId), { recursive: true });
+    mkdirSync(modelsDir(sessionId), { recursive: true, mode: SESSION_DIR_MODE });
   }
-  const stream = createWriteStream(targetPath, { flags: "a" });
+  const stream = createWriteStream(targetPath, { flags: "a", mode: SESSION_FILE_MODE });
   const logLine = (line = ""): void => {
     stream.write(`${line}\n`);
   };
