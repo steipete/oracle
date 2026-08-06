@@ -46,6 +46,7 @@ API mode is opt-in and reads keys from the environment. Set whichever providers 
 | Google       | `GEMINI_API_KEY`                                                  | Gemini 3.1 Pro, Gemini 3.5 Flash, Gemini 3.1 Flash-Lite |
 | Anthropic    | `ANTHROPIC_API_KEY`                                               | Claude Sonnet 4.6, Claude Opus 4.1                      |
 | OpenRouter   | `OPENROUTER_API_KEY`                                              | Any OpenRouter id (e.g. `minimax/minimax-m2`)           |
+| OrcaRouter   | `OPENAI_API_KEY` + `--base-url https://api.orcarouter.ai/v1`      | Any OrcaRouter id (e.g. `openai/gpt-5.5`)               |
 
 If no key is set, Oracle defaults to **browser mode** and drives ChatGPT directly — see [Browser Mode](browser-mode.md) for the manual-login flow.
 

@@ -171,3 +171,16 @@ oracle --model minimax/minimax-m2 --prompt "Summarize the notes"
 - If `OPENROUTER_API_KEY` is set and no provider-specific key is available for the chosen model, Oracle defaults the base URL to `https://openrouter.ai/api/v1`.
 - You can still set `--base-url` explicitly; if it points at OpenRouter (with or without a trailing `/responses`), Oracle will use `OPENROUTER_API_KEY` and forward optional attribution headers (`OPENROUTER_REFERER` / `OPENROUTER_TITLE`).
 - Multi-model runs accept OpenRouter ids alongside built-in ones. See `docs/openrouter.md` for details.
+
+## OrcaRouter
+
+[OrcaRouter](https://www.orcarouter.ai) is an OpenAI-compatible model routing gateway with the same `provider/model` id convention as OpenRouter. It works through Oracle's existing custom `--base-url` path:
+
+```bash
+export OPENAI_API_KEY="sk-orca-..."
+oracle --engine api --provider openai --base-url https://api.orcarouter.ai/v1 --model openai/gpt-5.5 -p "Summarize the notes"
+```
+
+- Model ids keep their upstream namespace, e.g. `openai/gpt-5.5` or `orcarouter/auto` (OrcaRouter's adaptive router). Get an API key at https://www.orcarouter.ai/console; keys start with `sk-orca-`.
+- Requests go through Oracle's Chat Completions adapter (like other custom `--base-url` routes), which sends the flat `reasoning_effort` field OrcaRouter expects.
+- To use a gateway model under another namespace (e.g. `anthropic/claude-sonnet-4.6`), Oracle resolves slash-qualified ids from `OPENROUTER_API_KEY` — set that variable to your OrcaRouter key as well.
