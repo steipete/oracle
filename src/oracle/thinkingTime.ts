@@ -5,6 +5,10 @@ export const THINKING_TIME_LEVELS = [
   "standard",
   "extended",
   "extra-high",
+  // ChatGPT's unified Intelligence picker exposes Pro as the top effort tier of
+  // the active model rather than a separate model row, so it is a level here.
+  // Kept distinct from "heavy": requesting Pro must be deliberate.
+  "pro",
   "heavy",
 ] as const;
 export const THINKING_TIME_ALIASES = [
@@ -46,6 +50,8 @@ export function normalizeThinkingTimeLevel(
     case "extrahigh":
     case "xhigh":
       return "extra-high";
+    case "pro":
+      return "pro";
     case "heavy":
       return "heavy";
     default:

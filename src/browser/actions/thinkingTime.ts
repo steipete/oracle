@@ -65,8 +65,12 @@ export async function ensureThinkingTime(
   const capitalizedLevel = level.charAt(0).toUpperCase() + level.slice(1);
   const targetModelKind = inferThinkingTargetModelKind(desiredModel);
   const observedModelKind = result && "modelKind" in result ? result.modelKind : null;
+  // Pro is expensive and rate-limited, so a Pro request must never degrade quietly
+  // into a cheaper tier. Requesting it explicitly (level "pro") fails closed on its
+  // own, independently of the legacy Pro-model + "extended" combination.
   const strictProEffort =
-    (targetModelKind === "pro" || observedModelKind === "pro") && level === "extended";
+    level === "pro" ||
+    ((targetModelKind === "pro" || observedModelKind === "pro") && level === "extended");
 
   switch (result?.status) {
     case "already-selected":
@@ -90,13 +94,17 @@ export async function ensureThinkingTime(
             : "";
       const message = `Thinking time: ${result.status.replaceAll("-", " ")}${kindHint} (requested ${capitalizedLevel})`;
       if (strictProEffort) {
-        throw new Error(`${message}; refusing to submit without confirmed Pro Extended.`);
+        const target = level === "pro" ? "Pro" : "Pro Extended";
+        throw new Error(`${message}; refusing to submit without confirmed ${target}.`);
       }
-      // Nothing was clicked, so the tab keeps whatever effort it already had —
-      // which is not necessarily ChatGPT's default.
-      logger(
-        formatBrowserThinkingLog(`${message}; keeping the effort already selected in ChatGPT.`),
-      );
+      // "selection-unverified" is the one status here that already dispatched a
+      // click, so the effort may or may not have moved. Every other status left
+      // the tab on whatever effort it had — which is not necessarily the default.
+      const outcome =
+        result.status === "selection-unverified"
+          ? "the effort in ChatGPT is unconfirmed"
+          : "keeping the effort already selected in ChatGPT";
+      logger(formatBrowserThinkingLog(`${message}; ${outcome}.`));
       return;
     }
     default: {
@@ -213,7 +221,12 @@ function buildThinkingTimeExpression(
       'extra-high': ['extra high', 'sehr hoch', '极高'],
       heavy: ['heavy', 'schwer', '重度', '加重'],
     };
-    const targetTokens = LEVEL_TOKENS[TARGET_LEVEL] || [TARGET_LEVEL];
+    // Pro is a tier you can request, but it is also a MODEL name, so it must never
+    // be used to decide whether a control or a menu is an effort owner: a model pill
+    // reading "Pro" would be claimed as the effort pill, and a model menu listing
+    // "Instant"/"Pro" would look like a tier list. Keep it to target matching only.
+    const TARGET_LEVEL_TOKENS = { ...LEVEL_TOKENS, pro: ['pro'] };
+    const targetTokens = TARGET_LEVEL_TOKENS[TARGET_LEVEL] || [TARGET_LEVEL];
 
     const INITIAL_WAIT_MS = 150;
     const STEP_WAIT_MS = 200;
@@ -440,7 +453,20 @@ function buildThinkingTimeExpression(
       diagnostic: collectPickerDiagnostic(),
     });
     const findOptionInMenu = (menu, modelKindOverride = null) => {
-      const items = Array.from(menu.querySelectorAll(MENU_ITEM_SELECTOR));
+      // Container controls reveal other controls; they are not tiers you can pick.
+      // Two shapes exist and both can collide with a tier label: a submenu opener
+      // ("ModelGPT-5.6 Pro" would satisfy a Pro request) and a disclosure toggle
+      // (German "Erweitert" is literally one of the extended tokens, so the
+      // Advanced toggle would satisfy an extended request and be clicked in place
+      // of the tier). Detect them structurally rather than by label: a real tier row
+      // carries a checked state, while a container carries expansion state.
+      const isContainerControl = (node) =>
+        node?.getAttribute?.('aria-haspopup') === 'menu' ||
+        (node?.getAttribute?.('aria-expanded') !== null &&
+          node?.getAttribute?.('aria-checked') === null);
+      const items = Array.from(menu.querySelectorAll(MENU_ITEM_SELECTOR)).filter(
+        (item) => !isContainerControl(item),
+      );
       const modelKind = modelKindOverride || effectiveTargetModelKind();
       if (modelKind === 'pro') {
         // GPT-5.6's unified Intelligence picker exposes Pro as the highest
@@ -482,7 +508,11 @@ function buildThinkingTimeExpression(
         const itemText = normalize(
           (item.textContent ?? '') + ' ' + (item.getAttribute?.('aria-label') ?? ''),
         );
-        if (modelKind !== 'pro' && hasToken(itemText, 'pro')) {
+        // Pro rows are skipped for non-Pro targets so "High" never resolves to
+        // "Pro". Two things lift this: an explicit TARGET_LEVEL of 'pro', and a
+        // legacy Pro-model menu (modelKind === 'pro'), whose rows are all Pro
+        // variants so excluding them would leave nothing to match.
+        if (TARGET_LEVEL !== 'pro' && modelKind !== 'pro' && hasToken(itemText, 'pro')) {
           continue;
         }
         if (
@@ -712,6 +742,119 @@ function buildThinkingTimeExpression(
       return null;
     };
 
+    // ---------- Unified Intelligence picker: Advanced -> Effort submenu ----------
+    // A newer ChatGPT layout replaces the flat effort rows with a "power" slider
+    // (simple view) plus an "Advanced" view holding two submenu openers: Model and
+    // Effort. The tier rows only exist inside the Effort submenu, so the flat scan
+    // of the top-level menu finds nothing and we must expand and descend.
+    const ADVANCED_VIEW_SELECTOR = '[data-testid="composer-model-picker-slider-advanced-view"]';
+    const SUBMENU_OPENER_SELECTOR = '[role="menuitem"][aria-haspopup="menu"]';
+    const nodeLabel = (node) =>
+      normalize((node?.getAttribute?.('aria-label') ?? '') + ' ' + (node?.textContent ?? ''));
+    // Row labels in this menu concatenate without separators ("EffortHigh"), so
+    // token matching cannot be used here — substring is deliberate, as in
+    // countEffortLevels above.
+    const ADVANCED_WORDS = ['advanced', 'erweitert', '高级', 'avanzado', 'avancado', 'avance'];
+    const EFFORT_WORDS = [
+      'effort', 'aufwand', '强度', '努力',
+      'esfuerzo', 'esforco', 'sforzo', 'inspanning', 'wysilek',
+    ];
+    const containsAny = (label, words) => words.some((word) => label.includes(word));
+    const findAdvancedToggle = (menu) => {
+      for (const item of (menu || document).querySelectorAll('[role="menuitem"]')) {
+        if (!isVisible(item)) continue;
+        if (containsAny(nodeLabel(item), ADVANCED_WORDS)) return item;
+      }
+      return null;
+    };
+    // Verify the shape rather than trusting the selector: a tier row must never be
+    // mistaken for the opener, or hovering it would silently change the effort.
+    const isSubmenuOpener = (node) =>
+      node?.getAttribute?.('aria-haspopup') === 'menu' &&
+      (node?.getAttribute?.('role') ?? '') === 'menuitem';
+    // The Effort opener's label is the word "Effort" plus the tier it currently sits
+    // on ("EffortHigh"). Positive identification only: the sibling Model opener has
+    // the identical shape and can read "ModelGPT-5.6 Pro", so guessing from tier
+    // words would pick it and then click model rows as if they were efforts. An
+    // unrecognised language yields no opener, and the caller fails instead of
+    // gambling on the wrong control.
+    const findEffortSubmenuOpener = (menu) => {
+      const scope = menu?.querySelector?.(ADVANCED_VIEW_SELECTOR) || menu || document;
+      for (const item of scope.querySelectorAll(SUBMENU_OPENER_SELECTOR)) {
+        if (!isVisible(item) || !isSubmenuOpener(item)) continue;
+        if (containsAny(nodeLabel(item), EFFORT_WORDS)) return item;
+      }
+      return null;
+    };
+    // countEffortLevels reads aggregate menu text, where one "Extra High" row scores
+    // twice (once as "high", once as "extra high"). Count distinct levels across
+    // distinct rows instead, so ">= 2" really means two selectable tiers.
+    const countDistinctTierRows = (menu) => {
+      if (!menu) return 0;
+      const matched = new Set();
+      for (const row of menu.querySelectorAll(MENU_ITEM_SELECTOR)) {
+        if (isSubmenuOpener(row)) continue;
+        const text = nodeLabel(row);
+        for (const [level, tokens] of Object.entries(LEVEL_TOKENS)) {
+          if (matchesTokens(text, tokens)) matched.add(level);
+        }
+      }
+      return matched.size;
+    };
+    const resolveSubmenuFor = (opener, parentMenu) => {
+      const id = opener?.getAttribute?.('aria-controls');
+      if (id) {
+        const node = document.getElementById?.(id);
+        if (isVisible(node) && countDistinctTierRows(node) >= 2) return node;
+      }
+      let best = null;
+      for (const menu of document.querySelectorAll(MENU_CONTAINER_SELECTOR)) {
+        if (menu === parentMenu || menu.contains?.(opener) || !isVisible(menu)) continue;
+        const hits = countDistinctTierRows(menu);
+        if (hits >= 2 && (!best || hits > best.hits)) best = { menu, hits };
+      }
+      return best?.menu ?? null;
+    };
+    const selectEffortFromAdvancedSubmenu = async (parentMenu, modelKindOverride = null) => {
+      if (!parentMenu) return null;
+      // React can mount the advanced view well after the click under load, so poll
+      // for the opener to the same deadline the submenu gets instead of assuming it
+      // rendered within one STEP_WAIT_MS. Re-expand if the toggle collapses again.
+      let opener = null;
+      const openerDeadline = performance.now() + MAX_WAIT_MS;
+      while (!opener && performance.now() < openerDeadline) {
+        const toggle = findAdvancedToggle(parentMenu);
+        if (toggle && toggle.getAttribute?.('aria-expanded') === 'false') {
+          dispatchClickSequence(toggle);
+          await sleep(STEP_WAIT_MS);
+        }
+        opener = findEffortSubmenuOpener(parentMenu);
+        if (opener) break;
+        await sleep(100);
+      }
+      if (!opener) return null;
+      dispatchHoverSequence(opener);
+      if (opener.getAttribute?.('aria-expanded') !== 'true') {
+        dispatchClickSequence(opener);
+      }
+      const deadline = performance.now() + MAX_WAIT_MS;
+      while (performance.now() < deadline) {
+        const submenu = resolveSubmenuFor(opener, parentMenu);
+        if (submenu) {
+          return selectAndVerify(
+            opener,
+            () => {
+              const current = resolveSubmenuFor(opener, parentMenu);
+              return current ? findOptionInMenu(current, modelKindOverride) : null;
+            },
+            modelKindOverride,
+          );
+        }
+        await sleep(100);
+      }
+      return null;
+    };
+
     // Current ChatGPT exposes a standalone Pro or Thinking composer pill whose
     // controlled menu contains the effort levels. Prefer this ownership boundary
     // before probing older model-picker layouts.
@@ -808,9 +951,26 @@ function buildThinkingTimeExpression(
     }
     if (composerEffortPill) {
       if (attemptedModelButton && attemptedModelButton !== composerEffortPill) closeOpenMenus();
+      // In the unified Intelligence picker the composer pill shows the current
+      // EFFORT ("Pro", "High"), not the model. Reading a Pro *model* out of it would
+      // lift the Pro-row exclusion in findOptionInMenu and let a lower-tier request
+      // settle on Pro. Only a pill naming a tier and nothing else qualifies: legacy
+      // pills read "Pro Extended" (model + effort) and must keep naming their model,
+      // or a Pro Extended user asking for extended would be moved down to High.
+      const pillLabel = normalize(
+        (composerEffortPill.getAttribute?.('aria-label') ?? '') +
+          ' ' +
+          (composerEffortPill.textContent ?? ''),
+      );
+      const pillIsBareEffortTier = Object.values(TARGET_LEVEL_TOKENS).some((tokens) =>
+        tokens.some((token) => normalize(token) === pillLabel),
+      );
+      const pillNamesEffortNotModel =
+        TARGET_IS_GPT56_MODEL ||
+        (pillIsBareEffortTier && Boolean(document.querySelector(INTELLIGENCE_MENU_SELECTOR)));
       const composerModelKind =
         TARGET_MODEL_KIND ||
-        (TARGET_IS_GPT56_MODEL ? 'versioned' : modelKindFromNode(composerEffortPill));
+        (pillNamesEffortNotModel ? 'versioned' : modelKindFromNode(composerEffortPill));
       if (composerEffortPill.getAttribute?.('aria-expanded') !== 'true') {
         dispatchClickSequence(composerEffortPill);
         await sleep(INITIAL_WAIT_MS);
@@ -822,6 +982,14 @@ function buildThinkingTimeExpression(
           const proEffortResult = await selectProEffortFromSubmenu();
           if (proEffortResult) {
             return proEffortResult;
+          }
+          // Flat rows win when present; only descend into Advanced -> Effort when
+          // this menu has no matching tier of its own (the slider layout).
+          if (!findOptionInMenu(menu, composerModelKind)) {
+            const advancedResult = await selectEffortFromAdvancedSubmenu(menu, composerModelKind);
+            if (advancedResult) {
+              return advancedResult;
+            }
           }
           return selectAndVerify(
             composerEffortPill,
