@@ -19,7 +19,8 @@ If you’re running Gemini, also see `docs/gemini.md`.
 jq '.' ~/.oracle/cookies.json  # file must contain CookieParam[]
 oracle --engine browser \
   --browser-inline-cookies-file ~/.oracle/cookies.json \
-  --model "GPT-5.5 Pro" \
+  --model gpt-5.5 \
+  --browser-thinking-time pro \
   -p "Run the UI smoke" \
   --file "src/**/*.ts" --file "!src/**/*.test.ts"
 ```
@@ -49,7 +50,8 @@ Use this when you already have a signed-in Chrome session running with DevTools 
 ```bash
 oracle --engine browser \
   --browser-attach-running \
-  --model "GPT-5.5 Pro" \
+  --model gpt-5.5 \
+  --browser-thinking-time pro \
   -p "Summarize the last assistant response in one paragraph"
 ```
 
@@ -61,7 +63,8 @@ Notes:
   oracle --engine browser \
     --browser-attach-running \
     --remote-chrome 127.0.0.1:63332 \
-    --model "GPT-5.5 Pro" \
+    --model gpt-5.5 \
+    --browser-thinking-time pro \
     -p "Summarize the last assistant response in one paragraph"
   ```
 - Oracle reads local `DevToolsActivePort` metadata, connects to the browser websocket directly, and then reuses the normal CDP automation flow.
@@ -77,10 +80,11 @@ Notes:
    - Launcher mode starts Chrome via `chrome-launcher` and connects with `chrome-remote-interface`.
    - Attach-running mode reads local `DevToolsActivePort` metadata for the selected local port, connects to the browser websocket, opens a dedicated tab, and reuses the same DOM automation/capture flow against that attached browser.
    - Launcher mode can optionally copy cookies from the requested browser profile via Oracle’s built-in cookie reader (Keychain/DPAPI aware) so you stay signed in.
-   - Navigates to `chatgpt.com`, switches the model to the requested GPT-5.5 / GPT-5.4 / GPT-5.2 variant, optionally activates Deep Research, pastes the prompt, waits for completion, and copies the markdown via the built-in “copy turn” button.
+   - Navigates to `chatgpt.com`, switches the model to the requested GPT-5.5 / GPT-5.4 variant (including `Advanced` → `Model` in the unified picker), optionally activates Deep Research, pastes the prompt, waits for completion, and copies the markdown via the built-in “copy turn” button.
    - Immediately probes the cookie-authenticated `/api/auth/session` endpoint in the ChatGPT tab and checks only whether it contains a user; returned tokens are never logged. If that endpoint is unavailable, Oracle falls back to the legacy `/backend-api/me` probe and a visible composer plus profile or chat-history authentication signals. Auth pages, visible login controls, resolved sessions without a user, composer-only shells, and pages without profile/history signals still fail with login guidance.
    - When `--file` inputs would push the pasted composer content over ~60k characters, we switch to uploading attachments (optionally bundled) and wait for ChatGPT to re-enable the send button before submitting the combined system+user prompt.
    - Launcher mode cleans up the temporary profile unless `--browser-keep-browser` is passed.
+
 3. **Session integration** – browser sessions use the normal log writer, add `mode: "browser"` plus `browser.config/runtime` metadata, and persist Chrome pid/port or websocket attach metadata plus the Oracle-owned target/tab URL for reattach.
 4. **Usage accounting** – we estimate input tokens with the same tokenizer used for API runs and estimate output tokens via `estimateTokenCount`. `oracle status` therefore shows comparable cost/timing info even though the call ran through the browser.
 
@@ -101,7 +105,7 @@ Notes:
 - If an assistant response still times out (common with long Pro runs), Oracle marks the session as an incomplete capture, stores reattach/runtime diagnostics, and keeps enough browser metadata for `oracle session <id>` to recover the final answer. Visible ChatGPT rate-limit, temporary-unavailable, and authentication/challenge warnings are included in the error and session metadata instead of being reduced to a generic timeout. Increase `--browser-timeout` only when the browser session is truly unrecoverable.
 - `--browser-model-strategy <select|current|ignore>`: control ChatGPT model selection. `select` (default) switches to the requested model; `current` keeps the active model and logs its label; `ignore` skips the picker entirely. (Ignored for Gemini web runs.)
 - Temporary Chat can reduce account-sidebar clutter for one-shot browser consults, but it is a different ChatGPT workflow: Oracle skips archive attempts there and the local transcript/artifacts are the durable record. Verify live behavior before relying on Project Sources, Deep Research reports, or multi-turn persistence.
-- `--browser-thinking-time <light|standard|extended|extra-high|pro|heavy>`: set the ChatGPT thinking-time intensity (Thinking/Pro models only). On GPT-5.6 Sol, `extra-high` selects Extra High; a `heavy` request accepts an already-selected Pro pill but otherwise selects only a matching Heavy row. Use `pro` to select the Pro tier of the model already in use — because Pro is expensive and rate-limited, `pro` fails closed: an unconfirmed selection aborts the run rather than quietly submitting at a cheaper tier. Effort rows are matched in English, German (`Sofort`/`Mittel`/`Hoch`/`Sehr hoch`), and Chinese; when the requested tier has no row in the current UI language, Oracle keeps the effort already selected in the tab instead of switching the model. In ChatGPT's unified Intelligence picker the tiers sit behind `Advanced` → `Effort`, and Oracle opens that submenu automatically; if the `Effort` label is in a language Oracle does not recognize it declines to guess which control to use rather than risk changing the model. You can also set a default in `~/.oracle/config.json` via `browser.thinkingTime`.
+- `--browser-thinking-time <light|standard|extended|extra-high|pro|heavy>`: set the ChatGPT thinking-time intensity (Thinking/Pro models only). On GPT-5.6 Sol, `extra-high` selects Extra High; a `heavy` request accepts an already-selected Pro pill but otherwise selects only a matching Heavy row. Use `--model gpt-5.5 --browser-thinking-time pro` for GPT-5.5 with explicit Pro effort. Because Pro is expensive and rate-limited, `pro` fails closed: an unconfirmed selection aborts the run rather than quietly submitting at a cheaper tier. Effort rows are matched in English, German (`Sofort`/`Mittel`/`Hoch`/`Sehr hoch`), and Chinese; when the requested tier has no row in the current UI language, Oracle keeps the effort already selected in the tab instead of switching the model. In ChatGPT's unified Intelligence picker Oracle opens `Advanced` → `Model` first, verifies the requested version, then opens `Advanced` → `Effort`; if either opener label is not recognized it declines to guess which control to use. You can also set a default in `~/.oracle/config.json` via `browser.thinkingTime`.
 - GPT-5.5 Pro Extended is verified from the selected item in ChatGPT's standalone Pro/Thinking effort pill or compatible Intelligence/model-picker menu. A run **fails closed** if Extended cannot be confirmed rather than silently submitting at a weaker effort. Detection failures write a bounded, redacted model-picker diagnostic to the normal session log.
 - `--browser-research deep`: activate ChatGPT Deep Research before submitting the prompt. Use this for broad public-web research and final cited reports, not as a replacement for GPT-5.x Pro Heavy code review or pure reasoning.
 - `--browser-follow-up <prompt>`: submit another prompt in the same ChatGPT conversation after the initial answer. Repeat the flag for multi-turn reviews such as “challenge your recommendation”, “compare against this constraint”, then “give the final decision”. Deep Research has its own report lifecycle, so browser follow-ups are rejected when `--browser-research deep` is enabled.

@@ -167,6 +167,10 @@ Run these four smoke tests whenever we touch browser automation:
 `pnpm run oracle -- --engine browser --model gpt-5.5-instant --prompt "Give me two short markdown bullet points about tables"`
 Expect a near-instant response (no Thinking spinner) and confirm the composer pill shows the "Instant" row, not "Thinking 5.5" or "Pro". Run after any change to the 5.5 picker tokens.
 
+2c. **GPT-5.5 Pro effort through the unified picker**
+`pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5 --browser-thinking-time pro --write-output response.txt --prompt "Say Hi!"`
+Confirm the logs report a verified GPT-5.5 model followed by `Thinking time: Pro`, and `response.txt` contains the captured answer. Exercise both a tab starting on another model and a retained tab where GPT-5.5 is already selected. Never click ChatGPT's "Answer now" shortcut while the Pro response is thinking.
+
 3. **GPT-5.5 + attachment**
    Prepare `/tmp/browser-md.txt` with a short note, then run
    `pnpm run oracle -- --engine browser --model gpt-5.5 --prompt "Summarize the key idea from the attached note" --file /tmp/browser-md.txt`
@@ -251,7 +255,7 @@ Use this when you need to inspect the live ChatGPT composer (DOM state, markdown
    ```bash
    tmux new -d -s oracle-browser \\
      "pnpm run oracle -- --engine browser --browser-keep-browser \\
-      --model 'GPT-5.5 Pro' --prompt 'Debug via DevTools.'"
+      --model gpt-5.5 --browser-thinking-time pro --prompt 'Debug via DevTools.'"
    ```
 
    Keeping the run in tmux prevents your shell from blocking and ensures Chrome stays open afterward.

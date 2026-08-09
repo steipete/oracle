@@ -23,7 +23,7 @@ Recommended defaults:
 - Base Sol: `--model gpt-5.6-sol`
 - Base Sol maximum reasoning: `--browser-thinking-time extra-high` (Extra High)
 - Explicit Pro effort on GPT-5.6 Sol: `--browser-thinking-time pro` (fails closed if Pro cannot be confirmed)
-- Browser Pro: `--model gpt-5-pro`, without a thinking-time flag
+- Browser GPT-5.5 with Pro effort: `--model gpt-5.5 --browser-thinking-time pro`
 - API Pro maximum reasoning: `--model gpt-5.6-sol --reasoning-mode pro --reasoning-effort max`
 - Fallback: explicitly use `--model gpt-5.5-pro` when GPT-5.6 is unavailable
 - Attachments: directories/globs plus excludes; never attach secrets by default

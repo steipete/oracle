@@ -47,15 +47,17 @@ function isMissingChatGptSessionError(error: unknown): boolean {
 
 const CASES = [
   {
-    name: "pro",
-    desiredModel: "Pro",
-    expected: ["pro"],
+    name: "gpt-5.5-pro-effort",
+    desiredModel: "Thinking 5.5",
+    thinkingTime: "pro" as const,
+    expectedModel: ["5.5"],
+    expectedEffort: ["pro"],
   },
 ];
 
 (LIVE ? describe : describe.skip)("ChatGPT browser live model selection", () => {
   test(
-    "selects the current bare Pro picker row reliably",
+    "selects GPT-5.5 and its Pro effort through the Advanced picker",
     async () => {
       if (!(await hasChatGptCookies())) return;
       // Learned: serialize live browser tests to avoid Chrome profile contention.
@@ -72,6 +74,7 @@ const CASES = [
                 config: {
                   chromeProfile: "Default",
                   desiredModel: entry.desiredModel,
+                  thinkingTime: entry.thinkingTime,
                   timeoutMs: 180_000,
                 },
                 log,
@@ -88,7 +91,17 @@ const CASES = [
               expect(modelLog).toBeTruthy();
               if (modelLog) {
                 const label = normalizeLabel(modelLog.replace(/^model picker:\s*/i, ""));
-                for (const token of entry.expected) {
+                for (const token of entry.expectedModel) {
+                  expect(label).toContain(token);
+                }
+              }
+              const effortLog = lines.find((line) =>
+                line.toLowerCase().startsWith("thinking time:"),
+              );
+              expect(effortLog).toBeTruthy();
+              if (effortLog) {
+                const label = normalizeLabel(effortLog.replace(/^thinking time:\s*/i, ""));
+                for (const token of entry.expectedEffort) {
                   expect(label).toContain(token);
                 }
               }

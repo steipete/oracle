@@ -150,7 +150,7 @@ interface CliOptions extends OptionValues {
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string;
   copyProfile?: string;
-  browserThinkingTime?: "light" | "standard" | "extended" | "extra-high" | "heavy";
+  browserThinkingTime?: "light" | "standard" | "extended" | "extra-high" | "pro" | "heavy";
   browserResearch?: "off" | "deep";
   browserFollowUp?: string[];
   browserAllowCookieErrors?: boolean;

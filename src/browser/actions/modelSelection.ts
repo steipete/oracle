@@ -287,10 +287,24 @@ function buildModelSelectionExpression(
     );
 
     const isVisibleElement = (node) => {
+      if (typeof HTMLElement === 'undefined') return false;
       if (!(node instanceof HTMLElement)) return false;
-      const rect = node.getBoundingClientRect();
-      const style = window.getComputedStyle(node);
-      return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      try {
+        const rect = node.getBoundingClientRect?.();
+        const style = window.getComputedStyle?.(node);
+        if (!rect) return true;
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style?.display !== 'none' &&
+          style?.visibility !== 'hidden'
+        );
+      } catch {
+        // DOM test doubles and older Chromium nodes can omit one of these APIs.
+        // Treat them as visible; real hidden picker rows still report a zero rect
+        // or display:none and are filtered above.
+        return true;
+      }
     };
     const looksLikeModelPill = (node) => {
       if (!(node instanceof HTMLElement) || !node.matches('button.__composer-pill')) return false;
@@ -446,12 +460,112 @@ function buildModelSelectionExpression(
       }
       return true;
     };
+
+    // ---------- Unified Intelligence picker: Advanced -> Model submenu ----------
+    // The slider picker exposes only the current effort in the composer pill. Its
+    // model versions live behind Advanced -> Model, next to an identically-shaped
+    // Effort submenu. Identify the Model opener positively so a Pro effort label can
+    // never be mistaken for a model target.
+    const ADVANCED_VIEW_SELECTOR = '[data-testid="composer-model-picker-slider-advanced-view"]';
+    const INTELLIGENCE_PICKER_SELECTOR = '[data-testid="composer-intelligence-picker-content"]';
+    const SUBMENU_OPENER_SELECTOR = '[role="menuitem"][aria-haspopup="menu"]';
+    const ADVANCED_WORDS = ['advanced', 'erweitert', '高级', 'avanzado', 'avancado', 'avance'];
+    const MODEL_WORDS = ['model', 'modell', '模型', 'modelo', 'modello', 'modele'];
+    const EFFORT_WORDS = [
+      'effort', 'aufwand', '强度', '努力',
+      'esfuerzo', 'esforco', 'sforzo', 'inspanning', 'wysilek',
+    ];
+    const pickerNodeLabel = (node) => {
+      const value =
+        (node?.getAttribute?.('aria-label') ?? '') + ' ' + (node?.textContent ?? '');
+      try {
+        return value
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/\\s+/g, ' ')
+          .trim();
+      } catch {
+        return value.toLowerCase().replace(/\\s+/g, ' ').trim();
+      }
+    };
+    const containsPickerWord = (label, words) =>
+      words.some((word) => label.includes(word));
+    const isSubmenuOpener = (node) =>
+      node?.getAttribute?.('role') === 'menuitem' &&
+      node?.getAttribute?.('aria-haspopup') === 'menu';
+    const isUnifiedPickerMenu = (menu) =>
+      Boolean(
+        menu?.getAttribute?.('data-testid') === 'composer-intelligence-picker-content' ||
+          menu?.querySelector?.(INTELLIGENCE_PICKER_SELECTOR) ||
+          menu?.querySelector?.(ADVANCED_VIEW_SELECTOR),
+      );
+    const findUnifiedPickerMenu = () =>
+      Array.from(document.querySelectorAll(${menuContainerLiteral})).find(isUnifiedPickerMenu) ??
+      null;
+    const findAdvancedToggle = (menu) => {
+      for (const item of (menu || document).querySelectorAll('[role="menuitem"]')) {
+        if (!isVisibleElement(item)) continue;
+        if (containsPickerWord(pickerNodeLabel(item), ADVANCED_WORDS)) return item;
+      }
+      return null;
+    };
+    const findModelSubmenuOpener = (menu) => {
+      const scope = menu?.querySelector?.(ADVANCED_VIEW_SELECTOR) || menu || document;
+      for (const item of scope.querySelectorAll(SUBMENU_OPENER_SELECTOR)) {
+        if (!isVisibleElement(item) || !isSubmenuOpener(item)) continue;
+        const label = pickerNodeLabel(item);
+        if (
+          containsPickerWord(label, MODEL_WORDS) &&
+          !containsPickerWord(label, EFFORT_WORDS)
+        ) {
+          return item;
+        }
+      }
+      return null;
+    };
+    const advancedModelSignalMatchesTarget = (menu = null) => {
+      const parentMenu = menu || findUnifiedPickerMenu();
+      const opener = findModelSubmenuOpener(parentMenu);
+      if (!opener) return false;
+      const label = normalizeText(pickerNodeLabel(opener));
+      const version = versionFromLabel(label);
+      if (desiredVersion && version !== desiredVersion) return false;
+      if (desiredModelVariant && !label.split(' ').includes(desiredModelVariant)) return false;
+      if (wantsPro) return labelHasProWord(label) && !labelHasLegacyProVersion(label);
+      if (wantsInstant) return label.includes('instant');
+      if (wantsThinking) return Boolean(desiredVersion) && !labelHasProWord(label);
+      if (desiredVersion) return true;
+      return normalizedTokens.some((token) => token && label.includes(token));
+    };
+    const getAdvancedModelLabel = () => {
+      const opener = findModelSubmenuOpener(findUnifiedPickerMenu());
+      if (!opener) return '';
+      const raw = (opener.textContent ?? '').trim();
+      const normalized = normalizeText(pickerNodeLabel(opener));
+      const version = versionFromLabel(normalized);
+      if (!version) return raw;
+      const [major, minor] = version.split('-');
+      const suffix = normalized.split(' ').includes('sol') ? ' Sol' : '';
+      return 'GPT-' + major + '.' + minor + suffix;
+    };
+    const isLegacyFlatIntelligencePickerOpen = () => {
+      const menu = findUnifiedPickerMenu();
+      return Boolean(
+        menu &&
+          !menu.querySelector?.(ADVANCED_VIEW_SELECTOR) &&
+          !findAdvancedToggle(menu),
+      );
+    };
     const getResolvedLabel = (observedOptionLabel = '') => {
       if (configuredSelectionMatchesTarget()) {
         const variant = getConfiguredVariantLabel();
         const version = formatModelOptionLabel(getConfiguredVersionLabel());
         if (desiredModelVariant === 'sol' && labelHasProWord(normalizeText(variant))) return version;
         return [variant, version].filter(Boolean).join(' ');
+      }
+      if (advancedModelSignalMatchesTarget()) {
+        return getAdvancedModelLabel();
       }
       const composerLabel = getComposerModelLabel();
       const normalizedComposerLabel = normalizeText(composerLabel);
@@ -511,8 +625,9 @@ function buildModelSelectionExpression(
         desiredVersion === '5-5' &&
         !hasProComposerPill() &&
         isThinkingEffortLabel(normalizedLabel) &&
-        (isNonProIntelligenceThinkingLabel(normalizedLabel) ||
-          isTargetGpt55VisibleAlias(readComposerModelSignal()))
+        (isTargetGpt55VisibleAlias(readComposerModelSignal()) ||
+          (isNonProIntelligenceThinkingLabel(normalizedLabel) &&
+            isLegacyFlatIntelligencePickerOpen()))
       ) {
         return true;
       }
@@ -584,6 +699,9 @@ function buildModelSelectionExpression(
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
     };
     const activeSelectionMatchesTarget = () => {
+      if (advancedModelSignalMatchesTarget()) {
+        return true;
+      }
       if (buttonMatchesTarget()) {
         return true;
       }
@@ -1015,6 +1133,9 @@ function buildModelSelectionExpression(
       for (const menu of menus) {
         const buttons = Array.from(menu.querySelectorAll(${menuItemLiteral}));
         for (const option of buttons) {
+          if (!isVisibleElement(option)) {
+            continue;
+          }
           if (isNestedEffortControl(option, menu)) {
             continue;
           }
@@ -1101,6 +1222,33 @@ function buildModelSelectionExpression(
       dispatchHoverSequence(node);
       dispatchClickSequence(node);
     };
+    const descendIntoAdvancedModelPicker = () => {
+      const parentMenu = findUnifiedPickerMenu();
+      if (!parentMenu) return 'unavailable';
+
+      const opener = findModelSubmenuOpener(parentMenu);
+      if (opener) {
+        if (advancedModelSignalMatchesTarget(parentMenu)) {
+          return 'already-selected';
+        }
+        const key = submenuKey(
+          normalizeText(opener.textContent ?? ''),
+          opener.getAttribute?.('data-testid') ?? '',
+        );
+        openedSubmenuKeys.add(key);
+        if (opener.getAttribute?.('aria-expanded') !== 'true') {
+          openSubmenuOption(opener);
+        }
+        return 'opened';
+      }
+
+      const advancedToggle = findAdvancedToggle(parentMenu);
+      if (!advancedToggle) return 'unavailable';
+      if (advancedToggle.getAttribute?.('aria-expanded') !== 'true') {
+        dispatchClickSequence(advancedToggle);
+      }
+      return 'expanded';
+    };
 
     return new Promise((resolve) => {
       const start = performance.now();
@@ -1185,6 +1333,17 @@ function buildModelSelectionExpression(
             }
             attempt();
           });
+          return;
+        }
+        const advancedState = descendIntoAdvancedModelPicker();
+        if (advancedState === 'already-selected') {
+          const resolvedLabel = getResolvedLabel();
+          closeMenu();
+          resolve({ status: 'already-selected', label: resolvedLabel });
+          return;
+        }
+        if (advancedState === 'expanded' || advancedState === 'opened') {
+          setTimeout(attempt, REOPEN_INTERVAL_MS / 2);
           return;
         }
         if (performance.now() - start > MAX_WAIT_MS) {
