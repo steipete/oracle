@@ -363,13 +363,86 @@ const MAX_SLUG_WORD_LENGTH = 10;
 // Keep them owner-only, matching the meta.json / bridge-config posture (0o600/0o700).
 const SESSION_DIR_MODE = 0o700;
 const SESSION_FILE_MODE = 0o600;
+const sessionStorageHardening = new Map<string, Promise<void>>();
 
 async function ensureDir(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true, mode: SESSION_DIR_MODE });
 }
 
+function isMissingPathError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+async function chmodIfPresent(targetPath: string, mode: number): Promise<boolean> {
+  try {
+    await fs.chmod(targetPath, mode);
+    return true;
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function hardenSessionStorageEntry(targetPath: string): Promise<void> {
+  let stats;
+  try {
+    stats = await fs.lstat(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return;
+    }
+    throw error;
+  }
+
+  if (stats.isSymbolicLink()) {
+    return;
+  }
+  if (stats.isDirectory()) {
+    if (!(await chmodIfPresent(targetPath, SESSION_DIR_MODE))) {
+      return;
+    }
+    let entries: string[];
+    try {
+      entries = await fs.readdir(targetPath);
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        return;
+      }
+      throw error;
+    }
+    for (const entry of entries) {
+      await hardenSessionStorageEntry(path.join(targetPath, entry));
+    }
+    return;
+  }
+  if (stats.isFile()) {
+    await chmodIfPresent(targetPath, SESSION_FILE_MODE);
+  }
+}
+
 export async function ensureSessionStorage(): Promise<void> {
-  await ensureDir(getSessionsDir());
+  const sessionsDir = getSessionsDir();
+  await ensureDir(sessionsDir);
+  if (process.platform === "win32") {
+    return;
+  }
+
+  const stats = await fs.lstat(sessionsDir);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) {
+    return;
+  }
+  const identity = `${sessionsDir}:${stats.dev}:${stats.ino}`;
+  let hardening = sessionStorageHardening.get(identity);
+  if (!hardening) {
+    hardening = hardenSessionStorageEntry(sessionsDir).catch((error) => {
+      sessionStorageHardening.delete(identity);
+      throw error;
+    });
+    sessionStorageHardening.set(identity, hardening);
+  }
+  await hardening;
 }
 
 function slugify(text: string | undefined, maxWords = MAX_SLUG_WORDS): string {
