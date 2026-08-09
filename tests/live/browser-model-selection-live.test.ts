@@ -75,7 +75,8 @@ const CASES = [
                   chromeProfile: "Default",
                   desiredModel: entry.desiredModel,
                   thinkingTime: entry.thinkingTime,
-                  timeoutMs: 180_000,
+                  // Pro browser responses can legitimately take up to ten minutes.
+                  timeoutMs: 10 * 60_000,
                 },
                 log,
               });
@@ -139,6 +140,7 @@ const CASES = [
         await releaseLiveTestLock("chatgpt-browser");
       }
     },
-    15 * 60 * 1000,
+    // Allow all three transient retries to consume the supported ten-minute Pro window.
+    35 * 60 * 1000,
   );
 });
