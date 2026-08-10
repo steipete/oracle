@@ -168,7 +168,7 @@ Run these four smoke tests whenever we touch browser automation:
 Expect a near-instant response (no Thinking spinner) and confirm the composer pill shows the "Instant" row, not "Thinking 5.5" or "Pro". Run after any change to the 5.5 picker tokens.
 
 2c. **GPT-5.5 Pro effort through the unified picker**
-`pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5 --browser-thinking-time pro --write-output response.txt --prompt "Say Hi!"`
+`pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5-pro --write-output response.txt --prompt "Say Hi!"`
 Confirm the logs report a verified GPT-5.5 model followed by `Thinking time: Pro`, and `response.txt` contains the captured answer. Exercise both a tab starting on another model and a retained tab where GPT-5.5 is already selected. Never click ChatGPT's "Answer now" shortcut while the Pro response is thinking.
 
 3. **GPT-5.5 + attachment**

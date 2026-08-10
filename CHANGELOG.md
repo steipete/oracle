@@ -14,7 +14,7 @@
 ### Fixed
 
 - Security: restrict existing and newly created session transcripts, model metadata, and browser artifacts to the current user, without following symlinks during upgrade hardening. Thanks @bunlongheng!
-- Browser: select models and reasoning effort in ChatGPT's unified Intelligence picker, where both controls moved behind `Advanced` → `Model` / `Effort` submenus next to a power slider. Model selection no longer mistakes a bare effort pill such as `High` for GPT-5.5, and `--browser-thinking-time` no longer silently keeps the previous tier or leaves Pro unreachable. Submenu openers are positively identified so the model and effort flows cannot click each other's controls.
+- Browser: select models and reasoning effort in ChatGPT's unified Intelligence picker, where both controls moved behind `Advanced` → `Model` / `Effort` submenus next to a power slider. Model selection no longer mistakes a bare effort pill such as `High` for GPT-5.5, and `gpt-5.5-pro` plus older Pro aliases now select GPT-5.5 with Pro effort while preserving explicit effort overrides. Submenu openers are positively identified so the model and effort flows cannot click each other's controls. Thanks @shivamiitgoa!
 
 ## 0.17.1 — 2026-08-02
 

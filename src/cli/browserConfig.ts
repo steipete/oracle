@@ -29,7 +29,7 @@ const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
   ["gpt-5.6-sol", "GPT-5.6 Sol"],
   ["gpt-5.6", "GPT-5.6 Sol"],
-  ["gpt-5.5-pro", "Pro"],
+  ["gpt-5.5-pro", "GPT-5.5"],
   ["gpt-5.5-instant", "GPT-5.5 Instant"],
   ["gpt-5.5", "Thinking 5.5"],
   ["gpt-5.4-pro", "Pro"],
@@ -161,10 +161,14 @@ export async function buildBrowserConfig(
   const normalizedOverride = desiredModelOverride?.toLowerCase() ?? "";
   const baseModel = options.model.toLowerCase();
   const isChatGptModel = baseModel.startsWith("gpt-") && !baseModel.includes("codex");
+  const normalizedBrowserModel = normalizeChatGptModelForBrowser(options.model);
   const shouldUseOverride =
     !isChatGptModel && normalizedOverride.length > 0 && normalizedOverride !== baseModel;
   const modelStrategy =
     normalizeBrowserModelStrategy(options.browserModelStrategy) ?? DEFAULT_MODEL_STRATEGY;
+  const thinkingTime =
+    normalizeThinkingTimeLevel(options.browserThinkingTime) ??
+    (modelStrategy === "select" && normalizedBrowserModel === "gpt-5.5-pro" ? "pro" : undefined);
   assertBrowserModelAvailable(options.model, modelStrategy);
   const cookieNames = parseCookieNames(
     options.browserCookieNames ?? process.env.ORACLE_BROWSER_COOKIE_NAMES,
@@ -282,7 +286,7 @@ export async function buildBrowserConfig(
     allowCookieErrors: options.browserAllowCookieErrors ?? true,
     remoteChrome,
     browserTabRef: options.browserTab ?? undefined,
-    thinkingTime: normalizeThinkingTimeLevel(options.browserThinkingTime) ?? undefined,
+    thinkingTime,
     researchMode: options.browserResearch === "deep" ? "deep" : "off",
     archiveConversations: options.browserArchive,
   };

@@ -344,7 +344,7 @@ describe("summarizeModelRunsForConsult", () => {
           resolvedEngine: "browser",
           model: "gpt-5.5-pro",
           browser: expect.objectContaining({
-            desiredModel: "Pro",
+            desiredModel: "GPT-5.5",
             thinkingTime: "extended",
             modelStrategy: "select",
             imageOutputPath: path.join(realpathSync(home), "generated", "from-mcp.png"),
