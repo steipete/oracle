@@ -6,5 +6,8 @@ overrides:
   protobufjs: 8.7.2
   vite: 8.2.1
 
-onlyBuiltDependencies:
-  - esbuild
+allowBuilds:
+  "@google/genai": false
+  esbuild: true
+
+minimumReleaseAge: 2880

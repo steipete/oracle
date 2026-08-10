@@ -77,9 +77,9 @@
     "openai": "^7.4.0",
     "osc-progress": "^0.3.2",
     "qs": "^6.15.3",
-    "shiki": "^4.4.3",
+    "shiki": "^4.4.2",
     "toasted-notifier": "^10.1.0",
-    "tokentally": "^0.1.4",
+    "tokentally": "^0.1.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -90,11 +90,11 @@
     "@vitest/coverage-v8": "4.1.10",
     "devtools-protocol": "0.0.1676105",
     "es-toolkit": "^1.50.0",
-    "esbuild": "^0.28.2",
-    "oxfmt": "0.63.0",
-    "oxlint": "^1.78.0",
+    "esbuild": "^0.28.1",
+    "oxfmt": "0.62.0",
+    "oxlint": "^1.77.0",
     "puppeteer-core": "^25.5.0",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.11",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
@@ -109,5 +109,5 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "pnpm@11.20.0"
 }
