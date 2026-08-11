@@ -72,10 +72,12 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("model-kind-not-found");
   });
 
-  it("preserves Chinese thinking-effort labels while normalizing", () => {
+  it("preserves Chinese and Japanese labels while normalizing", () => {
     const expression = buildThinkingTimeExpressionForTest("extra-high");
-    expect(expression).toContain("\\u4e00-\\u9fa5");
+    expect(expression).toContain("\\u3040-\\u30ff");
+    expect(expression).toContain("\\u4e00-\\u9fff");
     expect(expression).toContain("'极高'");
+    expect(expression).toContain("'推論レベル'");
   });
 
   it("infers target model kind with token matching", () => {
@@ -2955,6 +2957,43 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       label: "Pro",
     });
     expect(dom.getSelectedTier()).toBe("Pro");
+  });
+
+  it("selects Pro through Japanese Advanced and Effort labels", async () => {
+    const dom = buildDom("High");
+    dom.advancedToggle.textContent = "詳細設定";
+    dom.advancedToggle.setAttribute("aria-label", "詳細表示にする");
+    dom.modelOpener.textContent = "モデルGPT-5.6 Sol";
+    dom.effortOpener.textContent = "推論レベルHigh";
+    ["最速", "中程度", "高い", "非常に高い", "Pro"].forEach((label, index) => {
+      dom.tierRows[index]!.textContent = label;
+    });
+
+    const result = await run(dom.documentStub, "pro");
+    expect(dom.advancedToggle.clicks).toBeGreaterThan(0);
+    expect(dom.modelOpener.clicks).toBe(0);
+    expect(dom.effortOpener.clicks).toBeGreaterThan(0);
+    expect(result).toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(dom.getSelectedTier()).toBe("Pro");
+  });
+
+  it("selects Japanese Extra High without matching High", async () => {
+    const dom = buildDom("High");
+    dom.advancedToggle.textContent = "詳細設定";
+    dom.effortOpener.textContent = "推論レベル高い";
+    ["最速", "中程度", "高い", "非常に高い", "Pro"].forEach((label, index) => {
+      dom.tierRows[index]!.textContent = label;
+    });
+
+    await expect(run(dom.documentStub, "extra-high")).resolves.toEqual({
+      status: "switched",
+      label: "非常に高い",
+    });
+    expect(dom.tierRows[2]!.clicks).toBe(0);
+    expect(dom.tierRows[3]!.clicks).toBeGreaterThan(0);
   });
 
   it("expands the collapsed Advanced view before reading the tiers", async () => {

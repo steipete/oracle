@@ -2,6 +2,10 @@
 
 ## 0.17.3 — Unreleased
 
+### Fixed
+
+- Browser: recognize the Japanese `詳細設定` → `推論レベル` controls in ChatGPT's unified Intelligence picker, allowing explicit Pro effort selection without weakening the fail-closed guard for unknown languages.
+
 ## 0.17.2 — 2026-08-10
 
 **Highlight:** browser mode works with ChatGPT's redesigned model picker again —
