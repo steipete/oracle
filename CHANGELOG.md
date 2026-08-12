@@ -2,6 +2,10 @@
 
 ## 0.17.3 — Unreleased
 
+### Added
+
+- Browser: add Grok web automation through an attached `grok.com` Chrome session, including text prompts and same-conversation follow-ups.
+
 ### Fixed
 
 - Browser: recognize the Japanese `詳細設定` → `推論レベル` controls in ChatGPT's unified Intelligence picker, allowing explicit Pro effort selection without weakening the fail-closed guard for unknown languages.

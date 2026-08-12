@@ -74,7 +74,7 @@ async function runCliPty(
 }
 
 ptyDescribe("oracle CLI browser guard (PTY)", () => {
-  it("fails fast when grok is paired with --engine browser", async () => {
+  it("accepts grok when paired with --engine browser", async () => {
     const { output, code } = await runCliPty([
       "--engine",
       "browser",
@@ -83,8 +83,10 @@ ptyDescribe("oracle CLI browser guard (PTY)", () => {
       "--prompt",
       "TTY guard prompt for grok browser path",
     ]);
+    expect(stripAnsi(output)).not.toMatch(
+      /Browser engine only supports GPT, Gemini, and Grok models/i,
+    );
     expect(code).not.toBe(0);
-    expect(stripAnsi(output)).toMatch(/Browser engine only supports GPT and Gemini models/i);
   }, 30_000);
 
   it("fails fast when multi-model list includes non-GPT under browser engine", async () => {
@@ -97,6 +99,6 @@ ptyDescribe("oracle CLI browser guard (PTY)", () => {
       "TTY guard prompt for mixed models",
     ]);
     expect(code).not.toBe(0);
-    expect(stripAnsi(output)).toMatch(/Browser engine only supports GPT and Gemini models/i);
+    expect(stripAnsi(output)).toMatch(/Browser engine only supports GPT, Gemini, and Grok models/i);
   }, 30_000);
 });

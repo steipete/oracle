@@ -469,7 +469,7 @@ program
   .addOption(
     new Option(
       "-e, --engine <mode>",
-      "Execution engine (api | browser). Browser engine: GPT models automate ChatGPT; Gemini models use a cookie-based client for gemini.google.com. If omitted, oracle picks api when OPENAI_API_KEY is set, otherwise browser.",
+      "Execution engine (api | browser). Browser engine: GPT models automate ChatGPT; Gemini uses gemini.google.com; Grok uses an attached grok.com Chrome session. If omitted, oracle picks api when OPENAI_API_KEY is set, otherwise browser.",
     ).choices(["api", "browser"]),
   )
   .addOption(
@@ -1949,20 +1949,24 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const isGemini = primaryModelCandidate.startsWith("gemini");
   const isCodex = primaryModelCandidate.startsWith("gpt-5.1-codex");
   const isClaude = primaryModelCandidate.startsWith("claude");
+  const isGrok = primaryModelCandidate.startsWith("grok");
   const userForcedBrowser = options.browser || options.engine === "browser";
   const browserExplicitlyRequested = browserEngineRequested;
   const isBrowserCompatible = (model: string) =>
-    model.startsWith("gpt-") || model.startsWith("gemini");
+    model.startsWith("gpt-") || model.startsWith("gemini") || model.startsWith("grok");
   const hasNonBrowserCompatibleTarget =
     normalizedMultiModels.length > 0
       ? normalizedMultiModels.some((model) => !isBrowserCompatible(model))
       : !isBrowserCompatible(resolvedModelCandidate);
   if (browserExplicitlyRequested && hasNonBrowserCompatibleTarget) {
     throw new Error(
-      "Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.",
+      "Browser engine only supports GPT, Gemini, and Grok models. Re-run with --engine api for Claude or other models.",
     );
   }
   if (engine === "browser" && hasNonBrowserCompatibleTarget) {
+    engine = "api";
+  }
+  if (isGrok && engine === "browser" && !browserExplicitlyRequested) {
     engine = "api";
   }
   if (isClaude && engine === "browser") {
@@ -2121,6 +2125,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
   }
   const activeModel = resolvedOptions.model;
+  if (remoteHost && activeModel.startsWith("grok")) {
+    throw new Error(
+      "Grok web mode does not support --remote-host yet. Use --remote-chrome or --browser-attach-running.",
+    );
+  }
   if (options.reasoningMode && engine !== "api") {
     throw new Error("--reasoning-mode requires --engine api.");
   }
@@ -2274,6 +2283,10 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     if (browserConfig.modelStrategy && browserConfig.modelStrategy !== "select") {
       console.log(chalk.dim("Browser model strategy is ignored for Gemini web runs."));
     }
+  } else if (browserConfig && activeModel.startsWith("grok")) {
+    const { createGrokWebExecutor } = await import("../src/grok-web/index.js");
+    browserDeps = { executeBrowser: createGrokWebExecutor() };
+    console.log(chalk.dim("Using Grok web client for browser automation"));
   }
   const remoteExecutionActive = Boolean(browserDeps);
 
@@ -2642,6 +2655,11 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   if (remoteHost) {
     console.log(chalk.dim(`Remote browser host detected: ${remoteHost}`));
   }
+  if (remoteHost && runOptions.model.startsWith("grok")) {
+    throw new Error(
+      "Grok web mode does not support --remote-host yet. Use --remote-chrome or --browser-attach-running.",
+    );
+  }
   if (remoteHost && waitPreference === false) {
     console.log(chalk.dim("Remote browser runs require --wait; ignoring --no-wait."));
     waitPreference = true;
@@ -2670,6 +2688,10 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     if (browserConfig.modelStrategy && browserConfig.modelStrategy !== "select") {
       console.log(chalk.dim("Browser model strategy is ignored for Gemini web runs."));
     }
+  } else if (browserConfig && runOptions.model.startsWith("grok")) {
+    const { createGrokWebExecutor } = await import("../src/grok-web/index.js");
+    browserDeps = { executeBrowser: createGrokWebExecutor() };
+    console.log(chalk.dim("Using Grok web client for browser automation"));
   }
   const remoteExecutionActive = Boolean(browserDeps);
 

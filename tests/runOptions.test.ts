@@ -499,7 +499,7 @@ describe("resolveRunOptionsFromConfig", () => {
         userConfig: { engine: "browser" },
         env: {},
       }),
-    ).toThrow(/Browser engine only supports GPT and Gemini/);
+    ).toThrow(/Browser engine only supports GPT, Gemini, and Grok/);
   });
 
   it("normalizes shorthand multi-model entries", () => {
@@ -512,14 +512,15 @@ describe("resolveRunOptionsFromConfig", () => {
     expect(runOptions.models).toEqual(["gpt-5.1", "gemini-3-pro", "claude-4.6-sonnet"]);
   });
 
-  it("rejects browser engine for grok when explicitly set", () => {
-    expect(() =>
-      resolveRunOptionsFromConfig({
-        prompt: basePrompt,
-        model: "grok",
-        engine: "browser",
-      }),
-    ).toThrow(/Browser engine only supports GPT and Gemini/);
+  it("keeps grok in browser mode when explicitly requested", () => {
+    const { runOptions, resolvedEngine, engineCoercedToApi } = resolveRunOptionsFromConfig({
+      prompt: basePrompt,
+      model: "grok",
+      engine: "browser",
+    });
+    expect(runOptions.model).toBe("grok-4.1");
+    expect(resolvedEngine).toBe("browser");
+    expect(engineCoercedToApi).toBe(false);
   });
 
   it("forces api engine for grok when auto-selected browser and applies XAI base url", () => {

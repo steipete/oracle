@@ -13,4 +13,13 @@ Owner: Oracle CLI
 Notes:
 
 - If you supply `--base-url`, it overrides the default xAI endpoint.
-- Browser engine is not supported for Grok; Oracle coerces `--engine browser` to `api`.
+- Browser mode can use an existing Chrome session at `grok.com` without an API key:
+
+  ```bash
+  oracle --engine browser --model grok --remote-chrome 127.0.0.1:9222 -p "Review this plan"
+  ```
+
+  The initial Grok web implementation supports text prompts and browser follow-ups. It opens an
+  isolated Grok tab instead of reusing the active tab. File attachments are rejected explicitly;
+  use the xAI API engine when attachments are required. Grok web mode currently supports local
+  `--remote-chrome` / `--browser-attach-running` sessions, not `oracle serve --remote-host`.
