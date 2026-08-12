@@ -29,9 +29,12 @@ export const GROK_SELECTORS = {
     '.message-bubble:not([data-testid="user-message"])',
   ],
   responseContent: [
+    '[data-testid="assistant-message"] .response-content-markdown',
     '[data-testid="assistant-message"] .markdown',
+    '[data-testid="response-message"] .response-content-markdown',
     '[data-testid="response-message"] .markdown',
     '[data-message-author-role="assistant"] .markdown',
+    '[data-message-author-role="assistant"] .response-content-markdown',
     '[data-testid="assistant-message"]',
     '[data-testid="response-message"]',
     '[data-message-author-role="assistant"]',
@@ -164,10 +167,13 @@ async function waitForResponse(
         const last = turns[turns.length - 1];
         const content = last.matches(${responseContent}) ? last : last.querySelector(${responseContent});
         const text = (content?.innerText || content?.textContent || '').trim();
-        const html = content?.innerHTML || '';
         const stopVisible = Array.from(document.querySelectorAll(${stop})).some(
           (node) => node instanceof HTMLElement && node.offsetParent !== null
         );
+        if (!text || /^thought for \\d+s?$/i.test(text)) {
+          return JSON.stringify({ status: stopVisible ? 'streaming' : 'waiting', text: '' });
+        }
+        const html = content?.innerHTML || '';
         return JSON.stringify({ status: stopVisible ? 'streaming' : 'idle', text, html });
       })()`,
     );
