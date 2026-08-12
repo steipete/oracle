@@ -8,6 +8,7 @@ export interface ProviderDomFlowContext {
   delay: (ms: number) => Promise<void>;
   log?: BrowserLogger;
   state?: Record<string, unknown>;
+  uploadAttachments?: (attachments: Array<{ path: string; name: string }>) => Promise<void>;
 }
 
 export interface ProviderDomResponse {

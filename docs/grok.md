@@ -19,7 +19,8 @@ Notes:
   oracle --engine browser --model grok --remote-chrome 127.0.0.1:9222 -p "Review this plan"
   ```
 
-  The initial Grok web implementation supports text prompts and browser follow-ups. It opens an
-  isolated Grok tab instead of reusing the active tab. File attachments are rejected explicitly;
-  use the xAI API engine when attachments are required. Grok web mode currently supports local
-  `--remote-chrome` / `--browser-attach-running` sessions, not `oracle serve --remote-host`.
+  Grok web mode supports text prompts, file attachments, and browser follow-ups. It opens an
+  isolated Grok tab instead of reusing the active tab. Use `--browser-attachments always` to force
+  text files through Grok's upload control instead of Oracle's normal small-file inline mode. Grok
+  web mode currently supports local `--remote-chrome` / `--browser-attach-running` sessions, not
+  `oracle serve --remote-host`.

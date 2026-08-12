@@ -52,6 +52,7 @@ describe("Grok web executor", () => {
     const client = {
       Runtime: { enable: vi.fn(async () => undefined), evaluate },
       Page: { enable: vi.fn(async () => undefined) },
+      DOM: { enable: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
     };
     connectWithNewTab.mockResolvedValue({ client, targetId: "grok-target" });
@@ -101,6 +102,7 @@ describe("Grok web executor", () => {
       client: {
         Runtime: { enable: vi.fn(async () => undefined), evaluate },
         Page: { enable: vi.fn(async () => undefined) },
+        DOM: { enable: vi.fn(async () => undefined) },
         close: vi.fn(async () => undefined),
       },
     });
@@ -116,16 +118,41 @@ describe("Grok web executor", () => {
     expect(closeTab).toHaveBeenCalledWith(9444, "target-2", expect.any(Function), "127.0.0.1");
   });
 
-  it("rejects attachments instead of silently dropping them", async () => {
+  it("uploads attachments through the Grok file input before submitting", async () => {
+    const setFileInputFiles = vi.fn(async () => undefined);
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression.includes("blocked:")) return { result: { value: { ready: true } } };
+      if (expression.includes("chips =")) return { result: { value: true } };
+      if (expression.includes("HTMLTextAreaElement.prototype"))
+        return { result: { value: "typed" } };
+      if (expression.includes("button.disabled")) return { result: { value: "clicked" } };
+      if (expression.includes("const turns =")) {
+        return { result: { value: JSON.stringify({ status: "idle", text: "file answer" }) } };
+      }
+      return { result: { value: 0 } };
+    });
+    connectWithNewTab.mockResolvedValue({
+      targetId: "target-upload",
+      client: {
+        Runtime: { enable: vi.fn(async () => undefined), evaluate },
+        Page: { enable: vi.fn(async () => undefined) },
+        DOM: {
+          enable: vi.fn(async () => undefined),
+          getDocument: vi.fn(async () => ({ root: { nodeId: 1 } })),
+          querySelector: vi.fn(async () => ({ nodeId: 7 })),
+          setFileInputFiles,
+        },
+        close: vi.fn(async () => undefined),
+      },
+    });
     const { createGrokWebExecutor } = await import("../../src/grok-web/executor.js");
-    await expect(
-      createGrokWebExecutor()({
-        prompt: "Review this file",
-        attachments: [{ path: "/tmp/a.txt", displayPath: "a.txt" }],
-        config: { remoteChrome: { host: "127.0.0.1", port: 9333 } },
-      }),
-    ).rejects.toThrow(/does not support file attachments/);
-    expect(connectWithNewTab).not.toHaveBeenCalled();
+    const result = await createGrokWebExecutor()({
+      prompt: "Review this file",
+      attachments: [{ path: "/tmp/a.txt", displayPath: "a.txt" }],
+      config: { remoteChrome: { host: "127.0.0.1", port: 9333 } },
+    });
+    expect(setFileInputFiles).toHaveBeenCalledWith({ nodeId: 7, files: ["/tmp/a.txt"] });
+    expect(result.answerText).toBe("file answer");
   });
 
   it("reports the anonymous Grok sign-up wall immediately", async () => {
@@ -144,6 +171,7 @@ describe("Grok web executor", () => {
       client: {
         Runtime: { enable: vi.fn(async () => undefined), evaluate },
         Page: { enable: vi.fn(async () => undefined) },
+        DOM: { enable: vi.fn(async () => undefined) },
         close: vi.fn(async () => undefined),
       },
     });

@@ -8,6 +8,7 @@ interface GrokDomProviderState {
   inputTimeoutMs?: number;
   timeoutMs?: number;
   responseCountBeforeSubmit?: number;
+  attachments?: Array<{ path: string; name: string }>;
 }
 
 export const GROK_SELECTORS = {
@@ -83,6 +84,13 @@ async function waitForUi(ctx: ProviderDomFlowContext): Promise<void> {
 }
 
 async function typePrompt(ctx: ProviderDomFlowContext): Promise<void> {
+  const attachments = (ctx.state as GrokDomProviderState | undefined)?.attachments ?? [];
+  if (attachments.length > 0) {
+    if (!ctx.uploadAttachments)
+      throw new Error("Grok attachment upload is unavailable in this browser session.");
+    ctx.log?.(`[grok-web] Uploading ${attachments.length} attachment(s)...`);
+    await ctx.uploadAttachments(attachments);
+  }
   ctx.log?.("[grok-web] Typing prompt...");
   const input = selectorLiteral(GROK_SELECTORS.input);
   const result = await ctx.evaluate<string>(
@@ -165,7 +173,8 @@ async function waitForResponse(
         if (loginRequired) return JSON.stringify({ status: 'login-required' });
         if (turns.length <= ${initialCount}) return JSON.stringify({ status: 'waiting' });
         const last = turns[turns.length - 1];
-        const content = last.matches(${responseContent}) ? last : last.querySelector(${responseContent});
+        const content = last.querySelector('.response-content-markdown, .markdown') ??
+          (last.matches(${responseContent}) ? last : last.querySelector(${responseContent}));
         const text = (content?.innerText || content?.textContent || '').trim();
         const stopVisible = Array.from(document.querySelectorAll(${stop})).some(
           (node) => node instanceof HTMLElement && node.offsetParent !== null
@@ -174,7 +183,11 @@ async function waitForResponse(
           return JSON.stringify({ status: stopVisible ? 'streaming' : 'waiting', text: '' });
         }
         const html = content?.innerHTML || '';
-        return JSON.stringify({ status: stopVisible ? 'streaming' : 'idle', text, html });
+        return JSON.stringify({
+          status: stopVisible || !content?.matches('.response-content-markdown, .markdown') ? 'streaming' : 'idle',
+          text,
+          html,
+        });
       })()`,
     );
     const payload = JSON.parse(raw ?? "{}") as { status?: string; text?: string; html?: string };

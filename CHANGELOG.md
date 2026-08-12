@@ -4,7 +4,7 @@
 
 ### Added
 
-- Browser: add Grok web automation through an attached `grok.com` Chrome session, including text prompts and same-conversation follow-ups.
+- Browser: add Grok web automation through an attached `grok.com` Chrome session, including text prompts, file uploads, same-conversation follow-ups, and final-response extraction that excludes Grok's visible thinking process.
 
 ### Fixed
 

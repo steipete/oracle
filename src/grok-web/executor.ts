@@ -4,6 +4,7 @@ import { runProviderDomFlow } from "../browser/providerDomFlow.js";
 import { grokDomProvider, GROK_SELECTORS } from "../browser/providers/grokDomProvider.js";
 import type { BrowserLogger, BrowserRunOptions, BrowserRunResult } from "../browser/types.js";
 import { delay } from "../browser/utils.js";
+import path from "node:path";
 
 const GROK_URL = "https://grok.com/";
 
@@ -16,11 +17,6 @@ export function createGrokWebExecutor(): (options: BrowserRunOptions) => Promise
     const startedAt = Date.now();
     const config = options.config;
     const logger: BrowserLogger = options.log ?? (() => {});
-    if ((options.attachments?.length ?? 0) > 0) {
-      throw new Error(
-        "Grok web mode does not support file attachments yet. Remove --file or use the xAI API engine.",
-      );
-    }
     if (!config?.remoteChrome && !config?.attachRunning) {
       throw new Error(
         "Grok web mode currently requires --remote-chrome or --browser-attach-running with a Chrome profile.",
@@ -51,6 +47,7 @@ export function createGrokWebExecutor(): (options: BrowserRunOptions) => Promise
     try {
       await client.Runtime.enable();
       await client.Page.enable();
+      await client.DOM.enable();
       const evaluate = async <T>(expression: string): Promise<T | undefined> => {
         const { result } = await client.Runtime.evaluate({ expression, returnByValue: true });
         if (result?.subtype === "error") {
@@ -65,7 +62,33 @@ export function createGrokWebExecutor(): (options: BrowserRunOptions) => Promise
         );
         return count ?? 0;
       };
-      const runPrompt = async (prompt: string) =>
+      const uploadAttachments = async (attachments: Array<{ path: string; name: string }>) => {
+        const documentNode = await client.DOM.getDocument();
+        const result = await client.DOM.querySelector({
+          nodeId: documentNode.root.nodeId,
+          selector: 'input[type="file"]',
+        });
+        if (!result.nodeId) throw new Error("Unable to locate Grok file upload input.");
+        await client.DOM.setFileInputFiles({
+          nodeId: result.nodeId,
+          files: attachments.map((attachment) => attachment.path),
+        });
+        const names = attachments.map((attachment) => attachment.name.toLowerCase());
+        const deadline = Date.now() + (config.attachmentTimeoutMs ?? 45_000);
+        while (Date.now() < deadline) {
+          const ready = await evaluate<boolean>(`(() => {
+            const text = (document.body?.innerText || '').toLowerCase();
+            const chips = Array.from(document.querySelectorAll('[data-testid*="attachment"], [data-testid*="file"], [aria-label*="Remove"]'))
+              .map((node) => (node.textContent || node.getAttribute('aria-label') || '').toLowerCase())
+              .join(' ');
+            return ${JSON.stringify(names)}.every((name) => text.includes(name) || chips.includes(name));
+          })()`);
+          if (ready) return;
+          await delay(500);
+        }
+        throw new Error(`Timed out waiting for Grok attachments: ${names.join(", ")}`);
+      };
+      const runPrompt = async (prompt: string, includeAttachments: boolean) =>
         runProviderDomFlow(grokDomProvider, {
           prompt,
           evaluate,
@@ -75,13 +98,20 @@ export function createGrokWebExecutor(): (options: BrowserRunOptions) => Promise
             inputTimeoutMs: config.inputTimeoutMs,
             timeoutMs: config.timeoutMs,
             responseCountBeforeSubmit: await responseCount(),
+            attachments: includeAttachments
+              ? (options.attachments ?? []).map((attachment) => ({
+                  path: attachment.path,
+                  name: path.basename(attachment.path),
+                }))
+              : [],
           },
+          uploadAttachments,
         });
 
-      let result = await runPrompt(options.prompt);
+      let result = await runPrompt(options.prompt, true);
       for (const followUp of options.followUpPrompts ?? []) {
         logger("[grok-web] Sending follow-up prompt in the same conversation.");
-        result = await runPrompt(followUp);
+        result = await runPrompt(followUp, false);
       }
 
       const tookMs = Date.now() - startedAt;
