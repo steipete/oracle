@@ -18,6 +18,17 @@ Either pass the CLI flag or set it once in `~/.oracle/config.json`:
 
 `--browser-chrome-path` (also exposed in `oracle --debug-help`) controls which binary `chrome-launcher` starts. You can still keep `chromeProfile: "Default"` if you want to copy cookies from Chrome proper while launching Edge/Chromium.
 
+To launch the selected binary headlessly, add `--browser-headless` or set `browser.headless: true`:
+
+```bash
+oracle --engine browser \
+  --browser-chrome-path "/path/to/chromium" \
+  --browser-headless \
+  --prompt "Summarize the release notes"
+```
+
+Headless mode is opt-in; Oracle remains headful by default because some sites reject stock headless Chrome. The selected Chromium binary must provide any compatibility those sites require. Headless is a launch-only option: an explicit `--browser-headless` flag cannot be combined with `--browser-attach-running`, a saved `browser.headless` preference is ignored in attach-running mode (matching other launch-only defaults), and standalone `--remote-chrome` continues to warn and ignore headless.
+
 ## 2. Tell cookie sync where your session lives
 
 Set the new `--browser-cookie-path` flag (or `browser.chromeCookiePath` in config) to the absolute path of the fork’s `Cookies` SQLite database. When present, Oracle feeds this path straight into the internal cookie reader, skipping Chrome-only heuristics and profile-name guesses.

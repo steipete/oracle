@@ -131,7 +131,7 @@ export function applyBrowserDefaultsFromConfig(
   if (isUnset("browserCookieWait") && typeof browser.cookieSyncWaitMs === "number") {
     options.browserCookieWait = String(browser.cookieSyncWaitMs);
   }
-  if (isUnset("browserHeadless") && browser.headless !== undefined) {
+  if (!attachRunningRequested && isUnset("browserHeadless") && browser.headless !== undefined) {
     options.browserHeadless = browser.headless;
   }
   if (!attachRunningRequested && isUnset("browserHideWindow") && browser.hideWindow !== undefined) {

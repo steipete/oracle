@@ -253,6 +253,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
         attachRunning: false,
         debugPort: 9222,
         timeoutMs: 120_000,
+        headless: true,
         hideWindow: true,
         keepBrowser: true,
         manualLogin: true,
@@ -269,12 +270,30 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserChromeProfile).toBeUndefined();
     expect(options.browserCookiePath).toBeUndefined();
     expect(options.browserPort).toBeUndefined();
+    expect(options.browserHeadless).toBeUndefined();
     expect(options.browserHideWindow).toBeUndefined();
     expect(options.browserKeepBrowser).toBeUndefined();
     expect(options.browserManualLogin).toBeUndefined();
     expect(options.browserManualLoginProfileDir).toBeUndefined();
     expect(options.browserTimeout).toBe("120000");
     expect(options.browserThinkingTime).toBe("extended");
+  });
+
+  test("saved attach-running also skips a saved headless preference", () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = {
+      browser: {
+        attachRunning: true,
+        headless: true,
+        hideWindow: true,
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => "default");
+
+    expect(options.browserAttachRunning).toBe(true);
+    expect(options.browserHeadless).toBeUndefined();
+    expect(options.browserHideWindow).toBeUndefined();
   });
 
   test("does not override manual-login when CLI enabled it", () => {
