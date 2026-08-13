@@ -35,6 +35,15 @@ describe("buildBrowserConfig", () => {
     expect(config.cookieSync).toBe(true);
   });
 
+  test("honors explicit headless while keeping explicit false headful", async () => {
+    await expect(
+      buildBrowserConfig({ model: "gpt-5.5-pro", browserHeadless: true }),
+    ).resolves.toMatchObject({ headless: true });
+    await expect(
+      buildBrowserConfig({ model: "gpt-5.5-pro", browserHeadless: false }),
+    ).resolves.toMatchObject({ headless: undefined });
+  });
+
   test("maps gpt-5.4 browser runs to Thinking 5.4", async () => {
     const config = await buildBrowserConfig({ model: "gpt-5.4" });
     expect(config.desiredModel).toBe("Thinking 5.4");
@@ -206,7 +215,7 @@ describe("buildBrowserConfig", () => {
       maxConcurrentTabs: 5,
       cookieSyncWaitMs: 4_000,
       cookieSync: false,
-      headless: undefined,
+      headless: true,
       hideWindow: true,
       keepBrowser: true,
       desiredModel: "Thinking 5.4",
@@ -392,6 +401,16 @@ describe("buildBrowserConfig", () => {
         browserManualLogin: true,
       }),
     ).rejects.toThrow(/attach-running/i);
+  });
+
+  test("rejects headless when attach-running is enabled", async () => {
+    await expect(
+      buildBrowserConfig({
+        model: "gpt-5.2-pro",
+        browserAttachRunning: true,
+        browserHeadless: true,
+      }),
+    ).rejects.toThrow(/browser-attach-running cannot be combined with --browser-headless/);
   });
 
   test("rejects browser-chrome-profile when attach-running is enabled", async () => {

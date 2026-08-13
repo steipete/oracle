@@ -135,12 +135,12 @@ describe("hidden-window launch flags", () => {
     }
   });
 
-  test("does not add a window position to headless Chrome", async () => {
+  test("adds the headless launch flag without an off-screen window position", async () => {
     const { buildChromeFlagsForTest } = await import("../../src/browser/chromeLifecycle.js");
+    const flags = buildChromeFlagsForTest(true, undefined, true);
 
-    expect(buildChromeFlagsForTest(true, undefined, true)).not.toContain(
-      "--window-position=-32000,-32000",
-    );
+    expect(flags).toContain("--headless=new");
+    expect(flags).not.toContain("--window-position=-32000,-32000");
   });
 
   test("adds no-sandbox flags only when ORACLE_CHROME_NO_SANDBOX=1", async () => {

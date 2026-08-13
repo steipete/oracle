@@ -278,7 +278,7 @@ export async function buildBrowserConfig(
     cookieNames,
     inlineCookies: inline?.cookies,
     inlineCookiesSource: inline?.source ?? null,
-    headless: undefined, // disable headless; Cloudflare blocks it
+    headless: options.browserHeadless === true ? true : undefined,
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
     manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
@@ -330,6 +330,7 @@ function validateAttachRunningOptions(
     options.browserChromeProfile ? "--browser-chrome-profile" : null,
     options.browserCookiePath ? "--browser-cookie-path" : null,
     options.browserNoCookieSync ? "--browser-no-cookie-sync" : null,
+    options.browserHeadless ? "--browser-headless" : null,
     options.browserHideWindow ? "--browser-hide-window" : null,
     options.browserKeepBrowser ? "--browser-keep-browser" : null,
     options.browserManualLogin ? "--browser-manual-login" : null,
