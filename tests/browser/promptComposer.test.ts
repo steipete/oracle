@@ -9,6 +9,66 @@ import {
   CONVERSATION_TURN_SELECTOR,
 } from "../../src/browser/constants.js";
 
+function submissionStateExpression(node: object) {
+  class FakeTextArea {}
+  class FakeInput {}
+  let currentNode = node;
+  const document = {
+    querySelector: () => currentNode,
+  };
+  const setNode = (nextNode: object) => {
+    currentNode = nextNode;
+  };
+  const evaluate = (expression: string) =>
+    Function(
+      "document",
+      "HTMLTextAreaElement",
+      "HTMLInputElement",
+      `return ${expression};`,
+    )(document, FakeTextArea, FakeInput) as {
+      submissionValue?: string;
+      submissionStateKnown?: boolean;
+    };
+  return { evaluate, FakeTextArea, FakeInput, setNode };
+}
+
+function submissionRuntime(node: object, probe = submissionStateExpression(node)) {
+  const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+    if (expression.includes("document.readyState")) {
+      return { result: { value: { ready: true, composer: true, fileInput: false } } };
+    }
+    if (expression.includes("focused: true")) {
+      return { result: { value: { focused: true } } };
+    }
+    if (expression.includes("editorText")) {
+      return { result: { value: probe.evaluate(expression) } };
+    }
+    if (expression.includes("button.scrollIntoView")) {
+      return { result: { value: { status: "clicked" } } };
+    }
+    if (expression.includes("normalizedPrompt")) {
+      return {
+        result: {
+          value: {
+            baseline: 0,
+            turnsCount: 1,
+            userMatched: true,
+            prefixMatched: false,
+            lastMatched: true,
+            hasNewTurn: true,
+            stopVisible: true,
+            assistantVisible: false,
+            composerCleared: true,
+            inConversation: true,
+          },
+        },
+      };
+    }
+    return { result: { value: {} } };
+  });
+  return { runtime: { evaluate }, probe };
+}
+
 describe("promptComposer", () => {
   test("fails composer clearing when stale text remains", async () => {
     const runtime = {
@@ -242,7 +302,7 @@ describe("promptComposer", () => {
     expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"], 120_000)).toBe(120_000);
   });
 
-  test("marks prompt submitted before commit verification finishes", async () => {
+  test("marks prompt submitted after commit verification succeeds", async () => {
     const onPromptSubmitted = vi.fn();
     const runtime = {
       evaluate: vi.fn(async ({ expression }: { expression: string }) => {
@@ -254,7 +314,15 @@ describe("promptComposer", () => {
         }
         if (expression.includes("editorText")) {
           return {
-            result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
+            result: {
+              value: {
+                editorText: "hello",
+                fallbackValue: "",
+                activeValue: "hello",
+                submissionValue: "hello",
+                submissionStateKnown: true,
+              },
+            },
           };
         }
         if (expression.includes("button.scrollIntoView")) {
@@ -295,6 +363,77 @@ describe("promptComposer", () => {
     expect(onPromptSubmitted).toHaveBeenCalledTimes(1);
   });
 
+  test("does not mark prompt submitted if commit verification fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const onPromptSubmitted = vi.fn();
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("document.readyState")) {
+            return { result: { value: { ready: true, composer: true, fileInput: false } } };
+          }
+          if (expression.includes("focused: true")) {
+            return { result: { value: { focused: true } } };
+          }
+          if (expression.includes("editorText")) {
+            return {
+              result: {
+                value: {
+                  editorText: "hello",
+                  fallbackValue: "",
+                  activeValue: "hello",
+                  submissionValue: "hello",
+                  submissionStateKnown: true,
+                },
+              },
+            };
+          }
+          if (expression.includes("button.scrollIntoView")) {
+            return { result: { value: { status: "clicked" } } };
+          }
+          if (expression.includes("normalizedPrompt")) {
+            return {
+              result: {
+                value: {
+                  baseline: 0,
+                  turnsCount: 0,
+                  userMatched: false,
+                  prefixMatched: false,
+                  lastMatched: false,
+                  hasNewTurn: false,
+                  stopVisible: false,
+                  assistantVisible: false,
+                  composerCleared: false,
+                  inConversation: false,
+                },
+              },
+            };
+          }
+          return { result: { value: {} } };
+        }),
+      };
+      const input = { insertText: vi.fn(), dispatchKeyEvent: vi.fn() };
+      const logger = Object.assign(vi.fn(), { verbose: false });
+
+      const promise = submitPrompt(
+        {
+          runtime: runtime as never,
+          input: input as never,
+          baselineTurns: 0,
+          onPromptSubmitted,
+        },
+        "hello",
+        logger as never,
+      );
+      const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+      await vi.advanceTimersByTimeAsync(61_000);
+      await assertion;
+      expect(onPromptSubmitted).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("waits for a delayed trusted click without issuing a second send", async () => {
     vi.useFakeTimers();
     try {
@@ -320,6 +459,97 @@ describe("promptComposer", () => {
       await expect(result).resolves.toBe(true);
       expect(evaluate).toHaveBeenCalledTimes(1);
       expect(input.dispatchMouseEvent).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("reads submission state from a composer exposing only pmViewDesc.node", async () => {
+    vi.useFakeTimers();
+    try {
+      // Regression for the live failure: the composer div's only own key is pmViewDesc,
+      // pmViewDesc.view is absent, and React keys live on the parent carrying no text.
+      // Reading through view or __reactProps$ therefore reported no framework state at all
+      // and rejected every submission pre-submit.
+      const prompt = "alpha line one.\n\nbeta line two.";
+      const blocks = ["alpha line one.", "", "beta line two."];
+      const pmDoc = {
+        type: { name: "doc" },
+        content: { size: prompt.length },
+        textBetween: vi.fn((_from: number, _to: number, separator: string) =>
+          blocks.join(separator),
+        ),
+      };
+      const composer = {
+        innerText: prompt,
+        textContent: prompt,
+        getBoundingClientRect: () => ({ width: 100, height: 20 }),
+        pmViewDesc: {
+          parent: {},
+          children: [],
+          dom: {},
+          contentDOM: {},
+          dirty: 0,
+          node: pmDoc,
+          outerDeco: [],
+          innerDeco: {},
+          nodeDOM: {},
+        },
+      };
+      const { runtime } = submissionRuntime(composer);
+      const promise = submitPrompt(
+        { runtime: runtime as never, input: { insertText: vi.fn() } as never, baselineTurns: 0 },
+        prompt,
+        Object.assign(vi.fn(), { verbose: false }) as never,
+      );
+
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(promise).resolves.toBe(1);
+      expect(pmDoc.textBetween).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("verifies a Markdown prompt whose syntax the composer consumes into nodes and marks", async () => {
+    vi.useFakeTimers();
+    try {
+      // Measured live: ChatGPT applies Markdown input rules, so '## H' becomes a heading
+      // block holding 'H', '- x' a list item holding 'x', '**b**' a paragraph carrying a
+      // strong mark, and backticks a code mark. Pasting text/plain is parsed identically,
+      // so no insertion path preserves the literal source. Only the projection can match.
+      const prompt = [
+        "## Heading here",
+        "",
+        "- bullet one",
+        "1. numbered one",
+        "**bold** text and code `x` here",
+      ].join("\n");
+      const readBack = [
+        "Heading here",
+        "",
+        "bullet one",
+        "numbered one",
+        "bold text and code x here",
+      ].join("\n");
+      const pmDoc = {
+        content: { size: readBack.length },
+        textBetween: vi.fn(() => readBack),
+      };
+      const composer = {
+        innerText: readBack,
+        textContent: readBack,
+        getBoundingClientRect: () => ({ width: 100, height: 20 }),
+        pmViewDesc: { node: pmDoc },
+      };
+      const { runtime } = submissionRuntime(composer);
+      const promise = submitPrompt(
+        { runtime: runtime as never, input: { insertText: vi.fn() } as never, baselineTurns: 0 },
+        prompt,
+        Object.assign(vi.fn(), { verbose: false }) as never,
+      );
+
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(promise).resolves.toBe(1);
     } finally {
       vi.useRealTimers();
     }

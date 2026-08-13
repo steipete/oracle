@@ -5,6 +5,8 @@
 ### Fixed
 
 - Browser: recognize the Japanese `詳細設定` → `推論レベル` controls in ChatGPT's unified Intelligence picker, allowing explicit Pro effort selection without weakening the fail-closed guard for unknown languages.
+- Browser: read the prompt composer through the editor's framework state when available so the current ChatGPT composer is correctly recognised as filled before sending, with a fallback for other builds.
+- Browser: mark a prompt as submitted only after its turn is confirmed in the conversation, so session metadata reflects a committed turn rather than a dispatch attempt.
 
 ## 0.17.2 — 2026-08-10
 

@@ -116,8 +116,32 @@ export async function submitPrompt(
       const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
       const readValue = (node) => {
         if (!node) return '';
-        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
-        return node.innerText ?? '';
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return node.value ?? '';
+        }
+        return node.innerText ?? node.textContent ?? '';
+      };
+      const readSubmissionState = (node) => {
+        if (!node) return { known: false, value: '' };
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return { known: true, value: node.value ?? '' };
+        }
+        // Measured against ChatGPT on Chrome 151: the composer div carries exactly one own
+        // key, pmViewDesc, and pmViewDesc.view is absent. The authoritative handle is
+        // pmViewDesc.node, a real ProseMirror doc node. React keys live on the PARENT and
+        // carry no text, so a reactProps read here can never succeed; it stays only as a
+        // fallback for other builds. Separator is '\\n': an empty block already emits its
+        // own separator, so '\\n' round-trips byte-exact while '\\n\\n' doubles blank lines.
+        const pmDoc = node.pmViewDesc?.node ?? node.pmViewDesc?.view?.state?.doc;
+        const pmValue =
+          typeof pmDoc?.textBetween === 'function'
+            ? pmDoc.textBetween(0, pmDoc.content.size, '\\n')
+            : pmDoc?.textContent;
+        if (typeof pmValue === 'string') return { known: true, value: pmValue };
+        const reactPropsKey = Object.keys(node).find((key) => key.startsWith('__reactProps$'));
+        const reactValue = reactPropsKey ? node[reactPropsKey]?.value : undefined;
+        if (typeof reactValue === 'string') return { known: true, value: reactValue };
+        return { known: false, value: '' };
       };
       const isVisible = (node) => {
         if (!node || typeof node.getBoundingClientRect !== 'function') return false;
@@ -128,10 +152,13 @@ export async function submitPrompt(
         .map((selector) => document.querySelector(selector))
         .filter((node) => Boolean(node));
       const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+      const submission = readSubmissionState(active);
       return {
         editorText: editor?.innerText ?? '',
         fallbackValue: fallback?.value ?? '',
         activeValue: active ? readValue(active) : '',
+        submissionValue: submission.value,
+        submissionStateKnown: submission.known,
       };
     })()`,
     returnByValue: true,
@@ -144,7 +171,8 @@ export async function submitPrompt(
   const fallbackValueTrimmed = fallbackValueRaw?.trim?.() ?? "";
   const activeValueTrimmed = activeValueRaw?.trim?.() ?? "";
   if (!editorTextTrimmed && !fallbackValueTrimmed && !activeValueTrimmed) {
-    // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
+    // A direct DOM write is only a recovery attempt. Framework-controlled
+    // editors must still prove their own state below before we submit.
     await runtime.evaluate({
       expression: `(() => {
         const fallback = document.querySelector(${fallbackSelectorLiteral});
@@ -156,7 +184,6 @@ export async function submitPrompt(
         const editor = document.querySelector(${primarySelectorLiteral});
         if (editor) {
           editor.textContent = ${encodedPrompt};
-          // Nudge ProseMirror to register the textContent write so its state/send-button updates
           editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${encodedPrompt}, inputType: 'insertFromPaste' }));
         }
       })()`,
@@ -171,8 +198,28 @@ export async function submitPrompt(
       const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
       const readValue = (node) => {
         if (!node) return '';
-        if (node instanceof HTMLTextAreaElement) return node.value ?? '';
-        return node.innerText ?? '';
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return node.value ?? '';
+        }
+        return node.innerText ?? node.textContent ?? '';
+      };
+      const readSubmissionState = (node) => {
+        if (!node) return { known: false, value: '' };
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return { known: true, value: node.value ?? '' };
+        }
+        // See the note on the pre-fill reader: pmViewDesc.node is the authoritative handle
+        // and '\\n' is the separator that round-trips byte-exact.
+        const pmDoc = node.pmViewDesc?.node ?? node.pmViewDesc?.view?.state?.doc;
+        const pmValue =
+          typeof pmDoc?.textBetween === 'function'
+            ? pmDoc.textBetween(0, pmDoc.content.size, '\\n')
+            : pmDoc?.textContent;
+        if (typeof pmValue === 'string') return { known: true, value: pmValue };
+        const reactPropsKey = Object.keys(node).find((key) => key.startsWith('__reactProps$'));
+        const reactValue = reactPropsKey ? node[reactPropsKey]?.value : undefined;
+        if (typeof reactValue === 'string') return { known: true, value: reactValue };
+        return { known: false, value: '' };
       };
       const isVisible = (node) => {
         if (!node || typeof node.getBoundingClientRect !== 'function') return false;
@@ -183,10 +230,13 @@ export async function submitPrompt(
         .map((selector) => document.querySelector(selector))
         .filter((node) => Boolean(node));
       const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+      const submission = readSubmissionState(active);
       return {
         editorText: editor?.innerText ?? '',
         fallbackValue: fallback?.value ?? '',
         activeValue: active ? readValue(active) : '',
+        submissionValue: submission.value,
+        submissionStateKnown: submission.known,
       };
     })()`,
     returnByValue: true,
@@ -194,12 +244,86 @@ export async function submitPrompt(
   const observedEditor = postVerification.result?.value?.editorText ?? "";
   const observedFallback = postVerification.result?.value?.fallbackValue ?? "";
   const observedActive = postVerification.result?.value?.activeValue ?? "";
+  const observedSubmission = postVerification.result?.value?.submissionValue;
+  const submissionStateKnown = postVerification.result?.value?.submissionStateKnown === true;
   const observedLength = Math.max(
     observedEditor.length,
     observedFallback.length,
     observedActive.length,
+    typeof observedSubmission === "string" ? observedSubmission.length : 0,
   );
-  if (promptLength >= 50_000 && observedLength > 0 && observedLength < promptLength - 2_000) {
+  // Learned the hard way, measured live rather than assumed: the composer applies Markdown
+  // input rules, so syntax is consumed into node types and marks and can never appear in a
+  // plain-text readback. '## H' arrives as 'H' in a heading block, '- x' as 'x' in a list,
+  // '**b**' as 'b' carrying a strong mark, backticks as a code mark. Pasting does not dodge
+  // it: a real text/plain ClipboardEvent is parsed the same way. Literal equality is
+  // therefore unachievable by construction for any Markdown-bearing prompt.
+  //
+  // So compare a projection that survives those rules. Block markers are consumed by a small
+  // enumerable set of rules and must be stripped from the expected side; everything else is
+  // reduced to letters and digits, which is immune to whichever inline rule ChatGPT adds
+  // next. That still catches truncation, duplication, reordering, and a wrong prompt, which
+  // is the whole purpose of this gate. Semantics still reach the model — only syntax is lost.
+  const projectForComparison = (value: string): string =>
+    value
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((line) =>
+        line
+          .replace(/^\s*```.*$/, "")
+          .replace(/^\s*#{1,6}\s+/, "")
+          .replace(/^\s*>\s?/, "")
+          .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
+          .replace(/^\s*(?:[-*_]\s*){3,}$/, ""),
+      )
+      .join("\n")
+      .replace(/[^\p{L}\p{N}]+/gu, "")
+      .toLowerCase();
+  if (!submissionStateKnown) {
+    await logDomFailure(runtime, logger, "prompt-state-unknown");
+    throw new BrowserAutomationError(
+      "Prompt editor exposes no framework state to prove what will be submitted.",
+      {
+        stage: "submit-prompt",
+        code: "prompt-state-unknown",
+        promptLength,
+        observedLength,
+        submissionStateKnown,
+      },
+    );
+  }
+  const expectedProjection = projectForComparison(prompt);
+  const observedProjection = projectForComparison(observedSubmission ?? "");
+  if (expectedProjection !== observedProjection) {
+    await logDomFailure(runtime, logger, "prompt-state-mismatch");
+    // Emit a bounded window around the first divergence. Without it every mismatch costs a
+    // live round trip to find out what actually differed.
+    let divergenceIndex = 0;
+    while (
+      divergenceIndex < expectedProjection.length &&
+      divergenceIndex < observedProjection.length &&
+      expectedProjection[divergenceIndex] === observedProjection[divergenceIndex]
+    ) {
+      divergenceIndex += 1;
+    }
+    const windowStart = Math.max(0, divergenceIndex - 60);
+    throw new BrowserAutomationError(
+      "Prompt editor holds different text than the prompt we inserted.",
+      {
+        stage: "submit-prompt",
+        code: "prompt-state-mismatch",
+        promptLength,
+        observedLength,
+        submissionStateKnown,
+        divergenceIndex,
+        expectedProjectionLength: expectedProjection.length,
+        observedProjectionLength: observedProjection.length,
+        expectedExcerpt: expectedProjection.slice(windowStart, divergenceIndex + 60),
+        observedExcerpt: observedProjection.slice(windowStart, divergenceIndex + 60),
+      },
+    );
+  }
+  if (promptLength >= 50_000 && observedLength < promptLength - 2_000) {
     // Learned: very large prompts can truncate silently; fail fast so we can fall back to file uploads.
     await logDomFailure(runtime, logger, "prompt-too-large");
     throw new BrowserAutomationError(
@@ -235,17 +359,18 @@ export async function submitPrompt(
   } else {
     logger("Clicked send button");
   }
-  await deps.onPromptSubmitted?.();
 
   const commitTimeoutMs = Math.max(60_000, deps.inputTimeoutMs ?? 0);
   // Learned: the send button can succeed but the turn doesn't appear immediately; verify commit via turns/stop button.
-  return await verifyPromptCommitted(
+  const committedTurns = await verifyPromptCommitted(
     runtime,
     prompt,
     commitTimeoutMs,
     logger,
     deps.baselineTurns ?? undefined,
   );
+  await deps.onPromptSubmitted?.();
+  return committedTurns;
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
