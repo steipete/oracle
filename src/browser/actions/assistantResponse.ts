@@ -138,21 +138,70 @@ function matchesThinkingStatusLabel(trimmed: string): boolean {
   return trimmed.startsWith("pro thinking") && trimmed.length <= 40;
 }
 
-export function isAnswerNowPlaceholderText(value: string): boolean {
-  const text = value.toLowerCase().replace(/\s+/g, " ").trim();
-  if (!text) return false;
-  // Learned: "Pro thinking" shows a placeholder turn that contains "Answer now".
-  // That is not the final answer and must be ignored in browser automation.
-  if (text === "chatgpt said:" || text === "chatgpt said") return true;
-  if (
-    text.includes("file upload request") &&
-    (text.includes("pro thinking") || text.includes("chatgpt said"))
-  ) {
-    return true;
+// Single source of truth for the "Answer now" placeholder test.
+//
+// This function is ALSO injected verbatim into page expressions via
+// buildAnswerNowPlaceholderPredicateJs (it is stringified with
+// Function.prototype.toString), so it MUST stay closure-free: no imports, no module
+// constants, no helpers. Anything it references must be declared inside its own body
+// or it will throw a ReferenceError inside the renderer.
+//
+// Learned the hard way: ChatGPT's Pro UI keeps the "Answer now" skip-ahead control
+// mounted for the whole reasoning phase, so a bare `text.includes('answer now')` test
+// matched real answers that merely ended with that chrome and discarded them wholesale
+// at every extraction layer. A placeholder is short UI furniture, so this matches the
+// WHOLE trimmed string against known chrome labels behind a length cap, the way the
+// sibling predicates in this file already do.
+//
+// The cap is 60, taken from isActiveLabel in ./thinkingStatus.ts rather than the 40 used
+// by matchesThinkingStatusLabel above: 40 bounds a single status label, while the longest
+// genuine placeholder here is the composite
+// "chatgpt said: file upload request pro thinking answer now" (57 chars), which a 40 cap
+// would wrongly let through.
+export function isAnswerNowPlaceholderText(value: unknown): boolean {
+  let raw = "";
+  if (typeof value === "string") {
+    raw = value;
+  } else if (value && typeof value === "object" && "text" in value) {
+    const candidate = (value as { text?: unknown }).text;
+    if (typeof candidate === "string") raw = candidate;
   }
-  return (
-    text.includes("answer now") && (text.includes("pro thinking") || text.includes("chatgpt said"))
-  );
+  const text = raw.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!text) return false;
+  if (text === "chatgpt said:" || text === "chatgpt said") return true;
+  if (text.length > 60) return false;
+  // Whole-string match: consume the text left to right, longest chrome label first.
+  // Any residue means real content is present, so this is an answer, not a placeholder.
+  const chromeLabels = [
+    "chatgpt said:",
+    "chatgpt said",
+    "file upload request",
+    "pro thinking",
+    "answer now",
+  ];
+  let rest = text;
+  let sawOwner = false; // "pro thinking" / "chatgpt said"
+  let sawGate = false; // "answer now" / "file upload request"
+  while (rest.length > 0) {
+    let matched = "";
+    for (const label of chromeLabels) {
+      if (label.length > matched.length && rest.startsWith(label)) matched = label;
+    }
+    if (!matched) return false;
+    if (matched === "answer now" || matched === "file upload request") sawGate = true;
+    else sawOwner = true;
+    rest = rest.slice(matched.length).replace(/^[\s:.,;|\u00b7\u2022-]+/, "");
+  }
+  return sawGate && sawOwner;
+}
+
+// Exported: the two page expressions below and the tests all consume this one builder,
+// so the predicate cannot drift between the node side and the renderer.
+export function buildAnswerNowPlaceholderPredicateJs(fnName: string): string {
+  // Inject the node-side definition itself so a correction can never land in only one
+  // copy. `const x = function name(){}` is a valid expression, so the exported
+  // declaration stringifies straight into the page expression.
+  return `const ${fnName} = ${isAnswerNowPlaceholderText.toString()};`;
 }
 
 function buildActiveThinkingStatusPredicateJs(fnName: string): string {
@@ -421,6 +470,13 @@ export function buildAssistantSnapshotExpressionForTest(
   expectedConversationId?: string,
 ): string {
   return buildAssistantSnapshotExpression(minTurnIndex, expectedConversationId);
+}
+export function buildResponseObserverExpressionForTest(
+  timeoutMs: number,
+  minTurnIndex?: number,
+  expectedConversationId?: string,
+): string {
+  return buildResponseObserverExpression(timeoutMs, minTurnIndex, expectedConversationId);
 }
 
 export function buildConversationDebugExpressionForTest(): string {
@@ -879,14 +935,7 @@ function buildAssistantSnapshotExpression(
     // Learned: the default turn DOM misses project view; keep a fallback extractor.
     ${buildAssistantExtractor("extractAssistantTurn")}
     const extracted = extractAssistantTurn();
-    const isPlaceholder = (snapshot) => {
-      const normalized = String(snapshot?.text ?? '').toLowerCase().trim();
-      if (normalized === 'chatgpt said:' || normalized === 'chatgpt said') return true;
-      if (normalized.includes('file upload request') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'))) {
-        return true;
-      }
-      return normalized.includes('answer now') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'));
-    };
+    ${buildAnswerNowPlaceholderPredicateJs("isPlaceholder")}
     ${buildActiveThinkingStatusPredicateJs("isActiveThinkingStatus")}
     if (
       extracted &&
@@ -939,14 +988,7 @@ function buildResponseObserverExpression(
       const currentId = currentConversationId();
       return !currentId || currentId === EXPECTED_CONVERSATION_ID;
     };
-    const isAnswerNowPlaceholder = (snapshot) => {
-      const normalized = String(snapshot?.text ?? '').toLowerCase().trim();
-      if (normalized === 'chatgpt said:' || normalized === 'chatgpt said') return true;
-      if (normalized.includes('file upload request') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'))) {
-        return true;
-      }
-      return normalized.includes('answer now') && (normalized.includes('pro thinking') || normalized.includes('chatgpt said'));
-    };
+    ${buildAnswerNowPlaceholderPredicateJs("isAnswerNowPlaceholder")}
     ${buildActiveThinkingStatusPredicateJs("isActiveThinkingStatus")}
     ${buildThinkingActivePredicateJs("isThinkingActiveNow")}
 

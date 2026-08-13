@@ -5,6 +5,7 @@
 ### Fixed
 
 - Browser: recognize the Japanese `詳細設定` → `推論レベル` controls in ChatGPT's unified Intelligence picker, allowing explicit Pro effort selection without weakening the fail-closed guard for unknown languages.
+- Browser: treat the skip-ahead control labels as placeholder signals only when the entire turn text is short chrome text, so substantial assistant answers that mention those labels are no longer discarded.
 
 ## 0.17.2 — 2026-08-10
 

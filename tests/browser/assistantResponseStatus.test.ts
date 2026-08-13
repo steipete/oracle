@@ -2,13 +2,16 @@ import { createContext, Script } from "node:vm";
 import { describe, expect, test } from "vitest";
 import {
   buildActiveThinkingStatusPredicateJsForTest,
+  buildAnswerNowPlaceholderPredicateJs,
   buildAssistantSnapshotExpressionForTest,
   buildCompletionVisibilityExpressionForTest,
   buildMarkdownFallbackExtractorForTest,
+  buildResponseObserverExpressionForTest,
   buildStopButtonVisibilityExpressionForTest,
   classifyTurnTerminal,
   createTerminalGateState,
   hasScopedCompletionProof,
+  isAnswerNowPlaceholderText,
   matchesThinkingStatusLabelForTest,
   type TerminalGateConfig,
   type TerminalSample,
@@ -689,5 +692,89 @@ describe("thinking-active completion veto", () => {
 
   test("does NOT fire on an idle DOM (finished, no controls)", () => {
     expect(evalThinkingActive({})).toBe(false);
+  });
+});
+
+// Regression: ChatGPT's Pro UI keeps the "Answer now" skip-ahead control mounted for the
+// whole reasoning phase, so a substring test for "answer now" + "pro thinking" discarded
+// every in-progress Pro turn that had real content, at every extraction layer.
+describe("answer-now placeholder detection", () => {
+  const LONG_ANSWER_WITH_TRAILING_CHROME = [
+    "Searched the repository for the failing predicate",
+    "Read src/browser/actions/assistantResponse.ts",
+    "Ran the assistant-response test file",
+    "",
+    "I reviewed the capture pipeline and found three problems worth fixing before the next",
+    "long-running Pro submission. The placeholder gate is the most serious of them, because",
+    "it silently throws away captured text instead of failing loudly.",
+    "",
+    "1. The placeholder predicate matches by substring anywhere in the turn.",
+    "2. The same predicate is copied verbatim into two generated page expressions.",
+    "3. The interrupted-stream notice is invisible to the warning classifier.",
+    "",
+    "Pro thinking",
+    "Answer now",
+  ].join("\n");
+
+  const GENUINE_PLACEHOLDERS = [
+    "ChatGPT said:",
+    "ChatGPT said",
+    "Pro thinking Answer now",
+    "ChatGPT said: Answer now",
+    "ChatGPT said: Pro thinking Answer now",
+    "ChatGPT said: File upload request Pro thinking Answer now",
+  ];
+
+  test("the long answer is long enough to defeat a naive substring test", () => {
+    expect(LONG_ANSWER_WITH_TRAILING_CHROME.length).toBeGreaterThan(600);
+    expect(LONG_ANSWER_WITH_TRAILING_CHROME.toLowerCase()).toContain("pro thinking");
+    expect(LONG_ANSWER_WITH_TRAILING_CHROME.toLowerCase()).toContain("answer now");
+  });
+
+  test("node-side predicate keeps a long answer that merely ends with skip-ahead chrome", () => {
+    expect(isAnswerNowPlaceholderText(LONG_ANSWER_WITH_TRAILING_CHROME)).toBe(false);
+  });
+
+  test.each(GENUINE_PLACEHOLDERS)("node-side predicate still discards %s", (text) => {
+    expect(isAnswerNowPlaceholderText(text)).toBe(true);
+  });
+
+  test("the longest genuine placeholder sits under the 60-character cap", () => {
+    const longest = "chatgpt said: file upload request pro thinking answer now";
+    expect(longest.length).toBeGreaterThan(40);
+    expect(longest.length).toBeLessThanOrEqual(60);
+  });
+
+  test("short text that is chrome plus real content is not a placeholder", () => {
+    expect(isAnswerNowPlaceholderText("Pro thinking Answer now: use a mutex")).toBe(false);
+  });
+
+  describe("in-page copies", () => {
+    const predicateSource = buildAnswerNowPlaceholderPredicateJs("isPlaceholder");
+
+    const runInPage = (text: string): boolean =>
+      new Script(
+        `${predicateSource}\nisPlaceholder({ text: ${JSON.stringify(text)} });`,
+      ).runInContext(createContext({ String })) as boolean;
+
+    test("the snapshot extractor embeds the shared predicate, not a private copy", () => {
+      const expression = buildAssistantSnapshotExpressionForTest();
+      expect(expression).toContain(predicateSource);
+      expect(expression).not.toContain("normalized.includes('answer now')");
+    });
+
+    test("the response observer embeds the shared predicate, not a private copy", () => {
+      const expression = buildResponseObserverExpressionForTest(1000);
+      expect(expression).toContain(buildAnswerNowPlaceholderPredicateJs("isAnswerNowPlaceholder"));
+      expect(expression).not.toContain("normalized.includes('answer now')");
+    });
+
+    test("the injected page source keeps a long answer with trailing chrome", () => {
+      expect(runInPage(LONG_ANSWER_WITH_TRAILING_CHROME)).toBe(false);
+    });
+
+    test.each(GENUINE_PLACEHOLDERS)("the injected page source discards %s", (text) => {
+      expect(runInPage(text)).toBe(true);
+    });
   });
 });
