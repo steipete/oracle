@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ChromeClient, BrowserLogger } from "../types.js";
 import {
   INPUT_SELECTORS,
@@ -30,6 +31,40 @@ export interface AttachmentReadyExpectation {
 }
 
 type AttachmentReadyInput = string | AttachmentReadyExpectation;
+
+function sha256Prefix(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
+// ChatGPT consumes Markdown into node types and marks, so literal equality is
+// unachievable for Markdown-bearing prompts. Normalize only those input-rule
+// transformations: block markers, fenced-code openers, and inline emphasis/code.
+// Keep punctuation, paths, flags, and token boundaries so `--flag` cannot
+// compare equal to `flag`.
+function projectForComparison(value: string): string {
+  const withoutBlocks = value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s*```.*$/, "")
+        .replace(/^\s*#{1,6}\s+/, "")
+        .replace(/^\s*>\s?/, "")
+        .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
+        .replace(/^\s*(?:[-*_]\s*){3,}$/, ""),
+    )
+    .join("\n");
+  return withoutBlocks
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,]|$)/g, "$1$2")
+    .replace(/(^|[\s(])_([^_\s][^_]*)_(?=[\s).,]|$)/g, "$1$2")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n+/g, "\n")
+    .trim()
+    .toLowerCase();
+}
 
 export async function submitPrompt(
   deps: {
@@ -259,26 +294,9 @@ export async function submitPrompt(
   // it: a real text/plain ClipboardEvent is parsed the same way. Literal equality is
   // therefore unachievable by construction for any Markdown-bearing prompt.
   //
-  // So compare a projection that survives those rules. Block markers are consumed by a small
-  // enumerable set of rules and must be stripped from the expected side; everything else is
-  // reduced to letters and digits, which is immune to whichever inline rule ChatGPT adds
-  // next. That still catches truncation, duplication, reordering, and a wrong prompt, which
-  // is the whole purpose of this gate. Semantics still reach the model — only syntax is lost.
-  const projectForComparison = (value: string): string =>
-    value
-      .replace(/\r\n/g, "\n")
-      .split("\n")
-      .map((line) =>
-        line
-          .replace(/^\s*```.*$/, "")
-          .replace(/^\s*#{1,6}\s+/, "")
-          .replace(/^\s*>\s?/, "")
-          .replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "")
-          .replace(/^\s*(?:[-*_]\s*){3,}$/, ""),
-      )
-      .join("\n")
-      .replace(/[^\p{L}\p{N}]+/gu, "")
-      .toLowerCase();
+  // Compare a projection that undoes only those Markdown transformations. Do not strip
+  // remaining punctuation or token boundaries: flags, paths, URLs, and code syntax must
+  // still fail closed when they differ.
   if (!submissionStateKnown) {
     await logDomFailure(runtime, logger, "prompt-state-unknown");
     throw new BrowserAutomationError(
@@ -296,8 +314,6 @@ export async function submitPrompt(
   const observedProjection = projectForComparison(observedSubmission ?? "");
   if (expectedProjection !== observedProjection) {
     await logDomFailure(runtime, logger, "prompt-state-mismatch");
-    // Emit a bounded window around the first divergence. Without it every mismatch costs a
-    // live round trip to find out what actually differed.
     let divergenceIndex = 0;
     while (
       divergenceIndex < expectedProjection.length &&
@@ -306,7 +322,6 @@ export async function submitPrompt(
     ) {
       divergenceIndex += 1;
     }
-    const windowStart = Math.max(0, divergenceIndex - 60);
     throw new BrowserAutomationError(
       "Prompt editor holds different text than the prompt we inserted.",
       {
@@ -318,8 +333,8 @@ export async function submitPrompt(
         divergenceIndex,
         expectedProjectionLength: expectedProjection.length,
         observedProjectionLength: observedProjection.length,
-        expectedExcerpt: expectedProjection.slice(windowStart, divergenceIndex + 60),
-        observedExcerpt: observedProjection.slice(windowStart, divergenceIndex + 60),
+        expectedProjectionSha256: sha256Prefix(expectedProjection),
+        observedProjectionSha256: sha256Prefix(observedProjection),
       },
     );
   }
@@ -1110,4 +1125,5 @@ export const __test__ = {
   attemptSendButton,
   sendButtonTimeoutMs,
   verifyPromptCommitted,
+  projectForComparison,
 };

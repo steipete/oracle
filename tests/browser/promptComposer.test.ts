@@ -554,4 +554,59 @@ describe("promptComposer", () => {
       vi.useRealTimers();
     }
   });
+
+  test("preserves punctuation so flags and paths cannot compare equal", () => {
+    const { projectForComparison } = promptComposer;
+    expect(projectForComparison("## Heading here")).toBe("heading here");
+    expect(projectForComparison("**bold** text and code `x` here")).toBe(
+      "bold text and code x here",
+    );
+    expect(projectForComparison("--browser-headless")).not.toBe(
+      projectForComparison("browser-headless"),
+    );
+    expect(projectForComparison("foo/bar")).not.toBe(projectForComparison("foo bar"));
+    expect(projectForComparison("hello, world")).not.toBe(projectForComparison("hello world"));
+  });
+
+  test("mismatch errors keep lengths and hashes without prompt excerpts", async () => {
+    vi.useFakeTimers();
+    try {
+      const prompt = "hello, world --flag";
+      const readBack = "hello world flag";
+      const composer = {
+        innerText: readBack,
+        textContent: readBack,
+        getBoundingClientRect: () => ({ width: 100, height: 20 }),
+        pmViewDesc: {
+          node: { content: { size: readBack.length }, textBetween: () => readBack },
+        },
+      };
+      const { runtime } = submissionRuntime(composer);
+      const promise = submitPrompt(
+        { runtime: runtime as never, input: { insertText: vi.fn() } as never, baselineTurns: 0 },
+        prompt,
+        Object.assign(vi.fn(), { verbose: false }) as never,
+      );
+      const pending = promise.then(
+        () => {
+          throw new Error("expected mismatch");
+        },
+        (reason: { details?: Record<string, unknown> }) => reason,
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      const error = await pending;
+      expect(error.details).toMatchObject({
+        code: "prompt-state-mismatch",
+        promptLength: prompt.length,
+        expectedProjectionSha256: expect.stringMatching(/^[a-f0-9]{12}$/),
+        observedProjectionSha256: expect.stringMatching(/^[a-f0-9]{12}$/),
+      });
+      expect(error.details).not.toHaveProperty("expectedExcerpt");
+      expect(error.details).not.toHaveProperty("observedExcerpt");
+      expect(JSON.stringify(error.details)).not.toContain("hello");
+      expect(JSON.stringify(error.details)).not.toContain("--flag");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
