@@ -27,7 +27,7 @@ oracle --engine browser \
   --prompt "Summarize the release notes"
 ```
 
-Headless mode is opt-in; Oracle remains headful by default because some sites reject stock headless Chrome. The selected Chromium binary must provide any compatibility those sites require. Headless is a launch-only option, so it cannot be combined with `--browser-attach-running` and is ignored by standalone `--remote-chrome`.
+Headless mode is opt-in; Oracle remains headful by default because some sites reject stock headless Chrome. The selected Chromium binary must provide any compatibility those sites require. Headless is a launch-only option: an explicit `--browser-headless` flag cannot be combined with `--browser-attach-running`, a saved `browser.headless` preference is ignored in attach-running mode (matching other launch-only defaults), and standalone `--remote-chrome` continues to warn and ignore headless.
 
 ## 2. Tell cookie sync where your session lives
 
