@@ -628,6 +628,15 @@ describe("remote Chrome option warnings", () => {
       }),
     ).toContain("--browser-chrome-path");
   });
+
+  test("marks browser-headless as ignored for classic remote-chrome", () => {
+    expect(
+      __test__.listIgnoredRemoteChromeFlags({
+        attachRunning: false,
+        headless: true,
+      }),
+    ).toContain("--browser-headless");
+  });
 });
 
 describe("remote Chrome cleanup", () => {

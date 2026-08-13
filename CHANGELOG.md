@@ -5,6 +5,7 @@
 ### Fixed
 
 - Browser: recognize the Japanese `詳細設定` → `推論レベル` controls in ChatGPT's unified Intelligence picker, allowing explicit Pro effort selection without weakening the fail-closed guard for unknown languages.
+- Browser: honor explicit `--browser-headless` for locally launched Chrome/Chromium binaries while preserving the headful default and rejecting the launch-only flag in attach-running mode.
 
 ## 0.17.2 — 2026-08-10
 
