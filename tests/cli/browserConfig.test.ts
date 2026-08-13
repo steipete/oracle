@@ -32,6 +32,7 @@ describe("buildBrowserConfig", () => {
     });
 
     expect(config.manualLoginCookieSync).toBe(true);
+    expect(config.cookieSync).toBe(true);
   });
 
   test("maps gpt-5.4 browser runs to Thinking 5.4", async () => {

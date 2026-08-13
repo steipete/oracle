@@ -211,6 +211,26 @@ describe("summarizeModelRunsForConsult", () => {
     expect(config.cookieSync).toBe(process.platform !== "win32");
   });
 
+  test("honors explicit cookie sync for MCP manual-login consults", () => {
+    const config = buildConsultBrowserConfig({
+      userConfig: {
+        browser: {
+          manualLogin: true,
+          manualLoginCookieSync: true,
+        },
+      },
+      env: {},
+      runModel: "gpt-5.5-pro",
+      inputModel: "gpt-5.5-pro",
+    });
+
+    expect(config).toMatchObject({
+      manualLogin: true,
+      manualLoginCookieSync: true,
+      cookieSync: true,
+    });
+  });
+
   test("lets explicit consult inputs override config defaults", () => {
     const config = buildConsultBrowserConfig({
       userConfig: {

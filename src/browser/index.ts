@@ -109,6 +109,7 @@ import {
   resolveManualLoginWaitMs,
 } from "./manualLoginProfile.js";
 import { describeBrowserControlPlan, formatBrowserControlPlan } from "./controlPlan.js";
+import { shouldSyncBrowserCookies } from "./policies.js";
 import {
   createConversationUrlMonitor,
   type ConversationUrlMonitor,
@@ -1253,7 +1254,10 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
 
     const manualLoginCookieSync = manualLogin && Boolean(config.manualLoginCookieSync);
-    const cookieSyncEnabled = config.cookieSync && (!profileIsPreSigned || manualLoginCookieSync);
+    const cookieSyncEnabled = shouldSyncBrowserCookies(config, {
+      manualLogin,
+      profileIsPreSigned,
+    });
     if (cookieSyncEnabled) {
       if (manualLoginCookieSync) {
         logger(

@@ -270,7 +270,11 @@ export async function buildBrowserConfig(
     cookieSyncWaitMs: options.browserCookieWait
       ? parseBrowserDuration(options.browserCookieWait, "--browser-cookie-wait", 0)
       : undefined,
-    cookieSync: options.browserNoCookieSync ? false : undefined,
+    cookieSync: options.browserNoCookieSync
+      ? false
+      : options.browserManualLoginCookieSync === true
+        ? true
+        : undefined,
     cookieNames,
     inlineCookies: inline?.cookies,
     inlineCookiesSource: inline?.source ?? null,

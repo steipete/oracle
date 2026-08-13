@@ -3,7 +3,6 @@ import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
-import { resolveBrowserConfig } from "../../src/browser/config.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
 
 type FakeTarget = { id?: string; targetId?: string; type?: string; url?: string };
@@ -469,32 +468,7 @@ describe("reattach helpers", () => {
   });
 });
 
-describe("shouldSyncReattachCookies", () => {
-  const { shouldSyncReattachCookies } = __test__;
-
-  test("syncs cookies for non-manual-login profiles when cookie sync is enabled", () => {
-    const resolved = resolveBrowserConfig({ manualLogin: false, cookieSync: true });
-    expect(shouldSyncReattachCookies(false, resolved)).toBe(true);
-  });
-
-  test("skips cookie sync for manual-login profiles without explicit cookie sync", () => {
-    const resolved = resolveBrowserConfig({
-      manualLogin: true,
-      cookieSync: true,
-      manualLoginCookieSync: false,
-    });
-    expect(shouldSyncReattachCookies(true, resolved)).toBe(false);
-  });
-
-  test("syncs cookies for manual-login profiles with explicit cookie sync", () => {
-    const resolved = resolveBrowserConfig({
-      manualLogin: true,
-      cookieSync: true,
-      manualLoginCookieSync: true,
-    });
-    expect(shouldSyncReattachCookies(true, resolved)).toBe(true);
-  });
-
+describe("manual-login cookie sync recovery", () => {
   test("invokes cookie sync while reopening an explicitly synchronized manual-login profile", async () => {
     const profileDir = await mkdtemp(path.join(os.tmpdir(), "oracle-reattach-cookie-sync-"));
     try {

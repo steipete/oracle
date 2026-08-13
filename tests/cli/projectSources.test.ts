@@ -78,4 +78,21 @@ describe("project sources CLI helpers", () => {
       modelStrategy: "ignore",
     });
   });
+
+  test("honors explicit cookie sync for a persistent manual-login profile", async () => {
+    const config = await buildProjectSourcesBrowserConfig({
+      options: {},
+      projectUrl: "https://chatgpt.com/g/g-p-123/project?tab=sources",
+      configuredBrowser: {
+        manualLogin: true,
+        manualLoginCookieSync: true,
+      },
+    });
+
+    expect(config).toMatchObject({
+      manualLogin: true,
+      manualLoginCookieSync: true,
+      cookieSync: true,
+    });
+  });
 });

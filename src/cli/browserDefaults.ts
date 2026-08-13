@@ -175,7 +175,11 @@ export function applyBrowserDefaultsFromConfig(
   ) {
     options.browserManualLoginProfileDir = browser.manualLoginProfileDir;
   }
-  if (isUnset("browserManualLoginCookieSync") && browser.manualLoginCookieSync !== undefined) {
+  if (
+    !attachRunningRequested &&
+    isUnset("browserManualLoginCookieSync") &&
+    browser.manualLoginCookieSync !== undefined
+  ) {
     options.browserManualLoginCookieSync = browser.manualLoginCookieSync;
   }
 }

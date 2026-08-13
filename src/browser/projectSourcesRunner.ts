@@ -51,6 +51,7 @@ import {
 import { normalizeProjectSourcesUrl } from "../projectSources/url.js";
 import { buildProjectSourcesUploadPlan, diffAddedProjectSources } from "../projectSources/plan.js";
 import type { ProjectSourcesRequest, ProjectSourcesResult } from "../projectSources/types.js";
+import { shouldSyncBrowserCookies } from "./policies.js";
 
 type BrowserChrome = LaunchedChrome & { host?: string };
 
@@ -335,8 +336,7 @@ async function applyProjectSourcesCookies({
   manualLogin: boolean;
   logger: BrowserLogger;
 }): Promise<number> {
-  const manualLoginCookieSync = manualLogin && Boolean(config.manualLoginCookieSync);
-  const cookieSyncEnabled = config.cookieSync && (!manualLogin || manualLoginCookieSync);
+  const cookieSyncEnabled = shouldSyncBrowserCookies(config, { manualLogin });
   if (!cookieSyncEnabled) {
     logger(
       manualLogin

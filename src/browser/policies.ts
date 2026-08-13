@@ -1,5 +1,5 @@
 import { formatFileSections } from "../oracle/markdown.js";
-import type { BrowserAttachment } from "./types.js";
+import type { BrowserAttachment, ResolvedBrowserConfig } from "./types.js";
 import type { BrowserSessionConfig } from "../sessionManager.js";
 
 export interface AttachmentSection {
@@ -55,6 +55,17 @@ export type CookiePlan =
   | { type: "inline"; description: string }
   | { type: "disabled"; description: string }
   | { type: "copy"; description: string };
+
+export function shouldSyncBrowserCookies(
+  config: Pick<ResolvedBrowserConfig, "cookieSync" | "manualLoginCookieSync">,
+  {
+    manualLogin,
+    profileIsPreSigned = manualLogin,
+  }: { manualLogin: boolean; profileIsPreSigned?: boolean },
+): boolean {
+  const explicitManualLoginSync = manualLogin && config.manualLoginCookieSync === true;
+  return config.cookieSync && (!profileIsPreSigned || explicitManualLoginSync);
+}
 
 export function buildCookiePlan(config?: BrowserSessionConfig): CookiePlan {
   if (config?.inlineCookies && config.inlineCookies.length > 0) {

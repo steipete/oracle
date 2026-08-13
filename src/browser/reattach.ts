@@ -12,7 +12,7 @@ import {
   ensurePromptReady,
   waitForResumedConversationHydration,
 } from "./pageActions.js";
-import type { BrowserLogger, ChromeClient, ResolvedBrowserConfig } from "./types.js";
+import type { BrowserLogger, ChromeClient } from "./types.js";
 import {
   launchChrome,
   connectToChrome,
@@ -41,6 +41,7 @@ import {
   type TargetInfoLite,
 } from "./reattachHelpers.js";
 import { waitForDeepResearchCompletion } from "./actions/deepResearch.js";
+import { shouldSyncBrowserCookies } from "./policies.js";
 
 export interface ReattachDeps {
   listTargets?: () => Promise<TargetInfoLite[]>;
@@ -279,18 +280,6 @@ function inferPortFromBrowserWSEndpoint(browserWSEndpoint?: string): number | un
   }
   return undefined;
 }
-/**
- * Manual-login profiles normally reuse their persistent profile cookies, so recovery
- * skips cookie sync by default. When explicit cookie sync is requested for a
- * manual-login profile, supplied cookies must still be applied so the relaunched
- * browser can reopen an authenticated conversation. Matches the launch-path gate
- * `cookieSync && (!manualLogin || manualLoginCookieSync)`.
- */
-function shouldSyncReattachCookies(manualLogin: boolean, resolved: ResolvedBrowserConfig): boolean {
-  const manualLoginCookieSync = manualLogin && Boolean(resolved.manualLoginCookieSync);
-  return resolved.cookieSync && (!manualLogin || manualLoginCookieSync);
-}
-
 async function resumeBrowserSessionViaNewChrome(
   runtime: BrowserRuntimeMetadata,
   config: BrowserSessionConfig | undefined,
@@ -348,7 +337,7 @@ async function resumeBrowserSessionViaNewChrome(
     await positionChromeWindowOffscreen(client, logger);
   }
   let appliedCookies = 0;
-  if (shouldSyncReattachCookies(manualLogin, resolved)) {
+  if (shouldSyncBrowserCookies(resolved, { manualLogin })) {
     const sync = deps.syncCookies ?? syncCookies;
     try {
       appliedCookies = await sync(Network, resolved.url, resolved.chromeProfile, logger, {
@@ -494,5 +483,4 @@ export const __test__ = {
   buildConversationUrl,
   openConversationFromSidebar,
   readPromptPreviewTurnIndex,
-  shouldSyncReattachCookies,
 };

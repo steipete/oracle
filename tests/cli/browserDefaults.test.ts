@@ -255,6 +255,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
         attachRunning: false,
         debugPort: 9222,
         timeoutMs: 120_000,
+        manualLoginCookieSync: true,
         hideWindow: true,
         keepBrowser: true,
         manualLogin: true,
@@ -271,6 +272,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserChromeProfile).toBeUndefined();
     expect(options.browserCookiePath).toBeUndefined();
     expect(options.browserPort).toBeUndefined();
+    expect(options.browserManualLoginCookieSync).toBeUndefined();
     expect(options.browserHideWindow).toBeUndefined();
     expect(options.browserKeepBrowser).toBeUndefined();
     expect(options.browserManualLogin).toBeUndefined();
