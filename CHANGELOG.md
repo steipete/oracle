@@ -5,6 +5,7 @@
 ### Fixed
 
 - Browser: recognize the Japanese `詳細設定` → `推論レベル` controls in ChatGPT's unified Intelligence picker, allowing explicit Pro effort selection without weakening the fail-closed guard for unknown languages.
+- Browser: align reattach recovery cookie sync with the launch path for manual-login profiles with explicit cookie sync, so recovery can reopen an authenticated conversation with supplied cookies instead of skipping sync.
 
 ## 0.17.2 — 2026-08-10
 

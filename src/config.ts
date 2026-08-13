@@ -67,6 +67,8 @@ export interface BrowserConfigDefaults {
   manualLogin?: boolean;
   /** Manual-login profile directory override (also available via ORACLE_BROWSER_PROFILE_DIR). */
   manualLoginProfileDir?: string | null;
+  /** Seed a manual-login profile from configured Chrome/inline cookies. */
+  manualLoginCookieSync?: boolean;
 }
 
 export interface AzureConfig {

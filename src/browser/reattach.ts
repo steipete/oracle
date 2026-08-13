@@ -12,7 +12,7 @@ import {
   ensurePromptReady,
   waitForResumedConversationHydration,
 } from "./pageActions.js";
-import type { BrowserLogger, ChromeClient } from "./types.js";
+import type { BrowserLogger, ChromeClient, ResolvedBrowserConfig } from "./types.js";
 import {
   launchChrome,
   connectToChrome,
@@ -49,6 +49,9 @@ export interface ReattachDeps {
   captureAssistantMarkdown?: typeof captureAssistantMarkdown;
   waitForDeepResearchCompletion?: typeof waitForDeepResearchCompletion;
   waitForConversationHydration?: typeof waitForResumedConversationHydration;
+  launchChrome?: typeof launchChrome;
+  connectToChrome?: typeof connectToChrome;
+  syncCookies?: typeof syncCookies;
   recoverSession?: (
     runtime: BrowserRuntimeMetadata,
     config: BrowserSessionConfig | undefined,
@@ -276,6 +279,17 @@ function inferPortFromBrowserWSEndpoint(browserWSEndpoint?: string): number | un
   }
   return undefined;
 }
+/**
+ * Manual-login profiles normally reuse their persistent profile cookies, so recovery
+ * skips cookie sync by default. When explicit cookie sync is requested for a
+ * manual-login profile, supplied cookies must still be applied so the relaunched
+ * browser can reopen an authenticated conversation. Matches the launch-path gate
+ * `cookieSync && (!manualLogin || manualLoginCookieSync)`.
+ */
+function shouldSyncReattachCookies(manualLogin: boolean, resolved: ResolvedBrowserConfig): boolean {
+  const manualLoginCookieSync = manualLogin && Boolean(resolved.manualLoginCookieSync);
+  return resolved.cookieSync && (!manualLogin || manualLoginCookieSync);
+}
 
 async function resumeBrowserSessionViaNewChrome(
   runtime: BrowserRuntimeMetadata,
@@ -291,9 +305,37 @@ async function resumeBrowserSessionViaNewChrome(
   if (manualLogin) {
     await mkdir(userDataDir, { recursive: true });
   }
-  const chrome = await launchChrome(resolved, userDataDir, logger);
-  const chromeHost = (chrome as unknown as { host?: string }).host ?? "127.0.0.1";
-  const client = await connectToChrome(chrome.port, logger, chromeHost);
+  const launch = deps.launchChrome ?? launchChrome;
+  const connectToLaunchedChrome = deps.connectToChrome ?? connectToChrome;
+  const chrome = await launch(resolved, userDataDir, logger);
+  const chromeHost =
+    chrome && typeof chrome === "object" && "host" in chrome && typeof chrome.host === "string"
+      ? chrome.host
+      : "127.0.0.1";
+  const client = await connectToLaunchedChrome(chrome.port, logger, chromeHost);
+  const cleanup = async () => {
+    if (client && typeof client.close === "function") {
+      try {
+        await client.close();
+      } catch {
+        // ignore
+      }
+    }
+    if (!resolved.keepBrowser) {
+      try {
+        await chrome.kill();
+      } catch {
+        // ignore
+      }
+      if (manualLogin) {
+        await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "never" }).catch(
+          () => undefined,
+        );
+      } else {
+        await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
+  };
   const { Network, Page, Runtime, DOM, Target } = client;
 
   if (Runtime?.enable) {
@@ -306,14 +348,20 @@ async function resumeBrowserSessionViaNewChrome(
     await positionChromeWindowOffscreen(client, logger);
   }
   let appliedCookies = 0;
-  if (!manualLogin && resolved.cookieSync) {
-    appliedCookies = await syncCookies(Network, resolved.url, resolved.chromeProfile, logger, {
-      allowErrors: resolved.allowCookieErrors,
-      filterNames: resolved.cookieNames ?? undefined,
-      inlineCookies: resolved.inlineCookies ?? undefined,
-      cookiePath: resolved.chromeCookiePath ?? undefined,
-      waitMs: resolved.cookieSyncWaitMs ?? 0,
-    });
+  if (shouldSyncReattachCookies(manualLogin, resolved)) {
+    const sync = deps.syncCookies ?? syncCookies;
+    try {
+      appliedCookies = await sync(Network, resolved.url, resolved.chromeProfile, logger, {
+        allowErrors: resolved.allowCookieErrors,
+        filterNames: resolved.cookieNames ?? undefined,
+        inlineCookies: resolved.inlineCookies ?? undefined,
+        cookiePath: resolved.chromeCookiePath ?? undefined,
+        waitMs: resolved.cookieSyncWaitMs ?? 0,
+      });
+    } catch (error) {
+      await cleanup();
+      throw error;
+    }
   }
 
   await clearStaleChatGptConversationCookies(Network, Target, logger, {
@@ -369,29 +417,6 @@ async function resumeBrowserSessionViaNewChrome(
   const waitForResponse = deps.waitForAssistantResponse ?? waitForAssistantResponse;
   const captureMarkdown = deps.captureAssistantMarkdown ?? captureAssistantMarkdown;
   const timeoutMs = resolved.timeoutMs ?? 120_000;
-  const cleanup = async () => {
-    if (client && typeof client.close === "function") {
-      try {
-        await client.close();
-      } catch {
-        // ignore
-      }
-    }
-    if (!resolved.keepBrowser) {
-      try {
-        await chrome.kill();
-      } catch {
-        // ignore
-      }
-      if (manualLogin) {
-        await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "never" }).catch(
-          () => undefined,
-        );
-      } else {
-        await rm(userDataDir, { recursive: true, force: true }).catch(() => undefined);
-      }
-    }
-  };
   const minTurnIndex =
     (await readPromptPreviewTurnIndex(Runtime, deps.promptPreview)) ??
     (deps.promptPreview ? null : await readConversationTurnIndex(Runtime, logger));
@@ -428,7 +453,6 @@ async function resumeBrowserSessionViaNewChrome(
   const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
 
   await cleanup();
-
   return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
 }
 
@@ -470,4 +494,5 @@ export const __test__ = {
   buildConversationUrl,
   openConversationFromSidebar,
   readPromptPreviewTurnIndex,
+  shouldSyncReattachCookies,
 };

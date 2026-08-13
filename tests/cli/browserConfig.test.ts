@@ -24,6 +24,16 @@ describe("buildBrowserConfig", () => {
     });
   });
 
+  test("forwards configured manual-login cookie sync to browser sessions", async () => {
+    const config = await buildBrowserConfig({
+      model: "gpt-5.5-pro",
+      browserManualLogin: true,
+      browserManualLoginCookieSync: true,
+    });
+
+    expect(config.manualLoginCookieSync).toBe(true);
+  });
+
   test("maps gpt-5.4 browser runs to Thinking 5.4", async () => {
     const config = await buildBrowserConfig({ model: "gpt-5.4" });
     expect(config.desiredModel).toBe("Thinking 5.4");

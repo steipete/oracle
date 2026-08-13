@@ -78,6 +78,7 @@ export interface BrowserFlagOptions {
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
+  browserManualLoginCookieSync?: boolean;
   copyProfile?: string;
   remoteHost?: string;
   /** Thinking time intensity: 'light', 'standard', 'extended', 'extra-high', 'pro', 'heavy' */
@@ -277,6 +278,7 @@ export async function buildBrowserConfig(
     keepBrowser: options.browserKeepBrowser ? true : undefined,
     manualLogin: options.browserManualLogin === undefined ? undefined : options.browserManualLogin,
     manualLoginProfileDir: options.browserManualLoginProfileDir ?? undefined,
+    manualLoginCookieSync: options.browserManualLoginCookieSync,
     copyProfileSource: options.copyProfile ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
     desiredModel,

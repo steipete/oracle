@@ -38,6 +38,7 @@ export interface BrowserDefaultsOptions {
   browserArchive?: BrowserArchiveMode;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
+  browserManualLoginCookieSync?: boolean;
 }
 
 type SourceGetter = (key: keyof BrowserDefaultsOptions) => string | undefined;
@@ -173,5 +174,8 @@ export function applyBrowserDefaultsFromConfig(
     browser.manualLoginProfileDir !== undefined
   ) {
     options.browserManualLoginProfileDir = browser.manualLoginProfileDir;
+  }
+  if (isUnset("browserManualLoginCookieSync") && browser.manualLoginCookieSync !== undefined) {
+    options.browserManualLoginCookieSync = browser.manualLoginCookieSync;
   }
 }

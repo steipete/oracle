@@ -222,6 +222,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
       browser: {
         manualLogin: true,
         manualLoginProfileDir: "/tmp/oracle-profile",
+        manualLoginCookieSync: true,
       },
     };
 
@@ -229,6 +230,7 @@ describe("applyBrowserDefaultsFromConfig", () => {
 
     expect(options.browserManualLogin).toBe(true);
     expect(options.browserManualLoginProfileDir).toBe("/tmp/oracle-profile");
+    expect(options.browserManualLoginCookieSync).toBe(true);
   });
 
   test("applies attach-running defaults from config when CLI flags are untouched", () => {

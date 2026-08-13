@@ -1,5 +1,9 @@
+import os from "node:os";
+import path from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
+import { resolveBrowserConfig } from "../../src/browser/config.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
 
 type FakeTarget = { id?: string; targetId?: string; type?: string; url?: string };
@@ -462,5 +466,83 @@ describe("reattach helpers", () => {
     const call = evaluate.mock.calls[0]?.[0] as EvaluateParams | undefined;
     expect(call?.expression).toContain("const conversationId = null");
     expect(call?.expression).toContain("const preferProjects = false");
+  });
+});
+
+describe("shouldSyncReattachCookies", () => {
+  const { shouldSyncReattachCookies } = __test__;
+
+  test("syncs cookies for non-manual-login profiles when cookie sync is enabled", () => {
+    const resolved = resolveBrowserConfig({ manualLogin: false, cookieSync: true });
+    expect(shouldSyncReattachCookies(false, resolved)).toBe(true);
+  });
+
+  test("skips cookie sync for manual-login profiles without explicit cookie sync", () => {
+    const resolved = resolveBrowserConfig({
+      manualLogin: true,
+      cookieSync: true,
+      manualLoginCookieSync: false,
+    });
+    expect(shouldSyncReattachCookies(true, resolved)).toBe(false);
+  });
+
+  test("syncs cookies for manual-login profiles with explicit cookie sync", () => {
+    const resolved = resolveBrowserConfig({
+      manualLogin: true,
+      cookieSync: true,
+      manualLoginCookieSync: true,
+    });
+    expect(shouldSyncReattachCookies(true, resolved)).toBe(true);
+  });
+
+  test("invokes cookie sync while reopening an explicitly synchronized manual-login profile", async () => {
+    const profileDir = await mkdtemp(path.join(os.tmpdir(), "oracle-reattach-cookie-sync-"));
+    try {
+      const expected = new Error("stop after cookie sync");
+      const kill = vi.fn(async () => {});
+      const close = vi.fn(async () => {});
+      const launchChrome = vi.fn(async () => ({ port: 9222, kill }));
+      const connectToChrome = vi.fn(async () => ({
+        // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+        Network: {},
+        // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+        Page: {},
+        // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+        Runtime: { enable: vi.fn() },
+        // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+        DOM: { enable: vi.fn() },
+        // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+        Target: {},
+        close,
+      }));
+      const syncCookies = vi.fn(async () => {
+        throw expected;
+      });
+      const logger = vi.fn() as BrowserLogger;
+
+      await expect(
+        resumeBrowserSession(
+          { tabUrl: "https://chatgpt.com/c/abc" },
+          {
+            manualLogin: true,
+            manualLoginProfileDir: profileDir,
+            cookieSync: true,
+            manualLoginCookieSync: true,
+          },
+          logger,
+          {
+            launchChrome: launchChrome as never,
+            connectToChrome: connectToChrome as never,
+            syncCookies: syncCookies as never,
+          },
+        ),
+      ).rejects.toBe(expected);
+
+      expect(syncCookies).toHaveBeenCalledOnce();
+      expect(close).toHaveBeenCalledOnce();
+      expect(kill).toHaveBeenCalledOnce();
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
   });
 });
