@@ -10,22 +10,22 @@ describe("Gemini web model mapping", () => {
   it.each([
     [
       "gemini-3.1-flash-lite",
-      '[1,null,null,null,"1d44b34bcaa1c04d",null,null,1,[4,5,6,8],null,null,3,null,null,6,1,"TEST-ID"]',
+      '[1,null,null,null,"1d44b34bcaa1c04d",null,null,0,[4],null,null,2]',
     ],
     [
       "gemini-3.5-flash",
-      '[1,null,null,null,"56fdd199312815e2",null,null,1,[4,5,6,8],null,null,3,null,null,1,1,"TEST-ID"]',
+      '[1,null,null,null,"56fdd199312815e2",null,null,0,[4],null,null,2]',
     ],
     [
       "gemini-3.1-pro",
-      '[1,null,null,null,"797f3d0293f288ad",null,null,1,[4,5,6,8],null,null,3,null,null,3,1,"TEST-ID"]',
+      '[1,null,null,null,"e6fa609c3fa255c0",null,null,0,[4],null,null,2]',
     ],
     [
       "gemini-3-pro-deep-think",
-      '[1,null,null,null,"797f3d0293f288ad",null,null,1,[4,5,6,8],null,null,3,null,null,3,3,"TEST-ID"]',
+      '[1,null,null,null,"e051ce1aa80aa576",null,null,0,[4],null,null,2]',
     ],
   ] as const)("builds the captured %s header", (model, expected) => {
-    expect(buildGeminiWebModelHeader(model, "TEST-ID")).toBe(expected);
+    expect(buildGeminiWebModelHeader(model)).toBe(expected);
   });
 
   it("uses current defaults", () => {
