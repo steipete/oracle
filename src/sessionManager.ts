@@ -261,6 +261,7 @@ export interface StoredRunOptions {
   browserResumeConversationUrl?: string;
   aspectRatio?: string;
   geminiShowThoughts?: boolean;
+  geminiAllowModelFallback?: boolean;
 }
 
 export interface SessionMetadata {
@@ -705,6 +706,7 @@ export async function initializeSession(
       browserResumeConversationUrl: options.browserResumeConversationUrl,
       aspectRatio: options.aspectRatio,
       geminiShowThoughts: options.geminiShowThoughts,
+      geminiAllowModelFallback: options.geminiAllowModelFallback,
     },
   };
   await ensureDir(modelsDir(sessionId));
