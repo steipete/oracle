@@ -60,6 +60,11 @@ import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
 import { BrowserAutomationError } from "../oracle/errors.js";
+import {
+  buildAttachmentBasenameCollisionDetails,
+  findAttachmentBasenameCollisions,
+  formatAttachmentBasenameCollisionMessage,
+} from "./attachmentValidation.js";
 import { alignPromptEchoPair, buildPromptEchoMatcher } from "./reattachHelpers.js";
 import { buildConversationTurnCountExpression } from "./conversationTurns.js";
 import type { ProfileRunLock } from "./profileState.js";
@@ -509,6 +514,27 @@ function hasBrowserErrorCode(error: unknown, code: string): boolean {
   );
 }
 
+function assertUniqueAttachmentBasenames(
+  attachments: BrowserAttachment[],
+  options: { stage: string; subject: string },
+): void {
+  const collisions = findAttachmentBasenameCollisions(attachments);
+  if (collisions.length === 0) return;
+
+  const collisionDetails = buildAttachmentBasenameCollisionDetails(
+    collisions,
+    (attachment) => attachment.displayPath || attachment.path,
+  );
+  throw new BrowserAutomationError(
+    formatAttachmentBasenameCollisionMessage(options.subject, collisionDetails.collisions),
+    {
+      stage: options.stage,
+      code: "attachment-basename-collision",
+      ...collisionDetails,
+    },
+  );
+}
+
 async function saveOptionalArtifact<T>(
   operation: () => Promise<T | null>,
   logger: BrowserLogger,
@@ -790,6 +816,10 @@ async function runSubmissionWithRecovery({
 
       const isPromptTooLarge = hasBrowserErrorCode(error, "prompt-too-large");
       if (fallbackSubmission && isPromptTooLarge && !usedFallbackSubmission) {
+        assertUniqueAttachmentBasenames(fallbackSubmission.attachments, {
+          stage: "upload-fallback",
+          subject: "The inline prompt was too large, but its upload fallback",
+        });
         usedFallbackSubmission = true;
         logger("[browser] Inline prompt too large; retrying with file uploads.");
         await prepareFallbackSubmission();
@@ -912,12 +942,17 @@ function buildSkippedModelSelectionEvidence(
 }
 
 export async function runBrowserMode(options: BrowserRunOptions): Promise<BrowserRunResult> {
+  const attachments: BrowserAttachment[] = options.attachments ?? [];
+  assertUniqueAttachmentBasenames(attachments, {
+    stage: "upload",
+    subject: "Browser upload",
+  });
+
   const promptText = options.prompt?.trim();
   if (!promptText) {
     throw new Error("Prompt text is required when using browser mode.");
   }
 
-  const attachments: BrowserAttachment[] = options.attachments ?? [];
   const fallbackSubmission = options.fallbackSubmission;
 
   let config = resolveBrowserConfig(options.config);
