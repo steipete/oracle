@@ -204,7 +204,7 @@ describe("promptComposer", () => {
 
     await expect(
       promptComposer.verifyPromptCommitted(runtime as never, "hello", 150),
-    ).resolves.toBe(1);
+    ).resolves.toEqual({ turnsCount: 1, userTurnIndex: null });
   });
 
   test("attachment sends time out instead of allowing Enter fallback", async () => {
@@ -244,6 +244,8 @@ describe("promptComposer", () => {
 
   test("marks prompt submitted before commit verification finishes", async () => {
     const onPromptSubmitted = vi.fn();
+    const onPromptDispatched = vi.fn();
+    const onPromptCommitted = vi.fn();
     const runtime = {
       evaluate: vi.fn(async ({ expression }: { expression: string }) => {
         if (expression.includes("document.readyState")) {
@@ -266,6 +268,7 @@ describe("promptComposer", () => {
               baseline: 0,
               turnsCount: 1,
               userMatched: true,
+              matchedUserTurnIndex: 0,
               prefixMatched: false,
               lastMatched: true,
               hasNewTurn: true,
@@ -287,12 +290,16 @@ describe("promptComposer", () => {
         input: input as never,
         baselineTurns: 0,
         onPromptSubmitted,
+        onPromptDispatched,
+        onPromptCommitted,
       },
       "hello",
       logger as never,
     );
 
     expect(onPromptSubmitted).toHaveBeenCalledTimes(1);
+    expect(onPromptDispatched).toHaveBeenCalledTimes(1);
+    expect(onPromptCommitted).toHaveBeenCalledWith(1, 0);
   });
 
   test("waits for a delayed trusted click without issuing a second send", async () => {

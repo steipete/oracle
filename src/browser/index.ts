@@ -56,7 +56,15 @@ import {
 } from "./actions/deepResearch.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
 import { formatElapsed } from "../oracle/format.js";
-import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
+import type { BrowserModelSelectionEvidence, BrowserRuntimeMetadata } from "../sessionStore.js";
+import {
+  beginProResponseTimingTurn,
+  completeProResponseTimingTurn,
+  markProPromptCommitted,
+  markProPromptDispatched,
+  requiresProResponseTiming,
+  resolveProAttachmentBytes,
+} from "./proResponseTiming.js";
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
 import { BrowserAutomationError } from "../oracle/errors.js";
@@ -950,6 +958,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  const proTimingRequired = requiresProResponseTiming(config);
+  let proTimingRuntime: BrowserRuntimeMetadata = {};
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let tabLease: BrowserTabLease | null = null;
   let conversationUrlMonitor: ConversationUrlMonitor | null = null;
@@ -966,6 +976,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tabUrl: lastUrl,
       conversationId,
       promptSubmitted,
+      ...proTimingRuntime,
       userDataDir,
       controllerPid: process.pid,
     };
@@ -982,9 +993,18 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       logger(`Failed to persist runtime hint: ${message}`);
     }
   };
-  const markPromptSubmitted = async (): Promise<void> => {
-    if (promptSubmitted) {
-      return;
+  const markPromptDispatched = async (): Promise<void> => {
+    if (proTimingRequired) {
+      proTimingRuntime = markProPromptDispatched(proTimingRuntime);
+    }
+    await emitRuntimeHint();
+  };
+  const markPromptCommitted = async (
+    _committedTurns: number | null,
+    committedUserTurnIndex: number | null,
+  ): Promise<void> => {
+    if (proTimingRequired) {
+      proTimingRuntime = markProPromptCommitted(proTimingRuntime, committedUserTurnIndex);
     }
     promptSubmitted = true;
     await emitRuntimeHint();
@@ -1225,6 +1245,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
                     ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
                     : undefined,
                 promptSubmitted,
+                ...proTimingRuntime,
                 controllerPid: process.pid,
               },
             }),
@@ -1537,6 +1558,14 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       await handle.release().catch(() => undefined);
     };
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
+      if (proTimingRequired) {
+        proTimingRuntime = beginProResponseTimingTurn(proTimingRuntime, {
+          inputTokens: estimateTokenCount(prompt),
+          attachmentBytes: await resolveProAttachmentBytes(submissionAttachments),
+          prompt,
+        });
+        await emitRuntimeHint();
+      }
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
       const baselineAssistantText =
         typeof baselineSnapshot?.text === "string" ? baselineSnapshot.text.trim() : "";
@@ -1610,7 +1639,8 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         attachmentTimeoutMs: config.attachmentTimeoutMs ?? undefined,
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames: attachmentExpectations,
-        onPromptSubmitted: markPromptSubmitted,
+        onPromptDispatched: markPromptDispatched,
+        onPromptCommitted: markPromptCommitted,
       };
       const deepResearchTargetBaseline =
         deepResearch && client
@@ -1623,7 +1653,6 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         log: logger,
         state: providerState,
       });
-      await markPromptSubmitted();
       const providerBaselineTurns = providerState.baselineTurns;
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
@@ -1710,6 +1739,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           },
         ),
       );
+      if (proTimingRequired) {
+        proTimingRuntime = completeProResponseTimingTurn({
+          runtime: proTimingRuntime,
+        });
+        await emitRuntimeHint();
+      }
       await updateConversationHint("post-deep-research", 15_000).catch(() => false);
       runStatus = "complete";
       const durationMs = Date.now() - startedAt;
@@ -1763,6 +1798,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        ...proTimingRuntime,
         controllerPid: process.pid,
       };
     }
@@ -1864,6 +1900,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ...proTimingRuntime,
               controllerPid: process.pid,
             },
           },
@@ -1953,6 +1990,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ...proTimingRuntime,
               controllerPid: process.pid,
             };
             throw await createAssistantTimeoutError({
@@ -2124,6 +2162,12 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           turnAnswerMarkdown = bestText;
         }
       }
+      if (proTimingRequired) {
+        proTimingRuntime = completeProResponseTimingTurn({
+          runtime: proTimingRuntime,
+        });
+        await emitRuntimeHint();
+      }
       return {
         label,
         answerText: turnAnswerText,
@@ -2208,6 +2252,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
             promptSubmitted,
+            ...proTimingRuntime,
             controllerPid: process.pid,
           },
         }),
@@ -2279,6 +2324,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       promptSubmitted,
+      ...proTimingRuntime,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -2306,6 +2352,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
         promptSubmitted,
+        ...proTimingRuntime,
         controllerPid: process.pid,
       };
       const reuseProfileHint =
@@ -2382,6 +2429,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
               : undefined,
           promptSubmitted,
+          ...proTimingRuntime,
           controllerPid: process.pid,
         },
       },
@@ -2888,6 +2936,8 @@ async function runRemoteBrowserMode(
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  const proTimingRequired = requiresProResponseTiming(config);
+  let proTimingRuntime: BrowserRuntimeMetadata = {};
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let attachedExistingTab = false;
   let ownsTarget = true;
@@ -2906,6 +2956,7 @@ async function runRemoteBrowserMode(
           tabUrl: lastUrl,
           conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
           promptSubmitted,
+          ...proTimingRuntime,
           controllerPid: process.pid,
         },
         modelSelectionEvidence,
@@ -2921,9 +2972,18 @@ async function runRemoteBrowserMode(
       logger(`Failed to persist runtime hint: ${message}`);
     }
   };
-  const markPromptSubmitted = async (): Promise<void> => {
-    if (promptSubmitted) {
-      return;
+  const markPromptDispatched = async (): Promise<void> => {
+    if (proTimingRequired) {
+      proTimingRuntime = markProPromptDispatched(proTimingRuntime);
+    }
+    await emitRuntimeHint();
+  };
+  const markPromptCommitted = async (
+    _committedTurns: number | null,
+    committedUserTurnIndex: number | null,
+  ): Promise<void> => {
+    if (proTimingRequired) {
+      proTimingRuntime = markProPromptCommitted(proTimingRuntime, committedUserTurnIndex);
     }
     promptSubmitted = true;
     await emitRuntimeHint();
@@ -3127,6 +3187,14 @@ async function runRemoteBrowserMode(
       );
     }
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
+      if (proTimingRequired) {
+        proTimingRuntime = beginProResponseTimingTurn(proTimingRuntime, {
+          inputTokens: estimateTokenCount(prompt),
+          attachmentBytes: await resolveProAttachmentBytes(submissionAttachments),
+          prompt,
+        });
+        await emitRuntimeHint();
+      }
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
       const baselineAssistantText =
         typeof baselineSnapshot?.text === "string" ? baselineSnapshot.text.trim() : "";
@@ -3184,7 +3252,8 @@ async function runRemoteBrowserMode(
         attachmentTimeoutMs: config.attachmentTimeoutMs ?? undefined,
         baselineTurns: baselineTurns ?? undefined,
         attachmentNames: attachmentExpectations,
-        onPromptSubmitted: markPromptSubmitted,
+        onPromptDispatched: markPromptDispatched,
+        onPromptCommitted: markPromptCommitted,
       };
       const deepResearchTargetBaseline =
         deepResearch && client
@@ -3197,7 +3266,6 @@ async function runRemoteBrowserMode(
         log: logger,
         state: providerState,
       });
-      await markPromptSubmitted();
       const providerBaselineTurns = providerState.baselineTurns;
       if (typeof providerBaselineTurns === "number" && Number.isFinite(providerBaselineTurns)) {
         baselineTurns = providerBaselineTurns;
@@ -3250,6 +3318,12 @@ async function runRemoteBrowserMode(
           targetBaselineCaptured: deepResearchTargetBaselineCaptured,
         },
       );
+      if (proTimingRequired) {
+        proTimingRuntime = completeProResponseTimingTurn({
+          runtime: proTimingRuntime,
+        });
+        await emitRuntimeHint();
+      }
       await activeConversationUrlMonitor.update("post-deep-research", 15_000).catch(() => false);
       const durationMs = Date.now() - startedAt;
       const tokens = estimateTokenCount(researchResult.text);
@@ -3301,6 +3375,7 @@ async function runRemoteBrowserMode(
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        ...proTimingRuntime,
         controllerPid: process.pid,
       };
     }
@@ -3399,6 +3474,7 @@ async function runRemoteBrowserMode(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ...proTimingRuntime,
               controllerPid: process.pid,
             },
           },
@@ -3486,6 +3562,7 @@ async function runRemoteBrowserMode(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ...proTimingRuntime,
               controllerPid: process.pid,
             };
             throw await createAssistantTimeoutError({
@@ -3621,6 +3698,12 @@ async function runRemoteBrowserMode(
           turnAnswerMarkdown = bestText;
         }
       }
+      if (proTimingRequired) {
+        proTimingRuntime = completeProResponseTimingTurn({
+          runtime: proTimingRuntime,
+        });
+        await emitRuntimeHint();
+      }
       return {
         label,
         answerText: turnAnswerText,
@@ -3697,6 +3780,7 @@ async function runRemoteBrowserMode(
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
             promptSubmitted,
+            ...proTimingRuntime,
             controllerPid: process.pid,
           },
         }),
@@ -3765,6 +3849,7 @@ async function runRemoteBrowserMode(
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       promptSubmitted,
+      ...proTimingRuntime,
       artifacts: savedArtifacts,
       generatedImages: imageArtifacts.generatedImages,
       savedImages: imageArtifacts.savedImages,
@@ -3810,6 +3895,7 @@ async function runRemoteBrowserMode(
             ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
             : undefined,
         promptSubmitted,
+        ...proTimingRuntime,
         controllerPid: process.pid,
       },
     });

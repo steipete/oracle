@@ -944,6 +944,86 @@ describe("runBrowserSessionExecution", () => {
     );
   });
 
+  test("preserves a fast Pro result when its timing receipt is complete", async () => {
+    const log = vi.fn();
+    const result = await runBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: { thinkingTime: "pro", modelStrategy: "select" },
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 500,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async () => ({
+          answerText: "fast complete",
+          answerMarkdown: "fast complete",
+          tookMs: 10_000,
+          answerTokens: 1,
+          answerChars: 13,
+          proDispatchAt: "2026-08-16T00:00:00.000Z",
+          proResponseElapsedMs: 10_000,
+          proInputTokens: 500,
+          proAttachmentBytes: 0,
+          proTurnIndex: 0,
+          proTurnCommitted: true,
+          proPromptSha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          proCommittedTurnIndex: 0,
+        }),
+      },
+    );
+    expect(result.answerText).toBe("fast complete");
+    expect(log).toHaveBeenCalledWith("Answer:");
+    expect(log).toHaveBeenCalledWith("fast complete");
+  });
+
+  test("rejects partial Pro markers even when the resolved config is not Pro", async () => {
+    const log = vi.fn();
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: { thinkingTime: "standard", modelStrategy: "select" },
+          cwd: "/repo",
+          log,
+        },
+        {
+          assemblePrompt: async () => ({
+            markdown: "prompt",
+            composerText: "prompt",
+            estimatedInputTokens: 500,
+            attachments: [],
+            inlineFileCount: 0,
+            tokenEstimateIncludesInlineFiles: false,
+            attachmentsPolicy: "auto",
+            attachmentMode: "inline",
+            fallback: null,
+          }),
+          executeBrowser: async () => ({
+            answerText: "partial",
+            answerMarkdown: "partial",
+            tookMs: 10_000,
+            answerTokens: 1,
+            answerChars: 7,
+            proDispatchAt: "2026-08-16T00:00:00.000Z",
+          }),
+        },
+      ),
+    ).rejects.toMatchObject({ details: { code: "pro-turn-not-committed" } });
+    expect(log).not.toHaveBeenCalledWith("Answer:");
+    expect(log).not.toHaveBeenCalledWith("partial");
+  });
+
   test("allows Gemini in browser mode with custom executor", async () => {
     const log = vi.fn();
     const executeBrowser = vi.fn().mockResolvedValue({

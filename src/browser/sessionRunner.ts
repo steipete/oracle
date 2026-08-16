@@ -24,6 +24,11 @@ import {
   formatBrowserModelTarget,
   resolveBrowserModelDisplayName,
 } from "./modelDisplay.js";
+import {
+  assertCompleteProResponseTimingReceipt,
+  hasProResponseTimingMarker,
+  requiresProResponseTiming,
+} from "./proResponseTiming.js";
 
 export interface BrowserExecutionResult {
   usage: {
@@ -241,6 +246,33 @@ export async function runBrowserSessionExecution(
   }
   const modelSelection =
     browserResult.modelSelection ?? buildUnavailableModelSelectionEvidence(browserConfig);
+  const runtime: BrowserRuntimeMetadata = {
+    browserTransport: browserResult.browserTransport,
+    chromePid: browserResult.chromePid,
+    chromePort: browserResult.chromePort,
+    chromeHost: browserResult.chromeHost,
+    chromeBrowserWSEndpoint: browserResult.chromeBrowserWSEndpoint,
+    chromeProfileRoot: browserResult.chromeProfileRoot,
+    userDataDir: browserResult.userDataDir,
+    chromeTargetId: browserResult.chromeTargetId,
+    tabUrl: browserResult.tabUrl,
+    conversationId: browserResult.conversationId,
+    promptSubmitted: browserResult.promptSubmitted,
+    proDispatchAt: browserResult.proDispatchAt,
+    proResponseElapsedMs: browserResult.proResponseElapsedMs,
+    proInputTokens: browserResult.proInputTokens,
+    proAttachmentBytes: browserResult.proAttachmentBytes,
+    proTurnIndex: browserResult.proTurnIndex,
+    proTurnCommitted: browserResult.proTurnCommitted,
+    proPromptSha256: browserResult.proPromptSha256,
+    proCommittedTurnIndex: browserResult.proCommittedTurnIndex,
+    proResponseTimingReceipts: browserResult.proResponseTimingReceipts,
+    controllerPid: browserResult.controllerPid ?? process.pid,
+  };
+  const answerText = browserResult.answerMarkdown || browserResult.answerText || "";
+  if (requiresProResponseTiming(executionBrowserConfig) || hasProResponseTimingMarker(runtime)) {
+    assertCompleteProResponseTimingReceipt(runtime);
+  }
   if (modelSelection) {
     log(
       `[browser] Model selection evidence: ${formatBrowserModelSelectionEvidence(modelSelection, runOptions.model)}`,
@@ -261,7 +293,6 @@ export async function runBrowserSessionExecution(
     log(browserResult.answerMarkdown || browserResult.answerText || chalk.dim("(no text output)"));
     log("");
   }
-  const answerText = browserResult.answerMarkdown || browserResult.answerText || "";
   const savedArtifacts = await ensureSessionArtifacts({
     sessionId: runOptions.sessionId,
     prompt: promptArtifacts.composerText,
@@ -305,20 +336,7 @@ export async function runBrowserSessionExecution(
   return {
     usage,
     elapsedMs: browserResult.tookMs,
-    runtime: {
-      browserTransport: browserResult.browserTransport,
-      chromePid: browserResult.chromePid,
-      chromePort: browserResult.chromePort,
-      chromeHost: browserResult.chromeHost,
-      chromeBrowserWSEndpoint: browserResult.chromeBrowserWSEndpoint,
-      chromeProfileRoot: browserResult.chromeProfileRoot,
-      userDataDir: browserResult.userDataDir,
-      chromeTargetId: browserResult.chromeTargetId,
-      tabUrl: browserResult.tabUrl,
-      conversationId: browserResult.conversationId,
-      promptSubmitted: browserResult.promptSubmitted,
-      controllerPid: browserResult.controllerPid ?? process.pid,
-    },
+    runtime,
     archive: browserResult.archive,
     modelSelection,
     warnings,

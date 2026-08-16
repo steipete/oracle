@@ -30,6 +30,19 @@ import { getOracleHomeDir } from "./oracleHome.js";
 
 export type SessionMode = "api" | "browser";
 
+export interface ProResponseTimingReceipt {
+  /** Zero-based submitted turn index within one browser invocation. */
+  turnIndex: number;
+  /** Durable timestamp captured immediately after this turn's send attempt. */
+  dispatchAt: string;
+  /** First observed elapsed time from dispatch to a stable assistant answer. */
+  responseElapsedMs: number;
+  /** Estimated tokens in this submitted turn, excluding conversation history. */
+  inputTokens: number;
+  /** Bytes uploaded with this submitted turn. */
+  attachmentBytes: number;
+}
+
 export interface BrowserSessionConfig {
   chromeProfile?: string | null;
   chromePath?: string | null;
@@ -100,6 +113,24 @@ export interface BrowserRuntimeMetadata {
   conversationId?: string;
   /** True after Oracle has submitted the prompt to ChatGPT. */
   promptSubmitted?: boolean;
+  /** Timestamp captured immediately after the active Pro turn's send attempt. */
+  proDispatchAt?: string;
+  /** First observed elapsed time from Pro dispatch to a stable answer. */
+  proResponseElapsedMs?: number;
+  /** Estimated input tokens used by the workload-aware Pro timing guard. */
+  proInputTokens?: number;
+  /** Uploaded bytes used by the workload-aware Pro timing guard. */
+  proAttachmentBytes?: number;
+  /** Active/latest Pro turn represented by the scalar timing fields. */
+  proTurnIndex?: number;
+  /** Whether the active Pro prompt was verified as a committed user turn. */
+  proTurnCommitted?: boolean;
+  /** SHA-256 of the normalized prompt identity for the active Pro turn. */
+  proPromptSha256?: string;
+  /** Zero-based DOM turn index of the verified committed user turn. */
+  proCommittedTurnIndex?: number;
+  /** Accepted Pro turns, each bound to its timing and workload receipt. */
+  proResponseTimingReceipts?: ProResponseTimingReceipt[];
   /** PID of the controller process that launched this browser run. Helps detect orphaned sessions. */
   controllerPid?: number;
 }

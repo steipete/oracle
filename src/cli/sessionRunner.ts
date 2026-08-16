@@ -52,6 +52,8 @@ import { estimateTokenCount } from "../browser/utils.js";
 import type { BrowserLogger } from "../browser/types.js";
 import { formatElapsed } from "../oracle/format.js";
 import { formatBrowserReattachGuidance } from "./reattachGuidance.js";
+import { BrowserAutomationError } from "../oracle/errors.js";
+import { isTerminalProResponseTimingCode } from "../browser/proResponseTiming.js";
 
 const isTty = process.stdout.isTTY;
 const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
@@ -1219,6 +1221,7 @@ async function autoReattachUntilComplete({
         promptPreview: sessionMeta.promptPreview,
       });
       captureSucceeded = true;
+      const recoveredRuntime = result.runtime ?? runtime;
       const answerText = result.answerMarkdown || result.answerText || "";
       const outputTokens = estimateTokenCount(answerText);
       const artifacts = await ensureSessionArtifacts({
@@ -1277,7 +1280,7 @@ async function autoReattachUntilComplete({
         browser: {
           ...browserMetadata,
           config: browserConfig,
-          runtime,
+          runtime: recoveredRuntime,
         },
         artifacts: mergeArtifacts(sessionMeta.artifacts, artifacts),
         response: { status: "completed" },
@@ -1287,6 +1290,12 @@ async function autoReattachUntilComplete({
       log(kleur.green("Auto-reattach succeeded; session marked completed."));
       return true;
     } catch (error) {
+      if (
+        error instanceof BrowserAutomationError &&
+        isTerminalProResponseTimingCode(error.details?.code)
+      ) {
+        throw error;
+      }
       if (captureSucceeded) {
         const message = formatError(error);
         if (modelForStatus) {

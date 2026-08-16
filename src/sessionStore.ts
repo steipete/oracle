@@ -138,6 +138,7 @@ export type {
   SessionMode,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
+  ProResponseTimingReceipt,
   SessionArtifact,
   BrowserHarvestState,
   BrowserHarvestMetadata,

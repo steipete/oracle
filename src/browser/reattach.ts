@@ -42,6 +42,13 @@ import {
 } from "./reattachHelpers.js";
 import { waitForDeepResearchCompletion } from "./actions/deepResearch.js";
 import { CHROME_COOKIE_SYNC_WARNING, shouldSyncBrowserCookies } from "./policies.js";
+import { BrowserAutomationError } from "../oracle/errors.js";
+import {
+  hashProPromptIdentity,
+  hasProResponseTimingMarker,
+  isTerminalProResponseTimingCode,
+  verifyStoredProResponseWorkloadTiming,
+} from "./proResponseTiming.js";
 
 export interface ReattachDeps {
   listTargets?: () => Promise<TargetInfoLite[]>;
@@ -63,6 +70,68 @@ export interface ReattachDeps {
 export interface ReattachResult {
   answerText: string;
   answerMarkdown: string;
+  runtime?: BrowserRuntimeMetadata;
+}
+
+function isTerminalProResponseTimingError(error: unknown): boolean {
+  return (
+    error instanceof BrowserAutomationError && isTerminalProResponseTimingCode(error.details?.code)
+  );
+}
+
+async function verifyCommittedProTurnIdentity(
+  Runtime: ChromeClient["Runtime"],
+  runtime: BrowserRuntimeMetadata,
+): Promise<number | null> {
+  if (!hasProResponseTimingMarker(runtime)) return null;
+  if (runtime.proTurnCommitted !== true) {
+    throw new BrowserAutomationError(
+      "Oracle cannot recover this Pro response because the prompt was never verified as committed.",
+      { stage: "response-timing", code: "pro-turn-not-committed", runtime },
+    );
+  }
+  const turnIndex = runtime.proCommittedTurnIndex;
+  if (
+    !Number.isSafeInteger(turnIndex) ||
+    (turnIndex as number) < 0 ||
+    !/^[a-f0-9]{64}$/u.test(runtime.proPromptSha256 ?? "")
+  ) {
+    throw new BrowserAutomationError(
+      "Oracle cannot recover this Pro response because its committed turn identity is incomplete.",
+      { stage: "response-timing", code: "pro-turn-identity-missing", runtime },
+    );
+  }
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const turns = ${buildConversationTurnListExpression()};
+      const node = turns[${turnIndex as number}];
+      if (!node) return null;
+      const role = String(
+        node.getAttribute?.('data-message-author-role') ||
+        node.getAttribute?.('data-turn') ||
+        node.dataset?.turn ||
+        '',
+      ).toLowerCase();
+      const isUser = role === 'user' || Boolean(
+        node.querySelector?.('[data-message-author-role="user"], [data-turn="user"]'),
+      );
+      if (!isUser) return null;
+      const roleNode = role === 'user'
+        ? node
+        : node.querySelector?.('[data-message-author-role="user"], [data-turn="user"]');
+      const messageNode = roleNode?.querySelector?.('.whitespace-pre-wrap') || roleNode;
+      return String(messageNode?.innerText || messageNode?.textContent || '');
+    })()`,
+    returnByValue: true,
+  });
+  const promptText = typeof result?.value === "string" ? result.value : null;
+  if (!promptText || hashProPromptIdentity(promptText) !== runtime.proPromptSha256) {
+    throw new BrowserAutomationError(
+      "Oracle refused to recover a Pro response from a different committed user turn.",
+      { stage: "response-timing", code: "pro-turn-identity-mismatch", runtime },
+    );
+  }
+  return turnIndex as number;
 }
 
 export async function resumeBrowserSession(
@@ -71,6 +140,12 @@ export async function resumeBrowserSession(
   logger: BrowserLogger,
   deps: ReattachDeps = {},
 ): Promise<ReattachResult> {
+  if (runtime.proTurnCommitted === false) {
+    throw new BrowserAutomationError(
+      "Oracle cannot recover this Pro response because the prompt was never verified as committed.",
+      { stage: "response-timing", code: "pro-turn-not-committed", runtime },
+    );
+  }
   const recoverSession =
     deps.recoverSession ??
     (async (runtimeMeta, configMeta) =>
@@ -191,7 +266,9 @@ export async function resumeBrowserSession(
       requirePromptReady: false,
       expectedConversationUrl: expectedConversationUrl ?? undefined,
     });
+    const committedTurnIndex = await verifyCommittedProTurnIdentity(Runtime, runtime);
     const minTurnIndex =
+      committedTurnIndex ??
       (await readPromptPreviewTurnIndex(Runtime, deps.promptPreview)) ??
       (deps.promptPreview ? null : await readConversationTurnIndex(Runtime, logger));
     if (config?.researchMode === "deep") {
@@ -204,10 +281,15 @@ export async function resumeBrowserSession(
         timeoutMs + 5_000,
         "Reattach Deep Research response timed out",
       );
+      const recoveredRuntime = verifyStoredProResponseWorkloadTiming({
+        runtime,
+        capturedAt: new Date(),
+      });
       await closeAttached();
       return {
         answerText: researchResult.text,
         answerMarkdown: researchResult.text,
+        runtime: recoveredRuntime,
       };
     }
     const promptEcho = buildPromptEchoMatcher(deps.promptPreview);
@@ -232,10 +314,19 @@ export async function resumeBrowserSession(
       )) ?? recovered.text;
     const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
 
+    const recoveredRuntime = verifyStoredProResponseWorkloadTiming({
+      runtime,
+      capturedAt: new Date(),
+    });
     await closeAttached();
-    return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
+    return {
+      answerText: aligned.answerText,
+      answerMarkdown: aligned.answerMarkdown,
+      runtime: recoveredRuntime,
+    };
   } catch (error) {
     await closeAttached();
+    if (isTerminalProResponseTimingError(error)) throw error;
     const message = error instanceof Error ? error.message : String(error);
     logger(
       `Existing Chrome reattach failed (${message}); reopening browser to locate the session.`,
@@ -409,7 +500,15 @@ async function resumeBrowserSessionViaNewChrome(
   const waitForResponse = deps.waitForAssistantResponse ?? waitForAssistantResponse;
   const captureMarkdown = deps.captureAssistantMarkdown ?? captureAssistantMarkdown;
   const timeoutMs = resolved.timeoutMs ?? 120_000;
+  let committedTurnIndex: number | null;
+  try {
+    committedTurnIndex = await verifyCommittedProTurnIdentity(Runtime, runtime);
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
   const minTurnIndex =
+    committedTurnIndex ??
     (await readPromptPreviewTurnIndex(Runtime, deps.promptPreview)) ??
     (deps.promptPreview ? null : await readConversationTurnIndex(Runtime, logger));
   if (resolved.researchMode === "deep") {
@@ -425,10 +524,15 @@ async function resumeBrowserSessionViaNewChrome(
         requireScopedTargetOwner: true,
       },
     );
+    const recoveredRuntime = verifyStoredProResponseWorkloadTiming({
+      runtime,
+      capturedAt: new Date(),
+    });
     await cleanup();
     return {
       answerText: researchResult.text,
       answerMarkdown: researchResult.text,
+      runtime: recoveredRuntime,
     };
   }
   const promptEcho = buildPromptEchoMatcher(deps.promptPreview);
@@ -444,8 +548,16 @@ async function resumeBrowserSessionViaNewChrome(
   const markdown = (await captureMarkdown(Runtime, recovered.meta, logger)) ?? recovered.text;
   const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
 
+  const recoveredRuntime = verifyStoredProResponseWorkloadTiming({
+    runtime,
+    capturedAt: new Date(),
+  });
   await cleanup();
-  return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
+  return {
+    answerText: aligned.answerText,
+    answerMarkdown: aligned.answerMarkdown,
+    runtime: recoveredRuntime,
+  };
 }
 
 async function readPromptPreviewTurnIndex(
@@ -486,4 +598,6 @@ export const __test__ = {
   buildConversationUrl,
   openConversationFromSidebar,
   readPromptPreviewTurnIndex,
+  verifyCommittedProTurnIdentity,
+  isTerminalProResponseTimingError,
 };

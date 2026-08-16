@@ -340,6 +340,7 @@ export async function attachSession(
         { promptPreview: metadata.promptPreview },
       );
       const outputTokens = estimateTokenCount(result.answerMarkdown);
+      const recoveredRuntime = result.runtime ?? runtime;
       const artifacts = await saveReattachBrowserArtifacts(sessionId, metadata, result);
       await writeReattachAnswer(
         sessionId,
@@ -371,7 +372,7 @@ export async function attachSession(
         errorMessage: undefined,
         browser: {
           config: metadata.browser?.config,
-          runtime,
+          runtime: recoveredRuntime,
           modelSelection: metadata.browser?.modelSelection,
           warnings: metadata.browser?.warnings,
         },

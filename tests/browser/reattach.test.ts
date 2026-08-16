@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
+import { hashProPromptIdentity } from "../../src/browser/proResponseTiming.js";
 
 type FakeTarget = { id?: string; targetId?: string; type?: string; url?: string };
 type FakeClient = {
@@ -354,6 +355,128 @@ describe("resumeBrowserSession", () => {
     expect(close).toHaveBeenCalledOnce();
     expect(waitForAssistantResponse).not.toHaveBeenCalled();
     expect(recoverSession).toHaveBeenCalled();
+  });
+
+  test("rejects an uncommitted Pro turn without attempting recovery", async () => {
+    const recoverSession = vi.fn(async () => ({
+      answerText: "must not recover",
+      answerMarkdown: "must not recover",
+    }));
+    const logger = vi.fn() as BrowserLogger;
+
+    await expect(
+      resumeBrowserSession(
+        { tabUrl: "https://chatgpt.com/c/abc", proTurnCommitted: false },
+        {},
+        logger,
+        { recoverSession },
+      ),
+    ).rejects.toMatchObject({ details: { code: "pro-turn-not-committed" } });
+    expect(recoverSession).not.toHaveBeenCalled();
+  });
+
+  test("rejects partial new-format markers when the commit flag is absent", async () => {
+    const evaluate = vi.fn(async () => ({ result: { value: null } }));
+
+    await expect(
+      __test__.verifyCommittedProTurnIdentity({ evaluate } as unknown as ChromeClient["Runtime"], {
+        proDispatchAt: "2026-08-16T00:00:00.000Z",
+        proInputTokens: 500,
+        proAttachmentBytes: 0,
+        proTurnIndex: 0,
+      }),
+    ).rejects.toMatchObject({ details: { code: "pro-turn-not-committed" } });
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  test("uses the committed Pro user-turn index after verifying its prompt digest", async () => {
+    const prompt = "Review this exact change";
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+      proTurnCommitted: true,
+      proCommittedTurnIndex: 7,
+      proPromptSha256: hashProPromptIdentity(prompt),
+      proDispatchAt: new Date(Date.now() - 5_000).toISOString(),
+      proResponseElapsedMs: 5_000,
+      proInputTokens: 500,
+      proAttachmentBytes: 0,
+      proTurnIndex: 0,
+    };
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") return { result: { value: runtime.tabUrl } };
+      if (expression === "1+1") return { result: { value: 2 } };
+      if (expression.includes("const turns =")) return { result: { value: prompt } };
+      return { result: { value: null } };
+    });
+    const waitForAssistantResponse = vi.fn(async () => ({
+      text: "verified answer",
+      html: "",
+      meta: { messageId: "m1", turnId: "conversation-turn-8" },
+    }));
+    const connect = vi.fn(async () => ({
+      Runtime: { enable: vi.fn(), evaluate },
+      DOM: { enable: vi.fn() },
+      close: vi.fn(async () => {}),
+    })) as unknown as (options?: unknown) => Promise<ChromeClient>;
+
+    await resumeBrowserSession(runtime, { timeoutMs: 2_000 }, vi.fn() as BrowserLogger, {
+      listTargets: vi.fn(async () => [{ targetId: "target-1", type: "page", url: runtime.tabUrl }]),
+      connect,
+      waitForAssistantResponse,
+      captureAssistantMarkdown: vi.fn(async () => "verified answer"),
+      waitForConversationHydration: vi.fn(async () => 2),
+    });
+
+    expect(waitForAssistantResponse).toHaveBeenCalledWith(
+      expect.anything(),
+      2_000,
+      expect.anything(),
+      7,
+    );
+  });
+
+  test("does not fall back to another browser when committed Pro identity mismatches", async () => {
+    const runtime = {
+      chromePort: 51559,
+      chromeHost: "127.0.0.1",
+      chromeTargetId: "target-1",
+      tabUrl: "https://chatgpt.com/c/abc",
+      proTurnCommitted: true,
+      proCommittedTurnIndex: 1,
+      proPromptSha256: hashProPromptIdentity("expected prompt"),
+    };
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      if (expression === "location.href") return { result: { value: runtime.tabUrl } };
+      if (expression === "1+1") return { result: { value: 2 } };
+      if (expression.includes("const turns =")) {
+        return { result: { value: "different prompt" } };
+      }
+      return { result: { value: null } };
+    });
+    const connect = vi.fn(async () => ({
+      Runtime: { enable: vi.fn(), evaluate },
+      DOM: { enable: vi.fn() },
+      close: vi.fn(async () => {}),
+    })) as unknown as (options?: unknown) => Promise<ChromeClient>;
+    const recoverSession = vi.fn(async () => ({
+      answerText: "wrong conversation",
+      answerMarkdown: "wrong conversation",
+    }));
+
+    await expect(
+      resumeBrowserSession(runtime, { timeoutMs: 2_000 }, vi.fn() as BrowserLogger, {
+        listTargets: vi.fn(async () => [
+          { targetId: "target-1", type: "page", url: runtime.tabUrl },
+        ]),
+        connect,
+        waitForConversationHydration: vi.fn(async () => 2),
+        recoverSession,
+      }),
+    ).rejects.toMatchObject({ details: { code: "pro-turn-identity-mismatch" } });
+    expect(recoverSession).not.toHaveBeenCalled();
   });
 });
 

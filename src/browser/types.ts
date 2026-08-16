@@ -4,6 +4,7 @@ import type {
   BrowserModelSelectionEvidence,
   BrowserRunWarning,
   BrowserRuntimeMetadata,
+  ProResponseTimingReceipt,
 } from "../sessionStore.js";
 import type { SessionArtifact } from "../sessionStore.js";
 import type { ThinkingTimeLevel } from "../oracle/types.js";
@@ -188,6 +189,15 @@ export interface BrowserRunResult {
   tabUrl?: string;
   conversationId?: string;
   promptSubmitted?: boolean;
+  proDispatchAt?: string;
+  proResponseElapsedMs?: number;
+  proInputTokens?: number;
+  proAttachmentBytes?: number;
+  proTurnIndex?: number;
+  proTurnCommitted?: boolean;
+  proPromptSha256?: string;
+  proCommittedTurnIndex?: number;
+  proResponseTimingReceipts?: ProResponseTimingReceipt[];
   controllerPid?: number;
 }
 
