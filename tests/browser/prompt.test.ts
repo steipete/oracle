@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { assembleBrowserPrompt, isRawUploadFile } from "../../src/browser/prompt.js";
+import { findAttachmentBasenameCollisions } from "../../src/browser/attachmentValidation.js";
 import { createStoredZip } from "../../src/browser/zipBundle.js";
 import { DEFAULT_SYSTEM_PROMPT, type MODEL_CONFIGS } from "../../src/oracle.js";
 import type { RunOracleOptions } from "../../src/oracle.js";
@@ -70,6 +71,35 @@ function readStoredZipEntries(zip: Buffer): Map<string, Buffer> {
 
   return entries;
 }
+
+describe("findAttachmentBasenameCollisions", () => {
+  test("returns every collision sorted by basename and display path", () => {
+    const collisions = findAttachmentBasenameCollisions([
+      { path: "/repo/z/SKILL.md", displayPath: "z/SKILL.md" },
+      { path: "/repo/b/README.md", displayPath: "b/README.md" },
+      { path: "/repo/a/SKILL.md", displayPath: "a/SKILL.md" },
+      { path: "/repo/a/README.md", displayPath: "a/README.md" },
+      { path: "/repo/unique.txt", displayPath: "unique.txt" },
+    ]);
+
+    expect(collisions).toEqual([
+      {
+        basename: "README.md",
+        attachments: [
+          { path: "/repo/a/README.md", displayPath: "a/README.md" },
+          { path: "/repo/b/README.md", displayPath: "b/README.md" },
+        ],
+      },
+      {
+        basename: "SKILL.md",
+        attachments: [
+          { path: "/repo/a/SKILL.md", displayPath: "a/SKILL.md" },
+          { path: "/repo/z/SKILL.md", displayPath: "z/SKILL.md" },
+        ],
+      },
+    ]);
+  });
+});
 
 describe("assembleBrowserPrompt", () => {
   test("builds markdown bundle with system/user/file blocks", async () => {
@@ -167,6 +197,172 @@ describe("assembleBrowserPrompt", () => {
     expect(tokenizedContents).toContain("### File: a.txt\n```\ntiny\n```");
     expect(tokenizedContents.some((content) => content.includes("1 | tiny"))).toBe(false);
     expect(result.fallback).toBeNull();
+  });
+
+  test("always mode rejects upload attachments with the same basename", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-duplicate-basename-"));
+    const firstPath = path.join(tempDir, "first", "SKILL.md");
+    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    try {
+      await fs.mkdir(path.dirname(firstPath), { recursive: true });
+      await fs.mkdir(path.dirname(secondPath), { recursive: true });
+      await fs.writeFile(firstPath, "first");
+      await fs.writeFile(secondPath, "second");
+
+      await expect(
+        assembleBrowserPrompt(
+          buildOptions({
+            file: [firstPath, secondPath],
+            browserAttachments: "always",
+          }),
+          { cwd: tempDir, tokenizeImpl: fastTokenizer },
+        ),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining('multiple files named "SKILL.md"'),
+        details: {
+          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
+          files: [firstPath, secondPath],
+        },
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("auto mode rejects basename collisions when it selects upload", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-upload-collision-"));
+    const firstPath = path.join(tempDir, "first", "SKILL.md");
+    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    const firstUniquePath = path.join(tempDir, "first", "FIRST.md");
+    const secondUniquePath = path.join(tempDir, "second", "SECOND.md");
+    const largeContent = "x".repeat(31_000);
+    try {
+      await fs.mkdir(path.dirname(firstPath), { recursive: true });
+      await fs.mkdir(path.dirname(secondPath), { recursive: true });
+      await Promise.all([
+        fs.writeFile(firstPath, largeContent),
+        fs.writeFile(secondPath, largeContent),
+        fs.writeFile(firstUniquePath, largeContent),
+        fs.writeFile(secondUniquePath, largeContent),
+      ]);
+
+      const uploadControl = await assembleBrowserPrompt(
+        buildOptions({
+          file: [firstUniquePath, secondUniquePath],
+          browserAttachments: "auto",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+      expect(uploadControl.attachmentMode).toBe("upload");
+      expect(uploadControl.fallback).toBeNull();
+
+      await expect(
+        assembleBrowserPrompt(
+          buildOptions({
+            file: [firstPath, secondPath],
+            browserAttachments: "auto",
+          }),
+          { cwd: tempDir, tokenizeImpl: fastTokenizer },
+        ),
+      ).rejects.toMatchObject({
+        details: {
+          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
+          files: [firstPath, secondPath],
+        },
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("auto mode keeps tiny duplicate-basename text files inline", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-inline-collision-"));
+    const firstPath = path.join(tempDir, "first", "SKILL.md");
+    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    try {
+      await fs.mkdir(path.dirname(firstPath), { recursive: true });
+      await fs.mkdir(path.dirname(secondPath), { recursive: true });
+      await fs.writeFile(firstPath, "first");
+      await fs.writeFile(secondPath, "second");
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [firstPath, secondPath],
+          browserAttachments: "auto",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("inline");
+      expect(result.attachments).toEqual([]);
+      expect(result.composerText).toContain("### File: first/SKILL.md");
+      expect(result.composerText).toContain("1 | first");
+      expect(result.composerText).toContain("### File: second/SKILL.md");
+      expect(result.composerText).toContain("1 | second");
+      expect(result.fallback?.attachments).toHaveLength(2);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("never mode keeps duplicate-basename text files inline", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-never-inline-collision-"));
+    const firstPath = path.join(tempDir, "first", "SKILL.md");
+    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    try {
+      await fs.mkdir(path.dirname(firstPath), { recursive: true });
+      await fs.mkdir(path.dirname(secondPath), { recursive: true });
+      await fs.writeFile(firstPath, "first");
+      await fs.writeFile(secondPath, "second");
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [firstPath, secondPath],
+          browserAttachments: "never",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("inline");
+      expect(result.attachments).toEqual([]);
+      expect(result.composerText).toContain("### File: first/SKILL.md");
+      expect(result.composerText).toContain("1 | first");
+      expect(result.composerText).toContain("### File: second/SKILL.md");
+      expect(result.composerText).toContain("1 | second");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("bundling resolves duplicate attachment basenames", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-bundled-collision-"));
+    const firstPath = path.join(tempDir, "first", "SKILL.md");
+    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    try {
+      await fs.mkdir(path.dirname(firstPath), { recursive: true });
+      await fs.mkdir(path.dirname(secondPath), { recursive: true });
+      await fs.writeFile(firstPath, "first");
+      await fs.writeFile(secondPath, "second");
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [firstPath, secondPath],
+          browserAttachments: "always",
+          browserBundleFiles: true,
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(1);
+      expect(result.bundled?.format).toBe("text");
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: first/SKILL.md");
+      expect(bundleText).toContain("1 | first");
+      expect(bundleText).toContain("### File: second/SKILL.md");
+      expect(bundleText).toContain("1 | second");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   test("legacy browserInlineFiles forces inline and disables auto fallback", async () => {
