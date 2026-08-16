@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Gemini: restore browser requests after the Gemini web protocol change, update current model headers, fail clearly on empty or upstream-error responses, and add `--no-gemini-fallback` for callers that require the requested model.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed
