@@ -8,18 +8,9 @@ import {
 
 describe("Gemini web model mapping", () => {
   it.each([
-    [
-      "gemini-3.1-flash-lite",
-      '[1,null,null,null,"1d44b34bcaa1c04d",null,null,0,[4],null,null,2]',
-    ],
-    [
-      "gemini-3.5-flash",
-      '[1,null,null,null,"56fdd199312815e2",null,null,0,[4],null,null,2]',
-    ],
-    [
-      "gemini-3.1-pro",
-      '[1,null,null,null,"e6fa609c3fa255c0",null,null,0,[4],null,null,2]',
-    ],
+    ["gemini-3.1-flash-lite", '[1,null,null,null,"1d44b34bcaa1c04d",null,null,0,[4],null,null,2]'],
+    ["gemini-3.5-flash", '[1,null,null,null,"56fdd199312815e2",null,null,0,[4],null,null,2]'],
+    ["gemini-3.1-pro", '[1,null,null,null,"e6fa609c3fa255c0",null,null,0,[4],null,null,2]'],
     [
       "gemini-3-pro-deep-think",
       '[1,null,null,null,"e051ce1aa80aa576",null,null,0,[4],null,null,2]',
