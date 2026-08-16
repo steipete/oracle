@@ -229,7 +229,9 @@ export async function createRemoteServer(
       const attachmentsPayload = Array.isArray(payload.attachments) ? payload.attachments : [];
       for (const [index, attachment] of attachmentsPayload.entries()) {
         const safeName = sanitizeName(attachment.fileName ?? `attachment-${index + 1}`);
-        const filePath = path.join(attachmentDir, safeName);
+        const stagingDir = path.join(attachmentDir, String(index));
+        await mkdir(stagingDir, { recursive: true });
+        const filePath = path.join(stagingDir, safeName);
         await writeFile(filePath, Buffer.from(attachment.contentBase64, "base64"));
         attachments.push({
           path: filePath,
@@ -247,7 +249,9 @@ export async function createRemoteServer(
           : [];
         for (const [index, attachment] of fallbackPayload.entries()) {
           const safeName = sanitizeName(attachment.fileName ?? `fallback-attachment-${index + 1}`);
-          const filePath = path.join(fallbackAttachmentDir, safeName);
+          const stagingDir = path.join(fallbackAttachmentDir, String(index));
+          await mkdir(stagingDir, { recursive: true });
+          const filePath = path.join(stagingDir, safeName);
           await writeFile(filePath, Buffer.from(attachment.contentBase64, "base64"));
           fallbackAttachments.push({
             path: filePath,

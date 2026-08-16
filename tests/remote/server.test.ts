@@ -149,6 +149,45 @@ describe("remote browser service", () => {
   );
 
   test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "stages colliding primary attachment names without losing payloads",
+    async () => {
+      await expectRemoteAttachmentStaging({
+        location: "primary",
+        files: [
+          { fileName: "a b.txt", content: "primary with space", stagedName: "a_b.txt" },
+          { fileName: "a_b.txt", content: "primary with underscore", stagedName: "a_b.txt" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "stages colliding fallback attachment names without losing payloads",
+    async () => {
+      await expectRemoteAttachmentStaging({
+        location: "fallback",
+        files: [
+          { fileName: "a b.txt", content: "fallback with space", stagedName: "a_b.txt" },
+          { fileName: "a_b.txt", content: "fallback with underscore", stagedName: "a_b.txt" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "preserves ordinary non-colliding attachment names and payload order",
+    async () => {
+      await expectRemoteAttachmentStaging({
+        location: "primary",
+        files: [
+          { fileName: "alpha.txt", content: "first", stagedName: "alpha.txt" },
+          { fileName: "beta.md", content: "second", stagedName: "beta.md" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
     "keeps manual-login Chrome but requests completed run-tab cleanup",
     async () => {
       const manualLoginProfileDir = "/tmp/oracle-manual-login-profile-test";
@@ -449,6 +488,80 @@ describe("remote browser service", () => {
     },
   );
 });
+
+async function expectRemoteAttachmentStaging({
+  location,
+  files,
+}: {
+  location: "primary" | "fallback";
+  files: Array<{ fileName: string; content: string; stagedName: string }>;
+}): Promise<void> {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-staging-test-"));
+  const sourceAttachments = [];
+  for (const file of files) {
+    const sourcePath = path.join(tmpDir, file.fileName);
+    await writeFile(sourcePath, file.content, "utf8");
+    sourceAttachments.push({
+      path: sourcePath,
+      displayPath: file.fileName,
+      sizeBytes: Buffer.byteLength(file.content),
+    });
+  }
+
+  const server = await createRemoteServer(
+    { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+    {
+      runBrowser: async (options) => {
+        const stagedAttachments =
+          location === "primary" ? options.attachments : options.fallbackSubmission?.attachments;
+        expect(stagedAttachments).toHaveLength(files.length);
+        if (!stagedAttachments) {
+          throw new Error(`missing ${location} attachments`);
+        }
+
+        const stagedPaths = stagedAttachments.map((attachment) => attachment.path);
+        expect(new Set(stagedPaths).size).toBe(files.length);
+        expect(stagedAttachments.map((attachment) => path.basename(attachment.path))).toEqual(
+          files.map((file) => file.stagedName),
+        );
+        expect(stagedAttachments.map((attachment) => attachment.displayPath)).toEqual(
+          files.map((file) => file.fileName),
+        );
+        await expect(
+          Promise.all(stagedPaths.map((stagedPath) => readFile(stagedPath, "utf8"))),
+        ).resolves.toEqual(files.map((file) => file.content));
+
+        return {
+          answerText: "done",
+          answerMarkdown: "done",
+          tookMs: 1,
+          answerTokens: 1,
+          answerChars: 4,
+        };
+      },
+    },
+  );
+
+  try {
+    const executor = createRemoteBrowserExecutor({
+      host: `127.0.0.1:${server.port}`,
+      token: "secret",
+    });
+    const result = await executor({
+      prompt: "remote attachment staging",
+      attachments: location === "primary" ? sourceAttachments : [],
+      fallbackSubmission:
+        location === "fallback"
+          ? { prompt: "fallback attachment staging", attachments: sourceAttachments }
+          : undefined,
+      config: {},
+    });
+    expect(result.answerText).toBe("done");
+  } finally {
+    await server.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
 
 function createArtifactDescriptor(
   payload: Buffer,
