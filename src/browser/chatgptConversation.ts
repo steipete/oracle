@@ -639,6 +639,10 @@ function decimalToHex(bytes: number[]): string {
   return Buffer.from(bytes).toString("hex");
 }
 
+function hexToDecimalString(hex: string): string {
+  return Array.from(Buffer.from(hex, "hex")).join(" ");
+}
+
 /**
  * Compares the run's captured answer against the provider's turns by digest.
  *
@@ -777,11 +781,23 @@ export async function finalizeProviderNativeCapture(params: {
         captured_at: capturedAt,
         fetched_at: capture.evidence.fetchedAt,
         raw_backend_api_json: {
-          // False by construction: this file describes the SECOND fetch, whose
-          // body never left the page. The first fetch is the one on disk.
+          // This block describes the document this evidence accompanies — the
+          // one on disk — so a verifier can confirm the file was not altered
+          // between capture and ingest.
           materialized_to_disk: false,
-          sha256_decimal_bytes: capture.evidence.documentSha256Decimal,
-          bytes: capture.evidence.documentBytes,
+          sha256_decimal_bytes: hexToDecimalString(capture.rawSha256),
+          bytes: capture.rawBytes,
+        },
+        // The independent second fetch, kept separate on purpose. Its per-turn
+        // digests are the evidence; its document hash is only a volatility
+        // record. Document-level equality is NOT a fidelity criterion: the
+        // backend document carries nested metadata that changes between fetches
+        // at identical turn content, so gating on it would fail honest captures
+        // and pass nothing extra.
+        independent_fetch: {
+          document_sha256_decimal_bytes: capture.evidence.documentSha256Decimal.join(" "),
+          document_bytes: capture.evidence.documentBytes,
+          fetched_at: capture.evidence.fetchedAt,
         },
         materialized_document: {
           path: path.basename(rawPath),
@@ -796,7 +812,10 @@ export async function finalizeProviderNativeCapture(params: {
           role: turn.role,
           ct: turn.contentType,
           blen: turn.bytes,
-          sha256_dec: turn.sha256Decimal,
+          // Space-separated decimal bytes: the transport-safe encoding verifiers
+          // of this format expect, and one that survives copy/paste through
+          // channels that mangle hex or JSON arrays.
+          sha256_dec: turn.sha256Decimal.join(" "),
           sha256_hex: decimalToHex(turn.sha256Decimal),
         })),
       };
