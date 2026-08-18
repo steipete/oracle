@@ -800,7 +800,34 @@ function formatSocket(req: http.IncomingMessage): string {
   return `${host}:${port}`;
 }
 
+/**
+ * Addresses a client could actually reach this service on.
+ *
+ * A loopback bind is reachable only from this machine, so listing the host's LAN
+ * and tailnet addresses there is not merely noisy — it tells an operator the
+ * service is exposed when it is not, which is the wrong direction for a mistake
+ * about a token that grants browser automation.
+ */
 function formatReachableAddresses(bindAddress: string, port: number): string[] {
+  if (isLoopbackAddress(bindAddress)) {
+    return [`${formatHostPort(bindAddress, port)}`];
+  }
+  return formatAllInterfaceAddresses(bindAddress, port);
+}
+
+function isLoopbackAddress(address: string): boolean {
+  const normalized = address
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  return normalized === "127.0.0.1" || normalized === "::1" || normalized === "localhost";
+}
+
+function formatHostPort(address: string, port: number): string {
+  return address.includes(":") ? `[${address}]:${port}` : `${address}:${port}`;
+}
+
+function formatAllInterfaceAddresses(bindAddress: string, port: number): string[] {
   const ipv4: string[] = [];
   const ipv6: string[] = [];
   if (bindAddress && bindAddress !== "::" && bindAddress !== "0.0.0.0") {
