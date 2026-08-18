@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Browser: report ChatGPT's rate limit as a rate limit. When ChatGPT covers the page with its "Too many requests — we've temporarily limited access to your conversations" modal, the model-switcher scrape walked it like any other menu and reported its "Got it" button as an available model, so a throttled run failed with `Unable to find model option matching "…". Available: Got it` — a message that sends the reader after a model-naming bug when the correct response is to wait a few minutes. Model selection now probes for the notice first and raises a `chatgpt-throttled` error carrying `retryable: true` and the notice text; without a notice the original diagnosis is unchanged.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed
