@@ -581,3 +581,41 @@ async function httpGetJson({
     req.end();
   });
 }
+
+describe("transport failure messages", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "losing the bridge mid-run says the conversation may exist and not to resubmit",
+    async () => {
+      // The bare socket error ("aborted") describes the symptom. What the reader
+      // needs is that the browser work is not undone by losing the stream, so
+      // resubmitting would open a second ChatGPT conversation.
+      //
+      // Stubbed rather than driven through the real service: the behaviour under
+      // test is entirely the client's, and a real server cannot drop a socket
+      // mid-run without also waiting for the run it is pretending to perform.
+      const stub = http.createServer((req, res) => {
+        res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+        res.write(`${JSON.stringify({ type: "log", message: "started" })}\n`);
+        setTimeout(() => req.socket.destroy(), 50);
+      });
+      await new Promise<void>((resolve) => stub.listen(0, "127.0.0.1", resolve));
+      const { port } = stub.address() as { port: number };
+
+      const executor = createRemoteBrowserExecutor({ host: `127.0.0.1:${port}`, token: "secret" });
+      await expect(executor({ prompt: "x", config: {} })).rejects.toThrow(
+        /research bridge at 127\.0\.0\.1:\d+ while the run was in progress/,
+      );
+      await expect(executor({ prompt: "x", config: {} })).rejects.toThrow(
+        /reattach to it rather than resubmitting/,
+      );
+      await new Promise<void>((resolve) => stub.close(() => resolve()));
+    },
+  );
+
+  test("an unreachable bridge is reported as unreachable, not as a lost run", async () => {
+    const executor = createRemoteBrowserExecutor({ host: "127.0.0.1:1", token: "secret" });
+    await expect(executor({ prompt: "x", config: {} })).rejects.toThrow(
+      /Could not reach the research bridge at 127\.0\.0\.1:1/,
+    );
+  });
+});
