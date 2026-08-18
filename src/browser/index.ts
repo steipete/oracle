@@ -2434,7 +2434,17 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
           sessionId: options.sessionId,
         }).catch(() => null);
       }
-      keepBrowserOpen = await hasOtherActiveLeases().catch(() => false);
+      // Fail closed. This value decides whether the shared Chrome gets terminated,
+      // so an unreadable slot registry must mean "assume a peer is using it", not
+      // "assume the profile is idle" — the latter kills a peer's run to tidy up.
+      keepBrowserOpen = await hasOtherActiveLeases().catch((error) => {
+        logger(
+          `[browser] Could not read the ChatGPT slot registry; leaving the shared Chrome running: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return true;
+      });
       if (keepBrowserOpen) {
         logger("[browser] Other ChatGPT tab leases still active; leaving shared Chrome running.");
       } else if (reusedChrome && !connectionClosedUnexpectedly) {
