@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Remote: say what a lost bridge connection means for the run. Losing the service mid-run surfaced the bare socket error ("aborted"), leaving out the consequential part — the run had already been accepted, so the ChatGPT conversation very likely exists on the bridge host and resubmitting opens a second one. The client now distinguishes a bridge it could not reach from one it lost mid-run, and the latter points at `oracle status` on the bridge host to reattach rather than resubmit.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed
@@ -10,6 +16,7 @@
 ### Fixed
 
 - Browser: detect a disabled ChatGPT effort tier (e.g. an exhausted Pro allotment) before clicking it, and report the account's own reset notice instead of a misleading "selection unverified" failure. Thanks @enieuwy!
+
 ## 0.17.3 — 2026-08-13
 
 **Highlight:** browser-mode answers and recovery are reliable again — no more
