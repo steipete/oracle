@@ -33,6 +33,7 @@ import {
 import { formatSessionExecutionLabel } from "./sessionLifecycle.js";
 import {
   formatBrowserModelSelectionEvidence,
+  formatBrowserThinkingSelectionEvidence,
   formatSessionBrowserModelWithRequestedKey,
   resolveSessionBrowserModelDisplayName,
 } from "../browser/modelDisplay.js";
@@ -373,6 +374,7 @@ export async function attachSession(
           config: metadata.browser?.config,
           runtime,
           modelSelection: metadata.browser?.modelSelection,
+          thinkingSelection: metadata.browser?.thinkingSelection,
           warnings: metadata.browser?.warnings,
         },
         artifacts,
@@ -743,13 +745,21 @@ export function formatUserErrorMetadata(metadata?: SessionUserErrorMetadata): st
 
 export function formatBrowserEvidence(metadata: SessionMetadata): string[] | null {
   const browser = metadata.browser;
-  if (!browser?.modelSelection && (!browser?.warnings || browser.warnings.length === 0)) {
+  if (
+    !browser?.modelSelection &&
+    !browser?.thinkingSelection &&
+    (!browser?.warnings || browser.warnings.length === 0)
+  ) {
     return null;
   }
   const lines: string[] = [];
   const evidence = browser.modelSelection;
   if (evidence) {
     lines.push(`model ${formatBrowserModelSelectionEvidence(evidence, metadata.model)}`);
+  }
+  const thinkingEvidence = browser.thinkingSelection;
+  if (thinkingEvidence) {
+    lines.push(`effort ${formatBrowserThinkingSelectionEvidence(thinkingEvidence)}`);
   }
   for (const warning of browser.warnings ?? []) {
     lines.push(`warning ${warning.code}: ${warning.message}`);

@@ -4,6 +4,7 @@ import { formatTokenCount } from "../oracle/runUtils.js";
 import { formatFinishLine } from "../oracle/finishLine.js";
 import type {
   BrowserModelSelectionEvidence,
+  BrowserThinkingSelectionEvidence,
   BrowserRunWarning,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
@@ -21,6 +22,7 @@ import {
 } from "./artifacts.js";
 import {
   formatBrowserModelSelectionEvidence,
+  formatBrowserThinkingSelectionEvidence,
   formatBrowserModelTarget,
   resolveBrowserModelDisplayName,
 } from "./modelDisplay.js";
@@ -36,6 +38,7 @@ export interface BrowserExecutionResult {
   runtime: BrowserRuntimeMetadata;
   archive?: BrowserArchiveResult;
   modelSelection?: BrowserModelSelectionEvidence;
+  thinkingSelection?: BrowserThinkingSelectionEvidence;
   warnings?: BrowserRunWarning[];
   answerText: string;
   artifacts?: SessionArtifact[];
@@ -246,6 +249,12 @@ export async function runBrowserSessionExecution(
       `[browser] Model selection evidence: ${formatBrowserModelSelectionEvidence(modelSelection, runOptions.model)}`,
     );
   }
+  const thinkingSelection = browserResult.thinkingSelection;
+  if (thinkingSelection) {
+    log(
+      `[browser] Thinking effort evidence: ${formatBrowserThinkingSelectionEvidence(thinkingSelection)}`,
+    );
+  }
   const warnings = buildBrowserRunWarnings({
     runOptions,
     browserConfig,
@@ -321,6 +330,7 @@ export async function runBrowserSessionExecution(
     },
     archive: browserResult.archive,
     modelSelection,
+    thinkingSelection,
     warnings,
     answerText,
     artifacts: savedArtifacts,
