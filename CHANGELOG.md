@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Browser: stop treating an unreadable shared-profile slot registry as an empty one. `isLastLease` and `hasOtherActiveBrowserTabLeases` gate closing tabs and terminating the Chrome that other runs on the same manual-login profile are using, and three paths turned "could not tell" into "nobody else is here" — a truncated registry read as no leases, an in-place write that could produce exactly that truncation, and a teardown guard that treated a read failure as an idle profile. The registry is now written atomically, a missing registry is distinguished from an unreadable one, both consumers fail closed, and the registry lock waits rather than breaking itself (which let two writers proceed against one file and drop a live peer's lease).
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed
@@ -10,6 +16,7 @@
 ### Fixed
 
 - Browser: detect a disabled ChatGPT effort tier (e.g. an exhausted Pro allotment) before clicking it, and report the account's own reset notice instead of a misleading "selection unverified" failure. Thanks @enieuwy!
+
 ## 0.17.3 — 2026-08-13
 
 **Highlight:** browser-mode answers and recovery are reliable again — no more
