@@ -71,6 +71,13 @@ export interface BrowserConfigDefaults {
   manualLoginProfileDir?: string | null;
   /** Seed a manual-login profile from configured Chrome/inline cookies. */
   manualLoginCookieSync?: boolean;
+  /**
+   * Also fetch ChatGPT's own conversation document and an independent set of
+   * per-turn digests, saved beside the run's other artifacts. Off by default:
+   * it costs two extra authenticated requests and only matters when the
+   * transcript is meant to be evidence rather than an answer.
+   */
+  captureProviderNative?: boolean;
 }
 
 export interface AzureConfig {

@@ -1,0 +1,40 @@
+{
+  "raw": "{\"title\": \"Fidelity fixture\", \"conversation_id\": \"fixture-0001\", \"current_node\": \"n5\", \"mapping\": {\"root\": {\"id\": \"root\", \"parent\": null, \"children\": [\"n0\"], \"message\": null}, \"n0\": {\"id\": \"n0\", \"parent\": \"root\", \"children\": [\"n1\"], \"message\": {\"author\": {\"role\": \"system\"}, \"content\": {\"content_type\": \"text\", \"parts\": [\"ignored\"]}}}, \"n1\": {\"id\": \"n1\", \"parent\": \"n0\", \"children\": [\"n2\"], \"message\": {\"author\": {\"role\": \"user\"}, \"content\": {\"content_type\": \"multimodal_text\", \"parts\": [{\"content_type\": \"image_asset_pointer\", \"asset_pointer\": \"file-service://file-abc\", \"size_bytes\": 123456, \"width\": 1024, \"height\": 768, \"fovea\": null, \"metadata\": {\"dalle\": null, \"gizmo\": null}, \"downsampled\": 1.0, \"ratio\": 0.75, \"huge\": 1e+30}, \"Compare $\\\\Delta(G)$ against $\\\\chi'(G)$ — see attachment ≤ ∞.\"]}}}, \"n2\": {\"id\": \"n2\", \"parent\": \"n1\", \"children\": [\"n3\"], \"message\": {\"author\": {\"role\": \"assistant\"}, \"content\": {\"content_type\": \"thoughts\", \"thoughts\": [{\"summary\": \"s\", \"content\": \"First thought ∀ε>0\"}, {\"summary\": \"t\", \"content\": \"Second thought\"}]}}}, \"n3\": {\"id\": \"n3\", \"parent\": \"n2\", \"children\": [\"n4\"], \"message\": {\"author\": {\"role\": \"assistant\"}, \"content\": {\"content_type\": \"code\", \"language\": \"python\", \"text\": \"def f(x):\\n    return x ** 2  # $ and \\\\ and `\"}}}, \"n4\": {\"id\": \"n4\", \"parent\": \"n3\", \"children\": [\"n5\"], \"message\": {\"author\": {\"role\": \"assistant\"}, \"content\": {\"content_type\": \"reasoning_recap\", \"content\": \"Recapped ⌈n⌉\"}}}, \"n5\": {\"id\": \"n5\", \"parent\": \"n4\", \"children\": [], \"message\": {\"author\": {\"role\": \"assistant\"}, \"content\": {\"content_type\": \"some_future_type\", \"payload\": {\"z\": 1, \"a\": [1, 2.0, true, null], \"m\": \"unicode ≡ ok\"}, \"n\": 7}}}}}",
+  "expected": [
+    {
+      "index": 0,
+      "role": "user",
+      "content_type": "multimodal_text",
+      "bytes": 312,
+      "sha256": "c340b1301608951c3c9f30fcfcb3549988168397c20599e7c99312c40c8680b0"
+    },
+    {
+      "index": 1,
+      "role": "assistant",
+      "content_type": "thoughts",
+      "bytes": 37,
+      "sha256": "0da6f512884d7b4f90e33fa87821c389f486064039183d835939ba805f52c9e1"
+    },
+    {
+      "index": 2,
+      "role": "assistant",
+      "content_type": "code",
+      "bytes": 44,
+      "sha256": "700f20751ff52acebe46193c1cc4d84488b4231fb72d00b5e0e595810e39fed3"
+    },
+    {
+      "index": 3,
+      "role": "assistant",
+      "content_type": "reasoning_recap",
+      "bytes": 16,
+      "sha256": "7cbbfb8e46caf3661d65b2c94dd78c20ec2e5a279aab31e641d903560262bfa9"
+    },
+    {
+      "index": 4,
+      "role": "assistant",
+      "content_type": "some_future_type",
+      "bytes": 115,
+      "sha256": "f1831bf03183b036297da807f85b6ad26563b06e3e556442d43286666db31929"
+    }
+  ]
+}
