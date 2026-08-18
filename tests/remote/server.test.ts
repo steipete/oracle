@@ -832,3 +832,63 @@ describe("per-run isolation on the shared host", () => {
     },
   );
 });
+
+describe("cancellation reaches the run", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "a client that disconnects mid-run aborts it instead of letting it finish",
+    async () => {
+      // Releasing the slot when the run happens to end is not cancellation. The
+      // browser keeps a tab and a shared-profile slot for the whole run, so a
+      // caller that walked away must be able to give both back immediately.
+      let sawSignal: AbortSignal | undefined;
+      let observedAbort = false;
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async (options) => {
+            sawSignal = options.signal;
+            await new Promise<void>((resolve) => {
+              options.signal?.addEventListener("abort", () => {
+                observedAbort = true;
+                resolve();
+              });
+              // Long enough that natural completion cannot be mistaken for
+              // cancellation.
+              setTimeout(resolve, 10_000);
+            });
+            return {
+              answerText: "",
+              answerMarkdown: "",
+              tookMs: 0,
+              answerTokens: 0,
+              answerChars: 0,
+            };
+          },
+        },
+      );
+
+      const request = http.request(
+        {
+          host: "127.0.0.1",
+          port: server.port,
+          path: "/runs",
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer secret" },
+        },
+        () => {},
+      );
+      request.write(JSON.stringify({ prompt: "x", options: {}, browserConfig: {} }));
+      request.end();
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(sawSignal).toBeDefined();
+      expect(observedAbort).toBe(false);
+
+      request.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(observedAbort).toBe(true);
+
+      await server.close();
+    },
+  );
+});

@@ -470,6 +470,10 @@ export async function createRemoteServer(
         attachments,
         fallbackSubmission,
         config: payload.browserConfig,
+        // A disconnected client's run is finished being useful. Without this it
+        // keeps the browser tab and its slot until it happens to complete, so a
+        // service that outlives its callers hands capacity to nobody.
+        signal: controller.signal,
         // `keepBrowser` above preserves the authenticated shared Chrome
         // process. This separate service policy closes only a successfully
         // captured tab owned by this run, preventing one renderer leak per

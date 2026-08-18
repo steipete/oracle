@@ -46,6 +46,18 @@ export class BrowserAutomationError extends OracleUserError {
   }
 }
 
+/**
+ * The caller went away. Distinct from a failure: nothing was wrong with the run,
+ * it simply stopped being wanted, and a caller that reads this should not retry
+ * or report a problem.
+ */
+export class BrowserRunCancelledError extends OracleUserError {
+  constructor(message = "Browser run cancelled: the caller disconnected.") {
+    super("browser-automation", message, { stage: "run-cancelled" });
+    this.name = "BrowserRunCancelledError";
+  }
+}
+
 export class PromptValidationError extends OracleUserError {
   constructor(message: string, details?: OracleUserErrorDetails, cause?: unknown) {
     super("prompt-validation", message, details, cause);

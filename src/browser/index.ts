@@ -59,7 +59,7 @@ import { formatElapsed } from "../oracle/format.js";
 import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
-import { BrowserAutomationError } from "../oracle/errors.js";
+import { BrowserAutomationError, BrowserRunCancelledError } from "../oracle/errors.js";
 import { alignPromptEchoPair, buildPromptEchoMatcher } from "./reattachHelpers.js";
 import { buildConversationTurnCountExpression } from "./conversationTurns.js";
 import type { ProfileRunLock } from "./profileState.js";
@@ -1232,8 +1232,30 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         })();
       });
     });
+    // Cancellation shares the disconnect race because it is the same kind of
+    // event: something outside the run has made continuing pointless. Racing it
+    // here means every awaited step already honours it, and the existing finally
+    // does the unwinding — releasing the tab lease, closing the owned tab, and
+    // stopping the monitors.
+    const abortPromise: Promise<never> | null = options.signal
+      ? new Promise<never>((_, reject) => {
+          const signal = options.signal as AbortSignal;
+          if (signal.aborted) {
+            reject(new BrowserRunCancelledError());
+            return;
+          }
+          signal.addEventListener("abort", () => reject(new BrowserRunCancelledError()), {
+            once: true,
+          });
+        })
+      : null;
+    // Nothing ever resolves abortPromise, so an unraced rejection would surface
+    // as an unhandled rejection if the run finishes first.
+    abortPromise?.catch(() => undefined);
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
-      Promise.race([promise, disconnectPromise]);
+      abortPromise
+        ? Promise.race([promise, disconnectPromise, abortPromise])
+        : Promise.race([promise, disconnectPromise]);
     const { Network, Page, Runtime, Input, DOM, Target } = client;
 
     const domainEnablers = [Network.enable({}), Page.enable(), Runtime.enable()];
