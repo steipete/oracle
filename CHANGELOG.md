@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Browser: persist thinking-effort selection evidence as `browser.thinkingSelection`, parallel to `browser.modelSelection`, and render it in `oracle status`. `ensureThinkingTime` verified the requested tier and then discarded the result, and the model evidence cannot stand in: for a Pro-capable target the picker reports the requested model string as the resolved label, so `resolvedLabel === requestedModel; verified: true` is byte-identical whether or not the Pro row was ever selected. `verified` is true only for the two statuses that positively observed the option's selected state, and strict (fail-closed) requests still throw before submit on every other outcome, so a persisted strict record is proof by refusal that no degraded tier was used.
+
+### Fixed
+
+- Remote: stop stripping run identity and selection evidence from bridged results. `sanitizeResult` correctly keeps host detail (pids, ports, profile paths) from crossing to a client on another machine, but the whitelist had drifted narrower than that rule and also dropped `modelSelection`, `thinkingSelection`, `archive`, `tabUrl`, `conversationId`, and `promptSubmitted` — so a remote caller could not tell which model or effort answered their prompt, nor bind the answer to a durable ChatGPT URL. The fields are optional, so nothing failed; the answer simply arrived unattributable.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed

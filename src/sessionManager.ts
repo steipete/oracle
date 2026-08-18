@@ -137,6 +137,36 @@ export interface BrowserModelSelectionEvidence {
   capturedAt: string;
 }
 
+export type BrowserThinkingSelectionStatus = "already-selected" | "switched" | "unverified";
+
+/**
+ * Machine-checkable evidence that a requested thinking-effort tier was actually
+ * confirmed in ChatGPT's composer before the prompt was submitted.
+ *
+ * This exists because {@link BrowserModelSelectionEvidence} cannot carry it: for
+ * a Pro-capable model the picker deliberately reports the requested model string
+ * as the resolved label, so `resolvedLabel === requestedModel; verified: true` is
+ * byte-identical whether or not the Pro effort row was selected. Without a
+ * separate record, "this run answered at Pro effort" is unprovable after the fact.
+ *
+ * `verified` is true only for statuses that positively observed the option's
+ * selected state (aria-checked/aria-selected/data-state, or a composer pill whose
+ * label matches the target tier). `strictFailClosed` records that the run was in
+ * the fail-closed regime, where every non-confirming outcome throws before submit
+ * — so a submitted strict run is itself evidence that no degraded tier was used.
+ */
+export interface BrowserThinkingSelectionEvidence {
+  requestedLevel: ThinkingTimeLevel;
+  status: BrowserThinkingSelectionStatus;
+  resolvedLabel?: string | null;
+  verified: boolean;
+  strictFailClosed: boolean;
+  targetModelKind?: string | null;
+  observedModelKind?: string | null;
+  source: "chatgpt-thinking-picker";
+  capturedAt: string;
+}
+
 export interface BrowserRunWarning {
   code: string;
   severity: "warning";
@@ -150,6 +180,7 @@ export interface BrowserMetadata {
   harvest?: BrowserHarvestMetadata;
   archive?: BrowserArchiveResult;
   modelSelection?: BrowserModelSelectionEvidence;
+  thinkingSelection?: BrowserThinkingSelectionEvidence;
   warnings?: BrowserRunWarning[];
 }
 

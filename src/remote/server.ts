@@ -723,6 +723,17 @@ function sanitizeName(raw: string): string {
   return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
+/**
+ * Whitelist rather than blacklist: a bridged result must never carry host detail
+ * (pids, ports, profile paths) to a client on another machine.
+ *
+ * The fields below are on the safe side of that line and are load-bearing for the
+ * caller. Selection evidence is the caller's only proof of WHICH model and effort
+ * answered their prompt — dropping it left a remote run indistinguishable from one
+ * that silently inherited whatever the composer had selected. The conversation
+ * identity is what binds an answer to a durable ChatGPT URL the caller can revisit;
+ * without it a bridged answer is unattributable. None of it describes the host.
+ */
 function sanitizeResult(
   result: BrowserRunResult,
   warnings: BrowserRunWarning[] = [],
@@ -734,6 +745,12 @@ function sanitizeResult(
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,
+    modelSelection: result.modelSelection,
+    thinkingSelection: result.thinkingSelection,
+    archive: result.archive,
+    tabUrl: result.tabUrl,
+    conversationId: result.conversationId,
+    promptSubmitted: result.promptSubmitted,
     warnings: warnings.length > 0 ? warnings : undefined,
     chromePid: undefined,
     chromePort: undefined,
