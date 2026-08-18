@@ -581,3 +581,77 @@ async function httpGetJson({
     req.end();
   });
 }
+
+describe("bridged result sanitization", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "carries selection evidence and conversation identity, never host detail",
+    async () => {
+      // Two properties in one test because they are the same decision seen from
+      // both sides: the whitelist must pass what makes a remote answer
+      // attributable, and must still refuse anything describing this machine.
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async () => {
+            const result: BrowserRunResult = {
+              answerText: "hi",
+              answerMarkdown: "hi",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+              modelSelection: {
+                requestedModel: "gpt-5.6-sol",
+                resolvedLabel: "GPT-5.6 Sol",
+                strategy: "select",
+                status: "switched",
+                verified: true,
+                source: "chatgpt-model-picker",
+                capturedAt: "2026-08-18T00:00:00.000Z",
+              },
+              thinkingSelection: {
+                requestedLevel: "pro",
+                status: "switched",
+                resolvedLabel: "Pro",
+                verified: true,
+                strictFailClosed: true,
+                source: "chatgpt-thinking-picker",
+                capturedAt: "2026-08-18T00:00:00.000Z",
+              },
+              tabUrl: "https://chatgpt.com/c/abc-123",
+              conversationId: "abc-123",
+              promptSubmitted: true,
+              chromePid: 4242,
+              chromePort: 9222,
+              userDataDir: "/Users/someone/.oracle/browser-profile",
+            };
+            return result;
+          },
+        },
+      );
+
+      const executor = createRemoteBrowserExecutor({
+        host: `127.0.0.1:${server.port}`,
+        token: "secret",
+      });
+      const result = await executor({ prompt: "remote", config: {} });
+
+      // Without these a bridged run cannot be proven to have answered at the
+      // requested model and effort, and its answer cannot be bound to a URL.
+      expect(result.thinkingSelection).toMatchObject({
+        requestedLevel: "pro",
+        verified: true,
+        strictFailClosed: true,
+      });
+      expect(result.modelSelection?.resolvedLabel).toBe("GPT-5.6 Sol");
+      expect(result.conversationId).toBe("abc-123");
+      expect(result.tabUrl).toBe("https://chatgpt.com/c/abc-123");
+
+      // Host detail stays on the host.
+      expect(result.chromePid).toBeUndefined();
+      expect(result.chromePort).toBeUndefined();
+      expect(result.userDataDir).toBeUndefined();
+
+      await server.close();
+    },
+  );
+});
