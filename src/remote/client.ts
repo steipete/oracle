@@ -62,12 +62,38 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
       const transferPromises: Promise<void>[] = [];
       let artifactTransferQueue = Promise.resolve();
       let settled = false;
+      let runAccepted = false;
       let resolved: BrowserRunResult | null = null;
 
       const fail = (error: Error) => {
         if (settled) return;
         settled = true;
         reject(error);
+      };
+
+      /**
+       * A transport error after the run was accepted usually means the bridge
+       * went away mid-run, and the bare socket error ("aborted", "ECONNRESET")
+       * describes the symptom rather than the situation. The important part for
+       * whoever reads this is that the conversation may well exist on the bridge
+       * host regardless — the browser work is not undone by losing the stream.
+       */
+      const failTransport = (error: Error) => {
+        const wasAccepted = runAccepted;
+        fail(
+          wasAccepted
+            ? new Error(
+                `Lost the connection to the research bridge at ${hostname}:${port} while the run was in progress (${error.message}). ` +
+                  "The run may have started in ChatGPT before the connection dropped: check `oracle status` on the bridge host " +
+                  "for a session from this run and reattach to it rather than resubmitting, which would create a second conversation.",
+                { cause: error },
+              )
+            : new Error(
+                `Could not reach the research bridge at ${hostname}:${port} (${error.message}). ` +
+                  "Confirm the service is running on that host and that the port is reachable from here.",
+                { cause: error },
+              ),
+        );
       };
 
       const req = http.request(
@@ -89,6 +115,9 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
               .catch(fail);
             return;
           }
+          // 200 means the service took the request; from here on a dropped
+          // connection is a run that may exist rather than one that never began.
+          runAccepted = true;
           res.setEncoding("utf8");
           let buffer = "";
           res.on("data", (chunk: string) => {
@@ -139,10 +168,10 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
               resolve(mergeTransferredArtifacts(resolved, transferredFiles, transferFailures));
             })().catch(fail);
           });
-          res.on("error", fail);
+          res.on("error", failTransport);
         },
       );
-      req.on("error", fail);
+      req.on("error", failTransport);
       req.write(body);
       req.end();
     });
