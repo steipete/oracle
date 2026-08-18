@@ -59,7 +59,7 @@ import { formatElapsed } from "../oracle/format.js";
 import type { BrowserModelSelectionEvidence } from "../sessionStore.js";
 import { CHATGPT_URL, DEFAULT_MODEL_STRATEGY } from "./constants.js";
 import type { LaunchedChrome } from "chrome-launcher";
-import { BrowserAutomationError } from "../oracle/errors.js";
+import { BrowserAutomationError, BrowserRunCancelledError } from "../oracle/errors.js";
 import { alignPromptEchoPair, buildPromptEchoMatcher } from "./reattachHelpers.js";
 import { buildConversationTurnCountExpression } from "./conversationTurns.js";
 import type { ProfileRunLock } from "./profileState.js";
@@ -896,6 +896,22 @@ function shouldCleanupBlankTabsAfterLastLease(options: {
   );
 }
 
+/**
+ * A promise that only ever rejects, and only when the caller gives up.
+ *
+ * Kept separate so the same cancellation can be raced against setup steps that
+ * run long before there is a CDP connection to hang a disconnect handler on.
+ */
+function rejectOnAbort(signal: AbortSignal): Promise<never> {
+  return new Promise<never>((_, reject) => {
+    if (signal.aborted) {
+      reject(new BrowserRunCancelledError());
+      return;
+    }
+    signal.addEventListener("abort", () => reject(new BrowserRunCancelledError()), { once: true });
+  });
+}
+
 function buildSkippedModelSelectionEvidence(
   desiredModel: string | null | undefined,
   strategy: BrowserModelSelectionEvidence["strategy"],
@@ -1073,13 +1089,37 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     logger(`Created temporary Chrome profile at ${userDataDir}`);
   }
 
+  // Installed before the tab-lease wait and Chrome startup, not after the CDP
+  // connection. Those are the slowest part of a cold run and the part most likely
+  // to be waiting on a peer, so a run that ignores cancellation until it is
+  // connected keeps its admission slot for exactly the stretch where a
+  // disconnected caller is cheapest to drop — and several such runs can hold
+  // every slot until their browser timeouts.
+  const abortPromise = options.signal ? rejectOnAbort(options.signal) : null;
+  abortPromise?.catch(() => undefined);
+  const raceWithAbort = <T>(promise: Promise<T>): Promise<T> =>
+    abortPromise ? Promise.race([promise, abortPromise]) : promise;
+
   if (manualLogin) {
-    tabLease = await acquireBrowserTabLease(userDataDir, {
+    const pendingLease = acquireBrowserTabLease(userDataDir, {
       maxConcurrentTabs: config.maxConcurrentTabs,
       timeoutMs: config.timeoutMs,
       logger,
       sessionId: options.sessionId,
     });
+    // Losing the race does not cancel the acquisition, so a slot granted after
+    // the caller gave up has to be handed back here — otherwise cancelling
+    // during a queue wait burns a slot on the shared profile for six hours,
+    // which is worse than not honouring the cancellation at all.
+    pendingLease
+      .then(async (lease) => {
+        if (tabLease === lease || !options.signal?.aborted) {
+          return;
+        }
+        await lease.release().catch(() => undefined);
+      })
+      .catch(() => undefined);
+    tabLease = await raceWithAbort(pendingLease);
   }
 
   let acquiredChrome: { chrome: BrowserChrome; reusedChrome: LaunchedChrome | null };
@@ -1232,8 +1272,15 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         })();
       });
     });
+    // Cancellation shares the disconnect race because it is the same kind of
+    // event: something outside the run has made continuing pointless. Racing it
+    // here means every awaited step already honours it, and the existing finally
+    // does the unwinding — releasing the tab lease, closing the owned tab, and
+    // stopping the monitors. The promise itself was built before setup began.
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
-      Promise.race([promise, disconnectPromise]);
+      abortPromise
+        ? Promise.race([promise, disconnectPromise, abortPromise])
+        : Promise.race([promise, disconnectPromise]);
     const { Network, Page, Runtime, Input, DOM, Target } = client;
 
     const domainEnablers = [Network.enable({}), Page.enable(), Runtime.enable()];
