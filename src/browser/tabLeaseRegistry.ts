@@ -8,13 +8,18 @@ import { delay } from "./utils.js";
 export const DEFAULT_MAX_CONCURRENT_CHATGPT_TABS = 3;
 const REGISTRY_FILENAME = "oracle-tab-leases.json";
 const REGISTRY_LOCK_DIRNAME = "oracle-tab-leases.lock";
+const REGISTRY_LOCK_OWNER_FILENAME = "owner.json";
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_STALE_MS = 6 * 60 * 60 * 1000;
 // Generous because the lock is legitimately held across tab close and Chrome
 // termination on the last-lease path. The old 10s budget was short enough that a
 // normal teardown could push a waiter over it — and the waiter's response was to
-// break the lock.
-const REGISTRY_LOCK_TIMEOUT_MS = 45_000;
+// break the lock. Overridable in the same shape as the tab cap, so a host with a
+// slower teardown can raise it without patching.
+function resolveRegistryLockTimeoutMs(): number {
+  const raw = Number(process.env.ORACLE_TAB_LEASE_LOCK_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 45_000;
+}
 
 export interface BrowserTabLeaseRecord {
   id: string;
@@ -216,26 +221,87 @@ export async function hasOtherActiveBrowserTabLeases(
   });
 }
 
-async function withRegistryLock<T>(profileDir: string, callback: () => Promise<T>): Promise<T> {
+/**
+ * Who holds the lock, so an abandoned one can be told from a busy one.
+ *
+ * Without this the only options are both bad: break the lock on a timer, which
+ * lets the original holder's `finally` delete the new holder's lock and put two
+ * writers on one file; or never break it, which turns any crash between `mkdir`
+ * and `finally` into a permanently wedged profile.
+ */
+interface RegistryLockOwner {
+  pid: number;
+  acquiredAt: string;
+}
+
+async function writeLockOwner(lockDir: string): Promise<void> {
+  const owner: RegistryLockOwner = { pid: process.pid, acquiredAt: new Date().toISOString() };
+  await writeFile(path.join(lockDir, REGISTRY_LOCK_OWNER_FILENAME), JSON.stringify(owner), "utf8");
+}
+
+async function readLockOwner(lockDir: string): Promise<RegistryLockOwner | null> {
+  try {
+    const raw = await readFile(path.join(lockDir, REGISTRY_LOCK_OWNER_FILENAME), "utf8");
+    const parsed = JSON.parse(raw) as RegistryLockOwner;
+    return typeof parsed?.pid === "number" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reclaims a lock only when its owner is provably gone.
+ *
+ * "Provably" is doing real work: an owner file that cannot be read is treated as
+ * a live holder, because the alternative is stealing a lock from a process that
+ * is merely mid-write.
+ */
+async function reclaimAbandonedLock(
+  lockDir: string,
+  isAlive: (pid: number) => boolean,
+  logger?: BrowserLogger,
+): Promise<boolean> {
+  const owner = await readLockOwner(lockDir);
+  if (!owner) {
+    return false;
+  }
+  if (owner.pid === process.pid || isAlive(owner.pid)) {
+    return false;
+  }
+  logger?.(
+    `[browser] Reclaiming the ChatGPT slot registry lock from dead pid ${owner.pid} (held since ${owner.acquiredAt}).`,
+  );
+  await rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
+  return true;
+}
+
+async function withRegistryLock<T>(
+  profileDir: string,
+  callback: () => Promise<T>,
+  options: { isProcessAlive?: (pid: number) => boolean; logger?: BrowserLogger } = {},
+): Promise<T> {
   const lockDir = path.join(profileDir, REGISTRY_LOCK_DIRNAME);
+  const isAlive = options.isProcessAlive ?? isProcessAlive;
+  const lockTimeoutMs = resolveRegistryLockTimeoutMs();
   const startedAt = Date.now();
   for (;;) {
     try {
       await mkdir(lockDir, { recursive: false });
+      await writeLockOwner(lockDir);
       break;
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") {
         throw error;
       }
-      if (Date.now() - startedAt > REGISTRY_LOCK_TIMEOUT_MS) {
-        // Deliberately not self-breaking. Stealing the lock here means the
-        // original holder's `finally` then removes the *new* holder's lock, and
-        // two writers proceed against the same file — which is how a live peer's
-        // lease disappears. Waiting longer is recoverable; a lost lease is not.
-        // A truly abandoned lock is cleared by the stale-PID prune on the next
-        // successful pass, not by a timer.
+      // Never on a timer. A lock is taken from its holder only once that holder
+      // is known to be dead — a crash between mkdir and the finally below is the
+      // case this exists for, and it would otherwise wedge the profile forever.
+      if (await reclaimAbandonedLock(lockDir, isAlive, options.logger)) {
+        continue;
+      }
+      if (Date.now() - startedAt > lockTimeoutMs) {
         throw new Error(
-          `timed out after ${REGISTRY_LOCK_TIMEOUT_MS}ms waiting for the ChatGPT slot registry lock at ${lockDir}`,
+          `timed out after ${lockTimeoutMs}ms waiting for the ChatGPT slot registry lock at ${lockDir}`,
         );
       }
       await delay(50);

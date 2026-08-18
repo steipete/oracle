@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Browser: stop treating an unreadable shared-profile slot registry as an empty one. `isLastLease` and `hasOtherActiveBrowserTabLeases` gate closing tabs and terminating the Chrome that other runs on the same manual-login profile are using, and three paths turned "could not tell" into "nobody else is here" — a truncated registry read as no leases, an in-place write that could produce exactly that truncation, and a teardown guard that treated a read failure as an idle profile. The registry is now written atomically, a missing registry is distinguished from an unreadable one, both consumers fail closed, and the registry lock waits rather than breaking itself (which let two writers proceed against one file and drop a live peer's lease).
+- Browser: stop treating an unreadable shared-profile slot registry as an empty one. `isLastLease` and `hasOtherActiveBrowserTabLeases` gate closing tabs and terminating the Chrome that other runs on the same manual-login profile are using, and three paths turned "could not tell" into "nobody else is here" — a truncated registry read as no leases, an in-place write that could produce exactly that truncation, and a teardown guard that treated a read failure as an idle profile. The registry is now written atomically, a missing registry is distinguished from an unreadable one, and both lease consumers — browser runs and Project Sources — fail closed. The registry lock records its owner so an abandoned one can be reclaimed only when that owner is provably dead, instead of being broken on a timer (which let two writers proceed against one file and drop a live peer's lease) or never at all (which wedged the profile after any crash between taking the lock and releasing it).
 
 ## 0.18.0 — 2026-08-14
 
