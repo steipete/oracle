@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import type { BrowserLogger } from "./types.js";
 import { isProcessAlive } from "./profileState.js";
 import { delay } from "./utils.js";
@@ -10,7 +10,11 @@ const REGISTRY_FILENAME = "oracle-tab-leases.json";
 const REGISTRY_LOCK_DIRNAME = "oracle-tab-leases.lock";
 const DEFAULT_POLL_MS = 1000;
 const DEFAULT_STALE_MS = 6 * 60 * 60 * 1000;
-const REGISTRY_LOCK_TIMEOUT_MS = 10_000;
+// Generous because the lock is legitimately held across tab close and Chrome
+// termination on the last-lease path. The old 10s budget was short enough that a
+// normal teardown could push a waiter over it — and the waiter's response was to
+// break the lock.
+const REGISTRY_LOCK_TIMEOUT_MS = 45_000;
 
 export interface BrowserTabLeaseRecord {
   id: string;
@@ -158,6 +162,11 @@ export async function releaseBrowserTabLease(
   logger?: BrowserLogger,
   options: { onRelease?: (context: { isLastLease: boolean }) => Promise<void> } = {},
 ): Promise<void> {
+  // The release callback runs while the lock is still held, and deliberately so:
+  // it closes tabs and can terminate the shared Chrome, and a peer that acquired
+  // a slot midway through would have its browser killed underneath it. The cost
+  // is that the lock is held for seconds, which is why the lock waits rather than
+  // breaking, and why the wait budget is generous.
   await withRegistryLock(profileDir, async () => {
     const registry = await readRegistry(profileDir);
     const active = pruneStaleLeases(registry.leases, {
@@ -168,7 +177,17 @@ export async function releaseBrowserTabLease(
     const leases = active.filter((lease) => lease.id !== leaseId);
     await writeRegistry(profileDir, { version: 1, leases });
     await options.onRelease?.({ isLastLease: leases.length === 0 });
-  }).catch(() => undefined);
+  }).catch((error) => {
+    // Previously swallowed. If the registry could not be read or written, this
+    // run never learned whether it was the last one out — and the teardown that
+    // decision gates is browser-wide. Saying so is the difference between a
+    // skipped cleanup and an unexplained dead Chrome in somebody else's run.
+    logger?.(
+      `[browser] Could not update the ChatGPT slot registry while releasing ${leaseId.slice(0, 8)}; skipping shared-profile teardown: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  });
   logger?.(`[browser] Released ChatGPT browser slot ${leaseId.slice(0, 8)}.`);
 }
 
@@ -209,8 +228,15 @@ async function withRegistryLock<T>(profileDir: string, callback: () => Promise<T
         throw error;
       }
       if (Date.now() - startedAt > REGISTRY_LOCK_TIMEOUT_MS) {
-        await rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
-        continue;
+        // Deliberately not self-breaking. Stealing the lock here means the
+        // original holder's `finally` then removes the *new* holder's lock, and
+        // two writers proceed against the same file — which is how a live peer's
+        // lease disappears. Waiting longer is recoverable; a lost lease is not.
+        // A truly abandoned lock is cleared by the stale-PID prune on the next
+        // successful pass, not by a timer.
+        throw new Error(
+          `timed out after ${REGISTRY_LOCK_TIMEOUT_MS}ms waiting for the ChatGPT slot registry lock at ${lockDir}`,
+        );
       }
       await delay(50);
     }
@@ -222,19 +248,42 @@ async function withRegistryLock<T>(profileDir: string, callback: () => Promise<T
   }
 }
 
+/**
+ * A missing registry means "nobody has taken a slot yet" and is normal. An
+ * unreadable one means "the answer is unknown", which is not the same thing and
+ * must not be rendered as an empty lease list: callers treat emptiness as
+ * permission to close tabs and kill the shared Chrome.
+ */
+class UnreadableTabLeaseRegistryError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `tab-lease registry is unreadable: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    this.name = "UnreadableTabLeaseRegistryError";
+  }
+}
+
 async function readRegistry(profileDir: string): Promise<BrowserTabLeaseRegistryFile> {
+  let raw: string;
   try {
-    const raw = await readFile(registryPath(profileDir), "utf8");
+    raw = await readFile(registryPath(profileDir), "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") {
+      return { version: 1, leases: [] };
+    }
+    throw new UnreadableTabLeaseRegistryError(error);
+  }
+  try {
     const parsed = JSON.parse(raw) as BrowserTabLeaseRegistryFile;
     if (!Array.isArray(parsed.leases)) {
-      return { version: 1, leases: [] };
+      throw new Error("registry has no leases array");
     }
     return {
       version: 1,
       leases: parsed.leases.filter(isLeaseRecord),
     };
-  } catch {
-    return { version: 1, leases: [] };
+  } catch (error) {
+    throw new UnreadableTabLeaseRegistryError(error);
   }
 }
 
@@ -243,7 +292,20 @@ async function writeRegistry(
   registry: BrowserTabLeaseRegistryFile,
 ): Promise<void> {
   await mkdir(profileDir, { recursive: true });
-  await writeFile(registryPath(profileDir), `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  // Written through a temp file and renamed, because a torn read of this file
+  // does not fail loudly — readRegistry treats unparseable content as "no
+  // leases", and callers read "no leases" as "this profile is idle" before
+  // closing tabs and terminating the shared Chrome. A partial write is therefore
+  // indistinguishable from permission to tear down somebody else's run.
+  const target = registryPath(profileDir);
+  const temporary = `${target}.tmp.${process.pid}.${randomUUID()}`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+    await rename(temporary, target);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 function registryPath(profileDir: string): string {
