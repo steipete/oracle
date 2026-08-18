@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Browser: `--browser-capture-provider-native` saves ChatGPT's own record of the conversation alongside the run's artifacts, for runs whose transcript has to be evidence rather than an answer. Oracle's answer capture is a rendering of what ChatGPT displayed, and for notation that is not the same thing: on a live Pro run the captured Markdown for a math-heavy turn differed from the provider's record of that same turn — `\,` lost its backslash and `\mathcal{F}_s` came back as `\mathcal{F}*s` — with no fallback fired and every keyword-level check passing. Two files are written: the conversation document verbatim, and an evidence file from a second, independent fetch normalized and hashed **in the page** so only digests cross the boundary. The run's own answer is then compared against those digests and recorded as matched / divergent / unknown. Capture never gates an answer: `/backend-api/*` sits behind bot mitigation that can refuse an in-page fetch while the user is logged in, so every failure is a typed reason and a normal result, and a conversation with no id (a temporary chat, or a run whose URL never settled) is `unavailable` rather than an error. Document-level hashes of the two fetches are recorded but never gated — the backend document carries nested metadata that changes between fetches at identical turn content.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed
@@ -10,6 +16,7 @@
 ### Fixed
 
 - Browser: detect a disabled ChatGPT effort tier (e.g. an exhausted Pro allotment) before clicking it, and report the account's own reset notice instead of a misleading "selection unverified" failure. Thanks @enieuwy!
+
 ## 0.17.3 — 2026-08-13
 
 **Highlight:** browser-mode answers and recovery are reliable again — no more

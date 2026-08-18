@@ -67,6 +67,7 @@ export const DEFAULT_BROWSER_CONFIG: ResolvedBrowserConfig = {
   researchMode: "off",
   archiveConversations: "auto",
   resumeConversationUrl: null,
+  captureProviderNative: false,
 };
 
 export function resolveBrowserConfig(
@@ -154,6 +155,8 @@ export function resolveBrowserConfig(
     archiveConversations,
     resumeConversationUrl:
       config?.resumeConversationUrl ?? DEFAULT_BROWSER_CONFIG.resumeConversationUrl,
+    captureProviderNative:
+      config?.captureProviderNative ?? DEFAULT_BROWSER_CONFIG.captureProviderNative,
     manualLogin,
     manualLoginProfileDir: manualLogin ? resolvedProfileDir : null,
     manualLoginCookieSync:
