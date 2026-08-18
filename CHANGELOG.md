@@ -9,10 +9,12 @@
 ### Added
 
 - Browser: `BrowserRunOptions.signal`, so a caller can cancel a run it no longer wants. `oracle serve` now observes client disconnect and cancels rather than letting the run finish: measured before, a client killed ten seconds into a thirty-second run held its browser tab and its shared-profile slot for the remaining twenty. Cancellation joins the existing disconnect race, so every awaited step honours it and the existing unwinding releases the tab lease and closes the owned tab. It raises `BrowserRunCancelledError` rather than a generic failure, because a caller that walked away is not a run that went wrong.
+- Remote: the remote executor honours `BrowserRunOptions.signal`, destroying its HTTP request so the service's own disconnect handling cancels the run rather than the caller merely believing it cancelled.
 - Remote: `/health` reports `activeRuns`, `queuedRuns`, and `maxConcurrentRuns`, so a caller can decide when to send work instead of discovering the answer by being queued.
 
 ### Fixed
 
+- Remote: bound admission by the shared-profile tab cap rather than overwriting it. The service reads the host's configured `maxConcurrentTabs` and admits at most that many concurrent runs, so an operator who lowered the cap — to stay under an account's throttling, say — keeps that choice.
 - Remote: give each run its own server-side session directory. The client's session slug was used verbatim as the key for the server's artifact directory, and slugs are prompt-derived, so two callers could collide — invisible while only one run existed at a time. The browser tab cap is also pinned to what the service admits, so extra callers wait in the queue where the wait is visible rather than inside the lease loop where it is not.
 
 ## 0.18.0 — 2026-08-14

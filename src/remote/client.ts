@@ -56,7 +56,18 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
     const body = Buffer.from(JSON.stringify(payload));
     const { hostname, port } = parseHost(host);
 
+    // `BrowserRunOptions.signal` has to mean the same thing on both sides of the
+    // bridge. Observed only locally, it would look like cancellation while the
+    // remote run kept its slot and its browser tab until it finished on its own —
+    // the exact failure the signal exists to prevent, made harder to see because
+    // the caller believes it cancelled.
+    const callerSignal = options.signal;
+
     return new Promise<BrowserRunResult>((resolve, reject) => {
+      if (callerSignal?.aborted) {
+        reject(new Error("Browser run cancelled before the request was sent."));
+        return;
+      }
       const transferredFiles: SavedBrowserFile[] = [];
       const transferFailures: string[] = [];
       const transferPromises: Promise<void>[] = [];
@@ -143,6 +154,17 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
         },
       );
       req.on("error", fail);
+
+      // Destroying the request closes the socket, which is how the service learns
+      // to abort: its own disconnect handler fires and releases the slot and the
+      // browser tab.
+      const onCallerAbort = () => {
+        req.destroy();
+        fail(new Error("Browser run cancelled: the caller aborted."));
+      };
+      callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+      req.on("close", () => callerSignal?.removeEventListener("abort", onCallerAbort));
+
       req.write(body);
       req.end();
     });

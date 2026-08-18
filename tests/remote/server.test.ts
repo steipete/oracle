@@ -802,35 +802,35 @@ describe("per-run isolation on the shared host", () => {
     },
   );
 
-  test.skipIf(!CAN_LISTEN_LOCALHOST)(
-    "the browser tab cap is pinned to what the service admits",
-    async () => {
-      let observedCap: number | undefined;
-      const server = await createRemoteServer(
-        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {}, maxConcurrentRuns: 4 },
-        {
-          runBrowser: async (options) => {
-            observedCap = options.config?.maxConcurrentTabs;
-            return {
-              answerText: "ok",
-              answerMarkdown: "ok",
-              tookMs: 1,
-              answerTokens: 1,
-              answerChars: 2,
-            };
-          },
+  test.skipIf(!CAN_LISTEN_LOCALHOST)("does not overwrite the shared-profile tab cap", async () => {
+    // The tab cap is the physical constraint on a shared profile and belongs to
+    // the host. An operator who lowered it — to stay under an account's
+    // throttling, say — must not have that silently replaced by whatever the
+    // service happens to admit.
+    let observedCap: number | undefined = 7;
+    const server = await createRemoteServer(
+      { host: "127.0.0.1", port: 0, token: "secret", logger: () => {}, maxConcurrentRuns: 4 },
+      {
+        runBrowser: async (options) => {
+          observedCap = options.config?.maxConcurrentTabs;
+          return {
+            answerText: "ok",
+            answerMarkdown: "ok",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 2,
+          };
         },
-      );
-      await createRemoteBrowserExecutor({ host: `127.0.0.1:${server.port}`, token: "secret" })({
-        prompt: "x",
-        // A client asking for a different cap does not get one: this is a
-        // property of the host's shared profile, not of the caller's run.
-        config: { maxConcurrentTabs: 99 } as never,
-      });
-      expect(observedCap).toBe(4);
-      await server.close();
-    },
-  );
+      },
+    );
+    await createRemoteBrowserExecutor({ host: `127.0.0.1:${server.port}`, token: "secret" })({
+      prompt: "x",
+      config: {},
+    });
+    // Left for the browser layer to resolve from the host's own configuration.
+    expect(observedCap).toBeUndefined();
+    await server.close();
+  });
 });
 
 describe("cancellation reaches the run", () => {
@@ -891,4 +891,61 @@ describe("cancellation reaches the run", () => {
       await server.close();
     },
   );
+});
+
+describe("cancellation across the bridge", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "a caller aborting a remote run cancels it on the far side",
+    async () => {
+      // `signal` has to mean the same thing on both sides. Observed only locally
+      // it would look like cancellation while the remote run kept its slot and
+      // its browser tab until it finished on its own.
+      let observedAbort = false;
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async (options) => {
+            await new Promise<void>((resolve) => {
+              options.signal?.addEventListener("abort", () => {
+                observedAbort = true;
+                resolve();
+              });
+              setTimeout(resolve, 10_000);
+            });
+            return {
+              answerText: "",
+              answerMarkdown: "",
+              tookMs: 0,
+              answerTokens: 0,
+              answerChars: 0,
+            };
+          },
+        },
+      );
+      const controller = new AbortController();
+      const executor = createRemoteBrowserExecutor({
+        host: `127.0.0.1:${server.port}`,
+        token: "secret",
+      });
+      const run = executor({ prompt: "x", config: {}, signal: controller.signal });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(observedAbort).toBe(false);
+
+      controller.abort();
+      await expect(run).rejects.toThrow(/cancelled/i);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(observedAbort).toBe(true);
+
+      await server.close();
+    },
+  );
+
+  test("an already-aborted caller never sends the request", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const executor = createRemoteBrowserExecutor({ host: "127.0.0.1:1", token: "secret" });
+    await expect(executor({ prompt: "x", config: {}, signal: controller.signal })).rejects.toThrow(
+      /cancelled before the request was sent/,
+    );
+  });
 });

@@ -10,6 +10,8 @@ import { mkdtemp, rm, mkdir, writeFile, stat, realpath } from "node:fs/promises"
 import chalk from "chalk";
 import type { BrowserAttachment, BrowserLogger, CookieParam } from "../browser/types.js";
 import { runBrowserMode } from "../browserMode.js";
+import { normalizeMaxConcurrentTabs } from "../browser/tabLeaseRegistry.js";
+import { loadUserConfig } from "../config.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import type {
   RemoteArtifactCapabilities,
@@ -214,10 +216,23 @@ export async function createRemoteServer(
   // Admission control. The browser profile is shared, so concurrency is bounded;
   // the profile run lock inside the browser stack keeps composer interaction
   // serialized underneath this.
-  const slots = new RunSlots(
-    Math.max(1, options.maxConcurrentRuns ?? 4),
-    Math.max(0, options.maxQueuedRuns ?? 8),
+  // Admission is bounded by the browser's own cap, not the other way round. The
+  // tab cap is the physical constraint on a shared profile; a service that
+  // admitted more than it would simply move the waiting from the queue, where it
+  // is visible, into the lease loop, where it is not. Overwriting the browser
+  // cap to match would be worse still — it silently discards an operator's lower
+  // choice, which is exactly what someone avoiding account throttling would set.
+  const browserTabCap = normalizeMaxConcurrentTabs(
+    (await loadUserConfig().catch(() => null))?.config.browser?.maxConcurrentTabs,
   );
+  const requestedConcurrency = Math.max(1, options.maxConcurrentRuns ?? 4);
+  const effectiveConcurrency = Math.min(requestedConcurrency, browserTabCap);
+  if (effectiveConcurrency < requestedConcurrency) {
+    logger(
+      `[serve] Admitting ${effectiveConcurrency} concurrent run(s): the shared-profile tab cap (${browserTabCap}) is lower than the requested ${requestedConcurrency}.`,
+    );
+  }
+  const slots = new RunSlots(effectiveConcurrency, Math.max(0, options.maxQueuedRuns ?? 8));
   const artifactRegistry = new Map<string, RegisteredRemoteArtifact>();
 
   if (!process.listenerCount("unhandledRejection")) {
@@ -447,11 +462,6 @@ export async function createRemoteServer(
       if (payload.options?.sessionId) {
         payload.options.sessionId = `${payload.options.sessionId}-${runId.slice(0, 8)}`;
       }
-
-      // Keep the browser-side tab cap in step with what this service admits.
-      // If the tab registry allowed fewer, the extra callers would block inside
-      // the lease loop instead of in the queue, where their wait is visible.
-      payload.browserConfig.maxConcurrentTabs = slots.capacity;
 
       // Enforce manual-login profile when cookie sync is unavailable (e.g., Windows/WSL).
       if (options.manualLoginDefault) {
