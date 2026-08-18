@@ -9,6 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, writeFile, stat, realpath } from "node:fs/promises";
 import chalk from "chalk";
 import type { BrowserAttachment, BrowserLogger, CookieParam } from "../browser/types.js";
+import type { BrowserSessionConfig } from "../sessionManager.js";
 import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import type {
@@ -273,15 +274,23 @@ export async function createRemoteServer(
       // open before the service forces `keepBrowser` for process lifetime.
       const clientRequestedKeepBrowser = payload.browserConfig?.keepBrowser === true;
 
+      // A client may describe the conversation it wants; it may not describe this
+      // machine. Rebuilding the config from an allowlist rather than deleting
+      // known-bad keys makes that the default: a field added to
+      // BrowserSessionConfig later is host-owned until someone decides otherwise,
+      // instead of reaching Chrome the moment it exists.
+      //
+      // The distinction is not stylistic. `chromePath` names an executable this
+      // process spawns, `remoteChrome` names a debugger to attach to,
+      // `copyProfileSource` names a directory to copy credentials out of, and
+      // `browserTabRef`/`attachRunning` select a tab that may belong to somebody
+      // else's run. With those reachable, a bridge token is not a permission to
+      // ask ChatGPT a question — it is a permission to run code here.
+      payload.browserConfig = pickClientBrowserConfig(payload.browserConfig);
       // Remote runs rely on the host's authentication policy; never accept cookie payloads from clients.
-      if (payload.browserConfig) {
-        payload.browserConfig.inlineCookies = null;
-        payload.browserConfig.inlineCookiesSource = null;
-        payload.browserConfig.cookieSync = options.cookieSyncDefault === true;
-      } else {
-        payload.browserConfig = {} as typeof payload.browserConfig;
-        payload.browserConfig.cookieSync = options.cookieSyncDefault === true;
-      }
+      payload.browserConfig.inlineCookies = null;
+      payload.browserConfig.inlineCookiesSource = null;
+      payload.browserConfig.cookieSync = options.cookieSyncDefault === true;
 
       // Enforce manual-login profile when cookie sync is unavailable (e.g., Windows/WSL).
       if (options.manualLoginDefault) {
@@ -717,6 +726,49 @@ async function readRequestBody(req: http.IncomingMessage): Promise<string> {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * Fields a remote caller may set: they describe the conversation and its time
+ * budgets. Everything else on BrowserSessionConfig — executable paths, profile
+ * directories, debugger endpoints, tab selection, window mode, cookie policy,
+ * and the shared-profile concurrency limits — is the host's to decide.
+ */
+const CLIENT_BROWSER_CONFIG_FIELDS = [
+  "chatgptUrl",
+  "url",
+  "desiredModel",
+  "modelStrategy",
+  "thinkingTime",
+  "researchMode",
+  "archiveConversations",
+  "resumeConversationUrl",
+  "timeoutMs",
+  "inputTimeoutMs",
+  "attachmentTimeoutMs",
+  "assistantRecheckDelayMs",
+  "assistantRecheckTimeoutMs",
+  "autoReattachDelayMs",
+  "autoReattachIntervalMs",
+  "autoReattachTimeoutMs",
+  "keepBrowser",
+  "debug",
+] as const satisfies readonly (keyof BrowserSessionConfig)[];
+
+export function pickClientBrowserConfig(
+  requested: BrowserSessionConfig | undefined | null,
+): BrowserSessionConfig {
+  const accepted: BrowserSessionConfig = {};
+  if (!requested) {
+    return accepted;
+  }
+  for (const field of CLIENT_BROWSER_CONFIG_FIELDS) {
+    const value = requested[field];
+    if (value !== undefined) {
+      (accepted as Record<string, unknown>)[field] = value;
+    }
+  }
+  return accepted;
 }
 
 function sanitizeName(raw: string): string {

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
-import { createRemoteServer } from "../../src/remote/server.js";
+import { createRemoteServer, pickClientBrowserConfig } from "../../src/remote/server.js";
 import { createRemoteBrowserExecutor } from "../../src/remote/client.js";
 import type { BrowserRunResult } from "../../src/browserMode.js";
 import type { RemoteArtifactDescriptor } from "../../src/remote/types.js";
@@ -581,3 +581,62 @@ async function httpGetJson({
     req.end();
   });
 }
+
+describe("client browser-config allowlist", () => {
+  test("passes through the fields that describe the conversation", () => {
+    const accepted = pickClientBrowserConfig({
+      chatgptUrl: "https://chatgpt.com/g/g-p-abc/project",
+      desiredModel: "gpt-5.6-sol",
+      modelStrategy: "select",
+      thinkingTime: "pro",
+      archiveConversations: "never",
+      resumeConversationUrl: "https://chatgpt.com/c/abc-123",
+      timeoutMs: 900_000,
+    });
+    expect(accepted).toEqual({
+      chatgptUrl: "https://chatgpt.com/g/g-p-abc/project",
+      desiredModel: "gpt-5.6-sol",
+      modelStrategy: "select",
+      thinkingTime: "pro",
+      archiveConversations: "never",
+      resumeConversationUrl: "https://chatgpt.com/c/abc-123",
+      timeoutMs: 900_000,
+    });
+  });
+
+  test("drops every field that describes the host rather than the conversation", () => {
+    // Each of these is a different way for a token holder to stop asking
+    // questions and start running code, reading credentials, or steering another
+    // caller's tab. Named individually so a regression names its own hazard.
+    const accepted = pickClientBrowserConfig({
+      chromePath: "/tmp/evil",
+      chromeProfile: "/Users/someone/Library/Application Support/Google/Chrome",
+      chromeCookiePath: "/Users/someone/Library/Cookies",
+      copyProfileSource: "/Users/someone/Library/Application Support/Google/Chrome",
+      remoteChrome: { host: "attacker.example", port: 9222 },
+      debugPort: 9222,
+      attachRunning: true,
+      browserTabRef: "current",
+      headless: true,
+      hideWindow: true,
+      manualLogin: false,
+      manualLoginProfileDir: "/tmp/profile",
+      manualLoginCookieSync: true,
+      cookieSync: true,
+      cookieNames: ["__Secure-next-auth.session-token"],
+      inlineCookies: [],
+      inlineCookiesSource: "somewhere",
+      allowCookieErrors: true,
+      maxConcurrentTabs: 99,
+      profileLockTimeoutMs: 0,
+      reuseChromeWaitMs: 0,
+      desiredModel: "gpt-5.6-sol",
+    } as never);
+    expect(accepted).toEqual({ desiredModel: "gpt-5.6-sol" });
+  });
+
+  test("treats a missing config as an empty one", () => {
+    expect(pickClientBrowserConfig(undefined)).toEqual({});
+    expect(pickClientBrowserConfig(null)).toEqual({});
+  });
+});
