@@ -6,6 +6,17 @@ import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
 
+export function buildCollisionRenamedAttachmentPattern(expectedName: string): RegExp | null {
+  const baseName = expectedName.split("/").pop()?.split("\\").pop() ?? expectedName;
+  const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
+  const extensionIndex = normalizedExpected.lastIndexOf(".");
+  if (extensionIndex <= 0 || extensionIndex === normalizedExpected.length - 1) return null;
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const stem = escape(normalizedExpected.slice(0, extensionIndex));
+  const extension = escape(normalizedExpected.slice(extensionIndex + 1));
+  return new RegExp(`^${stem}(?:\\([0-9-]+\\))?\\.${extension}$`, "i");
+}
+
 export async function uploadAttachmentFile(
   deps: {
     runtime: ChromeClient["Runtime"];
@@ -26,16 +37,20 @@ export async function uploadAttachmentFile(
       : 0;
 
   const readAttachmentSignals = async (name: string) => {
+    const collisionPattern = buildCollisionRenamedAttachmentPattern(name);
     const check = await runtime.evaluate({
       expression: `(() => {
         const expected = ${JSON.stringify(name)};
         const normalizedExpected = String(expected || '').toLowerCase().replace(/\\s+/g, ' ').trim();
         const expectedNoExt = normalizedExpected.replace(/\\.[a-z0-9]{1,10}$/i, '');
+        const collisionPatternSource = ${JSON.stringify(collisionPattern?.source ?? "")};
+        const collisionPattern = collisionPatternSource ? new RegExp(collisionPatternSource, 'i') : null;
         const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
         const matchesExpected = (value) => {
           const text = normalize(value);
           if (!text) return false;
           if (text.includes(normalizedExpected)) return true;
+          if (collisionPattern?.test(text)) return true;
           if (expectedNoExt.length >= 6 && text.includes(expectedNoExt)) return true;
           if (text.includes('…') || text.includes('...')) {
             const marker = text.includes('…') ? '…' : '...';
@@ -374,10 +389,12 @@ export async function uploadAttachmentFile(
   const expectedName = path.basename(attachment.path);
   const expectedNameLower = normalizeForMatch(expectedName);
   const expectedNameNoExt = expectedNameLower.replace(/\.[a-z0-9]{1,10}$/i, "");
+  const expectedCollisionPattern = buildCollisionRenamedAttachmentPattern(expectedNameLower);
   const matchesExpectedName = (value: string): boolean => {
     const normalized = normalizeForMatch(value);
     if (!normalized) return false;
     if (normalized.includes(expectedNameLower)) return true;
+    if (expectedCollisionPattern?.test(normalized)) return true;
     if (expectedNameNoExt.length >= 6 && normalized.includes(expectedNameNoExt)) return true;
     return false;
   };
@@ -1603,8 +1620,10 @@ export async function waitForAttachmentCompletion(
         const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
         const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
         const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
+        const collisionPattern = buildCollisionRenamedAttachmentPattern(normalizedExpected);
         return attachedNames.some((raw) => {
           if (raw.includes(normalizedExpected)) return true;
+          if (collisionPattern?.test(raw)) return true;
           if (expectedNoExt.length >= 6 && raw.includes(expectedNoExt)) return true;
           if (raw.includes("…") || raw.includes("...")) {
             const marker = raw.includes("…") ? "…" : "...";

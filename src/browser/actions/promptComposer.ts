@@ -13,6 +13,7 @@ import {
 } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
+import { buildCollisionRenamedAttachmentPattern } from "./attachments.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 
@@ -358,6 +359,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       name: normalized,
       stem: normalized.replace(/\.[a-z0-9]{1,10}$/i, ""),
       extension: normalized.match(/(\.[a-z0-9]{1,10})$/i)?.[1] ?? "",
+      collisionPattern: buildCollisionRenamedAttachmentPattern(normalized)?.source ?? "",
       generatedBundle: typeof attachment === "object" && attachment.generatedBundle === true,
     };
   });
@@ -427,6 +429,13 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       const text = normalize(value);
       if (!text) return false;
       if (hasNameBoundary(text, item.name)) return true;
+      const collisionPattern = item.collisionPattern ? new RegExp(item.collisionPattern, 'i') : null;
+      if (
+        collisionPattern &&
+        String(value || '').split('\\n').some((candidate) => collisionPattern.test(normalize(candidate)))
+      ) {
+        return true;
+      }
       if (item.generatedBundle && hasBareStemBoundary(text, item.stem)) return true;
       if (
         item.stem &&
@@ -532,7 +541,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       };
       pushAttrs(node);
       pushText(node);
-      return pieces.join(' ').toLowerCase();
+      return pieces.join('\\n').toLowerCase();
     };
     const collectLabelHaystack = (node) => {
       if (!node) return '';
@@ -545,7 +554,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       push(parent);
       const grandparent = parent?.parentElement;
       push(grandparent);
-      return pieces.join(' ').toLowerCase();
+      return pieces.join('\\n').toLowerCase();
     };
     const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
     const collectChipNodes = () => {

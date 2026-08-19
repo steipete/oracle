@@ -3,6 +3,7 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
 } from "../../src/browser/pageActions.js";
+import * as attachments from "../../src/browser/actions/attachments.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
 const useFakeTime = () => {
@@ -13,6 +14,64 @@ const useFakeTime = () => {
 const useRealTime = () => {
   vi.useRealTimers();
 };
+
+const buildCollisionPattern = (expectedName: string): RegExp | null => {
+  const builder = (
+    attachments as unknown as {
+      buildCollisionRenamedAttachmentPattern?: (name: string) => RegExp | null;
+    }
+  ).buildCollisionRenamedAttachmentPattern;
+  return builder?.(expectedName) ?? null;
+};
+
+describe("collision-renamed attachment names", () => {
+  test.each([
+    ["01.jpg", "01(5).jpg"],
+    ["document.md", "document(20260818-145702).md"],
+    ["document.md", "document.md"],
+    ["a+b.jpg", "a+b(2).jpg"],
+  ])("matches %s to %s", (expectedName, actualName) => {
+    expect(buildCollisionPattern(expectedName)?.test(actualName) ?? false).toBe(true);
+  });
+
+  test.each([
+    ["01.jpg", "010.jpg"],
+    ["01.jpg", "02(5).jpg"],
+  ])("does not match %s to %s", (expectedName, actualName) => {
+    expect(buildCollisionPattern(expectedName)?.test(actualName) ?? false).toBe(false);
+  });
+
+  test("waitForAttachmentCompletion resolves for a collision-renamed short filename", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: true,
+            attachedNames: ["01(5).jpg"],
+            inputNames: [],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    try {
+      const promise = waitForAttachmentCompletion(runtime, 3_000, ["01.jpg"]);
+      const resolved = promise.then(
+        () => true,
+        () => false,
+      );
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(await resolved).toBe(true);
+    } finally {
+      useRealTime();
+    }
+  });
+});
 
 describe("attachment completion fallbacks", () => {
   test("waitForAttachmentCompletion resolves when ready file input contains expected name (no UI chip)", async () => {

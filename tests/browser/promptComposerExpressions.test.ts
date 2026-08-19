@@ -253,6 +253,40 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(true);
   });
 
+  test.each([
+    ["01.jpg", "01(5).jpg"],
+    ["document.md", "document(20260818-145702).md"],
+    ["document.md", "document.md"],
+    ["a+b.jpg", "a+b(2).jpg"],
+  ])("attachment ready check matches %s to %s", (expectedName, actualName) => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], actualName),
+          new FakeElement("button", { "aria-label": `Remove file 1: ${actualName}` }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression([expectedName], document)).toBe(true);
+  });
+
+  test.each(["010.jpg", "02(5).jpg"])(
+    "attachment ready check does not match 01.jpg to %s",
+    (actualName) => {
+      const document = new FakeDocument([
+        new FakeElement("div", { "data-testid": "unified-composer" }, [
+          new FakeElement("div", { "data-testid": "attachment-chip" }, [
+            new FakeElement("span", {}, [], actualName),
+            new FakeElement("button", { "aria-label": `Remove file 1: ${actualName}` }),
+          ]),
+        ]),
+      ]);
+
+      expect(evaluateAttachmentReadyExpression(["01.jpg"], document)).toBe(false);
+    },
+  );
+
   test("attachment ready check accepts generated bundle chips that expose only the bundle stem", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
