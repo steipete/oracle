@@ -94,6 +94,28 @@ oracle status --hours 72
 
 Use `oracle session` to reattach to a run, `oracle restart` to repeat one, or `--followup` to continue a supported API or ChatGPT conversation with more context. See [sessions](docs/sessions.md) and [follow-ups](docs/followup.md) for the lifecycle and provider limits.
 
+## Archive ChatGPT conversations into an Obsidian vault / knowledge repo
+
+`oracle conversation export` reads an existing ChatGPT conversation from a signed-in Chrome tab (never sends a prompt, never navigates) and can write it out as a raw-first, one-note-per-exchange Obsidian vault import — a durable, greppable, Git-trackable copy of a conversation, meant for a coding agent (Codex, Claude Code, ...) to archive into your own knowledge repo:
+
+```bash
+# 1. Start a Chrome with DevTools remote debugging enabled and sign in to
+#    ChatGPT once (see "Remote Chrome Sessions" in docs/browser-mode.md).
+
+# 2. Export a conversation straight into your vault's inbox.
+oracle conversation export "https://chatgpt.com/c/<conversation-id>" \
+  --format obsidian --out ./00_Inbox
+
+# 3. Commit it like any other file in the repo.
+git add 00_Inbox/ChatGPT-* && git commit -m "archive: chatgpt conversation"
+```
+
+This writes `00_Inbox/ChatGPT-<id8>/NNN-YYYY-MM-DD-turn-TTT.md` (one file per Q/A exchange, byte-exact query and assistant text) plus an `INDEX.md` with wikilinks. See [`--format obsidian`](docs/cli-reference.md#--format-obsidian-archive-into-an-obsidian-vault--knowledge-repo) for the full note/frontmatter shape.
+
+For an agent doing this on your behalf, a good instruction block is:
+
+> Archive this ChatGPT conversation raw-first: run `oracle conversation export <url> --format obsidian --out ./00_Inbox`, do not summarize or edit anything it writes, and leave the notes under `00_Inbox` — promotion/organization into the rest of the vault happens later, as a separate pass.
+
 ## Multiple models and automation
 
 `--models` runs an API panel and records per-model usage, cost, output, and partial failures in one session. `oracle doctor --providers` inspects readiness for the selected models without exposing credentials. The [multi-model guide](docs/multimodel.md) covers routing and output files.
