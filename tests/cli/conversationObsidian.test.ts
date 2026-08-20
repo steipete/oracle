@@ -316,7 +316,9 @@ describe("renderObsidianVault", () => {
       "- 4 exchanges: query-only 1; thoughts-only assistant turns 1; empty assistant 0; visible raw segments 3; CRLF->LF normalised records 1",
     );
     expect(index).toContain("- mapping nodes 12; off-path (branch) nodes 1 are not exported");
-    expect(index).toContain("- 原文を保存した一次資料。query本文は索引へ重複しない。");
+    expect(index).toContain(
+      "- Primary source, stored verbatim. Query text is not duplicated into this index.",
+    );
     expect(index).toContain("001. [[ChatGPT-testconv/001-2025-07-08-turn-001|2025-07-08 — Q/A]]");
     expect(index).toContain("002. [[ChatGPT-testconv/002-2025-07-08-turn-003|2025-07-08 — Q/A]]");
     expect(index).toContain(

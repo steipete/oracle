@@ -19,11 +19,11 @@ import type {
 
 const TIMESTAMP_SOURCE = "ChatGPT backend-api message.create_time (epoch seconds -> ISO UTC)";
 
-/** Intentionally Japanese for this first release; centralized here for future localisation. */
+/** Note section headings, centralized here for future localisation. */
 const HEADINGS = {
-  query: "元のクエリ",
-  answer: "元の回答",
-  related: "関連",
+  query: "Original query",
+  answer: "Original answer",
+  related: "Related",
 } as const;
 
 const NOTE_KIND = {
@@ -386,7 +386,7 @@ export function renderObsidianVault(
     `- ${records.length} turns: user ${users} / assistant ${assistants}; turn index 1..${records.length} (turn = user message or run of consecutive assistant nodes; turn_id = first node id, same as DOM data-turn-id)`,
     `- ${exchanges.length} exchanges: query-only ${queryOnly}; thoughts-only assistant turns ${thoughtsOnlyTurns}; empty assistant ${emptyAssistant}; visible raw segments ${segmentCount}; CRLF->LF normalised records ${crlfNormalized}`,
     `- mapping nodes ${nodeCount}; off-path (branch) nodes ${branchNodesSkipped} are not exported`,
-    "- 原文を保存した一次資料。query本文は索引へ重複しない。",
+    "- Primary source, stored verbatim. Query text is not duplicated into this index.",
     "",
     "## Q/A",
     "",
