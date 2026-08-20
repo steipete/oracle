@@ -334,6 +334,7 @@ const docsCheckRequested = docsArgIndex >= 0 && routingCliArgs[docsArgIndex + 1]
 const suppressIntro =
   doctorJsonRequested ||
   docsCheckRequested ||
+  (routingCliArgs[0] === "conversation" && routingCliArgs[1] === "export") ||
   (routingCliArgs[0] === "bridge" &&
     (routingCliArgs[1] === "codex-config" || routingCliArgs[1] === "claude-config"));
 
@@ -1140,6 +1141,65 @@ bridgeCommand
   .action(async (commandOptions) => {
     const { runBridgeClaudeConfig } = await import("../src/cli/bridge/claudeConfig.js");
     await runBridgeClaudeConfig(commandOptions);
+  });
+
+program
+  .command("conversation")
+  .description("Read an existing ChatGPT conversation through CDP (never sends or navigates).")
+  .command("export [ref]")
+  .description(
+    "Export ordered user/assistant records from an attached ChatGPT tab. " +
+      "ref may be a full ChatGPT URL (project-prefixed is fine) or a bare conversation id; " +
+      "the api source only needs any logged-in ChatGPT tab on the CDP endpoint, not necessarily the conversation's own tab.",
+  )
+  .option("--host <host>", "Chrome DevTools host (default 127.0.0.1).")
+  .option("--port <port>", "Chrome DevTools port (default 9222).")
+  .addOption(
+    new Option(
+      "--source <source>",
+      "Export source: api (default, reads the canonical backend-api conversation JSON) or dom (legacy virtualized DOM crawl). Distinct from the root --engine flag.",
+    )
+      .choices(["api", "dom"])
+      .default("api"),
+  )
+  .option(
+    "--format <format>",
+    "Output format: json, markdown, raw (api source only), or obsidian (api source only; requires --out <dir>).",
+    "json",
+  )
+  .option(
+    "--out <path>",
+    "Write export to a file (json/markdown/raw) or a vault/inbox root directory (obsidian) instead of stdout.",
+  )
+  .option("--omit-text", "Omit text; IDs and hashes remain provenance, not anonymization.", false)
+  .option(
+    "--timezone <iana>",
+    "IANA timezone for obsidian filenames/frontmatter dates (default: this machine's local timezone).",
+  )
+  .option(
+    "--captured <date>",
+    "YYYY-MM-DD capture date recorded in obsidian frontmatter (default: today in --timezone).",
+  )
+  .option(
+    "--folder <name>",
+    "Vault subfolder name for obsidian output (default: ChatGPT-<first 8 chars of conversation id>).",
+  )
+  .option(
+    "--force",
+    "obsidian: write into the target folder even if it already exists and is not empty.",
+    false,
+  )
+  .action(async (ref, options) => {
+    const { runConversationExport } = await import("../src/cli/conversationCommand.js");
+    if (
+      options.format !== "json" &&
+      options.format !== "markdown" &&
+      options.format !== "raw" &&
+      options.format !== "obsidian"
+    ) {
+      throw new Error("--format must be json, markdown, raw, or obsidian.");
+    }
+    await runConversationExport({ ...options, ref, output: options.out, engine: options.source });
   });
 
 program

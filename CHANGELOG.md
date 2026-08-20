@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add attach-only `oracle conversation export` for ordered ChatGPT transcript exports with hashes and provenance. Defaults to the `api` source, which reads ChatGPT's own canonical `/backend-api/conversation/<id>` JSON (branches, `create_time`, model slugs, canvas documents, and thoughts-only turns the DOM never renders) via two read-only fetches in the attached tab, and only needs some logged-in ChatGPT tab, not necessarily the conversation's own. The original virtualized-scroll DOM crawl remains available as `--source dom` (legacy). Supports `--format json` (default), `markdown`, `raw` (api source only, the untouched backend-api body), and `--omit-text` for text-free output.
+- Add `--format obsidian` to `oracle conversation export` (api source only, requires `--out <dir>`): archives a conversation as a raw-first Obsidian vault import — one byte-exact Q/A note per exchange (with `query_sha256`/`answer_sha256` provenance, per-segment tables for multi-part or canvas-document answers, and marked thoughts-only/empty turns) plus an `INDEX.md` with wikilinks and a summary. Adds `--timezone`, `--captured`, `--folder`, and `--force`. This is the primary workflow for agents (Codex, Claude Code, ...) archiving ChatGPT conversations into a Git-tracked knowledge repo; see the README's Obsidian archiving section.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed
@@ -10,6 +15,7 @@
 ### Fixed
 
 - Browser: detect a disabled ChatGPT effort tier (e.g. an exhausted Pro allotment) before clicking it, and report the account's own reset notice instead of a misleading "selection unverified" failure. Thanks @enieuwy!
+
 ## 0.17.3 — 2026-08-13
 
 **Highlight:** browser-mode answers and recovery are reliable again — no more

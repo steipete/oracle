@@ -122,6 +122,42 @@ See [Browser Mode](browser-mode.md) for usage.
 | `--aspect <ratio>`        | Aspect ratio for image gen.                                          |
 | `--youtube <url>`         | Analyze a YouTube video (Gemini browser).                            |
 
+## Conversation export
+
+`oracle conversation export [ref]` is read-only: it never sends a prompt or navigates the tab, it only reads. `ref` may be a full ChatGPT URL (a project-prefixed URL like `.../g/g-p-.../c/<id>` works too) or a bare conversation id.
+
+| Flag                | Purpose                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--source <source>` | `api` (default) or `dom` (legacy). See below. (Not the root `--engine` flag.)                                  |
+| `--format <format>` | `json` (default), `markdown`, `raw`, or `obsidian` (`raw`/`obsidian` are `api` source only).                   |
+| `--host <host>`     | Chrome DevTools host (default `127.0.0.1`).                                                                    |
+| `--port <port>`     | Chrome DevTools port (default `9222`).                                                                         |
+| `--out <path>`      | Write the export to a file (`json`/`markdown`/`raw`) or a vault root directory (`obsidian`) instead of stdout. |
+| `--omit-text`       | Omit message text; ids, hashes, and structure remain (provenance, not anonymization).                          |
+| `--timezone <iana>` | `obsidian` only: calendar timezone for filenames/frontmatter dates (default: this machine's local timezone).   |
+| `--captured <date>` | `obsidian` only: `YYYY-MM-DD` capture date recorded in frontmatter (default: today in `--timezone`).           |
+| `--folder <name>`   | `obsidian` only: vault subfolder name (default: `ChatGPT-<first 8 chars of conversation id>`).                 |
+| `--force`           | `obsidian` only: write into the target folder even if it already exists and is not empty.                      |
+
+Two sources:
+
+- **`api` (default)**: reads ChatGPT's own `/backend-api/conversation/<id>` JSON directly from the attached tab (via two read-only `fetch()` calls the tab already has cookies/token for: `/api/auth/session` for a bearer token, then the conversation body). This sees the canonical message graph in one shot — branches, `create_time`, model slugs, canvas (`canmore`) documents, and thoughts-only assistant turns that render nothing in the DOM — so it never needs to scroll, never reports a false "incomplete", and `complete` is always `true`. Records are `version: 2`: one record per turn, with `messageIds`, `segments` (visible assistant content blocks), `hiddenNodes` (skipped thoughts/tool-call/reasoning-recap nodes, labelled `role:content_type[:recipient]`), `attachments` (non-text parts like images), `createTime`, and `model`. The `api` source only needs _some_ logged-in ChatGPT tab reachable on the CDP endpoint — not necessarily a tab already open on that exact conversation; if the given `ref` doesn't match a live tab, Oracle retries against any live ChatGPT tab before giving up.
+- **`dom` (legacy, `--source dom`)**: the original virtualized-scroll DOM crawl. Kept for compatibility; `version: 1` records, gap-checked `complete`/`missingTurnIndices`, but structurally blind to thoughts-only turns, branches, and canvas documents.
+
+`--format raw` (api source only) writes the untouched backend-api response body instead of Oracle's normalized record shape — useful for inspecting fields Oracle doesn't yet surface.
+
+### `--format obsidian`: archive into an Obsidian vault / knowledge repo
+
+`--format obsidian` (api source only, requires `--out <dir>`) writes a raw-first note per Q/A exchange plus an `INDEX.md`, under `<out>/<folder>/`. This is Oracle's primary intended use for `conversation export`: letting a coding agent (Codex, Claude Code, ...) archive a ChatGPT conversation into a Git-tracked Obsidian vault as durable, greppable, wikilinked source material.
+
+- **Exchange** = one user turn plus every assistant turn that follows it up to the next user turn. A leading assistant-only run (no user before it) becomes its own "answer only" note; a trailing user turn with no assistant reply becomes a "query only" note.
+- **File name**: `NNN-YYYY-MM-DD-turn-TTT.md` — `NNN` is the 1-based exchange number, the date is the query's `createTime` converted to `--timezone`'s calendar date (or `unknown`), `TTT` is the query's turn index (or the first answer's, for an answer-only note).
+- **Raw-first**: query text and every visible assistant segment are stored byte-exact (only CRLF → LF is normalized, and recorded per-record in `normalization`); nothing is summarized at capture time. Each note's frontmatter carries `query_sha256`/`answer_sha256` so integrity is checkable later, plus `conversation_id`, `source_url`, `query_turn`/`query_turn_id`, `answer_turns`/`answer_turn_ids`, and `query_attachments` (images etc.). The body has a `## Original query` block (`<!-- QUERY_RAW_START/END -->` markers) and, per assistant turn, a `### Assistant turn N` field table plus one `#### Segment k` block per visible content block (text, or a `canmore` canvas document) with its own `message_id`/`content_type`/`model`/`sha256`/`created_at`. A thoughts-only assistant turn (nothing rendered in the ChatGPT UI) still gets a note, marked `<!-- ANSWER_EMPTY -->`, so it's distinguishable from a turn that failed to export.
+- **`INDEX.md`**: frontmatter with the conversation's date range/title/timestamps, a plain-language summary line (turn/exchange counts, query-only/thoughts-only/empty counts, segment and CRLF-normalization counts, mapping node and branch-node counts), and one `NNN. [[folder/file|date — kind]]` wikilink per exchange.
+- Refuses to write into an existing non-empty `<out>/<folder>` unless `--force` is passed.
+
+See [Archive ChatGPT conversations into an Obsidian vault](../README.md#archive-chatgpt-conversations-into-an-obsidian-vault--knowledge-repo) in the README for the end-to-end workflow.
+
 ## Stale session detection
 
 | Flag                     | Purpose                                      |

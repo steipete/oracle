@@ -94,6 +94,47 @@ oracle status --hours 72
 
 Use `oracle session` to reattach to a run, `oracle restart` to repeat one, or `--followup` to continue a supported API or ChatGPT conversation with more context. See [sessions](docs/sessions.md) and [follow-ups](docs/followup.md) for the lifecycle and provider limits.
 
+## Bring your ChatGPT history into your knowledge graph
+
+**The pain.** If you run Codex or Claude Code and keep their session logs in an Obsidian vault, you already know the payoff: every decision, dead end and working snippet becomes a node in a knowledge graph you can link, search and revisit. Productivity compounds. But the years of thinking you did in ChatGPT _before_ agents arrived sit outside that graph. Merging them is miserable: long threads have scrolled out of context, the built-in export is one giant JSON, and copy-pasting hundreds of turns by hand is exactly the kind of work nobody finishes.
+
+**The fix.** Let the agent do it. `oracle conversation export` reuses the one thing Oracle already has — a signed-in ChatGPT Chrome tab — to read an existing conversation **read-only** (no prompt is sent, nothing is clicked, nothing navigates) and write it out as Markdown, **one note per query/answer pair**, straight into a Git-tracked folder. Obsidian picks the notes up as-is: frontmatter, wikilinks, an `INDEX.md` per conversation. Your pre-agent ChatGPT history becomes part of the same graph as your agent logs.
+
+You don't need Obsidian for this to be useful. It is also simply a faithful, greppable, diff-able archive of your ChatGPT conversations — byte-exact text with SHA-256 provenance — that lives in a repo you own instead of a vendor UI.
+
+Works from **Codex and Claude Code** alike (it is just a CLI), and from your own shell.
+
+```bash
+# 1. One-time: start a Chrome with DevTools remote debugging and sign in to
+#    ChatGPT (see "Remote Chrome Sessions" in docs/browser-mode.md).
+
+# 2. Archive a conversation into your vault's inbox. Any signed-in ChatGPT tab
+#    is enough; the conversation does not have to be open.
+oracle conversation export "https://chatgpt.com/c/<conversation-id>" \
+  --format obsidian --out ./00_Inbox
+
+# 3. Commit it like any other note.
+git add 00_Inbox/ChatGPT-* && git commit -m "archive: chatgpt conversation"
+```
+
+What you get:
+
+```
+00_Inbox/ChatGPT-685b5c1d/
+├── INDEX.md                         # summary + wikilinks to every note
+├── 001-2025-06-25-turn-001.md       # one query + its answer(s), verbatim
+├── 002-2025-06-25-turn-003.md
+└── …
+```
+
+Each note carries `conversation_id`, `source_url`, the original timestamps (in your timezone), turn ids, and `query_sha256` / `answer_sha256`, so you can always prove a note is untouched. Nothing is summarized at capture time — **raw first, organize later** — which is the property that makes the archive trustworthy as a primary source.
+
+Under the hood it reads the same `/backend-api/conversation/<id>` JSON the ChatGPT UI renders from, so it sees the whole thread in one shot: branches, model per answer, canvas documents, and "thinking-only" turns the UI never displays. The older DOM-scrolling approach is still available as `--source dom`. JSON, Markdown and the raw backend body are available via `--format`; see [CLI reference](docs/cli-reference.md#conversation-export).
+
+If you're handing this to an agent, an instruction that works well:
+
+> Archive this ChatGPT conversation raw-first: run `oracle conversation export <url> --format obsidian --out ./00_Inbox`, do not summarize or edit anything it writes, and leave the notes under `00_Inbox` — promoting them into the rest of the vault is a separate, later pass.
+
 ## Multiple models and automation
 
 `--models` runs an API panel and records per-model usage, cost, output, and partial failures in one session. `oracle doctor --providers` inspects readiness for the selected models without exposing credentials. The [multi-model guide](docs/multimodel.md) covers routing and output files.
