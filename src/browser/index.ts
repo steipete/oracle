@@ -204,6 +204,21 @@ export function classifyPreservedBrowserErrorForTest(
 // defaults to Standard effort. ensureThinkingTime() already handles the
 // "already-selected" case as a no-op, so always attempting it is safe.
 
+type BrowserConfigWithThinkingTime = Pick<
+  ResolvedBrowserConfig,
+  "researchMode" | "thinkingTime"
+> & {
+  thinkingTime: NonNullable<ResolvedBrowserConfig["thinkingTime"]>;
+};
+
+function shouldApplyThinkingTimeSelection(
+  config: Pick<ResolvedBrowserConfig, "researchMode" | "thinkingTime">,
+): config is BrowserConfigWithThinkingTime {
+  // Deep Research uses the same effort picker, so research mode must not
+  // suppress an explicitly configured thinking-time selection.
+  return config.thinkingTime !== undefined;
+}
+
 type ChatGptUiWarningType = "rate_limit" | "temporary_unavailable" | "auth_or_challenge";
 
 type ChatGptUiWarning = {
@@ -1503,22 +1518,23 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       );
     }
     const deepResearch = config.researchMode === "deep";
-    // Handle thinking time selection if specified. Deep Research owns its own effort flow.
-    const thinkingTime = config.thinkingTime;
-    if (thinkingTime && !deepResearch) {
+    if (shouldApplyThinkingTimeSelection(config)) {
       const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
       await raceWithDisconnect(
-        withRetries(() => ensureThinkingTime(Runtime, thinkingTime, logger, thinkingTargetModel), {
-          retries: 2,
-          delayMs: 300,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
+        withRetries(
+          () => ensureThinkingTime(Runtime, config.thinkingTime, logger, thinkingTargetModel),
+          {
+            retries: 2,
+            delayMs: 300,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Thinking time (${config.thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
           },
-        }),
+        ),
       );
     }
     const profileLockTimeoutMs = manualLogin ? (config.profileLockTimeoutMs ?? 0) : 0;
@@ -3107,19 +3123,17 @@ async function runRemoteBrowserMode(
       );
     }
     const deepResearch = config.researchMode === "deep";
-    // Handle thinking time selection if specified. Deep Research owns its own effort flow.
-    const thinkingTime = config.thinkingTime;
-    if (thinkingTime && !deepResearch) {
+    if (shouldApplyThinkingTimeSelection(config)) {
       const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
       await withRetries(
-        () => ensureThinkingTime(Runtime, thinkingTime, logger, thinkingTargetModel),
+        () => ensureThinkingTime(Runtime, config.thinkingTime, logger, thinkingTargetModel),
         {
           retries: 2,
           delayMs: 300,
           onRetry: (attempt, error) => {
             if (options.verbose) {
               logger(
-                `[retry] Thinking time (${thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                `[retry] Thinking time (${config.thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
               );
             }
           },
@@ -3889,6 +3903,7 @@ export const __test__ = {
   listIgnoredRemoteChromeFlags,
   normalizeAuthenticatedModelSelectionError,
   resolveManualLoginWaitMs,
+  shouldApplyThinkingTimeSelection,
   shouldCleanupBlankTabsAfterLastLease,
   shouldCloseOwnedRunTargetAfterRun,
   shouldKeepLocalBrowserOpen,
