@@ -147,7 +147,9 @@ are essential to the question.
   4.x; availability depends on engine and provider.
 - API runs require explicit user consent because they may incur usage costs.
 - Browser attachments use `--browser-attachments auto|never|always`.
-- For many files, add `--browser-bundle-files --browser-bundle-format auto|zip`.
+- Browser uploads keep one text/source file native and automatically ZIP
+  multiple text/source files; use `--browser-bundle-files` with `auto`/`zip`
+  only to force every resolved attachment into one ZIP.
 - Reuse an existing Chrome session with `--browser-tab <ref>`,
   `--browser-attach-running`, or `--remote-chrome <host:port>`.
 - Use `--browser-model-strategy select|current|ignore` to control picker
