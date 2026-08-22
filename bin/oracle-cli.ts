@@ -875,13 +875,13 @@ program
   .addOption(
     new Option(
       "--browser-bundle-files",
-      "Bundle all attachments into a single archive before uploading.",
+      "Force one browser upload bundle; auto/zip includes all resolved files. Multi-file text/source uploads already use ZIP by default.",
     ).default(false),
   )
   .addOption(
     new Option(
       "--browser-bundle-format <format>",
-      "Bundle format for browser uploads when files are bundled: auto (default), text, or zip.",
+      "Bundle format for browser uploads: auto (default ZIP), text (legacy flattened bundle), or zip.",
     )
       .choices(["auto", "text", "zip"])
       .default("auto"),

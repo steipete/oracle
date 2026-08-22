@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Browser: make byte-preserving ZIP the default representation for multiple uploaded text/source files, preserve single files and native image/document uploads, and add a composer instruction telling ChatGPT to extract the archive into its sandbox. The flattened text bundle remains available explicitly with `--browser-bundle-format text`.
+
 ## 0.18.0 — 2026-08-14
 
 ### Changed

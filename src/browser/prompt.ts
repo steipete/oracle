@@ -139,6 +139,7 @@ interface BrowserBundleSource {
 }
 
 type ResolvedBrowserBundleFormat = Exclude<BrowserBundleFormat, "auto">;
+type BrowserBundleScope = "none" | "text-only" | "all";
 
 function formatSectionsForBundle(
   sections: Array<{ displayPath: string; content: string }>,
@@ -150,38 +151,60 @@ function formatSectionsForBundle(
   });
 }
 
-function resolveBrowserBundleFormat(
-  format: BrowserBundleFormat,
-  sources: { hasRawUploadFiles: boolean },
-): ResolvedBrowserBundleFormat {
+function resolveBrowserBundleFormat(format: BrowserBundleFormat): ResolvedBrowserBundleFormat {
   if (format !== "auto") {
     return format;
   }
-  return sources.hasRawUploadFiles ? "zip" : "text";
+  return "zip";
 }
 
-function shouldWriteBrowserBundle(
+function resolveBrowserBundleScope(
   format: ResolvedBrowserBundleFormat,
   {
-    attachmentCount,
     bundleRequested,
-    textSourceCount,
-    textPlanShouldBundle,
+    rawAttachmentCount,
+    textAttachmentCount,
   }: {
-    attachmentCount: number;
     bundleRequested: boolean;
-    textSourceCount: number;
-    textPlanShouldBundle: boolean;
+    rawAttachmentCount: number;
+    textAttachmentCount: number;
   },
-): boolean {
-  if (format === "zip") {
-    return (
-      textPlanShouldBundle ||
-      (bundleRequested && attachmentCount > 0) ||
-      attachmentCount > MAX_BROWSER_ATTACHMENTS
-    );
+): BrowserBundleScope {
+  const attachmentCount = textAttachmentCount + rawAttachmentCount;
+  if (attachmentCount === 0) {
+    return "none";
   }
-  return textSourceCount > 0 && (textPlanShouldBundle || attachmentCount > MAX_BROWSER_ATTACHMENTS);
+
+  if (format === "text") {
+    if (textAttachmentCount === 0) {
+      return "none";
+    }
+    const shouldBundleText =
+      bundleRequested || textAttachmentCount > 1 || attachmentCount > MAX_BROWSER_ATTACHMENTS;
+    return shouldBundleText ? "text-only" : "none";
+  }
+
+  if (bundleRequested) {
+    return "all";
+  }
+
+  // Preserve native uploads for images, PDFs, archives, and other raw inputs.
+  // Multiple text/source files benefit from a real filesystem tree, so bundle
+  // those into one ZIP while leaving any native attachments alongside it.
+  if (textAttachmentCount > 1) {
+    return rawAttachmentCount + 1 <= MAX_BROWSER_ATTACHMENTS ? "text-only" : "all";
+  }
+
+  return attachmentCount > MAX_BROWSER_ATTACHMENTS ? "all" : "none";
+}
+
+function appendZipBundleInstruction(composerText: string, originalCount: number): string {
+  const fileLabel = originalCount === 1 ? "file" : "files";
+  const instruction = [
+    `The attached \`attachments-bundle.zip\` contains ${originalCount} selected ${fileLabel} with relative paths preserved.`,
+    "Extract it into a temporary directory, then inspect the resulting file tree with filesystem and search tools before answering.",
+  ].join(" ");
+  return [composerText, instruction].filter(Boolean).join("\n\n").trim();
 }
 
 function assertAttachmentCount(
@@ -345,16 +368,14 @@ export async function assembleBrowserPrompt(
   const allBundleSources = [...textBundleSources, ...rawUploadBundleSources];
   const attachments: BrowserAttachment[] = [...selectedPlan.attachments, ...rawUploadAttachments];
 
-  const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
-    hasRawUploadFiles: rawUploadAttachments.length > 0,
-  });
-  const shouldBundle = shouldWriteBrowserBundle(resolvedBundleFormat, {
-    attachmentCount: attachments.length,
+  const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat);
+  const bundleScope = resolveBrowserBundleScope(resolvedBundleFormat, {
     bundleRequested,
-    textSourceCount: textBundleSources.length,
-    textPlanShouldBundle: selectedPlan.shouldBundle,
+    rawAttachmentCount: rawUploadAttachments.length,
+    textAttachmentCount: selectedPlan.attachments.length,
   });
-  const composerText = (
+  const shouldBundle = bundleScope !== "none";
+  let composerText = (
     !shouldBundle && selectedPlan.inlineBlock
       ? [...baseComposerSections, selectedPlan.inlineBlock]
       : baseComposerSections
@@ -368,16 +389,19 @@ export async function assembleBrowserPrompt(
   if (shouldBundle) {
     const writtenBundle = await writeBrowserBundle(
       sections,
-      resolvedBundleFormat === "zip" ? allBundleSources : textBundleSources,
+      bundleScope === "all" ? allBundleSources : textBundleSources,
       resolvedBundleFormat,
     );
     bundleText = writtenBundle.tokenEstimateText;
     attachments.length = 0;
     attachments.push(writtenBundle.attachment);
-    if (resolvedBundleFormat === "text") {
+    if (bundleScope === "text-only") {
       attachments.push(...rawUploadAttachments);
     }
     bundled = writtenBundle.metadata;
+    if (resolvedBundleFormat === "zip") {
+      composerText = appendZipBundleInstruction(composerText, writtenBundle.metadata.originalCount);
+    }
   }
   assertAttachmentCount(attachments, resolvedBundleFormat);
 
@@ -386,13 +410,17 @@ export async function assembleBrowserPrompt(
     ? MODEL_CONFIGS[runOptions.model]
     : MODEL_CONFIGS["gpt-5.1"];
   const tokenizer = deps.tokenizeImpl ?? modelConfig.tokenizer;
-  const tokenizerUserContent =
-    inlineFileCount > 0 && selectedPlan.inlineBlock
-      ? [userPrompt, selectedPlan.inlineBlock]
-          .filter((value) => Boolean(value?.trim()))
-          .join("\n\n")
-          .trim()
-      : userPrompt;
+  const tokenizerUserSections = [userPrompt];
+  if (inlineFileCount > 0 && selectedPlan.inlineBlock) {
+    tokenizerUserSections.push(selectedPlan.inlineBlock);
+  }
+  if (shouldBundle && resolvedBundleFormat === "zip" && bundled) {
+    tokenizerUserSections.push(appendZipBundleInstruction("", bundled.originalCount));
+  }
+  const tokenizerUserContent = tokenizerUserSections
+    .filter((value) => Boolean(value?.trim()))
+    .join("\n\n")
+    .trim();
   const tokenizerMessages = [
     systemPrompt ? { role: "system", content: systemPrompt } : null,
     tokenizerUserContent ? { role: "user", content: tokenizerUserContent } : null,
@@ -413,30 +441,34 @@ export async function assembleBrowserPrompt(
 
   let fallback: BrowserPromptArtifacts["fallback"] = null;
   if (attachmentsPolicy === "auto" && selectedPlan.mode === "inline" && sections.length > 0) {
-    const fallbackComposerText = baseComposerSections.join("\n\n").trim();
+    let fallbackComposerText = baseComposerSections.join("\n\n").trim();
     const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
     let fallbackBundled: BrowserBundleMetadata | null = null;
-    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
-      hasRawUploadFiles: rawUploadAttachments.length > 0,
-    });
-    const fallbackShouldBundle = shouldWriteBrowserBundle(fallbackBundleFormat, {
-      attachmentCount: fallbackAttachments.length,
+    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat);
+    const fallbackBundleScope = resolveBrowserBundleScope(fallbackBundleFormat, {
       bundleRequested,
-      textSourceCount: textBundleSources.length,
-      textPlanShouldBundle: uploadPlan.shouldBundle,
+      rawAttachmentCount: rawUploadAttachments.length,
+      textAttachmentCount: uploadPlan.attachments.length,
     });
+    const fallbackShouldBundle = fallbackBundleScope !== "none";
     if (fallbackShouldBundle) {
       const writtenBundle = await writeBrowserBundle(
         sections,
-        fallbackBundleFormat === "zip" ? allBundleSources : textBundleSources,
+        fallbackBundleScope === "all" ? allBundleSources : textBundleSources,
         fallbackBundleFormat,
       );
       fallbackAttachments.length = 0;
       fallbackAttachments.push(writtenBundle.attachment);
-      if (fallbackBundleFormat === "text") {
+      if (fallbackBundleScope === "text-only") {
         fallbackAttachments.push(...rawUploadAttachments);
       }
       fallbackBundled = writtenBundle.metadata;
+      if (fallbackBundleFormat === "zip") {
+        fallbackComposerText = appendZipBundleInstruction(
+          fallbackComposerText,
+          writtenBundle.metadata.originalCount,
+        );
+      }
     }
     assertAttachmentCount(fallbackAttachments, fallbackBundleFormat);
     fallback = {

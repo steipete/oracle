@@ -87,12 +87,14 @@ const consultInputShape = {
   browserBundleFiles: z
     .boolean()
     .optional()
-    .describe("Browser-only: bundle many files into a single upload (helps with upload limits)."),
+    .describe(
+      "Browser-only: force one upload bundle; auto/zip includes all resolved files. Multiple text/source uploads already use ZIP by default.",
+    ),
   browserBundleFormat: z
     .enum(["auto", "text", "zip"])
     .optional()
     .describe(
-      'Browser-only: bundle upload format when browserBundleFiles is true or auto-bundling is needed. Defaults to "auto"; "auto" uses ZIP when bundled inputs include raw/binary files.',
+      'Browser-only: bundle upload format. Defaults to "auto", which uses a byte-preserving ZIP; "text" retains the legacy flattened text bundle.',
     ),
   browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
