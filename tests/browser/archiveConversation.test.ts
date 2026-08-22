@@ -160,4 +160,13 @@ describe("archiveChatGptConversation", () => {
     expect(expression).toContain("archive");
     expect(expression).not.toContain("delete");
   });
+
+  test("recognizes Japanese ChatGPT archive controls", () => {
+    const expression = buildArchiveConversationExpressionForTest();
+    expect(expression).toContain("その他");
+    expect(expression).toContain("会話オプション");
+    expect(expression).toContain("アーカイブ");
+    expect(expression).toContain("アーカイブを解除");
+    expect(expression).toContain("アーカイブしました");
+  });
 });
