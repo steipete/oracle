@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  devtools-protocol: 0.0.1676105
+  devtools-protocol: 0.0.1681094
   hono: 4.13.1
   '@hono/node-server': 2.1.0
   fast-uri: 4.1.2
@@ -102,8 +102,8 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(vitest@4.1.11)
       devtools-protocol:
-        specifier: 0.0.1676105
-        version: 0.0.1676105
+        specifier: 0.0.1681094
+        version: 0.0.1681094
       es-toolkit:
         specifier: ^1.50.0
         version: 1.51.0
@@ -1191,7 +1191,7 @@ packages:
     resolution: {integrity: sha512-5v9GQFhTktFvotn/OFNJBmKLKRAb6n9r0bVCwf7sHgWc3/JryK0bj1nn93L3pHFrfgcsu6Be6EWsDi+1XHTGDg==}
     engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0'}
     peerDependencies:
-      devtools-protocol: 0.0.1676105
+      devtools-protocol: 0.0.1681094
 
   cli-width@4.1.0:
     resolution: {integrity: sha512-ouuZd4/dm2Sw5Gmqy6bGyNNNe1qt9RpmxveLSO7KcgsTnU7RXfsw+/bukWGo1abgBiMAic068rclZsO4IWmmxQ==}
@@ -1286,8 +1286,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  devtools-protocol@0.0.1676105:
-    resolution: {integrity: sha512-uTag5eGcXOOlgTbHyRX5HX6JOHRS81DxzwIg4N4Tj5sZDpq00KLWSAAb8gfoJF6eQanznZtd9UJaGxA9ohT0GA==}
+  devtools-protocol@0.0.1681094:
+    resolution: {integrity: sha512-46rnTytotqXcZS7cLfmuZjNFvrOAgvQEH3mrWzq0XvLE+R9pCfKTrff2WXGwhHDBKhiO2GzEhIKEkdBAAbJ9zg==}
 
   dotenv@17.4.2:
     resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
@@ -3004,7 +3004,7 @@ snapshots:
 
   '@types/chrome-remote-interface@0.34.0':
     dependencies:
-      devtools-protocol: 0.0.1676105
+      devtools-protocol: 0.0.1681094
 
   '@types/deep-eql@4.0.2': {}
 
@@ -3253,9 +3253,9 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  chromium-bidi@17.0.2(devtools-protocol@0.0.1676105):
+  chromium-bidi@17.0.2(devtools-protocol@0.0.1681094):
     dependencies:
-      devtools-protocol: 0.0.1676105
+      devtools-protocol: 0.0.1681094
       mitt: 3.0.1
       zod: 3.25.76
 
@@ -3335,7 +3335,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  devtools-protocol@0.0.1676105: {}
+  devtools-protocol@0.0.1681094: {}
 
   dotenv@17.4.2: {}
 
@@ -4086,8 +4086,8 @@ snapshots:
   puppeteer-core@25.8.0:
     dependencies:
       '@puppeteer/browsers': 3.2.1
-      chromium-bidi: 17.0.2(devtools-protocol@0.0.1676105)
-      devtools-protocol: 0.0.1676105
+      chromium-bidi: 17.0.2(devtools-protocol@0.0.1681094)
+      devtools-protocol: 0.0.1681094
       typed-query-selector: 2.12.2
       webdriver-bidi-protocol: 0.4.2
       ws: 8.21.3

@@ -4,8 +4,15 @@
 
 ### Fixed
 
+- Browser: restore locally launched macOS Chrome windows to their prior placement for visible runs only when Oracle recorded the window before a `--browser-hide-window` run; unmarked windows remain untouched.
 - Browser: archive completed ChatGPT conversations when the interface is Japanese by recognizing the current `その他`, `アーカイブ`, and `アーカイブを解除する` controls.
 - Browser: apply the configured input timeout to prompt preparation so stalled local file assembly fails clearly before launching Chrome. Fixes #381.
+- Browser: report ChatGPT's rate limit as a rate limit. When ChatGPT covers the page with its "Too many requests — we've temporarily limited access to your conversations" modal, the model-switcher scrape walked it like any other menu and reported its "Got it" button as an available model, so a throttled run failed with `Unable to find model option matching "…". Available: Got it` — a message that sends the reader after a model-naming bug when the correct response is to wait a few minutes. Model selection now probes for the notice first and raises a `chatgpt-throttled` error carrying `retryable: true` and the notice text; without a notice the original diagnosis is unchanged.
+
+### Changed
+
+- **Breaking** — Remote: accept only conversation-scoped fields from remote clients. The service overrode six known-dangerous `browserConfig` fields and passed the rest of `BrowserSessionConfig` through to `runBrowserMode` verbatim. The remainder is not inert: `chromePath` names an executable the host spawns, `remoteChrome` a debugger to attach to, `copyProfileSource` a directory to copy a signed-in profile out of, `debugPort` one to expose, and `attachRunning`/`browserTabRef` select an existing ChatGPT tab — with an empty or "current" ref resolving to the first ChatGPT tab in the browser. That makes a bridge token a permission to run code on the host rather than to ask ChatGPT a question. A client may now describe the conversation it wants — URL, model, effort, archive mode, resume target, time budgets — and nothing about the machine. A caller that was setting host-scoped fields is now ignored on them rather than obeyed.
+- Remote: stop advertising addresses the service is not listening on. `oracle serve --host 127.0.0.1` printed the host's LAN and tailnet addresses in its startup banner while bound to loopback only. That banner is how an operator decides whether a port needs a tunnel or a firewall rule, and for browser automation behind a bearer token, erring toward "more exposed than it is" is the wrong direction.
 
 ## 0.18.0 — 2026-08-14
 

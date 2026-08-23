@@ -17,6 +17,7 @@ import {
   launchChrome,
   registerTerminationHooks,
   positionChromeWindowOffscreen,
+  positionChromeWindowOnscreen,
   connectToRemoteChrome,
   connectWithNewTab,
   closeTab,
@@ -1292,7 +1293,11 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     await Promise.all(domainEnablers);
     if (!config.headless && config.hideWindow) {
-      await positionChromeWindowOffscreen(client, logger);
+      await positionChromeWindowOffscreen(client, userDataDir, logger);
+    } else if (!config.headless) {
+      // Persistent profiles can retain bounds from a prior hidden run. Visible
+      // local runs must actively restore the Oracle-owned Chrome window.
+      await positionChromeWindowOnscreen(client, userDataDir, logger);
     }
     // The send button is clicked with trusted CDP input events at viewport
     // coordinates, which ChatGPT silently drops when the window is hidden or
