@@ -80,6 +80,7 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("\\u4e00-\\u9fff");
     expect(expression).toContain("'极高'");
     expect(expression).toContain("'推論レベル'");
+    expect(expression).toContain("'思考量'");
   });
 
   it("infers target model kind with token matching", () => {
@@ -2989,6 +2990,23 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     const result = await run(dom.documentStub, "pro");
     expect(dom.advancedToggle.clicks).toBeGreaterThan(0);
     expect(dom.modelOpener.clicks).toBe(0);
+    expect(dom.effortOpener.clicks).toBeGreaterThan(0);
+    expect(result).toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(dom.getSelectedTier()).toBe("Pro");
+  });
+
+  it("selects Pro through the renamed Japanese effort label", async () => {
+    const dom = buildDom("High");
+    dom.advancedToggle.textContent = "詳細設定";
+    dom.effortOpener.textContent = "思考量High";
+    ["最速", "中程度", "高い", "非常に高い", "Pro"].forEach((label, index) => {
+      dom.tierRows[index]!.textContent = label;
+    });
+
+    const result = await run(dom.documentStub, "pro");
     expect(dom.effortOpener.clicks).toBeGreaterThan(0);
     expect(result).toEqual({
       status: "switched",

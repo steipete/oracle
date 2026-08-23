@@ -263,10 +263,23 @@ describe("manual-login profile setup gate", () => {
   });
 });
 
-// NOTE: shouldSkipThinkingTimeSelection was removed — it incorrectly assumed
-// that selecting "Pro" in the picker always implied Extended effort, which is
-// wrong for lower-tier plans where Pro defaults to Standard. The thinking time
-// step now always runs; ensureThinkingTime handles the already-selected case.
+describe("thinking time selection policy", () => {
+  test("keeps explicit effort selection enabled for Deep Research", () => {
+    const config = resolveBrowserConfig({
+      desiredModel: "gpt-5.6-sol",
+      thinkingTime: "pro",
+      researchMode: "deep",
+    });
+
+    expect(__test__.shouldApplyThinkingTimeSelection(config)).toBe(true);
+  });
+
+  test("does not select an effort when none was requested", () => {
+    const config = resolveBrowserConfig({ researchMode: "deep" });
+
+    expect(__test__.shouldApplyThinkingTimeSelection(config)).toBe(false);
+  });
+});
 
 describe("formatBrowserTurnTranscript", () => {
   test("keeps single-turn browser output unchanged", () => {
@@ -540,6 +553,30 @@ describe("ChatGPT UI warning detection", () => {
 });
 
 describe("browser follow-ups", () => {
+  test("rejects direct attachment basename collisions before launching Chrome", async () => {
+    await expect(
+      runBrowserMode({
+        prompt: "test",
+        attachments: [
+          { path: "/tmp/first/SKILL.md", displayPath: "first/SKILL.md" },
+          { path: "/tmp/second/SKILL.md", displayPath: "second/SKILL.md" },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      details: {
+        stage: "upload",
+        code: "attachment-basename-collision",
+        collisions: [
+          {
+            basename: "SKILL.md",
+            files: ["first/SKILL.md", "second/SKILL.md"],
+          },
+        ],
+        files: ["first/SKILL.md", "second/SKILL.md"],
+      },
+    });
+  });
+
   test("rejects copy-profile with manual-login before launching Chrome", async () => {
     await expect(
       runBrowserMode({
@@ -772,6 +809,52 @@ describe("shouldPreferSystemTmpDirForTest", () => {
 });
 
 describe("runSubmissionWithRecoveryForTest", () => {
+  test("rejects colliding fallback basenames before preparing or submitting fallback", async () => {
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new BrowserAutomationError("prompt too large", { code: "prompt-too-large" }),
+      );
+    const prepareFallbackSubmission = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      runSubmissionWithRecoveryForTest({
+        prompt: "inline prompt",
+        attachments: [],
+        fallbackSubmission: {
+          prompt: "fallback prompt",
+          attachments: [
+            { path: "/tmp/first/SKILL.md", displayPath: "first/SKILL.md", sizeBytes: 5 },
+            { path: "/tmp/second/SKILL.md", displayPath: "second/SKILL.md", sizeBytes: 6 },
+          ],
+        },
+        submit,
+        reloadPromptComposer: vi.fn().mockResolvedValue(undefined),
+        prepareFallbackSubmission,
+        logger: vi.fn<(message: string) => void>(),
+      }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining(
+        'inline prompt was too large, but its upload fallback cannot safely include multiple files named "SKILL.md"',
+      ),
+      details: {
+        stage: "upload-fallback",
+        code: "attachment-basename-collision",
+        collisions: [
+          {
+            basename: "SKILL.md",
+            files: ["first/SKILL.md", "second/SKILL.md"],
+          },
+        ],
+        files: ["first/SKILL.md", "second/SKILL.md"],
+      },
+    });
+
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledWith("inline prompt", []);
+    expect(prepareFallbackSubmission).not.toHaveBeenCalled();
+  });
+
   test("preserves prompt-too-large fallback after a dead-composer retry", async () => {
     const submit = vi
       .fn()
