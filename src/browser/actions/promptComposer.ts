@@ -257,12 +257,19 @@ async function readLatestUserTurnText(Runtime: ChromeClient["Runtime"]): Promise
         document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
       );
       const latest = nodes[nodes.length - 1];
-      if (!latest) return '';
-      return latest.innerText ?? latest.textContent ?? '';
+      if (!latest) return { found: false, text: '' };
+      return { found: true, text: latest.innerText ?? latest.textContent ?? '' };
     })()`,
     returnByValue: true,
   });
-  return typeof result?.value === "string" ? result.value : null;
+  const value = result?.value as { found?: unknown; text?: unknown } | undefined;
+  if (value?.found === false) {
+    return "";
+  }
+  if (value?.found !== true || typeof value.text !== "string" || !value.text.trim()) {
+    return null;
+  }
+  return value.text;
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
@@ -1031,6 +1038,7 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
   attemptSendButton,
+  readLatestUserTurnText,
   sendButtonTimeoutMs,
   verifyPromptCommitted,
 };

@@ -10,6 +10,22 @@ import {
 } from "../../src/browser/constants.js";
 
 describe("promptComposer", () => {
+  test("distinguishes a new conversation from an unhydrated latest user turn", async () => {
+    const emptyConversationRuntime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { found: false, text: "" } } }),
+    };
+    const unhydratedTurnRuntime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: { found: true, text: "" } } }),
+    };
+
+    await expect(
+      promptComposer.readLatestUserTurnText(emptyConversationRuntime as never),
+    ).resolves.toBe("");
+    await expect(
+      promptComposer.readLatestUserTurnText(unhydratedTurnRuntime as never),
+    ).resolves.toBeNull();
+  });
+
   test("fails composer clearing when stale text remains", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
