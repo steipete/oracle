@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Browser: archive completed ChatGPT conversations when the interface is Japanese by recognizing the current `その他`, `アーカイブ`, and `アーカイブを解除する` controls.
 - Browser: apply the configured input timeout to prompt preparation so stalled local file assembly fails clearly before launching Chrome. Fixes #381.
 
 ## 0.18.0 — 2026-08-14
@@ -16,7 +17,6 @@
 ### Fixed
 
 - Browser: detect a disabled ChatGPT effort tier (e.g. an exhausted Pro allotment) before clicking it, and report the account's own reset notice instead of a misleading "selection unverified" failure. Thanks @enieuwy!
-- Browser: archive completed ChatGPT conversations when the interface is Japanese by recognizing the current `その他`, `アーカイブ`, and `アーカイブを解除する` controls.
 
 ## 0.17.3 — 2026-08-13
 
