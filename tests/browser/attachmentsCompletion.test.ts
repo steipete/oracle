@@ -26,6 +26,10 @@ describe("attachment filename matching", () => {
     ["report.jpg", "report", true],
     ["report.jpg", "report.md", false],
     ["report.jpg", "report(2).md", false],
+    ["mcp.md", "mcp(3).md", true],
+    ["mcp.md", "remove file 1: mcp(3).md", true],
+    ["mcp.md", "xmcp(3).md", false],
+    ["mcp.md", "mcp(3).jpg", false],
   ])("matches %s against %s as %s", (expectedName, visibleName, expected) => {
     expect(matchesAttachmentReference(visibleName, expectedName)).toBe(expected);
   });

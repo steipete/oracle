@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
   __test__ as promptComposer,
+  buildAttachmentReadyExpressionForTest,
   clearPromptComposer,
   submitPrompt,
 } from "../../src/browser/actions/promptComposer.js";
@@ -9,7 +10,77 @@ import {
   CONVERSATION_TURN_SELECTOR,
 } from "../../src/browser/constants.js";
 
+const evaluateAttachmentReady = (expectedName: string, visibleName: string): boolean => {
+  class FakeElement {
+    tagName = "DIV";
+    parentElement: FakeElement | null = null;
+
+    constructor(
+      private readonly text = "",
+      private readonly attributes: Record<string, string> = {},
+    ) {}
+
+    get innerText() {
+      return this.text;
+    }
+
+    get textContent() {
+      return this.text;
+    }
+
+    getAttribute(name: string) {
+      return this.attributes[name] ?? null;
+    }
+
+    querySelectorAll(_selector: string): FakeElement[] {
+      return [];
+    }
+
+    closest(_selector: string): FakeElement | null {
+      return null;
+    }
+  }
+
+  class FakeInputElement extends FakeElement {
+    files: File[] = [];
+  }
+
+  const chip = new FakeElement(visibleName, {
+    "aria-label": `Remove file 1: ${visibleName}`,
+    "data-testid": "file-chip",
+  });
+  const root = new FakeElement();
+  root.querySelectorAll = (selector: string) => {
+    if (selector === 'input[type="file"]') return [];
+    if (selector.includes('[data-testid*="chip"]')) return [chip];
+    if (selector.includes('[aria-label*="Remove" i]')) return [chip];
+    return [];
+  };
+  const document = {
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    body: root,
+  };
+  const expression = buildAttachmentReadyExpressionForTest([expectedName]);
+  const evaluate = new Function(
+    "document",
+    "HTMLElement",
+    "HTMLInputElement",
+    `return ${expression};`,
+  );
+  return Boolean(evaluate(document, FakeElement, FakeInputElement));
+};
+
 describe("promptComposer", () => {
+  test.each([
+    ["mcp.md", "mcp(7).md", true],
+    ["mcp.md", "remove file 1: mcp(7).md", true],
+    ["mcp.md", "mcp(7).jpg", false],
+    ["mcp.md", "xmcp(7).md", false],
+  ])("matches ready attachment %s against %s as %s", (expected, visible, matches) => {
+    expect(evaluateAttachmentReady(expected, visible)).toBe(matches);
+  });
+
   test("fails composer clearing when stale text remains", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
@@ -325,13 +396,21 @@ describe("promptComposer", () => {
     }
   });
 
-  test("brings the target to front immediately before trusted input", async () => {
+  test("activates the target before measuring fresh trusted-click coordinates", async () => {
     vi.useFakeTimers();
     try {
       const events: string[] = [];
+      let activated = false;
       const runtime = {
-        evaluate: vi.fn().mockResolvedValue({
-          result: { value: { status: "point", x: 10, y: 20 } },
+        evaluate: vi.fn(async () => {
+          events.push("measurePoint");
+          return {
+            result: {
+              value: activated
+                ? { status: "point", x: 30, y: 40 }
+                : { status: "point", x: 10, y: 20 },
+            },
+          };
         }),
       };
       const input = {
@@ -341,6 +420,7 @@ describe("promptComposer", () => {
       };
       const page = {
         bringToFront: vi.fn(async () => {
+          activated = true;
           events.push("bringToFront");
         }),
       };
@@ -356,8 +436,19 @@ describe("promptComposer", () => {
       await vi.advanceTimersByTimeAsync(150);
 
       await expect(result).resolves.toBe(true);
-      expect(events).toEqual(["bringToFront", "mouseMoved", "mousePressed", "mouseReleased"]);
+      expect(events).toEqual([
+        "bringToFront",
+        "measurePoint",
+        "mouseMoved",
+        "mousePressed",
+        "mouseReleased",
+      ]);
       expect(page.bringToFront).toHaveBeenCalledTimes(1);
+      expect(input.dispatchMouseEvent).toHaveBeenNthCalledWith(1, {
+        type: "mouseMoved",
+        x: 30,
+        y: 40,
+      });
       expect(input.dispatchMouseEvent).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();

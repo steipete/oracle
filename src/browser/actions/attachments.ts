@@ -25,6 +25,20 @@ export function matchesAttachmentReference(value: unknown, expectedName: string)
     ? normalizedExpected.slice(0, -expectedExtension.length)
     : normalizedExpected;
 
+  // ChatGPT renames repeated uploads as name(2).ext. Match that exact shape even
+  // for short stems, while keeping filename boundaries and extension equality.
+  if (expectedStem && expectedExtension) {
+    const escapeRegex = (candidate: string): string =>
+      candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const duplicateName = new RegExp(
+      `(?:^|[^a-z0-9._-])${escapeRegex(expectedStem)}\\s*\\([0-9-]+\\)${escapeRegex(
+        expectedExtension,
+      )}(?=$|[^a-z0-9._-])`,
+      "i",
+    );
+    if (duplicateName.test(text)) return true;
+  }
+
   if (expectedStem.length >= 6 && text.includes(expectedStem)) {
     if (!expectedExtension) return true;
     let offset = 0;

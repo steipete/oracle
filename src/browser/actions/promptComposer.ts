@@ -430,14 +430,18 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       if (!text) return false;
       if (hasNameBoundary(text, item.name)) return true;
       if (item.generatedBundle && hasBareStemBoundary(text, item.stem)) return true;
-      if (
-        item.stem &&
-        item.stem.length >= 4 &&
-        item.extension &&
-        text.includes(item.stem + '(') &&
-        hasExtensionBoundary(text, item.extension)
-      ) {
-        return true;
+      if (item.stem && item.extension) {
+        let from = 0;
+        while (from < text.length) {
+          const index = text.indexOf(item.stem, from);
+          if (index === -1) break;
+          const previous = text[index - 1] || '';
+          const previousOk = !previous || !/[a-z0-9._-]/.test(previous);
+          const suffix = text.slice(index + item.stem.length);
+          const duplicate = suffix.match(/^\\s*\\([0-9-]+\\)(\\.[a-z0-9]{1,10})(?=$|[^a-z0-9._-])/i);
+          if (previousOk && duplicate?.[1] === item.extension) return true;
+          from = index + item.stem.length;
+        }
       }
       if (text.includes('…') || text.includes('...')) {
         const marker = text.includes('…') ? '…' : '...';
@@ -710,6 +714,9 @@ async function attemptSendButton(
         continue;
       }
     }
+    // Activating the target can trigger a final compositor/layout pass. Do it before
+    // measuring the button so the trusted click never uses stale coordinates.
+    await activatePageForTrustedInput(Page, logger);
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
     const value = result.value as
       | { status?: "clicked" | "missing" | "point"; x?: number; y?: number }
@@ -722,7 +729,7 @@ async function attemptSendButton(
       typeof value.x === "number" &&
       typeof value.y === "number"
     ) {
-      await clickTrustedPoint(Runtime, Input, Page, value.x, value.y, logger);
+      await clickTrustedPoint(Runtime, Input, value.x, value.y);
       return true;
     }
     if (status === "clicked") {
@@ -749,25 +756,26 @@ async function attemptSendButton(
   return false;
 }
 
+async function activatePageForTrustedInput(
+  Page: ChromeClient["Page"] | undefined,
+  logger?: BrowserLogger,
+): Promise<void> {
+  if (!Page || typeof Page.bringToFront !== "function") {
+    return;
+  }
+  await Page.bringToFront().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.(`[browser] Could not bring ChatGPT target to front before trusted click: ${message}`);
+  });
+  await delay(150);
+}
+
 async function clickTrustedPoint(
   Runtime: ChromeClient["Runtime"],
   Input: ChromeClient["Input"],
-  Page: ChromeClient["Page"] | undefined,
   x: number,
   y: number,
-  logger?: BrowserLogger,
 ): Promise<void> {
-  // Keep target activation adjacent to trusted input. Upload and model-picker work can
-  // leave Chrome non-composited after an earlier target activation.
-  if (Page && typeof Page.bringToFront === "function") {
-    await Page.bringToFront().catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      logger?.(
-        `[browser] Could not bring ChatGPT target to front before trusted click: ${message}`,
-      );
-    });
-    await delay(150);
-  }
   if (Input && typeof Input.dispatchMouseEvent === "function") {
     await Input.dispatchMouseEvent({ type: "mouseMoved", x, y });
     await Input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });
