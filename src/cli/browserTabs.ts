@@ -91,8 +91,10 @@ function expectedLatestUserPrompt(meta: SessionMetadata): {
       }
     }
   }
+  const system = typeof meta.options?.system === "string" ? meta.options.system.trim() : "";
+  const prompt = typeof meta.options?.prompt === "string" ? meta.options.prompt.trim() : "";
   return {
-    text: typeof meta.options?.prompt === "string" ? meta.options.prompt.trim() : undefined,
+    text: [system, prompt].filter(Boolean).join("\n\n") || undefined,
     exact: false,
   };
 }

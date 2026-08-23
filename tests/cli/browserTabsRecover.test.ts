@@ -331,6 +331,54 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
     expect(result.lastAssistantMarkdown).toBe(completedHarvest.lastAssistantMarkdown);
   });
 
+  test("matches initial-turn recovery against the stored system and user prompt", async () => {
+    vi.useFakeTimers();
+    try {
+      const harvestChatGptTab = vi.fn().mockResolvedValue({
+        ...completedHarvest,
+        lastUserText:
+          "Use the public context only\n\nInitial neutral request\n\nAttached public file context",
+        lastUserSnippet: "Use the public context only",
+      });
+
+      vi.doMock("../../src/browser/liveTabs.js", () => ({
+        collectChatGptTabs: vi.fn(),
+        DEFAULT_REMOTE_CHROME_HOST: "127.0.0.1",
+        DEFAULT_REMOTE_CHROME_PORT: 9222,
+        extractConversationIdFromUrl: () => "saved-conversation",
+        formatBrowserTabState: () => "completed",
+        harvestChatGptTab,
+        sessionMatchesTab: () => false,
+      }));
+      vi.doMock("../../src/browser/recoverConversation.js", () => ({
+        recoverConversationTab: vi.fn(),
+      }));
+      vi.doMock("../../src/sessionStore.js", () => ({
+        sessionStore: {
+          readSession: async () => ({
+            ...baseMeta,
+            options: {
+              prompt: "Initial neutral request",
+              system: "Use the public context only",
+            },
+          }),
+          updateSession: async () => {},
+        },
+      }));
+
+      const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
+      const promise = harvestSessionBrowserOutput("sess-recover", { quietOutput: true });
+      const assertion = expect(promise).resolves.toMatchObject({
+        lastAssistantMarkdown: completedHarvest.lastAssistantMarkdown,
+      });
+      await vi.advanceTimersByTimeAsync(5_250);
+      await assertion;
+      expect(harvestChatGptTab).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("requires an exact latest-user match for a short browser follow-up", async () => {
     const staleHarvest = {
       ...completedHarvest,
