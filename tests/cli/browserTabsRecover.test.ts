@@ -336,4 +336,51 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       vi.useRealTimers();
     }
   });
+
+  test("does not match a stale user turn that only shares the prompt prefix", async () => {
+    const commonPrefix = "Shared neutral review preamble with stable wrapper context. ".repeat(3);
+    const currentPrompt = `${commonPrefix}Current constraints.`;
+    const staleHarvest = {
+      ...completedHarvest,
+      lastUserText: `${commonPrefix}Older constraints.`,
+      lastUserSnippet: "Shared neutral review preamble",
+      lastAssistantText: "Older answer",
+      lastAssistantMarkdown: "Older answer",
+      assistantFollowsLatestUser: true,
+    };
+    const freshHarvest = {
+      ...completedHarvest,
+      lastUserText: currentPrompt,
+      lastUserSnippet: "Shared neutral review preamble",
+    };
+    const harvestChatGptTab = vi
+      .fn()
+      .mockResolvedValueOnce(staleHarvest)
+      .mockResolvedValueOnce(freshHarvest);
+
+    vi.doMock("../../src/browser/liveTabs.js", () => ({
+      collectChatGptTabs: vi.fn(),
+      DEFAULT_REMOTE_CHROME_HOST: "127.0.0.1",
+      DEFAULT_REMOTE_CHROME_PORT: 9222,
+      extractConversationIdFromUrl: () => "saved-conversation",
+      formatBrowserTabState: () => "completed",
+      harvestChatGptTab,
+      sessionMatchesTab: () => false,
+    }));
+    vi.doMock("../../src/browser/recoverConversation.js", () => ({
+      recoverConversationTab: vi.fn(),
+    }));
+    vi.doMock("../../src/sessionStore.js", () => ({
+      sessionStore: {
+        readSession: async () => ({ ...baseMeta, options: { prompt: currentPrompt } }),
+        updateSession: async () => {},
+      },
+    }));
+
+    const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
+    const result = await harvestSessionBrowserOutput("sess-recover", { quietOutput: true });
+
+    expect(harvestChatGptTab).toHaveBeenCalledTimes(2);
+    expect(result.lastAssistantMarkdown).toBe(completedHarvest.lastAssistantMarkdown);
+  });
 });

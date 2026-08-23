@@ -52,10 +52,11 @@ function finishRecoveredChrome(
 }
 
 function normalizePromptText(value: unknown): string {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+  let text = String(value ?? "").toLowerCase();
+  text = text.replace(/```[^\n]*\n([\s\S]*?)```/g, " $1 ");
+  text = text.replace(/```/g, " ");
+  text = text.replace(/`([^`]*)`/g, "$1");
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function harvestMatchesSessionPrompt(
@@ -74,8 +75,7 @@ function harvestMatchesSessionPrompt(
   if (!observed) {
     return false;
   }
-  const prefix = expected.slice(0, Math.min(120, expected.length));
-  return observed.startsWith(expected) || observed.startsWith(prefix);
+  return observed.startsWith(expected);
 }
 
 async function harvestSessionPrompt(

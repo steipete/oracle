@@ -341,6 +341,8 @@ describe("promptComposer", () => {
             composerCleared: true,
             composerMatchesPrompt: false,
             inConversation: true,
+            latestUserChanged: true,
+            latestUserMatched: true,
           },
         },
       }),
@@ -377,6 +379,8 @@ describe("promptComposer", () => {
               composerCleared: true,
               composerMatchesPrompt: false,
               inConversation: true,
+              latestUserChanged: true,
+              latestUserMatched: true,
             },
           },
         }),
@@ -387,6 +391,48 @@ describe("promptComposer", () => {
       const promise = promptComposer.verifyPromptCommitted(
         runtime as never,
         "A historical neutral prompt that remains visible in a virtualized conversation.",
+        150,
+        undefined,
+        6,
+      );
+      const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+      await vi.advanceTimersByTimeAsync(250);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does not accept a repeated historical prompt when turn count is virtualized", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({
+          result: {
+            value: {
+              baseline: 6,
+              turnsCount: 6,
+              userMatched: true,
+              prefixMatched: true,
+              lastMatched: true,
+              hasNewTurn: false,
+              stopVisible: true,
+              assistantVisible: true,
+              composerCleared: true,
+              composerMatchesPrompt: false,
+              inConversation: true,
+              latestUserChanged: false,
+              latestUserMatched: true,
+            },
+          },
+        }),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "A repeated neutral prompt that is already the latest visible user turn.",
         150,
         undefined,
         6,

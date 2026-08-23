@@ -213,6 +213,7 @@ export async function submitPrompt(
     );
   }
 
+  const baselineLastUserText = await readLatestUserTurnText(runtime).catch(() => null);
   const clicked = await attemptSendButton(
     runtime,
     input,
@@ -245,7 +246,23 @@ export async function submitPrompt(
     commitTimeoutMs,
     logger,
     deps.baselineTurns ?? undefined,
+    baselineLastUserText,
   );
+}
+
+async function readLatestUserTurnText(Runtime: ChromeClient["Runtime"]): Promise<string | null> {
+  const { result } = await Runtime.evaluate({
+    expression: `(() => {
+      const nodes = Array.from(
+        document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
+      );
+      const latest = nodes[nodes.length - 1];
+      if (!latest) return '';
+      return latest.innerText ?? latest.textContent ?? '';
+    })()`,
+    returnByValue: true,
+  });
+  return typeof result?.value === "string" ? result.value : null;
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
@@ -787,6 +804,7 @@ async function verifyPromptCommitted(
   timeoutMs: number,
   logger?: BrowserLogger,
   baselineTurns?: number,
+  baselineLastUserText?: string | null,
 ): Promise<number | null> {
   const deadline = Date.now() + timeoutMs;
   const encodedPrompt = JSON.stringify(prompt.trim());
@@ -814,6 +832,8 @@ async function verifyPromptCommitted(
     }
   }
   const baselineLiteral = baseline ?? -1;
+  const baselineLastUserKnownLiteral = typeof baselineLastUserText === "string";
+  const baselineLastUserTextLiteral = JSON.stringify(baselineLastUserText ?? "");
   // Learned: ChatGPT can echo/format text; normalize markdown and use prefix matches to detect the sent prompt.
   const script = `(() => {
 		    const editor = document.querySelector(${primarySelectorLiteral});
@@ -829,8 +849,21 @@ async function verifyPromptCommitted(
 	    };
 	    const normalizedPrompt = normalize(${encodedPrompt});
 	    const normalizedPromptPrefix = normalizedPrompt.slice(0, 120);
+	    const baselineLastUserKnown = ${baselineLastUserKnownLiteral};
+	    const baselineLastUserText = normalize(${baselineLastUserTextLiteral});
 	    const articles = ${buildConversationTurnListExpression()};
 	    const normalizedTurns = articles.map((node) => normalize(node?.innerText));
+	    const userTurns = Array.from(
+	      document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
+	    );
+	    const latestUserNode = userTurns[userTurns.length - 1];
+	    const latestUserText = normalize(latestUserNode?.innerText ?? latestUserNode?.textContent);
+	    const latestUserChanged =
+	      baselineLastUserKnown && latestUserText.length > 0 && latestUserText !== baselineLastUserText;
+	    const latestUserMatched =
+	      normalizedPrompt.length > 0 &&
+	      (latestUserText.includes(normalizedPrompt) ||
+	        (normalizedPromptPrefix.length > 30 && latestUserText.includes(normalizedPromptPrefix)));
 	    const readValue = (node) => {
 	      if (!node) return '';
 	      if (node instanceof HTMLTextAreaElement) return node.value ?? '';
@@ -876,6 +909,8 @@ async function verifyPromptCommitted(
 	      userMatched,
 	      prefixMatched,
 	      lastMatched,
+	      latestUserChanged,
+	      latestUserMatched,
 	      hasNewTurn,
 	      stopVisible,
       assistantVisible,
@@ -906,7 +941,9 @@ async function verifyPromptCommitted(
     const virtualizedActiveCommit =
       info?.composerCleared &&
       info.inConversation &&
-      Boolean(info.lastMatched || (info.prefixMatched && info.stopVisible));
+      info.stopVisible &&
+      info.latestUserChanged &&
+      info.latestUserMatched;
     if (virtualizedActiveCommit) {
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
     }
@@ -957,6 +994,8 @@ interface CommitProbeState {
   userMatched?: boolean;
   prefixMatched?: boolean;
   lastMatched?: boolean;
+  latestUserChanged?: boolean;
+  latestUserMatched?: boolean;
   hasNewTurn?: boolean;
   stopVisible?: boolean;
   assistantVisible?: boolean;
@@ -977,6 +1016,8 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
     userMatched: probe.userMatched,
     prefixMatched: probe.prefixMatched,
     lastMatched: probe.lastMatched,
+    latestUserChanged: probe.latestUserChanged,
+    latestUserMatched: probe.latestUserMatched,
     hasNewTurn: probe.hasNewTurn,
     stopVisible: probe.stopVisible,
     assistantVisible: probe.assistantVisible,
