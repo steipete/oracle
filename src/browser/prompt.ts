@@ -15,6 +15,11 @@ import { buildPromptMarkdown } from "../oracle/promptAssembly.js";
 import type { BrowserAttachment } from "./types.js";
 import { buildAttachmentPlan } from "./policies.js";
 import { createStoredZip } from "./zipBundle.js";
+import {
+  buildAttachmentBasenameCollisionDetails,
+  findAttachmentBasenameCollisions,
+  formatAttachmentBasenameCollisionMessage,
+} from "./attachmentValidation.js";
 
 const DEFAULT_BROWSER_INLINE_CHAR_BUDGET = 60_000;
 const MAX_BROWSER_ATTACHMENTS = 10;
@@ -191,6 +196,19 @@ function assertAttachmentCount(
   if (attachments.length <= MAX_BROWSER_ATTACHMENTS) return;
   throw new Error(
     `Browser upload has ${attachments.length} attachments after applying bundle format "${format}". Use --browser-bundle-format auto or zip to stay within the ${MAX_BROWSER_ATTACHMENTS}-attachment limit.`,
+  );
+}
+
+function assertUniqueAttachmentBasenames(attachments: BrowserAttachment[], cwd: string): void {
+  const collisions = findAttachmentBasenameCollisions(attachments);
+  if (collisions.length === 0) return;
+
+  const details = buildAttachmentBasenameCollisionDetails(collisions, (attachment) =>
+    path.isAbsolute(attachment.path) ? attachment.path : path.resolve(cwd, attachment.path),
+  );
+  throw new FileValidationError(
+    formatAttachmentBasenameCollisionMessage("Browser upload", details.collisions),
+    { ...details },
   );
 }
 
@@ -380,6 +398,7 @@ export async function assembleBrowserPrompt(
     bundled = writtenBundle.metadata;
   }
   assertAttachmentCount(attachments, resolvedBundleFormat);
+  assertUniqueAttachmentBasenames(attachments, cwd);
 
   const inlineFileCount = shouldBundle ? 0 : selectedPlan.inlineFileCount;
   const modelConfig = isKnownModel(runOptions.model)

@@ -1875,8 +1875,10 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   }
 
   const retentionHours = typeof options.retainHours === "number" ? options.retainHours : undefined;
-  await sessionStore.ensureStorage();
-  await pruneOldSessions(retentionHours, (message) => console.log(chalk.dim(message)));
+  if (!previewMode) {
+    await sessionStore.ensureStorage();
+    await pruneOldSessions(retentionHours, (message) => console.log(chalk.dim(message)));
+  }
   if (providerMode === "openai") {
     if (hasExplicitAzureOption(optionUsesDefault)) {
       throw new Error("--provider openai/--no-azure cannot be combined with Azure options.");

@@ -947,7 +947,7 @@ function buildThinkingTimeExpression(
       'avanzado', 'avancado', 'avance',
     ];
     const EFFORT_WORDS = [
-      'effort', 'aufwand', '强度', '努力', '推論レベル',
+      'effort', 'aufwand', '强度', '努力', '推論レベル', '思考量',
       'esfuerzo', 'esforco', 'sforzo', 'inspanning', 'wysilek',
     ];
     const containsAny = (label, words) => words.some((word) => label.includes(word));

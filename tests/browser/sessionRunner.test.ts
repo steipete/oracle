@@ -16,6 +16,65 @@ const baseRunOptions: RunOracleOptions = {
 const baseConfig: BrowserSessionConfig = {};
 
 describe("runBrowserSessionExecution", () => {
+  test("bounds browser prompt preparation with the configured input timeout", async () => {
+    vi.useFakeTimers();
+    const executeBrowser = vi.fn();
+    const execution = runBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: { inputTimeoutMs: 25 },
+        cwd: "/repo",
+        log: vi.fn(),
+      },
+      {
+        assemblePrompt: () => new Promise(() => {}),
+        executeBrowser,
+      },
+    );
+    const failure = expect(execution).rejects.toMatchObject({
+      name: "BrowserAutomationError",
+      category: "browser-automation",
+      message: expect.stringContaining("--browser-input-timeout"),
+      details: {
+        stage: "prepare-prompt",
+        code: "prompt-preparation-timeout",
+        timeoutMs: 25,
+      },
+    });
+
+    try {
+      await vi.advanceTimersByTimeAsync(25);
+      await failure;
+      expect(executeBrowser).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("preserves prompt preparation errors without starting the browser", async () => {
+    const executeBrowser = vi.fn();
+    const preparationError = new Error("failed to read requested input file");
+
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: { inputTimeoutMs: 1_000 },
+          cwd: "/repo",
+          log: vi.fn(),
+        },
+        {
+          assemblePrompt: async () => {
+            throw preparationError;
+          },
+          executeBrowser,
+        },
+      ),
+    ).rejects.toBe(preparationError);
+
+    expect(executeBrowser).not.toHaveBeenCalled();
+  });
+
   test("logs stats and returns usage/runtime", async () => {
     const log = vi.fn();
     const persistRuntimeHint = vi.fn();

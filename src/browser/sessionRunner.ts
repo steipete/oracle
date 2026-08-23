@@ -11,6 +11,7 @@ import type {
 } from "../sessionStore.js";
 import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
+import { DEFAULT_BROWSER_CONFIG } from "./config.js";
 import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
 import type { BrowserArchiveResult, BrowserLogger } from "./types.js";
@@ -136,7 +137,32 @@ export async function runBrowserSessionExecution(
 ): Promise<BrowserExecutionResult> {
   const assemblePrompt = deps.assemblePrompt ?? assembleBrowserPrompt;
   const executeBrowser = deps.executeBrowser ?? runBrowserMode;
-  const promptArtifacts = await assemblePrompt(runOptions, { cwd });
+  const inputTimeoutMs = browserConfig.inputTimeoutMs ?? DEFAULT_BROWSER_CONFIG.inputTimeoutMs;
+  let preparationTimeout: ReturnType<typeof setTimeout> | undefined;
+  let promptArtifacts: Awaited<ReturnType<typeof assembleBrowserPrompt>>;
+  try {
+    promptArtifacts = await Promise.race([
+      assemblePrompt(runOptions, { cwd }),
+      new Promise<never>((_, reject) => {
+        preparationTimeout = setTimeout(() => {
+          reject(
+            new BrowserAutomationError(
+              `Browser prompt preparation timed out after ${inputTimeoutMs}ms; increase --browser-input-timeout if local files need more time.`,
+              {
+                stage: "prepare-prompt",
+                code: "prompt-preparation-timeout",
+                timeoutMs: inputTimeoutMs,
+              },
+            ),
+          );
+        }, inputTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (preparationTimeout) {
+      clearTimeout(preparationTimeout);
+    }
+  }
   if (runOptions.verbose) {
     log(
       chalk.dim(
