@@ -61,13 +61,13 @@ function normalizePromptText(value: unknown): string {
 
 function harvestMatchesSessionPrompt(
   harvested: ChatGptTabSummary,
-  expectedPrompt: string | undefined,
+  expectedPrompt: { text: string | undefined; exact: boolean },
 ): boolean {
   const assistantText = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText;
   if (harvested.assistantFollowsLatestUser !== true || !assistantText?.trim()) {
     return false;
   }
-  const expected = normalizePromptText(expectedPrompt);
+  const expected = normalizePromptText(expectedPrompt.text);
   if (!expected) {
     return true;
   }
@@ -75,15 +75,33 @@ function harvestMatchesSessionPrompt(
   if (!observed) {
     return false;
   }
-  return observed.startsWith(expected);
+  return expectedPrompt.exact ? observed === expected : observed.startsWith(expected);
+}
+
+function expectedLatestUserPrompt(meta: SessionMetadata): {
+  text: string | undefined;
+  exact: boolean;
+} {
+  const followUps = meta.options?.browserFollowUps;
+  if (Array.isArray(followUps)) {
+    for (let index = followUps.length - 1; index >= 0; index -= 1) {
+      const followUp = followUps[index];
+      if (typeof followUp === "string" && followUp.trim()) {
+        return { text: followUp.trim(), exact: true };
+      }
+    }
+  }
+  return {
+    text: typeof meta.options?.prompt === "string" ? meta.options.prompt.trim() : undefined,
+    exact: false,
+  };
 }
 
 async function harvestSessionPrompt(
   meta: SessionMetadata,
   options: Parameters<typeof harvestChatGptTab>[0],
 ): Promise<ChatGptTabSummary> {
-  const expectedPrompt =
-    typeof meta.options?.prompt === "string" ? meta.options.prompt.trim() : undefined;
+  const expectedPrompt = expectedLatestUserPrompt(meta);
   const deadline = Date.now() + HARVEST_FRESHNESS_TIMEOUT_MS;
   let harvested = await harvestChatGptTab(options);
   while (!harvestMatchesSessionPrompt(harvested, expectedPrompt) && Date.now() < deadline) {
