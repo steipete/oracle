@@ -213,7 +213,10 @@ export async function submitPrompt(
     );
   }
 
-  const baselineLastUserText = await readLatestUserTurnText(runtime).catch(() => null);
+  const baselineLastUserTurn = await readLatestUserTurnSnapshot(runtime).catch(() => ({
+    text: null,
+    messageId: null,
+  }));
   const clicked = await attemptSendButton(
     runtime,
     input,
@@ -246,30 +249,62 @@ export async function submitPrompt(
     commitTimeoutMs,
     logger,
     deps.baselineTurns ?? undefined,
-    baselineLastUserText,
+    baselineLastUserTurn.text,
+    baselineLastUserTurn.messageId,
   );
 }
 
-async function readLatestUserTurnText(Runtime: ChromeClient["Runtime"]): Promise<string | null> {
+interface LatestUserTurnSnapshot {
+  text: string | null;
+  messageId: string | null;
+}
+
+async function readLatestUserTurnSnapshot(
+  Runtime: ChromeClient["Runtime"],
+): Promise<LatestUserTurnSnapshot> {
   const { result } = await Runtime.evaluate({
     expression: `(() => {
       const nodes = Array.from(
         document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
       );
       const latest = nodes[nodes.length - 1];
-      if (!latest) return { found: false, text: '' };
-      return { found: true, text: latest.innerText ?? latest.textContent ?? '' };
+      if (!latest) return { found: false, text: '', messageId: '' };
+      const messageId =
+        latest.getAttribute?.('data-message-id') ??
+        latest.closest?.('[data-message-id]')?.getAttribute?.('data-message-id') ??
+        latest.querySelector?.('[data-message-id]')?.getAttribute?.('data-message-id') ??
+        '';
+      return {
+        found: true,
+        text: latest.innerText ?? latest.textContent ?? '',
+        messageId,
+      };
     })()`,
     returnByValue: true,
   });
-  const value = result?.value as { found?: unknown; text?: unknown } | undefined;
+  const value = result?.value as
+    | { found?: unknown; text?: unknown; messageId?: unknown }
+    | undefined;
   if (value?.found === false) {
-    return "";
+    return { text: "", messageId: null };
   }
+  const messageId =
+    typeof value?.messageId === "string" && value.messageId.trim() ? value.messageId : null;
   if (value?.found !== true || typeof value.text !== "string" || !value.text.trim()) {
-    return null;
+    return { text: null, messageId };
   }
-  return value.text;
+  return { text: value.text, messageId };
+}
+
+async function readLatestUserTurnText(Runtime: ChromeClient["Runtime"]): Promise<string | null> {
+  return (await readLatestUserTurnSnapshot(Runtime)).text;
+}
+
+function didUserTurnMessageIdChange(
+  baselineMessageId: string | null | undefined,
+  latestMessageId: string | null | undefined,
+): boolean {
+  return Boolean(baselineMessageId && latestMessageId && baselineMessageId !== latestMessageId);
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
@@ -812,6 +847,7 @@ async function verifyPromptCommitted(
   logger?: BrowserLogger,
   baselineTurns?: number,
   baselineLastUserText?: string | null,
+  baselineLastUserMessageId?: string | null,
 ): Promise<number | null> {
   const deadline = Date.now() + timeoutMs;
   const encodedPrompt = JSON.stringify(prompt.trim());
@@ -945,12 +981,19 @@ async function verifyPromptCommitted(
     if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
     }
+    let latestUserIdentityChanged = false;
+    const virtualizedActiveCandidate =
+      info?.composerCleared && info.inConversation && info.stopVisible && info.latestUserMatched;
+    if (virtualizedActiveCandidate && !info.latestUserChanged) {
+      const latestUserTurn = await readLatestUserTurnSnapshot(Runtime).catch(() => null);
+      latestUserIdentityChanged = didUserTurnMessageIdChange(
+        baselineLastUserMessageId,
+        latestUserTurn?.messageId,
+      );
+      info.latestUserIdentityChanged = latestUserIdentityChanged;
+    }
     const virtualizedActiveCommit =
-      info?.composerCleared &&
-      info.inConversation &&
-      info.stopVisible &&
-      info.latestUserChanged &&
-      info.latestUserMatched;
+      virtualizedActiveCandidate && (info.latestUserChanged || latestUserIdentityChanged);
     if (virtualizedActiveCommit) {
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
     }
@@ -1002,6 +1045,7 @@ interface CommitProbeState {
   prefixMatched?: boolean;
   lastMatched?: boolean;
   latestUserChanged?: boolean;
+  latestUserIdentityChanged?: boolean;
   latestUserMatched?: boolean;
   hasNewTurn?: boolean;
   stopVisible?: boolean;
@@ -1024,6 +1068,7 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
     prefixMatched: probe.prefixMatched,
     lastMatched: probe.lastMatched,
     latestUserChanged: probe.latestUserChanged,
+    latestUserIdentityChanged: probe.latestUserIdentityChanged,
     latestUserMatched: probe.latestUserMatched,
     hasNewTurn: probe.hasNewTurn,
     stopVisible: probe.stopVisible,
@@ -1038,6 +1083,8 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
   attemptSendButton,
+  didUserTurnMessageIdChange,
+  readLatestUserTurnSnapshot,
   readLatestUserTurnText,
   sendButtonTimeoutMs,
   verifyPromptCommitted,

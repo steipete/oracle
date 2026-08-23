@@ -26,6 +26,34 @@ describe("promptComposer", () => {
     ).resolves.toBeNull();
   });
 
+  test("captures a stable message id for the latest user turn", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            found: true,
+            text: "Repeated neutral prompt",
+            messageId: "message-new",
+          },
+        },
+      }),
+    };
+
+    await expect(promptComposer.readLatestUserTurnSnapshot(runtime as never)).resolves.toEqual({
+      text: "Repeated neutral prompt",
+      messageId: "message-new",
+    });
+    const expression = runtime.evaluate.mock.calls[0]?.[0]?.expression ?? "";
+    expect(expression).toContain("data-message-id");
+  });
+
+  test("requires two distinct non-empty message ids to prove a structural change", () => {
+    expect(promptComposer.didUserTurnMessageIdChange("message-old", "message-new")).toBe(true);
+    expect(promptComposer.didUserTurnMessageIdChange("message-old", "message-old")).toBe(false);
+    expect(promptComposer.didUserTurnMessageIdChange(null, "message-new")).toBe(false);
+    expect(promptComposer.didUserTurnMessageIdChange("message-old", null)).toBe(false);
+  });
+
   test("fails composer clearing when stale text remains", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
@@ -456,6 +484,105 @@ describe("promptComposer", () => {
       const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
       await vi.advanceTimersByTimeAsync(250);
       await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("accepts a repeated prompt when the latest user turn has a new structural identity", async () => {
+    const probe = {
+      baseline: 6,
+      turnsCount: 6,
+      userMatched: true,
+      prefixMatched: true,
+      lastMatched: true,
+      hasNewTurn: false,
+      stopVisible: true,
+      assistantVisible: true,
+      composerCleared: true,
+      inConversation: true,
+      latestUserChanged: false,
+      latestUserMatched: true,
+    };
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: probe } })
+        .mockResolvedValueOnce({
+          result: {
+            value: {
+              found: true,
+              text: "A repeated neutral prompt that is already the latest visible user turn.",
+              messageId: "message-new",
+            },
+          },
+        }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "A repeated neutral prompt that is already the latest visible user turn.",
+        150,
+        undefined,
+        6,
+        "A repeated neutral prompt that is already the latest visible user turn.",
+        "message-old",
+      ),
+    ).resolves.toBe(6);
+    expect(probe).toMatchObject({ latestUserIdentityChanged: true });
+  });
+
+  test("does not accept a repeated prompt when its message id appears only after baseline", async () => {
+    vi.useFakeTimers();
+    try {
+      const probe = {
+        baseline: 6,
+        turnsCount: 6,
+        userMatched: true,
+        prefixMatched: true,
+        lastMatched: true,
+        hasNewTurn: false,
+        stopVisible: true,
+        assistantVisible: true,
+        composerCleared: true,
+        inConversation: true,
+        latestUserChanged: false,
+        latestUserMatched: true,
+      };
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) =>
+          expression.includes("if (!latest) return { found: false")
+            ? {
+                result: {
+                  value: {
+                    found: true,
+                    text: "A repeated neutral prompt that is already the latest visible user turn.",
+                    messageId: "message-hydrated",
+                  },
+                },
+              }
+            : { result: { value: probe } },
+        ),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "A repeated neutral prompt that is already the latest visible user turn.",
+        150,
+        undefined,
+        6,
+        "A repeated neutral prompt that is already the latest visible user turn.",
+        null,
+      );
+      const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+      await vi.advanceTimersByTimeAsync(250);
+      await assertion;
+      expect(probe).toMatchObject({ latestUserIdentityChanged: false });
     } finally {
       vi.useRealTimers();
     }
