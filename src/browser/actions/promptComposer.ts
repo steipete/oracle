@@ -35,6 +35,7 @@ export async function submitPrompt(
   deps: {
     runtime: ChromeClient["Runtime"];
     input: ChromeClient["Input"];
+    page?: ChromeClient["Page"];
     attachmentNames?: AttachmentReadyInput[];
     baselineTurns?: number | null;
     inputTimeoutMs?: number | null;
@@ -219,6 +220,7 @@ export async function submitPrompt(
     logger,
     deps?.attachmentNames,
     deps?.attachmentTimeoutMs,
+    deps?.page,
   );
   if (!clicked) {
     await input.dispatchKeyEvent({
@@ -648,9 +650,10 @@ export function buildAttachmentReadyExpressionForTest(attachmentNames: Attachmen
 async function attemptSendButton(
   Runtime: ChromeClient["Runtime"],
   Input: ChromeClient["Input"],
-  _logger?: BrowserLogger,
+  logger?: BrowserLogger,
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
+  Page?: ChromeClient["Page"],
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
   const script = `(() => {
@@ -719,7 +722,7 @@ async function attemptSendButton(
       typeof value.x === "number" &&
       typeof value.y === "number"
     ) {
-      await clickTrustedPoint(Runtime, Input, value.x, value.y);
+      await clickTrustedPoint(Runtime, Input, Page, value.x, value.y, logger);
       return true;
     }
     if (status === "clicked") {
@@ -749,9 +752,22 @@ async function attemptSendButton(
 async function clickTrustedPoint(
   Runtime: ChromeClient["Runtime"],
   Input: ChromeClient["Input"],
+  Page: ChromeClient["Page"] | undefined,
   x: number,
   y: number,
+  logger?: BrowserLogger,
 ): Promise<void> {
+  // Keep target activation adjacent to trusted input. Upload and model-picker work can
+  // leave Chrome non-composited after an earlier target activation.
+  if (Page && typeof Page.bringToFront === "function") {
+    await Page.bringToFront().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger?.(
+        `[browser] Could not bring ChatGPT target to front before trusted click: ${message}`,
+      );
+    });
+    await delay(150);
+  }
   if (Input && typeof Input.dispatchMouseEvent === "function") {
     await Input.dispatchMouseEvent({ type: "mouseMoved", x, y });
     await Input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });

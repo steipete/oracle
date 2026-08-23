@@ -3,6 +3,10 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
 } from "../../src/browser/pageActions.js";
+import {
+  buildAttachmentReferenceMatcherJs,
+  matchesAttachmentReference,
+} from "../../src/browser/actions/attachments.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
 const useFakeTime = () => {
@@ -13,6 +17,25 @@ const useFakeTime = () => {
 const useRealTime = () => {
   vi.useRealTimers();
 };
+
+describe("attachment filename matching", () => {
+  test.each([
+    ["report.jpg", "report.jpg", true],
+    ["report.jpg", "report(2).jpg", true],
+    ["report.jpg", "report(20260824-012300).jpg", true],
+    ["report.jpg", "report", true],
+    ["report.jpg", "report.md", false],
+    ["report.jpg", "report(2).md", false],
+  ])("matches %s against %s as %s", (expectedName, visibleName, expected) => {
+    expect(matchesAttachmentReference(visibleName, expectedName)).toBe(expected);
+  });
+
+  test("renderer-injected matcher stays closure-free", () => {
+    const script = `${buildAttachmentReferenceMatcherJs("matches")}
+      return matches("report.md", "report.jpg");`;
+    expect(Function(script)()).toBe(false);
+  });
+});
 
 describe("attachment completion fallbacks", () => {
   test("waitForAttachmentCompletion resolves when ready file input contains expected name (no UI chip)", async () => {
@@ -109,6 +132,31 @@ describe("attachment completion fallbacks", () => {
     const promise = waitForAttachmentCompletion(runtime, 800, ["a.txt", "b.txt"]);
     const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
     await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+    useRealTime();
+  });
+
+  test("waitForAttachmentCompletion does not let one extension satisfy a same-stem file", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: true,
+            attachedNames: ["report.md"],
+            inputNames: [],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 2_000, ["report.md", "report.jpg"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(3_000);
     await assertion;
     useRealTime();
   });

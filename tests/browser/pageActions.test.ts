@@ -1799,7 +1799,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("text.includes('…')")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           capturedPresenceExpression = expr;
           return { result: { value: { ui: true, input: false } } };
         }
@@ -1815,8 +1815,8 @@ describe("uploadAttachmentFile", () => {
       ),
     ).resolves.toBe(true);
 
-    expect(capturedPresenceExpression).toContain("text.includes('…')");
-    expect(capturedPresenceExpression).toContain("text.includes('...')");
+    expect(capturedPresenceExpression).toContain('text.includes("…")');
+    expect(capturedPresenceExpression).toContain('text.includes("...")');
     expect(dom.getDocument).not.toHaveBeenCalled();
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
     expect(logger).toHaveBeenCalledWith(expect.stringMatching(/Attachment already present/i));
@@ -1832,7 +1832,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           return { result: { value: { ui: false, input: true } } };
         }
         if (expr.includes("baselineChipCount") && expr.includes("baselineChips")) {
@@ -1848,7 +1848,7 @@ describe("uploadAttachmentFile", () => {
             },
           };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: true } } };
         }
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
@@ -1880,7 +1880,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
@@ -1923,7 +1923,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
@@ -1967,7 +1967,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           return {
             result: {
@@ -2016,7 +2016,7 @@ describe("uploadAttachmentFile", () => {
         if (expr.includes("attachmentSelectors") && expr.includes("found")) {
           return { result: { value: { found: true } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: true } } };
         }
         return { result: { value: null } };
@@ -2046,7 +2046,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           if (readSignalCalls < 3) {
             return {
@@ -2106,7 +2106,7 @@ describe("uploadAttachmentFile", () => {
             },
           };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: false } } };
         }
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
@@ -2143,7 +2143,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           if (readSignalCalls === 1) {
             return {
@@ -2209,7 +2209,7 @@ describe("uploadAttachmentFile", () => {
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
           return { result: { value: { found: true } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: true } } };
         }
         return { result: { value: null } };
@@ -2237,7 +2237,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
@@ -2290,7 +2290,7 @@ describe("uploadAttachmentFile", () => {
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
           return { result: { value: { found: false } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: false } } };
         }
         return { result: { value: null } };
@@ -2326,7 +2326,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("matchesAttachmentReference") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           return {
             result: {
@@ -2377,7 +2377,7 @@ describe("uploadAttachmentFile", () => {
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
           return { result: { value: { found: true } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: true } } };
         }
         return { result: { value: null } };

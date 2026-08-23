@@ -324,4 +324,43 @@ describe("promptComposer", () => {
       vi.useRealTimers();
     }
   });
+
+  test("brings the target to front immediately before trusted input", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: string[] = [];
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({
+          result: { value: { status: "point", x: 10, y: 20 } },
+        }),
+      };
+      const input = {
+        dispatchMouseEvent: vi.fn(async ({ type }: { type: string }) => {
+          events.push(type);
+        }),
+      };
+      const page = {
+        bringToFront: vi.fn(async () => {
+          events.push("bringToFront");
+        }),
+      };
+
+      const result = promptComposer.attemptSendButton(
+        runtime as never,
+        input as never,
+        undefined,
+        undefined,
+        undefined,
+        page as never,
+      );
+      await vi.advanceTimersByTimeAsync(150);
+
+      await expect(result).resolves.toBe(true);
+      expect(events).toEqual(["bringToFront", "mouseMoved", "mousePressed", "mouseReleased"]);
+      expect(page.bringToFront).toHaveBeenCalledTimes(1);
+      expect(input.dispatchMouseEvent).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

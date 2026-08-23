@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Browser: keep same-stem attachments with different extensions distinct, and reactivate the ChatGPT target immediately before the single trusted send click so multi-file submissions are not skipped or silently swallowed.
 - Browser: restore locally launched macOS Chrome windows to their prior placement for visible runs only when Oracle recorded the window before a `--browser-hide-window` run; unmarked windows remain untouched.
 - Browser: archive completed ChatGPT conversations when the interface is Japanese by recognizing the current `その他`, `アーカイブ`, and `アーカイブを解除する` controls.
 - Browser: apply the configured input timeout to prompt preparation so stalled local file assembly fails clearly before launching Chrome. Fixes #381.
