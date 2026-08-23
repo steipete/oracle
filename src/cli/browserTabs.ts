@@ -21,6 +21,8 @@ import { resolveOutputPath } from "./writeOutputPath.js";
 
 const LIVE_POLL_MS = 2000;
 const DEFAULT_STALL_THRESHOLD_MS = 60_000;
+const HARVEST_FRESHNESS_TIMEOUT_MS = 5_000;
+const HARVEST_FRESHNESS_POLL_MS = 250;
 
 function isRecoverableMissingTabError(message: string): boolean {
   return (
@@ -47,6 +49,53 @@ function finishRecoveredChrome(
   } catch {
     // best-effort cleanup
   }
+}
+
+function normalizePromptText(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function harvestMatchesSessionPrompt(
+  harvested: ChatGptTabSummary,
+  expectedPrompt: string | undefined,
+): boolean {
+  const assistantText = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText;
+  if (harvested.assistantFollowsLatestUser !== true || !assistantText?.trim()) {
+    return false;
+  }
+  const expected = normalizePromptText(expectedPrompt);
+  if (!expected) {
+    return true;
+  }
+  const observed = normalizePromptText(harvested.lastUserText);
+  if (!observed) {
+    return false;
+  }
+  const prefix = expected.slice(0, Math.min(120, expected.length));
+  return observed.startsWith(expected) || observed.startsWith(prefix);
+}
+
+async function harvestSessionPrompt(
+  meta: SessionMetadata,
+  options: Parameters<typeof harvestChatGptTab>[0],
+): Promise<ChatGptTabSummary> {
+  const expectedPrompt =
+    typeof meta.options?.prompt === "string" ? meta.options.prompt.trim() : undefined;
+  const deadline = Date.now() + HARVEST_FRESHNESS_TIMEOUT_MS;
+  let harvested = await harvestChatGptTab(options);
+  while (!harvestMatchesSessionPrompt(harvested, expectedPrompt) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, HARVEST_FRESHNESS_POLL_MS));
+    harvested = await harvestChatGptTab(options);
+  }
+  if (!harvestMatchesSessionPrompt(harvested, expectedPrompt)) {
+    throw new Error(
+      "Latest ChatGPT turn did not contain an assistant answer paired with this session prompt after 5s; refusing to harvest stale output.",
+    );
+  }
+  return harvested;
 }
 
 export interface BrowserHarvestOptions {
@@ -276,7 +325,7 @@ export async function harvestSessionBrowserOutput(
   try {
     let harvested: ChatGptTabSummary;
     try {
-      harvested = await harvestChatGptTab({
+      harvested = await harvestSessionPrompt(meta, {
         host: initialEndpoint.host,
         port: initialEndpoint.port,
         ref,
@@ -296,7 +345,7 @@ export async function harvestSessionBrowserOutput(
         existingEndpoint: recordedEndpoint ?? undefined,
       });
       recoveredChrome = recovered.chrome;
-      harvested = await harvestChatGptTab({
+      harvested = await harvestSessionPrompt(meta, {
         host: recovered.host,
         port: recovered.port,
         ref: recovered.ref,

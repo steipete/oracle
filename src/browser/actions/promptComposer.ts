@@ -903,6 +903,13 @@ async function verifyPromptCommitted(
     if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
       return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
     }
+    const virtualizedActiveCommit =
+      info?.composerCleared &&
+      info.inConversation &&
+      Boolean(info.lastMatched || (info.prefixMatched && info.stopVisible));
+    if (virtualizedActiveCommit) {
+      return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
+    }
     const fallbackCommit =
       info?.composerCleared &&
       Boolean(info?.hasNewTurn) &&

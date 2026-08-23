@@ -324,4 +324,78 @@ describe("promptComposer", () => {
       vi.useRealTimers();
     }
   });
+
+  test("accepts a matched prompt when conversation virtualization keeps the turn count stable", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            baseline: 6,
+            turnsCount: 6,
+            userMatched: false,
+            prefixMatched: true,
+            lastMatched: false,
+            hasNewTurn: false,
+            stopVisible: true,
+            assistantVisible: true,
+            composerCleared: true,
+            composerMatchesPrompt: false,
+            inConversation: true,
+          },
+        },
+      }),
+    } as unknown as {
+      evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+    };
+
+    await expect(
+      promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "A neutral prompt long enough for reliable prefix matching in a virtualized conversation.",
+        150,
+        undefined,
+        6,
+      ),
+    ).resolves.toBe(6);
+  });
+
+  test("does not accept a historical prefix match without an active response", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({
+          result: {
+            value: {
+              baseline: 6,
+              turnsCount: 6,
+              userMatched: false,
+              prefixMatched: true,
+              lastMatched: false,
+              hasNewTurn: false,
+              stopVisible: false,
+              assistantVisible: true,
+              composerCleared: true,
+              composerMatchesPrompt: false,
+              inConversation: true,
+            },
+          },
+        }),
+      } as unknown as {
+        evaluate: (args: { expression: string; returnByValue?: boolean }) => Promise<unknown>;
+      };
+
+      const promise = promptComposer.verifyPromptCommitted(
+        runtime as never,
+        "A historical neutral prompt that remains visible in a virtualized conversation.",
+        150,
+        undefined,
+        6,
+      );
+      const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+      await vi.advanceTimersByTimeAsync(250);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
