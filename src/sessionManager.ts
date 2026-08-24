@@ -1077,6 +1077,13 @@ async function markDeadBrowser(meta: SessionMetadata): Promise<SessionMetadata> 
     const host = runtime.chromeHost ?? "127.0.0.1";
     signals.push(await isPortOpen(host, runtime.chromePort));
   }
+  // controllerPid: the foreground process that launched this browser run.
+  // When neither chromePid nor chromePort are recorded (common on Linux),
+  // signals[] is empty and the early-return below would skip the reap.
+  // Use the same isProcessAlive() primitive to fill that gap.
+  if (signals.length === 0 && runtime.controllerPid) {
+    signals.push(isProcessAlive(runtime.controllerPid));
+  }
   if (signals.length === 0 || signals.some(Boolean)) {
     return meta;
   }

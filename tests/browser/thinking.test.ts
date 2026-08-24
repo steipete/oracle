@@ -462,6 +462,112 @@ describe("formatThinkingLog", () => {
 
     stop();
   });
+
+  test("calls onStall once when status has not changed for stallThresholdMs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0)); // ensure clock starts at 0 regardless of prior test state
+    const stallCalls: number[] = [];
+    let nowMs = 0;
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: "response streaming" } }),
+    } as unknown as ChromeClient["Runtime"];
+
+    // Use intervalMs: 5000, stallThresholdMs: 8000. Advance one tick at a time
+    // so microtasks flush between each interval firing.
+    const stop = startThinkingStatusMonitorForTest(runtime, () => {}, {
+      intervalMs: 5000,
+      now: () => nowMs,
+      stallThresholdMs: 8000,
+      onStall: (unchangedMs) => stallCalls.push(unchangedMs),
+    });
+
+    // Tick 1: nowMs=5000, unchanged = 5000 - 0 = 5000 < 8000 → no stall
+    nowMs = 5000;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(stallCalls).toHaveLength(0);
+
+    // Tick 2: nowMs=10000, unchanged = 10000 - 0 = 10000 >= 8000 → stall fires
+    nowMs = 10000;
+    await vi.advanceTimersByTimeAsync(5000);
+
+    // Tick 3: nowMs=15000, stall already notified → still only 1
+    nowMs = 15000;
+    await vi.advanceTimersByTimeAsync(5000);
+
+    stop();
+    expect(stallCalls).toHaveLength(1);
+    expect(stallCalls[0]).toBeGreaterThanOrEqual(8000);
+  });
+
+  test("onStall resets and can re-fire after a fingerprint change then re-stall", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0)); // ensure clock starts at 0 regardless of prior test state
+    const stallCalls: number[] = [];
+    let nowMs = 0;
+    let callCount = 0;
+    // Ticks 1–2: "response streaming" (unchanged < 8000)
+    // Tick 3: "response streaming" again but nowMs=15000, unchanged=15000 >= 8000 → stall fires (1st)
+    // Tick 4: "active" (fingerprint changes → lastChangedAt = 20000, reset stalledNotified)
+    // Ticks 5–6: "response streaming", unchanged = nowMs - 20000 < 8000
+    // Tick 7: unchanged = 35000 - 20000 = 15000 >= 8000 → stall fires (2nd)
+    const runtime = {
+      evaluate: vi.fn().mockImplementation(() => {
+        callCount += 1;
+        const value = callCount === 4 ? "active" : "response streaming";
+        return Promise.resolve({ result: { value } });
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const stop = startThinkingStatusMonitorForTest(runtime, () => {}, {
+      intervalMs: 5000,
+      now: () => nowMs,
+      stallThresholdMs: 8000,
+      onStall: (ms) => stallCalls.push(ms),
+    });
+
+    nowMs = 5000;  await vi.advanceTimersByTimeAsync(5000);  // tick 1: unchanged=5000
+    nowMs = 10000; await vi.advanceTimersByTimeAsync(5000);  // tick 2: unchanged=10000
+    nowMs = 15000; await vi.advanceTimersByTimeAsync(5000);  // tick 3: unchanged=15000 >= 8000 → stall 1
+    expect(stallCalls).toHaveLength(1);
+
+    nowMs = 20000; await vi.advanceTimersByTimeAsync(5000);  // tick 4: "active" → reset
+    nowMs = 25000; await vi.advanceTimersByTimeAsync(5000);  // tick 5: unchanged=5000
+    nowMs = 30000; await vi.advanceTimersByTimeAsync(5000);  // tick 6: unchanged=10000
+    nowMs = 35000; await vi.advanceTimersByTimeAsync(5000);  // tick 7: unchanged=15000 >= 8000 → stall 2
+
+    stop();
+    expect(stallCalls).toHaveLength(2);
+  });
+
+  test("onStall is not called when status fingerprint changes before threshold", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0)); // ensure clock starts at 0 regardless of prior test state
+    const stallCalls: number[] = [];
+    let nowMs = 0;
+    let callCount = 0;
+    const snapshots = ["active", "response streaming", "active"];
+    const runtime = {
+      evaluate: vi.fn().mockImplementation(() => {
+        const value = snapshots[Math.min(callCount++, snapshots.length - 1)];
+        return Promise.resolve({ result: { value } });
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const stop = startThinkingStatusMonitorForTest(runtime, () => {}, {
+      intervalMs: 100,
+      now: () => nowMs,
+      stallThresholdMs: 500,
+      onStall: (ms) => stallCalls.push(ms),
+    });
+
+    // 3 ticks, fingerprint changes each time — never reaches threshold
+    nowMs = 100; await vi.advanceTimersByTimeAsync(100);
+    nowMs = 200; await vi.advanceTimersByTimeAsync(100);
+    nowMs = 300; await vi.advanceTimersByTimeAsync(100);
+
+    stop();
+    expect(stallCalls).toHaveLength(0);
+  });
 });
 
 describe("thinking status browser expression", () => {
