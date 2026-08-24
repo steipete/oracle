@@ -1,9 +1,13 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { BrowserLogger } from "../../src/browser/types.js";
 
 describe("resolveAttachRunningConnection", () => {
   beforeEach(() => {
     vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   test("defaults attach-running discovery to 127.0.0.1:9222", async () => {
@@ -18,6 +22,8 @@ describe("resolveAttachRunningConnection", () => {
         },
       ]),
     }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
 
     const { resolveAttachRunningConnection } = await import("../../src/browser/attachRunning.js");
     const logger = vi.fn();
@@ -39,6 +45,7 @@ describe("resolveAttachRunningConnection", () => {
     expect(logger).toHaveBeenCalledWith(
       "Selected attach-running browser metadata from /profiles/default/DevToolsActivePort",
     );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("uses remote-chrome as the attach-running hint and prefers the newest candidate", async () => {
@@ -86,10 +93,49 @@ describe("resolveAttachRunningConnection", () => {
     );
   });
 
-  test("rejects attach-running when no local DevToolsActivePort matches the selected port", async () => {
+  test("probes the endpoint when DevToolsActivePort discovery finds nothing", async () => {
     vi.doMock("../../src/browser/detect.js", () => ({
       discoverDevToolsActivePortCandidates: vi.fn(async () => []),
     }));
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          webSocketDebuggerUrl: "ws://127.0.0.1:63332/devtools/browser/probed",
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { resolveAttachRunningConnection } = await import("../../src/browser/attachRunning.js");
+    const logger = vi.fn() as BrowserLogger;
+
+    const result = await resolveAttachRunningConnection(
+      {
+        chromePath: null,
+        remoteChrome: { host: "127.0.0.1", port: 63332 },
+      },
+      logger,
+    );
+
+    expect(result).toEqual({
+      host: "127.0.0.1",
+      port: 63332,
+      browserWSEndpoint: "ws://127.0.0.1:63332/devtools/browser/probed",
+      profileRoot: null,
+    });
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:63332/json/version", {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  test("reports discovery roots and a failed endpoint probe", async () => {
+    vi.doMock("../../src/browser/detect.js", () => ({
+      discoverDevToolsActivePortCandidates: vi.fn(async () => []),
+      resolveDevToolsActivePortDiscoveryRoots: vi.fn(() => ["/profiles/search-root"]),
+    }));
+    const fetchMock = vi.fn().mockRejectedValue(new Error("connection refused"));
+    vi.stubGlobal("fetch", fetchMock);
 
     const { resolveAttachRunningConnection } = await import("../../src/browser/attachRunning.js");
     const logger = vi.fn() as BrowserLogger;
@@ -102,6 +148,9 @@ describe("resolveAttachRunningConnection", () => {
         },
         logger,
       ),
-    ).rejects.toThrow(/No running browser with attach metadata matched 127\.0\.0\.1:63332/i);
+    ).rejects.toThrow(
+      /DevToolsActivePort discovery searched \/profiles\/search-root, and endpoint probe http:\/\/127\.0\.0\.1:63332\/json\/version failed: connection refused/i,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
