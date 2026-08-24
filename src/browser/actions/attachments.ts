@@ -304,15 +304,16 @@ export async function uploadAttachmentFile(
           '[aria-label*="attachment"]',
           '[title*="attachment"]',
         ].join(',');
-        const fileCountScope = scope ?? root ?? document.body;
+        const fileCountScope =
+          scope && scope !== document.body
+            ? scope
+            : root && root !== document.body
+              ? root
+              : null;
         const localFileNodes = fileCountScope
           ? Array.from(fileCountScope.querySelectorAll(fileCountSelectors))
           : [];
-        const globalFileNodes = Array.from(document.querySelectorAll(fileCountSelectors));
-        let fileCount = collectFileCount(localFileNodes);
-        if (!fileCount && globalFileNodes.length > 0) {
-          fileCount = collectFileCount(globalFileNodes);
-        }
+        const fileCount = collectFileCount(localFileNodes);
         const hasAttachmentSignal = localCandidates.length > 0 || inputCount > 0 || fileCount > 0 || uploading;
         if (!uiMatch && rootTextRaw && hasAttachmentSignal && matchesExpected(rootTextRaw)) {
           uiMatch = true;
@@ -634,15 +635,16 @@ export async function uploadAttachmentFile(
         '[aria-label*="attachment"]',
         '[title*="attachment"]',
       ].join(',');
-      const fileCountScope = scope ?? root ?? document.body;
+      const fileCountScope =
+        scope && scope !== document.body
+          ? scope
+          : root && root !== document.body
+            ? root
+            : null;
       const localFileNodes = fileCountScope
         ? Array.from(fileCountScope.querySelectorAll(fileCountSelectors))
         : [];
-      const globalFileNodes = Array.from(document.querySelectorAll(fileCountSelectors));
-      let baselineFileCount = collectFileCount(localFileNodes);
-      if (!baselineFileCount && globalFileNodes.length > 0) {
-        baselineFileCount = collectFileCount(globalFileNodes);
-      }
+      const baselineFileCount = collectFileCount(localFileNodes);
 
       // Mark candidates with stable indices so we can select them via DOM.querySelector.
       // Learned: ChatGPT sometimes renders a zero-sized file input that does *not* trigger uploads;
@@ -1574,13 +1576,14 @@ export async function waitForAttachmentCompletion(
       }
       return count;
     };
-    const localFileCountNodes = composerScope
-      ? Array.from(composerScope.querySelectorAll(fileCountSelectors))
+    const fileCountScope =
+      composerScope && composerScope !== document && composerScope !== document.body
+        ? composerScope
+        : null;
+    const localFileCountNodes = fileCountScope
+      ? Array.from(fileCountScope.querySelectorAll(fileCountSelectors))
       : [];
-    let fileCount = collectFileCount(localFileCountNodes);
-    if (!fileCount) {
-      fileCount = collectFileCount(Array.from(document.querySelectorAll(fileCountSelectors)));
-    }
+    const fileCount = collectFileCount(localFileCountNodes);
     const filesAttached = attachedNames.length > 0 || fileCount > 0;
     return {
       state: button ? (disabled ? 'disabled' : 'ready') : 'missing',

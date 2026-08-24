@@ -2397,6 +2397,26 @@ describe("uploadAttachmentFile", () => {
 
     expect(dom.querySelector).toHaveBeenCalledTimes(1);
     expect(dom.setFileInputFiles).toHaveBeenCalledTimes(1);
+
+    const fileCountExpressions = (
+      runtime.evaluate as unknown as { mock: { calls: Array<Array<{ expression?: string }>> } }
+    ).mock.calls
+      .map(([params]) => String(params?.expression ?? ""))
+      .filter((expression) => expression.includes("fileCountSelectors"));
+    expect(fileCountExpressions.length).toBeGreaterThan(1);
+    expect(
+      fileCountExpressions.some((expression) => expression.includes("baselineFileCount")),
+    ).toBe(true);
+    expect(
+      fileCountExpressions.every(
+        (expression) =>
+          expression.includes("scope && scope !== document.body") &&
+          expression.includes("root && root !== document.body"),
+      ),
+    ).toBe(true);
+    for (const expression of fileCountExpressions) {
+      expect(expression).not.toContain("document.querySelectorAll(fileCountSelectors)");
+    }
   });
 });
 
@@ -2424,6 +2444,30 @@ describe("waitForAttachmentVisible", () => {
 });
 
 describe("waitForAttachmentCompletion", () => {
+  test("keeps sidebar file-count labels outside the active composer scan", async () => {
+    const evaluate = vi.fn().mockResolvedValue({
+      result: {
+        value: {
+          state: "missing",
+          uploading: false,
+          filesAttached: true,
+          attachedNames: [],
+          inputNames: [],
+          fileCount: 0,
+        },
+      },
+    });
+    const runtime = { evaluate } as unknown as ChromeClient["Runtime"];
+
+    await expect(waitForAttachmentCompletion(runtime, 200)).resolves.toBeUndefined();
+
+    const call = evaluate.mock.calls[0]?.[0] as { expression?: string } | undefined;
+    const expression = String(call?.expression ?? "");
+    expect(expression).toContain("composerScope !== document");
+    expect(expression).toContain("composerScope !== document.body");
+    expect(expression).not.toContain("document.querySelectorAll(fileCountSelectors)");
+  });
+
   test("resolves when composer ready", async () => {
     const evaluate = vi.fn();
     evaluate.mockImplementation(async () => {
