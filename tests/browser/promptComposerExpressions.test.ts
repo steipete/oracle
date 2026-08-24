@@ -142,10 +142,11 @@ describe("prompt composer attachment expressions", () => {
     // Walks into ancestor and descendant text so filenames buried in nested spans are still found.
     expect(expression).toContain("collectLabelHaystack");
     expect(expression).toContain("parentElement");
-    // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching on the
-    // expected basename stem keeps the send check aligned with the upload check.
+    // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching the
+    // numeric suffix and exact extension keeps this aligned with the upload check.
     expect(expression).toContain("item.stem");
-    expect(expression).toContain("text.includes(item.stem + '(')");
+    expect(expression).toContain("const duplicate = suffix.match(");
+    expect(expression).toContain("duplicate?.[1] === item.extension");
     // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
     // see at least as many chip-shaped nodes (each with a Remove affordance) as we
     // uploaded.
