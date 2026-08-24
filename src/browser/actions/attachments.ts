@@ -14,7 +14,10 @@ export function buildCollisionRenamedAttachmentPattern(expectedName: string): Re
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const stem = escape(normalizedExpected.slice(0, extensionIndex));
   const extension = escape(normalizedExpected.slice(extensionIndex + 1));
-  return new RegExp(`^${stem}(?:\\([0-9-]+\\))?\\.${extension}$`, "i");
+  return new RegExp(
+    `(?:^|[^a-z0-9._-])${stem}(?:\\([0-9-]+\\))?\\.${extension}(?:$|[^a-z0-9._-])`,
+    "i",
+  );
 }
 
 export async function uploadAttachmentFile(

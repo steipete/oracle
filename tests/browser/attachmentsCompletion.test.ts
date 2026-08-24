@@ -30,6 +30,10 @@ describe("collision-renamed attachment names", () => {
     ["document.md", "document(20260818-145702).md"],
     ["document.md", "document.md"],
     ["a+b.jpg", "a+b(2).jpg"],
+    ["01.jpg", "remove file 1: 01.jpg"],
+    ["01.jpg", "remove file 2: 01(1).jpg"],
+    ["01.jpg", "remove file 2: 01(5).jpg"],
+    ["document.md", "remove file 1: document(20260818-145702).md"],
   ])("matches %s to %s", (expectedName, actualName) => {
     expect(buildCollisionPattern(expectedName)?.test(actualName) ?? false).toBe(true);
   });
@@ -37,6 +41,13 @@ describe("collision-renamed attachment names", () => {
   test.each([
     ["01.jpg", "010.jpg"],
     ["01.jpg", "02(5).jpg"],
+    ["01.jpg", "remove file 1: 001.jpg"],
+    ["01.jpg", "remove file 1: x01.jpg"],
+    ["01.jpg", "remove file 1: 01.jpeg"],
+    ["01.jpg", "remove file 1: photo01.jpg"],
+    ["attachments-bundle.txt", "not-attachments-bundle.txt"],
+    ["report.pdf", "remove file 1: my_report.pdf"],
+    ["report.pdf", "remove file 1: report.pdf.bak"],
   ])("does not match %s to %s", (expectedName, actualName) => {
     expect(buildCollisionPattern(expectedName)?.test(actualName) ?? false).toBe(false);
   });
