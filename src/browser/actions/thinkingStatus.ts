@@ -19,18 +19,6 @@ export interface ThinkingStatusSnapshot {
 interface ThinkingStatusMonitorOptions {
   intervalMs?: number;
   now?: () => number;
-  /**
-   * Called once per stall epoch when the thinking status fingerprint has not
-   * changed for at least stallThresholdMs. Resets on any fingerprint change so
-   * a recovered stream can stall-notify again.
-   */
-  onStall?: (unchangedMs: number) => void;
-  /**
-   * How long (ms) without a fingerprint change before onStall fires.
-   * Defaults to THINKING_STALE_HINT_MS (10 min). Pass the session's
-   * browserConfig.timeoutMs so no new constant is needed.
-   */
-  stallThresholdMs?: number;
 }
 
 export function startThinkingStatusMonitor(
@@ -43,15 +31,8 @@ export function startThinkingStatusMonitor(
     return () => {};
   }
   const now = options.now ?? Date.now;
-  const stallThresholdMs =
-    typeof options.stallThresholdMs === "number" &&
-    Number.isFinite(options.stallThresholdMs) &&
-    options.stallThresholdMs > 0
-      ? options.stallThresholdMs
-      : THINKING_STALE_HINT_MS;
   let stopped = false;
   let pending = false;
-  let stalledNotified = false;
   let lastFingerprint: string | null = null;
   let lastChangedAt = now();
   const startedAt = now();
@@ -72,17 +53,11 @@ export function startThinkingStatusMonitor(
         if (fingerprint !== lastFingerprint) {
           lastFingerprint = fingerprint;
           lastChangedAt = tickAt;
-          stalledNotified = false; // reset so a recovered stream can stall-notify again
         }
         if (stopped) {
           return;
         }
-        const unchangedMs = tickAt - lastChangedAt;
-        logger(formatThinkingLog(startedAt, tickAt, snapshot, "", unchangedMs));
-        if (!stalledNotified && unchangedMs >= stallThresholdMs) {
-          stalledNotified = true;
-          options.onStall?.(unchangedMs);
-        }
+        logger(formatThinkingLog(startedAt, tickAt, snapshot, "", tickAt - lastChangedAt));
       } else {
         logger(formatThinkingWaitingLog(startedAt, tickAt));
       }
