@@ -83,6 +83,64 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("'思考量'");
   });
 
+  // The tests above only pin each LEVEL_TOKENS/EFFORT_WORDS/ADVANCED_WORDS entry's
+  // leading word(s) as a stand-in for "the array still starts the same way" — a word
+  // dropped from the *middle* or *end* of any of these lists (German/Chinese/Japanese/
+  // Spanish/Portuguese/Italian/Dutch/Polish variants added across #377, #405, and
+  // others) would pass every test above unnoticed. Assert every word in every list so
+  // that kind of drift fails here instead of only surfacing as a live-account report —
+  // see docs/browser-mode.md's "self check" note.
+  it("keeps every LEVEL_TOKENS locale word for every tier", () => {
+    const levelWords: Record<Exclude<ThinkingTimeLevel, "pro">, string[]> = {
+      light: ["light", "instant", "sofort", "leicht", "最速", "轻", "极速"],
+      standard: ["standard", "medium", "mittel", "中程度", "标准", "中"],
+      extended: ["extended", "high", "hoch", "erweitert", "高い", "扩展", "深度", "加强", "高"],
+      "extra-high": ["extra high", "sehr hoch", "非常に高い", "极高"],
+      heavy: ["heavy", "schwer", "重度", "加重"],
+    };
+    for (const [level, words] of Object.entries(levelWords)) {
+      const expression = buildThinkingTimeExpressionForTest(level as ThinkingTimeLevel);
+      for (const word of words) {
+        expect(expression, `${level} should still list '${word}'`).toContain(`'${word}'`);
+      }
+    }
+  });
+
+  it("keeps every EFFORT_WORDS locale word", () => {
+    const expression = buildThinkingTimeExpressionForTest();
+    for (const word of [
+      "effort",
+      "aufwand",
+      "强度",
+      "努力",
+      "推論レベル",
+      "思考量",
+      "esfuerzo",
+      "esforco",
+      "sforzo",
+      "inspanning",
+      "wysilek",
+    ]) {
+      expect(expression, `EFFORT_WORDS should still list '${word}'`).toContain(`'${word}'`);
+    }
+  });
+
+  it("keeps every ADVANCED_WORDS locale word", () => {
+    const expression = buildThinkingTimeExpressionForTest();
+    for (const word of [
+      "advanced",
+      "erweitert",
+      "高级",
+      "詳細設定",
+      "詳細表示",
+      "avanzado",
+      "avancado",
+      "avance",
+    ]) {
+      expect(expression, `ADVANCED_WORDS should still list '${word}'`).toContain(`'${word}'`);
+    }
+  });
+
   it("infers target model kind with token matching", () => {
     expect(inferThinkingTargetModelKindForTest("gpt-5.5-pro")).toBe("pro");
     expect(inferThinkingTargetModelKindForTest("Thinking 5.5")).toBe("thinking");
