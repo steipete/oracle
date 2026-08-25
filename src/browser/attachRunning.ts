@@ -1,6 +1,7 @@
 import type { BrowserLogger, ResolvedBrowserConfig } from "./types.js";
 import {
   discoverDevToolsActivePortCandidates,
+  formatWebSocketHost,
   resolveDevToolsActivePortDiscoveryRoots,
   type DevToolsActivePortCandidate,
 } from "./detect.js";
@@ -44,7 +45,7 @@ export async function resolveAttachRunningConnection(
     }
     const discoveryRoots = resolveDevToolsActivePortDiscoveryRoots();
     throw new Error(
-      `No running browser matched ${host}:${port}. DevToolsActivePort discovery searched ${discoveryRoots.join(", ") || "no roots"}, and endpoint probe http://${host}:${port}/json/version failed: ${probe.error}.`,
+      `No running browser matched ${host}:${port}. DevToolsActivePort discovery searched ${discoveryRoots.join(", ") || "no roots"}, and endpoint probe http://${formatWebSocketHost(host)}:${port}/json/version failed: ${probe.error}.`,
     );
   }
   const candidate = candidates[0];
@@ -67,17 +68,18 @@ async function probeDevToolsBrowserWSEndpoint({
   port: number;
   attempts?: number;
   timeoutMs?: number;
-}): Promise<
-  | { ok: true; browserWSEndpoint: string }
-  | { ok: false; error: string }
-> {
-  const versionUrl = `http://${host}:${port}/json/version`;
+}): Promise<{ ok: true; browserWSEndpoint: string } | { ok: false; error: string }> {
+  const versionUrl = `http://${formatWebSocketHost(host)}:${port}/json/version`;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const response = await fetch(versionUrl, { signal: controller.signal });
-      clearTimeout(timeout);
+      let response: Response;
+      try {
+        response = await fetch(versionUrl, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
