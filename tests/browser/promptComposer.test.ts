@@ -364,6 +364,81 @@ describe("promptComposer", () => {
     );
 
     expect(onPromptSubmitted).toHaveBeenCalledTimes(1);
+    expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+  });
+
+  test("falls back to Enter when a trusted click leaves the exact prompt in the composer", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("document.readyState")) {
+            return { result: { value: { ready: true, composer: true, fileInput: false } } };
+          }
+          if (expression.includes("focused: true")) {
+            return { result: { value: { focused: true } } };
+          }
+          if (expression.includes("editorText")) {
+            return {
+              result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
+            };
+          }
+          if (expression.includes("button.scrollIntoView")) {
+            return { result: { value: { status: "clicked" } } };
+          }
+          if (expression.includes("oracle-post-click-composer-probe")) {
+            return { result: { value: true } };
+          }
+          if (expression.includes("input.focus()")) {
+            return { result: { value: true } };
+          }
+          return {
+            result: {
+              value: {
+                baseline: 0,
+                turnsCount: 1,
+                userMatched: true,
+                prefixMatched: false,
+                lastMatched: true,
+                hasNewTurn: true,
+                stopVisible: true,
+                assistantVisible: false,
+                composerCleared: true,
+                inConversation: true,
+              },
+            },
+          };
+        }),
+      };
+      const input = {
+        insertText: vi.fn(),
+        dispatchKeyEvent: vi.fn(),
+      };
+      const logger = Object.assign(vi.fn(), { verbose: false });
+
+      const result = submitPrompt(
+        {
+          runtime: runtime as never,
+          input: input as never,
+          baselineTurns: 0,
+        },
+        "hello",
+        logger as never,
+      );
+      await vi.advanceTimersByTimeAsync(2_600);
+
+      await expect(result).resolves.toBe(1);
+      expect(input.dispatchKeyEvent).toHaveBeenCalledTimes(2);
+      expect(input.dispatchKeyEvent).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ type: "keyDown", key: "Enter" }),
+      );
+      expect(logger).toHaveBeenCalledWith(
+        "Trusted click left prompt in composer; submitted via Enter key fallback",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("waits for a delayed trusted click without issuing a second send", async () => {

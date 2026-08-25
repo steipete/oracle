@@ -269,6 +269,31 @@ describe("attachment completion fallbacks", () => {
     await assertion;
     useRealTime();
   });
+
+  test("waitForAttachmentCompletion rejects a count-only label without exact attachment evidence", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: false,
+            attachedNames: [],
+            inputNames: [],
+            fileCount: 3,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 800, ["oracle-feature.txt"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+    useRealTime();
+  });
 });
 
 describe("sent turn attachment verification", () => {

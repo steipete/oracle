@@ -223,19 +223,15 @@ export async function submitPrompt(
     deps?.page,
   );
   if (!clicked) {
-    await input.dispatchKeyEvent({
-      type: "keyDown",
-      ...ENTER_KEY_EVENT,
-      text: ENTER_KEY_TEXT,
-      unmodifiedText: ENTER_KEY_TEXT,
-    });
-    await input.dispatchKeyEvent({
-      type: "keyUp",
-      ...ENTER_KEY_EVENT,
-    });
+    await dispatchEnterKey(input);
     logger("Submitted prompt via Enter key");
   } else {
     logger("Clicked send button");
+    if (await trustedClickLeftPromptInComposer(runtime, prompt)) {
+      await focusPromptForEnterFallback(runtime);
+      await dispatchEnterKey(input);
+      logger("Trusted click left prompt in composer; submitted via Enter key fallback");
+    }
   }
   await deps.onPromptSubmitted?.();
 
@@ -248,6 +244,93 @@ export async function submitPrompt(
     logger,
     deps.baselineTurns ?? undefined,
   );
+}
+
+async function dispatchEnterKey(Input: ChromeClient["Input"]): Promise<void> {
+  await Input.dispatchKeyEvent({
+    type: "keyDown",
+    ...ENTER_KEY_EVENT,
+    text: ENTER_KEY_TEXT,
+    unmodifiedText: ENTER_KEY_TEXT,
+  });
+  await Input.dispatchKeyEvent({
+    type: "keyUp",
+    ...ENTER_KEY_EVENT,
+  });
+}
+
+async function trustedClickLeftPromptInComposer(
+  Runtime: ChromeClient["Runtime"],
+  prompt: string,
+  timeoutMs = 2_000,
+): Promise<boolean> {
+  const expectedPrompt = prompt.trim();
+  if (!expectedPrompt) return false;
+  const expectedLiteral = JSON.stringify(expectedPrompt);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
+  const deadline = Date.now() + timeoutMs;
+  let observedExpectedPrompt = false;
+
+  while (Date.now() < deadline) {
+    const probe = await Runtime.evaluate({
+      expression: `(() => {
+        /* oracle-post-click-composer-probe */
+        const inputSelectors = ${inputSelectorsLiteral};
+        const expected = ${expectedLiteral};
+        const readValue = (node) => {
+          if (!node) return '';
+          if (node instanceof HTMLTextAreaElement) return node.value ?? '';
+          return node.innerText ?? '';
+        };
+        const isVisible = (node) => {
+          if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const candidates = inputSelectors
+          .map((selector) => document.querySelector(selector))
+          .filter((node) => Boolean(node));
+        const active = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+        return String(readValue(active)).trim() === expected;
+      })()`,
+      returnByValue: true,
+    }).catch(() => undefined);
+    const promptStillPresent = probe?.result?.value === true;
+    if (!promptStillPresent) return false;
+    observedExpectedPrompt = true;
+    await delay(100);
+  }
+  return observedExpectedPrompt;
+}
+
+async function focusPromptForEnterFallback(Runtime: ChromeClient["Runtime"]): Promise<void> {
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
+  await Runtime.evaluate({
+    expression: `(() => {
+      const inputSelectors = ${inputSelectorsLiteral};
+      const isVisible = (node) => {
+        if (!node || typeof node.getBoundingClientRect !== 'function') return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const candidates = inputSelectors
+        .map((selector) => document.querySelector(selector))
+        .filter((node) => Boolean(node));
+      const input = candidates.find((node) => isVisible(node)) || candidates[0] || null;
+      if (!input || typeof input.focus !== 'function') return false;
+      input.focus();
+      const selection = input.ownerDocument?.getSelection?.();
+      if (selection && !(input instanceof HTMLTextAreaElement)) {
+        const range = input.ownerDocument.createRange();
+        range.selectNodeContents(input);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      return true;
+    })()`,
+    returnByValue: true,
+  }).catch(() => undefined);
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {

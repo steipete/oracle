@@ -329,7 +329,7 @@ export async function uploadAttachmentFile(
           ? Array.from(fileCountScope.querySelectorAll(fileCountSelectors))
           : [];
         const fileCount = collectFileCount(localFileNodes);
-        const hasAttachmentSignal = localCandidates.length > 0 || inputCount > 0 || fileCount > 0 || uploading;
+        const hasAttachmentSignal = localCandidates.length > 0 || inputCount > 0 || uploading;
         if (!uiMatch && rootTextRaw && hasAttachmentSignal && matchesExpected(rootTextRaw)) {
           uiMatch = true;
         }
@@ -450,30 +450,12 @@ export async function uploadAttachmentFile(
     logger(`Attachment already present: ${path.basename(attachment.path)}`);
     return true;
   }
-  const isExpectedSatisfied = (signals: {
-    fileCount?: number;
-    chipCount?: number;
-    ui?: boolean;
-  }): boolean => {
+  const isExpectedSatisfied = (signals: { chipCount?: number; ui?: boolean }): boolean => {
     if (expectedCount <= 0) return false;
-    const fileCount = typeof signals.fileCount === "number" ? signals.fileCount : 0;
     const chipCount = typeof signals.chipCount === "number" ? signals.chipCount : 0;
-    if (fileCount >= expectedCount) return true;
     return Boolean(signals.ui && chipCount >= expectedCount);
   };
-  const initialInputSatisfied =
-    expectedCount > 0 ? initialSignals.inputCount >= expectedCount : Boolean(initialSignals.input);
-  if (
-    expectedCount > 0 &&
-    (initialSignals.fileCount >= expectedCount || initialSignals.inputCount >= expectedCount)
-  ) {
-    const satisfiedCount = Math.max(initialSignals.fileCount, initialSignals.inputCount);
-    logger(
-      `Attachment already present: composer shows ${satisfiedCount} file${satisfiedCount === 1 ? "" : "s"}`,
-    );
-    return true;
-  }
-  if (initialInputSatisfied || initialSignals.input) {
+  if (initialSignals.input) {
     logger(`Attachment already queued in file input: ${path.basename(attachment.path)}`);
     return true;
   }
@@ -723,8 +705,6 @@ export async function uploadAttachmentFile(
     ? candidateValue.baselineChips
     : [];
   const baselineUploading = Boolean(candidateValue?.baselineUploading);
-  const baselineFileCount =
-    typeof candidateValue?.baselineFileCount === "number" ? candidateValue.baselineFileCount : 0;
   const baselineInputCount =
     typeof candidateValue?.baselineInputCount === "number" ? candidateValue.baselineInputCount : 0;
   const serializeChips = (chips: Array<Record<string, string>>): string =>
@@ -758,8 +738,6 @@ export async function uploadAttachmentFile(
     (typeof signals.inputCount === "number" ? signals.inputCount : 0) > baselineInputCount;
   const hasUploadDelta = (signals: { uploading?: boolean }): boolean =>
     Boolean(signals.uploading && !baselineUploading);
-  const hasFileCountDelta = (signals: { fileCount?: number }): boolean =>
-    (typeof signals.fileCount === "number" ? signals.fileCount : 0) > baselineFileCount;
   const waitForAttachmentUiSignal = async (timeoutMs: number) => {
     const deadline = Date.now() + timeoutMs;
     let sawInputSignal = false;
@@ -776,7 +754,6 @@ export async function uploadAttachmentFile(
       chipDelta: boolean;
       inputDelta: boolean;
       uploadDelta: boolean;
-      fileCountDelta: boolean;
       expectedSatisfied: boolean;
     } | null = null;
     while (Date.now() < deadline) {
@@ -784,7 +761,6 @@ export async function uploadAttachmentFile(
       const chipDelta = hasChipDelta(signals);
       const inputDelta = hasInputDelta(signals) || signals.input;
       const uploadDelta = hasUploadDelta(signals);
-      const fileCountDelta = hasFileCountDelta(signals);
       const expectedSatisfied = isExpectedSatisfied(signals);
       if (inputDelta) {
         sawInputSignal = true;
@@ -794,10 +770,9 @@ export async function uploadAttachmentFile(
         chipDelta,
         inputDelta: sawInputSignal,
         uploadDelta,
-        fileCountDelta,
         expectedSatisfied,
       };
-      if (signals.ui || chipDelta || uploadDelta || fileCountDelta || expectedSatisfied) {
+      if (signals.ui || chipDelta || uploadDelta || expectedSatisfied) {
         return latest;
       }
       await delay(250);
@@ -983,8 +958,7 @@ export async function uploadAttachmentFile(
         queuedSignals.ui ||
         isExpectedSatisfied(queuedSignals) ||
         hasChipDelta(queuedSignals) ||
-        hasUploadDelta(queuedSignals) ||
-        hasFileCountDelta(queuedSignals)
+        hasUploadDelta(queuedSignals)
       ) {
         confirmedAttachment = true;
         break;
@@ -1052,10 +1026,7 @@ export async function uploadAttachmentFile(
           Boolean(signalResult?.inputDelta) ||
           inputHasFile;
         const uiDirect = Boolean(signalResult?.signals?.ui) || expectedSatisfied;
-        const uiDelta =
-          Boolean(signalResult?.chipDelta) ||
-          Boolean(signalResult?.uploadDelta) ||
-          Boolean(signalResult?.fileCountDelta);
+        const uiDelta = Boolean(signalResult?.chipDelta) || Boolean(signalResult?.uploadDelta);
         if (uiDirect || (uiDelta && inputEvidence)) {
           return { status: "ui" as const };
         }
@@ -1063,10 +1034,7 @@ export async function uploadAttachmentFile(
         if (
           postSignals.ui ||
           isExpectedSatisfied(postSignals) ||
-          ((hasChipDelta(postSignals) ||
-            hasUploadDelta(postSignals) ||
-            hasFileCountDelta(postSignals)) &&
-            inputEvidence)
+          ((hasChipDelta(postSignals) || hasUploadDelta(postSignals)) && inputEvidence)
         ) {
           return { status: "ui" as const };
         }
@@ -1184,8 +1152,7 @@ export async function uploadAttachmentFile(
         lateSignals.ui ||
         isExpectedSatisfied(lateSignals) ||
         hasChipDelta(lateSignals) ||
-        hasUploadDelta(lateSignals) ||
-        hasFileCountDelta(lateSignals)
+        hasUploadDelta(lateSignals)
       ) {
         confirmedAttachment = true;
         break;
@@ -1599,7 +1566,7 @@ export async function waitForAttachmentCompletion(
       ? Array.from(fileCountScope.querySelectorAll(fileCountSelectors))
       : [];
     const fileCount = collectFileCount(localFileCountNodes);
-    const filesAttached = attachedNames.length > 0 || fileCount > 0;
+    const filesAttached = attachedNames.length > 0;
     return {
       state: button ? (disabled ? 'disabled' : 'ready') : 'missing',
       uploading,
@@ -1657,14 +1624,12 @@ export async function waitForAttachmentCompletion(
         .map((name) => name.toLowerCase().replace(/\s+/g, " ").trim())
         .filter(Boolean);
       const fileCount = typeof value.fileCount === "number" ? value.fileCount : 0;
-      const fileCountSatisfied =
-        expectedNormalized.length > 0 && fileCount >= expectedNormalized.length;
       const matchesExpected = (expected: string): boolean => {
         const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
         return attachedNames.some((raw) => matchesAttachmentReference(raw, baseName));
       };
       const missing = expectedNormalized.filter((expected) => !matchesExpected(expected));
-      if (missing.length === 0 || fileCountSatisfied) {
+      if (missing.length === 0) {
         const stableThresholdMs = value.uploading ? 3000 : 1500;
         if (attachmentMatchSince === null) {
           attachmentMatchSince = Date.now();
@@ -1675,11 +1640,11 @@ export async function waitForAttachmentCompletion(
         }
         // Don't treat disabled button as complete - wait for it to become 'ready'.
         // The spinner detection is unreliable, so a disabled button likely means upload is in progress.
-        if (value.state === "missing" && (value.filesAttached || fileCountSatisfied)) {
+        if (value.state === "missing" && value.filesAttached) {
           return;
         }
         // If files are attached but button isn't ready yet, give it more time but don't fail immediately.
-        if (value.filesAttached || fileCountSatisfied) {
+        if (value.filesAttached) {
           await delay(500);
           continue;
         }
@@ -1711,14 +1676,10 @@ export async function waitForAttachmentCompletion(
 
       // Fallback: if the file input has the expected names, allow progress once that condition is stable.
       // Some ChatGPT surfaces only render the filename after sending the message.
-      const inputMissing = expectedNormalized.filter((expected) => {
-        const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-        return !inputNames.some((raw) => matchesAttachmentReference(raw, baseName));
-      });
       // Don't include 'disabled' - a disabled button likely means upload is still in progress.
       const inputStateOk = value.state === "ready" || value.state === "missing";
-      const inputSeenNow = inputMissing.length === 0 || fileCountSatisfied;
-      const inputEvidenceOk = Boolean(value.filesAttached) || fileCountSatisfied;
+      const inputSeenNow = inputOnlyNamesSatisfied;
+      const inputEvidenceOk = inputSeenNow;
       const stableThresholdMs = value.uploading ? 3000 : 1500;
       if (inputSeenNow && inputStateOk && inputEvidenceOk) {
         if (inputMatchSince === null) {
@@ -2050,81 +2011,11 @@ export async function waitForAttachmentVisible(
       return { found: true, source: 'attachments' };
     }
 
-    const removeButtons = Array.from(
-      (composerRoot ?? document).querySelectorAll('[aria-label*="Remove"],[aria-label*="remove"]'),
-    );
-    const visibleRemove = removeButtons.some((btn) => {
-      if (!(btn instanceof HTMLElement)) return false;
-      const rect = btn.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return false;
-      const style = window.getComputedStyle(btn);
-      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-    });
-    if (visibleRemove) {
-      return { found: true, source: 'remove-button' };
-    }
-
     const cardTexts = Array.from(composerRoot.querySelectorAll('[aria-label*="Remove"]')).map((btn) =>
       btn?.parentElement?.parentElement?.innerText?.toLowerCase?.() ?? '',
     );
     if (cardTexts.some(matchesExpectedFileName)) {
       return { found: true, source: 'attachment-cards' };
-    }
-
-    const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
-    const fileCountNodes = Array.from(composerRoot.querySelectorAll('button,span,div,[aria-label],[title]'));
-    let fileCount = 0;
-    for (const node of fileCountNodes) {
-      if (!(node instanceof HTMLElement)) continue;
-      if (node.matches('textarea,input,[contenteditable="true"]')) continue;
-      const dataTestId = node.getAttribute?.('data-testid') ?? '';
-      const aria = node.getAttribute?.('aria-label') ?? '';
-      const title = node.getAttribute?.('title') ?? '';
-      const tooltip =
-        node.getAttribute?.('data-tooltip') ?? node.getAttribute?.('data-tooltip-content') ?? '';
-      const text = node.textContent ?? '';
-      const parent = node.parentElement;
-      const parentText = parent?.textContent ?? '';
-      const parentAria = parent?.getAttribute?.('aria-label') ?? '';
-      const parentTitle = parent?.getAttribute?.('title') ?? '';
-      const parentTooltip =
-        parent?.getAttribute?.('data-tooltip') ?? parent?.getAttribute?.('data-tooltip-content') ?? '';
-      const parentTestId = parent?.getAttribute?.('data-testid') ?? '';
-      const candidates = [
-        text,
-        aria,
-        title,
-        tooltip,
-        dataTestId,
-        parentText,
-        parentAria,
-        parentTitle,
-        parentTooltip,
-        parentTestId,
-      ];
-      let hasFileHint = false;
-      for (const raw of candidates) {
-        if (!raw) continue;
-        const lowered = String(raw).toLowerCase();
-        if (lowered.includes('file') || lowered.includes('attachment')) {
-          hasFileHint = true;
-          break;
-        }
-      }
-      if (!hasFileHint) continue;
-      for (const raw of candidates) {
-        if (!raw) continue;
-        const match = String(raw).toLowerCase().match(countRegex);
-        if (match) {
-          const count = Number(match[1]);
-          if (Number.isFinite(count)) {
-            fileCount = Math.max(fileCount, count);
-          }
-        }
-      }
-    }
-    if (fileCount > 0) {
-      return { found: true, source: 'file-count' };
     }
 
     return { found: false };
@@ -2188,77 +2079,6 @@ async function waitForAttachmentAnchored(
     );
     if (cards.some(matchesExpected)) {
       return { found: true, text: cards.find(matchesExpected) };
-    }
-    const countRegex = /(?:^|\\b)(\\d+)\\s+(?:files?|attachments?)\\b/;
-    const fileCountNodes = (() => {
-      const nodes = [];
-      const seen = new Set();
-      const add = (node) => {
-        if (!node || seen.has(node)) return;
-        seen.add(node);
-        nodes.push(node);
-      };
-      const root =
-        document.querySelector('[data-testid*="composer"]') || document.querySelector('form') || document.body;
-      const localNodes = root ? Array.from(root.querySelectorAll('button,span,div,[aria-label],[title]')) : [];
-      for (const node of localNodes) add(node);
-      for (const node of Array.from(document.querySelectorAll('button,span,div,[aria-label],[title]'))) {
-        add(node);
-      }
-      return nodes;
-    })();
-    let fileCount = 0;
-    for (const node of fileCountNodes) {
-      if (!(node instanceof HTMLElement)) continue;
-      if (node.matches('textarea,input,[contenteditable="true"]')) continue;
-      const dataTestId = node.getAttribute?.('data-testid') ?? '';
-      const aria = node.getAttribute?.('aria-label') ?? '';
-      const title = node.getAttribute?.('title') ?? '';
-      const tooltip =
-        node.getAttribute?.('data-tooltip') ?? node.getAttribute?.('data-tooltip-content') ?? '';
-      const text = node.textContent ?? '';
-      const parent = node.parentElement;
-      const parentText = parent?.textContent ?? '';
-      const parentAria = parent?.getAttribute?.('aria-label') ?? '';
-      const parentTitle = parent?.getAttribute?.('title') ?? '';
-      const parentTooltip =
-        parent?.getAttribute?.('data-tooltip') ?? parent?.getAttribute?.('data-tooltip-content') ?? '';
-      const parentTestId = parent?.getAttribute?.('data-testid') ?? '';
-      const candidates = [
-        text,
-        aria,
-        title,
-        tooltip,
-        dataTestId,
-        parentText,
-        parentAria,
-        parentTitle,
-        parentTooltip,
-        parentTestId,
-      ];
-      let hasFileHint = false;
-      for (const raw of candidates) {
-        if (!raw) continue;
-        const lowered = String(raw).toLowerCase();
-        if (lowered.includes('file') || lowered.includes('attachment')) {
-          hasFileHint = true;
-          break;
-        }
-      }
-      if (!hasFileHint) continue;
-      for (const raw of candidates) {
-        if (!raw) continue;
-        const match = String(raw).toLowerCase().match(countRegex);
-        if (match) {
-          const count = Number(match[1]);
-          if (Number.isFinite(count)) {
-            fileCount = Math.max(fileCount, count);
-          }
-        }
-      }
-    }
-    if (fileCount > 0) {
-      return { found: true, text: 'file-count' };
     }
     return { found: false };
   })()`;

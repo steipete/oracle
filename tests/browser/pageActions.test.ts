@@ -1870,10 +1870,10 @@ describe("uploadAttachmentFile", () => {
     expect(logger).toHaveBeenCalledWith(expect.stringMatching(/already queued/i));
   });
 
-  test("skips upload when file count already satisfies expected count", async () => {
+  test("does not skip upload for an unrelated file-count label", async () => {
     logger.mockClear();
     const dom = {
-      getDocument: vi.fn(),
+      getDocument: vi.fn().mockRejectedValue(new Error("UPLOAD_PATH_REACHED")),
       querySelector: vi.fn(),
       setFileInputFiles: vi.fn(),
     } as unknown as ChromeClient["DOM"];
@@ -1906,17 +1906,16 @@ describe("uploadAttachmentFile", () => {
         logger,
         { expectedCount: 1 },
       ),
-    ).resolves.toBe(true);
+    ).rejects.toThrow("UPLOAD_PATH_REACHED");
 
-    expect(dom.getDocument).not.toHaveBeenCalled();
+    expect(dom.getDocument).toHaveBeenCalledTimes(1);
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
-    expect(logger).toHaveBeenCalledWith(expect.stringMatching(/composer shows 1 file/i));
   });
 
-  test("skips upload when input count already satisfies expected count", async () => {
+  test("does not skip upload for an unnamed file-input count", async () => {
     logger.mockClear();
     const dom = {
-      getDocument: vi.fn(),
+      getDocument: vi.fn().mockRejectedValue(new Error("UPLOAD_PATH_REACHED")),
       querySelector: vi.fn(),
       setFileInputFiles: vi.fn(),
     } as unknown as ChromeClient["DOM"];
@@ -1949,11 +1948,10 @@ describe("uploadAttachmentFile", () => {
         logger,
         { expectedCount: 1 },
       ),
-    ).resolves.toBe(true);
+    ).rejects.toThrow("UPLOAD_PATH_REACHED");
 
-    expect(dom.getDocument).not.toHaveBeenCalled();
+    expect(dom.getDocument).toHaveBeenCalledTimes(1);
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
-    expect(logger).toHaveBeenCalledWith(expect.stringMatching(/composer shows 1 file/i));
   });
 
   test("avoids retrying other inputs once upload shows progress", async () => {
@@ -2314,9 +2312,8 @@ describe("uploadAttachmentFile", () => {
     expect(dom.setFileInputFiles).toHaveBeenCalledWith({ nodeId: 2, files: [] });
   });
 
-  test("uses file-count signal to avoid retrying alternate inputs", async () => {
+  test("does not use a file-count-only signal as upload confirmation", async () => {
     logger.mockClear();
-    vi.spyOn(attachments, "waitForAttachmentVisible").mockResolvedValue(undefined);
     let readSignalCalls = 0;
     const dom = {
       getDocument: vi.fn().mockResolvedValue({ root: { nodeId: 1 } }),
@@ -2375,10 +2372,10 @@ describe("uploadAttachmentFile", () => {
           };
         }
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
-          return { result: { value: { found: true } } };
+          return { result: { value: { found: false } } };
         }
         if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
-          return { result: { value: { found: true } } };
+          return { result: { value: { found: false } } };
         }
         return { result: { value: null } };
       }),
@@ -2390,13 +2387,14 @@ describe("uploadAttachmentFile", () => {
       { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
       logger,
     );
+    const assertion = expect(uploadPromise).rejects.toThrow(/Attachment did not register/i);
     await Promise.resolve();
     await vi.runAllTimersAsync();
-    await expect(uploadPromise).resolves.toBe(true);
+    await assertion;
     vi.useRealTimers();
 
-    expect(dom.querySelector).toHaveBeenCalledTimes(1);
-    expect(dom.setFileInputFiles).toHaveBeenCalledTimes(1);
+    expect(dom.querySelector).toHaveBeenCalledTimes(2);
+    expect(dom.setFileInputFiles).toHaveBeenCalled();
 
     const fileCountExpressions = (
       runtime.evaluate as unknown as { mock: { calls: Array<Array<{ expression?: string }>> } }
@@ -2439,7 +2437,8 @@ describe("waitForAttachmentVisible", () => {
     const capturedExpression = String(call?.expression ?? "");
     expect(capturedExpression).toContain("source: 'file-input'");
     expect(capturedExpression).toContain('input[type="file"]');
-    expect(capturedExpression).toContain("attachments?");
+    expect(capturedExpression).not.toContain("source: 'file-count'");
+    expect(capturedExpression).not.toContain("visibleRemove");
   });
 });
 
