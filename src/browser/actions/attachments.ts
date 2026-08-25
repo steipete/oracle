@@ -17,7 +17,14 @@ export function matchesAttachmentReference(value: unknown, expectedName: string)
   const text = normalize(value);
   const normalizedExpected = normalize(expectedName);
   if (!text || !normalizedExpected) return false;
-  if (text.includes(normalizedExpected)) return true;
+
+  const escapeRegex = (candidate: string): string =>
+    candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const exactName = new RegExp(
+    `(?:^|[^a-z0-9._-])${escapeRegex(normalizedExpected)}(?=$|[^a-z0-9._-])`,
+    "i",
+  );
+  if (exactName.test(text)) return true;
 
   const extensionMatch = normalizedExpected.match(/(\.[a-z0-9]{1,10})$/i);
   const expectedExtension = extensionMatch?.[1] ?? "";
@@ -28,8 +35,6 @@ export function matchesAttachmentReference(value: unknown, expectedName: string)
   // ChatGPT renames repeated uploads as name(2).ext. Match that exact shape even
   // for short stems, while keeping filename boundaries and extension equality.
   if (expectedStem && expectedExtension) {
-    const escapeRegex = (candidate: string): string =>
-      candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const duplicateName = new RegExp(
       `(?:^|[^a-z0-9._-])${escapeRegex(expectedStem)}\\s*\\([0-9-]+\\)${escapeRegex(
         expectedExtension,
@@ -39,16 +44,26 @@ export function matchesAttachmentReference(value: unknown, expectedName: string)
     if (duplicateName.test(text)) return true;
   }
 
-  if (expectedStem.length >= 6 && text.includes(expectedStem)) {
-    if (!expectedExtension) return true;
+  if (expectedExtension && expectedStem.length >= 6 && text.includes(expectedStem)) {
     let offset = 0;
     let sawReferenceWithoutExtension = false;
     while (offset < text.length) {
       const index = text.indexOf(expectedStem, offset);
       if (index < 0) break;
+      const previous = text[index - 1] ?? "";
+      if (previous && /[a-z0-9._-]/i.test(previous)) {
+        offset = index + expectedStem.length;
+        continue;
+      }
       const suffix = text.slice(index + expectedStem.length);
-      const visibleExtension = suffix.match(/^\s*(?:\([0-9-]+\))?(\.[a-z0-9]{1,10})\b/i)?.[1] ?? "";
-      if (!visibleExtension) {
+      const directExtension = suffix.match(/^\s*(?:\([0-9-]+\))?(\.[a-z0-9]{1,10})\b/i)?.[1] ?? "";
+      const ellipsizedExtensionMatch = suffix.match(
+        /^\s*(?:\([0-9-]+\))?\s*(?:…|\.{3})\s*\.?([a-z0-9]{1,10})\b/i,
+      );
+      const visibleExtension =
+        directExtension || (ellipsizedExtensionMatch ? `.${ellipsizedExtensionMatch[1]}` : "");
+      const nextCharacter = suffix[0] ?? "";
+      if (!visibleExtension && (!nextCharacter || !/[a-z0-9._-]/i.test(nextCharacter))) {
         sawReferenceWithoutExtension = true;
       } else if (visibleExtension === expectedExtension) {
         return true;
