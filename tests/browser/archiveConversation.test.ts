@@ -170,3 +170,57 @@ describe("archiveChatGptConversation", () => {
     expect(expression).toContain("アーカイブしました");
   });
 });
+
+// Every locale label this matcher relies on, one line per literal. A future PR that
+// silently drops or renames one of these (while adding a new locale, for example)
+// fails here instead of only showing up as a live-account regression report — see
+// docs/browser-mode.md's "self check" ask and the localized-controls history in #407/#405.
+describe("archive expression locale label inventory", () => {
+  const expression = buildArchiveConversationExpressionForTest();
+
+  test("conversation menu ('more options') labels are present", () => {
+    for (const label of [
+      "more",
+      "conversation options",
+      "open menu",
+      "więcej",
+      "opcje",
+      "その他",
+      "会話オプション",
+    ]) {
+      expect(expression).toContain(label);
+    }
+  });
+
+  test("archive menu-item and confirmation-button labels are present", () => {
+    for (const label of [
+      "archive",
+      "archiwizuj",
+      "アーカイブ",
+      "アーカイブする",
+      "archive conversation",
+    ]) {
+      expect(expression).toContain(label);
+    }
+  });
+
+  test("unarchive/restore exclusion labels are present", () => {
+    for (const label of ["unarchive", "restore", "przywróć", "przywroc", "アーカイブを解除"]) {
+      expect(expression).toContain(label);
+    }
+  });
+
+  test("post-archive confirmation toast labels are present", () => {
+    for (const label of [
+      "archived",
+      "conversation archived",
+      "chat archived",
+      "zarchiwizowano",
+      "archiwum",
+      "アーカイブしました",
+      "アーカイブされました",
+    ]) {
+      expect(expression).toContain(label);
+    }
+  });
+});
