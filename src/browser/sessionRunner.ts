@@ -13,7 +13,7 @@ import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import { assembleBrowserPrompt } from "./prompt.js";
 import { BrowserAutomationError } from "../oracle/errors.js";
-import type { BrowserArchiveResult, BrowserLogger } from "./types.js";
+import type { BrowserArchiveResult, BrowserLogger, SavedBrowserFile } from "./types.js";
 import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
@@ -39,6 +39,7 @@ export interface BrowserExecutionResult {
   warnings?: BrowserRunWarning[];
   answerText: string;
   artifacts?: SessionArtifact[];
+  savedFiles?: SavedBrowserFile[];
 }
 
 interface RunBrowserSessionArgs {
@@ -324,6 +325,7 @@ export async function runBrowserSessionExecution(
     warnings,
     answerText,
     artifacts: savedArtifacts,
+    savedFiles: browserResult.savedFiles,
   };
 }
 
