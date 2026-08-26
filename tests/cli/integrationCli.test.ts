@@ -156,6 +156,60 @@ describe("oracle CLI integration", () => {
   );
 
   test(
+    "does not prune stored sessions during a dry-run",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-dry-run-retention-"));
+      const oldSessionDir = path.join(oracleHome, "sessions", "old-neutral-session");
+      try {
+        await mkdir(oldSessionDir, { recursive: true });
+        await writeFile(
+          path.join(oldSessionDir, "meta.json"),
+          JSON.stringify({
+            id: "old-neutral-session",
+            createdAt: "2020-01-01T00:00:00.000Z",
+            status: "completed",
+            mode: "browser",
+            options: {},
+          }),
+          "utf8",
+        );
+
+        const result = await execCli(
+          [
+            "--dry-run",
+            "summary",
+            "--retain-hours",
+            "1",
+            "--engine",
+            "browser",
+            "--prompt",
+            "Neutral dry-run retention check",
+          ],
+          {
+            env: {
+              ...process.env,
+              // biome-ignore lint/style/useNamingConvention: env var name
+              ORACLE_HOME_DIR: oracleHome,
+              // biome-ignore lint/style/useNamingConvention: env var name
+              ORACLE_DISABLE_KEYTAR: "1",
+            },
+            timeout: INTEGRATION_TIMEOUT,
+          },
+        );
+
+        expect(result.code).toBe(0);
+        expect(result.stdout).not.toContain("Pruned");
+        await expect(readFile(path.join(oldSessionDir, "meta.json"), "utf8")).resolves.toContain(
+          "old-neutral-session",
+        );
+      } finally {
+        await rm(oracleHome, { recursive: true, force: true });
+      }
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "SIGINT exits promptly",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-sigint-"));

@@ -8,6 +8,7 @@ import {
 } from "../constants.js";
 import { logDomFailure } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
+import { throwIfThrottled } from "../chatgptThrottle.js";
 import { delay } from "../utils.js";
 
 const LEGACY_PRO_VERSION_WORD_TOKENS = ["5 4", "5 2", "5 1", "5 0", "gpt 5 pro"] as const;
@@ -85,6 +86,11 @@ export async function ensureModelSelection(
     }
     case "option-not-found": {
       await logDomFailure(Runtime, logger, "model-switcher-option");
+      // Check for a rate-limit notice before blaming the model name. The notice
+      // is a plain dialog, so its "Got it" button reads as an available option to
+      // the menu scrape — which turns "wait a few minutes" into "your model does
+      // not exist", and sends the reader after the wrong bug.
+      await throwIfThrottled(Runtime, { stage: "model-selection" }, logger);
       const isTemporary = result.hint?.temporaryChat ?? false;
       const available = (result.hint?.availableOptions ?? []).filter(Boolean);
       const availableHint = available.length > 0 ? ` Available: ${available.join(", ")}.` : "";
@@ -98,6 +104,7 @@ export async function ensureModelSelection(
     }
     default: {
       await logDomFailure(Runtime, logger, "model-switcher-button");
+      await throwIfThrottled(Runtime, { stage: "model-selection" }, logger);
       throw new Error(
         "Unable to locate the ChatGPT model selector button. If the desired model is already selected in the browser, retry with --browser-model-strategy current; otherwise retry with --browser-model-strategy ignore to skip model selection.",
       );
