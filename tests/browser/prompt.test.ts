@@ -199,7 +199,61 @@ describe("assembleBrowserPrompt", () => {
     expect(result.fallback).toBeNull();
   });
 
-  test("always mode rejects upload attachments with the same basename", async () => {
+  test("bundles nine named small Markdown files on upload fallback without content loss or order drift", async () => {
+    const names = [
+      "01-alpha.md",
+      "02-bravo.md",
+      "03-charlie.md",
+      "04-delta.md",
+      "05-echo.md",
+      "06-foxtrot.md",
+      "07-golf.md",
+      "08-hotel.md",
+      "09-india.md",
+    ];
+    const result = await assembleBrowserPrompt(
+      buildOptions({ file: names, browserAttachments: "auto" }),
+      {
+        cwd: "/repo",
+        readFilesImpl: async (paths) =>
+          paths.map((entry) => ({
+            path: path.resolve("/repo", entry),
+            content: `content for ${path.relative("/repo", path.resolve("/repo", entry))}`,
+          })),
+        tokenizeImpl: fastTokenizer,
+      },
+    );
+
+    try {
+      expect(result.attachmentMode).toBe("inline");
+      expect(result.attachments).toEqual([]);
+      expect(result.fallback?.attachments).toEqual([
+        expect.objectContaining({ generatedBundle: true, displayPath: expect.any(String) }),
+      ]);
+      const bundleAttachment = result.fallback!.attachments[0]!;
+      expect(result.fallback?.bundled).toEqual({
+        originalCount: 9,
+        bundlePath: bundleAttachment.displayPath,
+        format: "text",
+      });
+      const bundleText = await fs.readFile(bundleAttachment.path, "utf8");
+      expect(bundleText.match(/^### File:/gm)).toHaveLength(9);
+      let previousSourceOffset = -1;
+      for (const name of names) {
+        const sourceOffset = bundleText.indexOf(`### File: ${name}`);
+        expect(sourceOffset).toBeGreaterThan(previousSourceOffset);
+        expect(bundleText).toContain(`1 | content for ${name}`);
+        previousSourceOffset = sourceOffset;
+      }
+    } finally {
+      await fs.rm(path.dirname(result.fallback!.attachments[0]!.path), {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
+  test("always mode bundles duplicate basenames with distinct source labels", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-duplicate-basename-"));
     const firstPath = path.join(tempDir, "first", "SKILL.md");
     const secondPath = path.join(tempDir, "second", "SKILL.md");
@@ -209,32 +263,26 @@ describe("assembleBrowserPrompt", () => {
       await fs.writeFile(firstPath, "first");
       await fs.writeFile(secondPath, "second");
 
-      await expect(
-        assembleBrowserPrompt(
-          buildOptions({
-            file: [firstPath, secondPath],
-            browserAttachments: "always",
-          }),
-          { cwd: tempDir, tokenizeImpl: fastTokenizer },
-        ),
-      ).rejects.toMatchObject({
-        message: expect.stringContaining('multiple files named "SKILL.md"'),
-        details: {
-          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
-          files: [firstPath, secondPath],
-        },
-      });
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [firstPath, secondPath],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+      expect(result.attachmentMode).toBe("bundle");
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: first/SKILL.md");
+      expect(bundleText).toContain("### File: second/SKILL.md");
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 
-  test("auto mode rejects basename collisions when it selects upload", async () => {
+  test("auto mode bundles basename collisions when it selects upload", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-upload-collision-"));
     const firstPath = path.join(tempDir, "first", "SKILL.md");
     const secondPath = path.join(tempDir, "second", "SKILL.md");
-    const firstUniquePath = path.join(tempDir, "first", "FIRST.md");
-    const secondUniquePath = path.join(tempDir, "second", "SECOND.md");
     const largeContent = "x".repeat(31_000);
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
@@ -242,34 +290,18 @@ describe("assembleBrowserPrompt", () => {
       await Promise.all([
         fs.writeFile(firstPath, largeContent),
         fs.writeFile(secondPath, largeContent),
-        fs.writeFile(firstUniquePath, largeContent),
-        fs.writeFile(secondUniquePath, largeContent),
       ]);
 
-      const uploadControl = await assembleBrowserPrompt(
+      const result = await assembleBrowserPrompt(
         buildOptions({
-          file: [firstUniquePath, secondUniquePath],
+          file: [firstPath, secondPath],
           browserAttachments: "auto",
         }),
         { cwd: tempDir, tokenizeImpl: fastTokenizer },
       );
-      expect(uploadControl.attachmentMode).toBe("upload");
-      expect(uploadControl.fallback).toBeNull();
-
-      await expect(
-        assembleBrowserPrompt(
-          buildOptions({
-            file: [firstPath, secondPath],
-            browserAttachments: "auto",
-          }),
-          { cwd: tempDir, tokenizeImpl: fastTokenizer },
-        ),
-      ).rejects.toMatchObject({
-        details: {
-          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
-          files: [firstPath, secondPath],
-        },
-      });
+      expect(result.attachmentMode).toBe("bundle");
+      expect(result.attachments).toHaveLength(1);
+      expect(result.fallback).toBeNull();
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -299,7 +331,10 @@ describe("assembleBrowserPrompt", () => {
       expect(result.composerText).toContain("1 | first");
       expect(result.composerText).toContain("### File: second/SKILL.md");
       expect(result.composerText).toContain("1 | second");
-      expect(result.fallback?.attachments).toHaveLength(2);
+      expect(result.fallback?.attachments).toHaveLength(1);
+      expect(result.fallback?.bundled).toEqual(
+        expect.objectContaining({ originalCount: 2, format: "text" }),
+      );
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -474,6 +509,47 @@ describe("assembleBrowserPrompt", () => {
       ]);
       expect(result.attachmentMode).toBe("upload");
       expect(result.bundled).toBeNull();
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("automatic text bundling keeps mixed raw inputs as direct byte-preserving uploads", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-mixed-bundle-"));
+    try {
+      const archiveBytes = Buffer.from([0x50, 0x4b, 0, 0xff, 0xfe]);
+      await Promise.all([
+        fs.writeFile(path.join(tempDir, "one.md"), "first", "utf8"),
+        fs.writeFile(path.join(tempDir, "two.md"), "second", "utf8"),
+        fs.writeFile(path.join(tempDir, "archive.zip"), archiveBytes),
+      ]);
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.md", "two.md", "archive.zip"],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(2);
+      expect(result.attachments[0]).toEqual(
+        expect.objectContaining({
+          generatedBundle: true,
+          displayPath: expect.stringMatching(/\.txt$/),
+        }),
+      );
+      expect(result.attachments[1]).toEqual(
+        expect.objectContaining({
+          path: path.join(tempDir, "archive.zip"),
+          displayPath: "archive.zip",
+        }),
+      );
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: one.md");
+      expect(bundleText).toContain("1 | first");
+      expect(bundleText).toContain("### File: two.md");
+      expect(bundleText).toContain("1 | second");
+      expect(await fs.readFile(result.attachments[1]!.path)).toEqual(archiveBytes);
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

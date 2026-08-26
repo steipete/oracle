@@ -16,7 +16,6 @@ describe("buildAttachmentPlan", () => {
     const plan = buildAttachmentPlan(sections, {
       inlineFiles: true,
       bundleRequested: false,
-      maxAttachments: 10,
     });
     expect(plan.mode).toBe("inline");
     expect(plan.inlineFileCount).toBe(2);
@@ -28,8 +27,8 @@ describe("buildAttachmentPlan", () => {
     expect(plan.inlineBlock).toContain("1 | world");
   });
 
-  test("bundles when over max attachments", () => {
-    const many = Array.from({ length: 11 }, (_, i) => ({
+  test("bundles multiple text uploads as one labelled corpus", () => {
+    const many = Array.from({ length: 2 }, (_, i) => ({
       displayPath: `f${i}.txt`,
       absolutePath: `/repo/f${i}.txt`,
       content: "x",
@@ -37,18 +36,26 @@ describe("buildAttachmentPlan", () => {
     const plan = buildAttachmentPlan(many, {
       inlineFiles: false,
       bundleRequested: false,
-      maxAttachments: 10,
     });
     expect(plan.mode).toBe("bundle");
     expect(plan.shouldBundle).toBe(true);
-    expect(plan.attachments).toHaveLength(11);
+    expect(plan.attachments).toHaveLength(2);
+  });
+
+  test("keeps one text upload as its original attachment", () => {
+    const plan = buildAttachmentPlan([sections[0]!], {
+      inlineFiles: false,
+      bundleRequested: false,
+    });
+    expect(plan.mode).toBe("upload");
+    expect(plan.shouldBundle).toBe(false);
+    expect(plan.attachments).toHaveLength(1);
   });
 
   test("forces bundle when requested even under threshold", () => {
     const plan = buildAttachmentPlan(sections, {
       inlineFiles: false,
       bundleRequested: true,
-      maxAttachments: 10,
     });
     expect(plan.shouldBundle).toBe(true);
     expect(plan.mode).toBe("bundle");

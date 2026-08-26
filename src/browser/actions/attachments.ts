@@ -1342,6 +1342,17 @@ export async function waitForAttachmentCompletion(
   let sawInputMatch = false;
   let attachmentMatchSince: number | null = null;
   let lastVerboseLog = 0;
+  type AttachmentReadinessState = {
+    expectedNames: string[];
+    missingAttachmentNames: string[];
+    missingInputNames: string[];
+    sendState: string;
+    uploading: boolean;
+    filesAttached: boolean;
+    fileCount: number;
+    inputNames: string[];
+  };
+  let lastReadinessState: AttachmentReadinessState | null = null;
   const expression = `(() => {
     const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
     const promptSelectors = ${JSON.stringify(INPUT_SELECTORS)};
@@ -1620,6 +1631,30 @@ export async function waitForAttachmentCompletion(
         });
       };
       const missing = expectedNormalized.filter((expected) => !matchesExpected(expected));
+      const inputMissing = expectedNormalized.filter((expected) => {
+        const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
+        const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
+        const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
+        return !inputNames.some(
+          (raw) =>
+            raw.includes(normalizedExpected) ||
+            (expectedNoExt.length >= 6 && raw.includes(expectedNoExt)),
+        );
+      });
+      lastReadinessState = {
+        expectedNames: expectedInputBasenames,
+        missingAttachmentNames: missing.map(
+          (name) => name.split("/").pop()?.split("\\").pop() ?? name,
+        ),
+        missingInputNames: inputMissing.map(
+          (name) => name.split("/").pop()?.split("\\").pop() ?? name,
+        ),
+        sendState: value.state ?? "unknown",
+        uploading: value.uploading === true,
+        filesAttached: value.filesAttached === true,
+        fileCount,
+        inputNames,
+      };
       if (missing.length === 0 || fileCountSatisfied) {
         const stableThresholdMs = value.uploading ? 3000 : 1500;
         if (attachmentMatchSince === null) {
@@ -1667,16 +1702,6 @@ export async function waitForAttachmentCompletion(
 
       // Fallback: if the file input has the expected names, allow progress once that condition is stable.
       // Some ChatGPT surfaces only render the filename after sending the message.
-      const inputMissing = expectedNormalized.filter((expected) => {
-        const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-        const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
-        const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
-        return !inputNames.some(
-          (raw) =>
-            raw.includes(normalizedExpected) ||
-            (expectedNoExt.length >= 6 && raw.includes(expectedNoExt)),
-        );
-      });
       // Don't include 'disabled' - a disabled button likely means upload is still in progress.
       const inputStateOk = value.state === "ready" || value.state === "missing";
       const inputSeenNow = inputMissing.length === 0 || fileCountSatisfied;
@@ -1702,9 +1727,24 @@ export async function waitForAttachmentCompletion(
     }
     await delay(250);
   }
-  logger?.("Attachment upload timed out while waiting for ChatGPT composer to become ready.");
+  const readinessState =
+    lastReadinessState ??
+    ({
+      expectedNames: expectedInputBasenames,
+      missingAttachmentNames: expectedInputBasenames,
+      missingInputNames: expectedInputBasenames,
+      sendState: "unavailable",
+      uploading: false,
+      filesAttached: false,
+      fileCount: 0,
+      inputNames: [],
+    } satisfies AttachmentReadinessState);
+  const readinessDetails = JSON.stringify(readinessState);
+  logger?.(`Attachment upload timed out. Readiness state: ${readinessDetails}`);
   await logDomFailure(Runtime, logger ?? (() => {}), "file-upload-timeout");
-  throw new Error("Attachments did not finish uploading before timeout.");
+  throw new Error(
+    `Attachments did not finish uploading before timeout. Readiness state: ${readinessDetails}`,
+  );
 }
 
 export async function waitForUserTurnAttachments(

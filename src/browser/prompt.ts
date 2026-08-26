@@ -165,6 +165,34 @@ function resolveBrowserBundleFormat(
   return sources.hasRawUploadFiles ? "zip" : "text";
 }
 
+function resolvePlannedBrowserBundleFormat(
+  format: BrowserBundleFormat,
+  {
+    attachmentCount,
+    bundleRequested,
+    hasRawUploadFiles,
+    textPlanShouldBundle,
+  }: {
+    attachmentCount: number;
+    bundleRequested: boolean;
+    hasRawUploadFiles: boolean;
+    textPlanShouldBundle: boolean;
+  },
+): ResolvedBrowserBundleFormat {
+  if (
+    format === "auto" &&
+    textPlanShouldBundle &&
+    !bundleRequested &&
+    attachmentCount <= MAX_BROWSER_ATTACHMENTS
+  ) {
+    // Automatic semantic bundling combines only text sources. Keep raw files as their
+    // original direct uploads unless the user requests one bundle or the platform's
+    // attachment limit requires a byte-preserving ZIP.
+    return "text";
+  }
+  return resolveBrowserBundleFormat(format, { hasRawUploadFiles });
+}
+
 function shouldWriteBrowserBundle(
   format: ResolvedBrowserBundleFormat,
   {
@@ -363,8 +391,11 @@ export async function assembleBrowserPrompt(
   const allBundleSources = [...textBundleSources, ...rawUploadBundleSources];
   const attachments: BrowserAttachment[] = [...selectedPlan.attachments, ...rawUploadAttachments];
 
-  const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+  const resolvedBundleFormat = resolvePlannedBrowserBundleFormat(bundleFormat, {
+    attachmentCount: attachments.length,
+    bundleRequested,
     hasRawUploadFiles: rawUploadAttachments.length > 0,
+    textPlanShouldBundle: selectedPlan.shouldBundle,
   });
   const shouldBundle = shouldWriteBrowserBundle(resolvedBundleFormat, {
     attachmentCount: attachments.length,
@@ -435,8 +466,11 @@ export async function assembleBrowserPrompt(
     const fallbackComposerText = baseComposerSections.join("\n\n").trim();
     const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
     let fallbackBundled: BrowserBundleMetadata | null = null;
-    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+    const fallbackBundleFormat = resolvePlannedBrowserBundleFormat(bundleFormat, {
+      attachmentCount: fallbackAttachments.length,
+      bundleRequested,
       hasRawUploadFiles: rawUploadAttachments.length > 0,
+      textPlanShouldBundle: uploadPlan.shouldBundle,
     });
     const fallbackShouldBundle = shouldWriteBrowserBundle(fallbackBundleFormat, {
       attachmentCount: fallbackAttachments.length,

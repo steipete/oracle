@@ -15,6 +15,68 @@ const useRealTime = () => {
 };
 
 describe("attachment completion fallbacks", () => {
+  test("reports the stalled ninth Markdown name while one text bundle becomes ready", async () => {
+    useFakeTime();
+    const names = [
+      "01-alpha.md",
+      "02-bravo.md",
+      "03-charlie.md",
+      "04-delta.md",
+      "05-echo.md",
+      "06-foxtrot.md",
+      "07-golf.md",
+      "08-hotel.md",
+      "09-india.md",
+    ];
+    const directRuntime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "disabled",
+            uploading: true,
+            filesAttached: true,
+            attachedNames: names.slice(0, -1),
+            inputNames: names.slice(0, -1),
+            fileCount: 8,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const directErrorPromise = waitForAttachmentCompletion(directRuntime, 800, names).catch(
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+    const directError = await directErrorPromise;
+    expect(directError).toBeInstanceOf(Error);
+    expect((directError as Error).message).toContain('"missingAttachmentNames":["09-india.md"]');
+    expect((directError as Error).message).toContain('"missingInputNames":["09-india.md"]');
+    expect((directError as Error).message).toContain('"sendState":"disabled"');
+    expect((directError as Error).message).toContain('"uploading":true');
+    expect((directError as Error).message).toContain('"fileCount":8');
+
+    const bundleRuntime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: false,
+            attachedNames: [],
+            inputNames: ["attachments-bundle.txt"],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+    const bundleReady = waitForAttachmentCompletion(bundleRuntime, 10_000, [
+      "attachments-bundle.txt",
+    ]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(bundleReady).resolves.toBeUndefined();
+    useRealTime();
+  });
+
   test("waitForAttachmentCompletion resolves when ready file input contains expected name (no UI chip)", async () => {
     useFakeTime();
 

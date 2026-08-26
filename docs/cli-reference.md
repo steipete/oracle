@@ -100,7 +100,7 @@ See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrout
 | `--browser-keep-browser`                                                       | Keep the browser open after the run.                                                                                         |
 | `--browser-headless`, `--browser-hide-window`                                  | Visibility controls.                                                                                                         |
 | `--browser-attachments <auto\|never\|always>`                                  | Attach files inline vs upload.                                                                                               |
-| `--browser-bundle-files`, `--browser-bundle-format <auto\|text\|zip>`          | Bundle browser uploads as text or byte-preserving ZIP.                                                                       |
+| `--browser-bundle-files`, `--browser-bundle-format <auto\|text\|zip>`          | Control browser upload bundles; multiple uploaded text files automatically share one labelled text bundle.                   |
 | `--browser-chrome-path`, `--browser-cookie-path`                               | Override Chrome / cookie store discovery (Linux / Windows).                                                                  |
 
 See [Browser Mode](browser-mode.md) for usage.

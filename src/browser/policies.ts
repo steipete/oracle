@@ -18,11 +18,7 @@ export interface AttachmentPlan {
 
 export function buildAttachmentPlan(
   sections: AttachmentSection[],
-  {
-    inlineFiles,
-    bundleRequested,
-    maxAttachments = 10,
-  }: { inlineFiles: boolean; bundleRequested: boolean; maxAttachments?: number },
+  { inlineFiles, bundleRequested }: { inlineFiles: boolean; bundleRequested: boolean },
 ): AttachmentPlan {
   if (inlineFiles) {
     const inlineBlock = formatFileSections(sections);
@@ -40,7 +36,11 @@ export function buildAttachmentPlan(
     displayPath: section.displayPath,
     sizeBytes: Buffer.byteLength(section.content, "utf8"),
   }));
-  const shouldBundle = bundleRequested || attachments.length > maxAttachments;
+  // Multiple text files are one ordered, labelled corpus. Uploading that corpus as one
+  // text bundle preserves its semantics while avoiding one asynchronous readiness state
+  // per source file. A single file stays a direct attachment so its original filename is
+  // retained in the composer.
+  const shouldBundle = bundleRequested || attachments.length > 1;
 
   return {
     mode: shouldBundle ? "bundle" : "upload",
