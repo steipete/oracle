@@ -21,7 +21,8 @@ import {
   buildAttachmentReadyExpressionForTest,
 } from "../dist/src/browser/actions/promptComposer.js";
 
-const root = await mkdtemp(path.join(os.tmpdir(), "oracle-attachment-proof-"));
+// Snap Chromium has a private /tmp. Keep disk-backed uploads in its allowed home tree.
+const root = await mkdtemp(path.join(os.homedir(), "oracle-attachment-proof-"));
 const fixtures = process.argv[2] ? path.resolve(process.argv[2]) : root;
 const chromePath = [
   process.env.CHROME_PATH,
