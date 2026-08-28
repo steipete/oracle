@@ -7,6 +7,8 @@ Oracle’s bridge workflow lets you keep an authenticated ChatGPT session on a W
 - **Host (Windows)**: runs `oracle bridge host` and holds the signed-in ChatGPT session.
 - **Client (Linux)**: stores the host connection once and routes browser runs (and MCP browser runs) through the host.
 
+The host sanitizes incoming attachment filenames for staging. If names collide after sanitization (or differ only by case), later uploads receive a unique numeric suffix before the extension, while their original display paths and payload order are retained. This applies to both primary uploads and prompt-size fallback uploads. Non-colliding filenames are unchanged; supplied names such as `a_b-2.txt` are reserved before suffix allocation.
+
 ## Generated artifact transfer
 
 Bridge runs now keep the Windows browser host and Linux client separated while still returning ChatGPT-generated files, such as ZIP, CSV, PDF, wheels, and source distributions, to a cloud-readable path. The host advertises artifact-transfer support from the token-protected `GET /health` response. The Linux client uses that capability signal in `oracle bridge client --test` and `oracle bridge doctor`; older hosts remain usable for text responses, but generated files require manual copy from the Windows browser until both sides are upgraded.
