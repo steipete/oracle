@@ -292,12 +292,12 @@ function buildThinkingTimeExpression(
     const TARGET_MODEL_KIND = ${targetModelKindLiteral};
     const TARGET_IS_GPT56_MODEL = ${targetIsGpt56ModelLiteral};
 
-    // Multilingual matchers: English level token + observed German/Japanese/Chinese variants.
+    // Multilingual matchers: English level token + observed localized variants.
     const LEVEL_TOKENS = {
-      light: ['light', 'instant', 'sofort', 'leicht', '最速', '轻', '极速'],
-      standard: ['standard', 'medium', 'mittel', '中程度', '标准', '中'],
-      extended: ['extended', 'high', 'hoch', 'erweitert', '高い', '扩展', '深度', '加强', '高'],
-      'extra-high': ['extra high', 'sehr hoch', '非常に高い', '极高'],
+      light: ['light', 'instant', 'sofort', 'leicht', '最速', '轻', '极速', '즉시'],
+      standard: ['standard', 'medium', 'mittel', '中程度', '标准', '中', '중간'],
+      extended: ['extended', 'high', 'hoch', 'erweitert', '高い', '扩展', '深度', '加强', '高', '높음'],
+      'extra-high': ['extra high', 'sehr hoch', '非常に高い', '极高', '매우 높음'],
       heavy: ['heavy', 'schwer', '重度', '加重'],
     };
     // Pro is a tier you can request, but it is also a MODEL name, so it must never
@@ -316,7 +316,7 @@ function buildThinkingTimeExpression(
     const INTELLIGENCE_WAIT_MS = 2500;
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    // Keep CJK characters, including Japanese kana, so localized labels survive
+    // Keep CJK characters, including Japanese kana and Hangul, so labels survive
     // normalization before being matched against LEVEL_TOKENS and picker controls.
     const normalize = (value) => (value || '')
       // Compose first so NFD umlauts fold too, then map them onto ASCII before
@@ -327,7 +327,7 @@ function buildThinkingTimeExpression(
       .replace(/ö/g, 'o')
       .replace(/ü/g, 'u')
       .replace(/ß/g, 'ss')
-      .replace(/[^a-z0-9\\u3040-\\u30ff\\u4e00-\\u9fff]+/g, ' ')
+      .replace(/[^a-z0-9\\u3040-\\u30ff\\u4e00-\\u9fff\\uac00-\\ud7af]+/g, ' ')
       .replace(/\\s+/g, ' ')
       .trim();
     const hasToken = (text, token) => normalize(text).split(' ').includes(token);
@@ -356,6 +356,8 @@ function buildThinkingTimeExpression(
         if (token === 'extra high') return hasPhrase(t, 'extra high');
         if (token === 'hoch') return hasPhrase(t, 'hoch') && !hasPhrase(t, 'sehr hoch');
         if (token === 'sehr hoch') return hasPhrase(t, 'sehr hoch');
+        if (token === '높음') return hasPhrase(t, '높음') && !hasPhrase(t, '매우 높음');
+        if (token === '매우 높음') return hasPhrase(t, '매우 높음');
         if (token === '高い' || token === '非常に高い') {
           return t === token || hasToken(t, token);
         }
@@ -943,11 +945,11 @@ function buildThinkingTimeExpression(
     // token matching cannot be used here — substring is deliberate, as in
     // countEffortLevels above.
     const ADVANCED_WORDS = [
-      'advanced', 'erweitert', '高级', '詳細設定', '詳細表示',
+      'advanced', 'erweitert', '高级', '詳細設定', '詳細表示', '고급',
       'avanzado', 'avancado', 'avance',
     ];
     const EFFORT_WORDS = [
-      'effort', 'aufwand', '强度', '努力', '推論レベル', '思考量',
+      'effort', 'aufwand', '强度', '努力', '推論レベル', '思考量', '추론 수준',
       'esfuerzo', 'esforco', 'sforzo', 'inspanning', 'wysilek',
     ];
     const containsAny = (label, words) => words.some((word) => label.includes(word));

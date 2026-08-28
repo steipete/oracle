@@ -3069,6 +3069,25 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     expect(dom.keys).toEqual([]);
   });
 
+  it.each([
+    ["light", "즉시"],
+    ["standard", "중간"],
+    ["extended", "높음"],
+    ["extra-high", "매우 높음"],
+    ["pro", "Pro"],
+  ])("selects Korean %s through the direct slider", async (level, label) => {
+    const dom = buildDirectSlider(level === "pro" ? 2 : 4, [
+      "즉시",
+      "중간",
+      "높음",
+      "매우 높음",
+      "Pro",
+    ]);
+    await expect(run(dom.documentStub, level)).resolves.toEqual({ status: "switched", label });
+    expect(dom.keys.length).toBeGreaterThan(0);
+    expect(dom.modelOpener.clicks).toBe(0);
+  });
+
   it("fails closed when the slider ignores keyboard input", async () => {
     const dom = buildDirectSlider(3);
     dom.control.dispatchEvent = () => true;
@@ -3167,6 +3186,50 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     const dom = buildDom("High");
     await run(dom.documentStub, "pro");
     expect(dom.advancedToggle.clicks).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["light", "즉시", 0],
+    ["standard", "중간", 1],
+    ["extended", "높음", 2],
+    ["extra-high", "매우 높음", 3],
+    ["pro", "Pro", 4],
+  ])(
+    "selects Korean %s without confusing neighboring tiers",
+    async (level, label, selectedIndex) => {
+      const dom = buildDom("높음");
+      dom.advancedToggle.textContent = "고급";
+      dom.advancedToggle.setAttribute("aria-label", "고급");
+      dom.modelOpener.textContent = "모델GPT-5.6 Sol";
+      dom.effortOpener.textContent = "추론 수준Pro";
+      ["즉시", "중간", "높음", "매우 높음", "Pro"].forEach((text, index) => {
+        dom.tierRows[index]!.textContent = text;
+      });
+      // Extra High preceding High catches a suffix matcher that would pick it first.
+      if (level === "extended") {
+        dom.tierRows[2]!.textContent = "매우 높음";
+        dom.tierRows[3]!.textContent = "높음";
+        selectedIndex = 3;
+      }
+      const result = await run(dom.documentStub, String(level));
+      expect(result).toEqual({ status: "switched", label });
+      dom.tierRows.forEach((row, index) => expect(row.clicks > 0).toBe(index === selectedIndex));
+      expect(dom.modelOpener.clicks).toBe(0);
+    },
+  );
+
+  it("normalizes decomposed Hangul in a Korean effort opener", async () => {
+    const dom = buildDom("High");
+    dom.advancedToggle.textContent = "고급".normalize("NFD");
+    dom.advancedToggle.setAttribute("aria-label", "고급".normalize("NFD"));
+    dom.effortOpener.textContent = "추론 수준Pro".normalize("NFD");
+    ["즉시", "중간", "높음", "매우 높음", "Pro"].forEach((text, index) => {
+      dom.tierRows[index]!.textContent = text.normalize("NFD");
+    });
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
   });
 
   it("reports Pro as already selected without clicking again", async () => {

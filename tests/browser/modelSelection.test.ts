@@ -488,10 +488,14 @@ const evaluateAdvancedModelPickerExpression = async ({
   targetModel = "Thinking 5.5",
   initialModel = "GPT-5.6 Sol",
   modelWord = "Model",
+  advancedWord = "Advanced",
+  effortWord = "Effort",
 }: {
   targetModel?: string;
   initialModel?: "GPT-5.5" | "GPT-5.6 Sol";
   modelWord?: string;
+  advancedWord?: string;
+  effortWord?: string;
 } = {}) => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -655,7 +659,7 @@ const evaluateAdvancedModelPickerExpression = async ({
     },
   );
   const effortOpener = new FakeElement(
-    "EffortHigh",
+    `${effortWord}High`,
     { role: "menuitem", "aria-haspopup": "menu", "data-state": "closed" },
     [],
     () => advancedVisible,
@@ -670,8 +674,8 @@ const evaluateAdvancedModelPickerExpression = async ({
     () => advancedVisible,
   );
   const advancedToggle = new FakeElement(
-    "Advanced",
-    { role: "menuitem", "aria-label": "Show advanced options", "aria-expanded": "false" },
+    advancedWord,
+    { role: "menuitem", "aria-label": advancedWord, "aria-expanded": "false" },
     [],
     () => topMenuOpen,
     () => {
@@ -1825,6 +1829,21 @@ describe("browser model selection matchers", () => {
     expect(harness.clicks.gpt55).toBe(0);
     expect(harness.clicks.effort).toBe(0);
   });
+
+  it.each(["NFC", "NFD"] as const)(
+    "selects models through Korean picker labels in %s",
+    async (form) => {
+      const harness = await evaluateAdvancedModelPickerExpression({
+        advancedWord: "고급".normalize(form),
+        modelWord: "모델".normalize(form),
+        effortWord: "추론 수준".normalize(form),
+      });
+      expect(harness.result).toEqual({ status: "switched", label: "GPT-5.5" });
+      expect(harness.clicks.advanced).toBeGreaterThan(0);
+      expect(harness.clicks.model).toBeGreaterThan(0);
+      expect(harness.clicks.effort).toBe(0);
+    },
+  );
 
   it("fails closed instead of guessing an unrecognized Model opener", async () => {
     const harness = await evaluateAdvancedModelPickerExpression({ modelWord: "Versjon" });
