@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Browser: retain per-file attachment evidence through local/remote upload and send checks, including filename-less images; activate and stabilize the send target without replaying a dispatched prompt. Fixes #418. Thanks @hubofvalley!
 - Remote: allocate unique upload basenames for primary and fallback attachments that collide after sanitization, preserving original display paths and every payload. Fixes #387. Thanks @postoso!
 - Browser: attach to running Chrome when `DevToolsActivePort` metadata is absent, with IPv6 support and bounded endpoint retries that include response-body reads. Fixes #414. Thanks @devYRPauli!
 - Browser: recognize collision-renamed attachment chips, including short filenames, while keeping Unicode filename boundaries and visible extensions distinct across upload and send checks. Fixes #393. Thanks @devYRPauli!

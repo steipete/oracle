@@ -1,105 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { buildAttachmentReadyExpressionForTest } from "../../src/browser/actions/promptComposer.ts";
 
-class FakeElement {
-  parentElement: FakeElement | null = null;
-  readonly children: FakeElement[];
-  readonly tagName: string;
-
-  constructor(
-    tagName: string,
-    private readonly attributes: Record<string, string> = {},
-    children: FakeElement[] = [],
-    private readonly ownText = "",
-  ) {
-    this.tagName = tagName.toUpperCase();
-    this.children = children;
-    for (const child of children) {
-      child.parentElement = this;
-    }
-  }
-
-  get innerText(): string {
-    return this.textContent;
-  }
-
-  get textContent(): string {
-    return `${this.ownText}${this.children.map((child) => child.textContent).join("")}`;
-  }
-
-  getAttribute(name: string): string | null {
-    return this.attributes[name] ?? null;
-  }
-
-  closest(selector: string): FakeElement | null {
-    if (matchesSelector(this, selector)) return this;
-    return this.parentElement?.closest(selector) ?? null;
-  }
-
-  querySelector(selector: string): FakeElement | null {
-    return this.querySelectorAll(selector)[0] ?? null;
-  }
-
-  querySelectorAll(selector: string): FakeElement[] {
-    return flattenElements(this.children).filter((element) => matchesSelector(element, selector));
-  }
-}
-
-class FakeInputElement extends FakeElement {
-  constructor(readonly files: Array<{ name: string }>) {
-    super("input", { type: "file" });
-  }
-}
-
-class FakeDocument {
-  readonly body: FakeElement;
-
-  constructor(children: FakeElement[]) {
-    this.body = new FakeElement("body", {}, children);
-  }
-
-  querySelector(selector: string): FakeElement | null {
-    return this.querySelectorAll(selector)[0] ?? null;
-  }
-
-  querySelectorAll(selector: string): FakeElement[] {
-    return this.body.querySelectorAll(selector);
-  }
-}
-
-function flattenElements(elements: FakeElement[]): FakeElement[] {
-  return elements.flatMap((element) => [element, ...flattenElements(element.children)]);
-}
-
-function matchesSelector(element: FakeElement, selector: string): boolean {
-  return selector
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .some((part) => matchesSingleSelector(element, part));
-}
-
-function matchesSingleSelector(element: FakeElement, selector: string): boolean {
-  const normalized = selector.replace(/:not\([^)]*\)/g, "");
-  const tag = normalized.match(/^[a-z][a-z0-9-]*/i)?.[0];
-  if (tag && element.tagName.toLowerCase() !== tag.toLowerCase()) return false;
-
-  const id = normalized.match(/#([a-z0-9_-]+)/i)?.[1];
-  if (id && element.getAttribute("id") !== id) return false;
-
-  const attrPattern = /\[([^\]\s~|^$*!=]+)(\*?=)?(?:"([^"]*)"|'([^']*)')?\s*i?\]/g;
-  for (const match of normalized.matchAll(attrPattern)) {
-    const [, name, operator, doubleQuotedValue, singleQuotedValue] = match;
-    const expected = doubleQuotedValue ?? singleQuotedValue ?? "";
-    const actual = element.getAttribute(name);
-    if (actual === null) return false;
-    if (operator === "=" && actual !== expected) return false;
-    if (operator === "*=" && !actual.toLowerCase().includes(expected.toLowerCase())) {
-      return false;
-    }
-  }
-  return true;
-}
+import { FakeElement, FakeInputElement, FakeDocument } from "./domFixture.js";
 
 function evaluateAttachmentReadyExpression(
   attachmentNames: Array<string | { name: string; generatedBundle?: boolean }>,
@@ -142,11 +44,8 @@ describe("prompt composer attachment expressions", () => {
     // Walks into ancestor and descendant text so filenames buried in nested spans are still found.
     expect(expression).toContain("collectLabelHaystack");
     expect(expression).toContain("parentElement");
-    // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
-    // see at least as many chip-shaped nodes (each with a Remove affordance) as we
-    // uploaded.
-    expect(expression).toContain("countReady");
-    expect(expression).toContain("removeAffordances");
+    expect(expression).toContain("__oracleAttachmentEvidence");
+    expect(expression).not.toContain("countReady");
   });
 
   test("attachment ready check stays scoped to the active composer", () => {
@@ -475,7 +374,7 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(false);
   });
 
-  test("attachment ready count fallback counts remove affordances inside one wrapper", () => {
+  test("attachment ready rejects unnamed controls without per-file upload evidence", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement("div", { "data-testid": "attachment-list" }, [
@@ -489,10 +388,10 @@ describe("prompt composer attachment expressions", () => {
       ]),
     ]);
 
-    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(true);
+    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(false);
   });
 
-  test("attachment ready count fallback accepts generic remove controls under chips", () => {
+  test("attachment ready rejects generic remove controls without upload evidence", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement("div", { "data-testid": "attachment-chip" }, [
@@ -501,10 +400,10 @@ describe("prompt composer attachment expressions", () => {
       ]),
     ]);
 
-    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(false);
   });
 
-  test("attachment ready count fallback allows mixed visible and hidden chip labels", () => {
+  test("attachment ready requires evidence for the hidden file in a mixed set", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement("div", { "data-testid": "attachment-chip" }, [
@@ -517,10 +416,10 @@ describe("prompt composer attachment expressions", () => {
       ]),
     ]);
 
-    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(true);
+    expect(evaluateAttachmentReadyExpression(["one.txt", "two.txt"], document)).toBe(false);
   });
 
-  test("attachment ready count fallback ignores prompt text extensions", () => {
+  test("attachment ready cannot use prompt text to identify an unnamed attachment", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement(
@@ -535,10 +434,10 @@ describe("prompt composer attachment expressions", () => {
       ]),
     ]);
 
-    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(false);
   });
 
-  test("attachment ready count fallback ignores decimal size text", () => {
+  test("attachment ready cannot use a size label to identify an unnamed attachment", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement("div", { "data-testid": "attachment-chip" }, [
@@ -548,7 +447,7 @@ describe("prompt composer attachment expressions", () => {
       ]),
     ]);
 
-    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(true);
+    expect(evaluateAttachmentReadyExpression(["one.txt"], document)).toBe(false);
   });
 
   test("attachment ready count fallback ignores unrelated remove controls", () => {
@@ -652,7 +551,7 @@ describe("prompt composer attachment expressions", () => {
     expect(evaluateAttachmentReadyExpression(["qa-quarterly-report-v1.md"], document)).toBe(true);
   });
 
-  test("attachment ready count fallback allows prefix-only ellipsized labels", () => {
+  test("attachment ready requires upload evidence for a prefix-only truncated label", () => {
     const document = new FakeDocument([
       new FakeElement("div", { "data-testid": "unified-composer" }, [
         new FakeElement("div", { "data-testid": "attachment-chip" }, [
@@ -662,7 +561,7 @@ describe("prompt composer attachment expressions", () => {
       ]),
     ]);
 
-    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(true);
+    expect(evaluateAttachmentReadyExpression(["paper1_plan_v3.md"], document)).toBe(false);
   });
 
   test("attachment ready check still rejects prompt-only filename matches", () => {

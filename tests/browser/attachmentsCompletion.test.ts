@@ -242,6 +242,31 @@ describe("attachment completion fallbacks", () => {
     useRealTime();
   });
 
+  test("waitForAttachmentCompletion does not let one extension satisfy a same-stem file", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: true,
+            attachedNames: ["report.md"],
+            inputNames: [],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 2_000, ["report.md", "report.jpg"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await assertion;
+    useRealTime();
+  });
+
   test("waitForAttachmentCompletion times out when ready file input has an unexpected extra name", async () => {
     useFakeTime();
 
@@ -332,6 +357,31 @@ describe("attachment completion fallbacks", () => {
     } as unknown as ChromeClient["Runtime"];
 
     const promise = waitForAttachmentCompletion(runtime, 800, ["oracle-attach-verify.txt"]);
+    const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await assertion;
+    useRealTime();
+  });
+
+  test("waitForAttachmentCompletion rejects a count-only label without exact attachment evidence", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: false,
+            attachedNames: [],
+            inputNames: [],
+            fileCount: 3,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const promise = waitForAttachmentCompletion(runtime, 800, ["oracle-feature.txt"]);
     const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
     await vi.advanceTimersByTimeAsync(2_000);
     await assertion;

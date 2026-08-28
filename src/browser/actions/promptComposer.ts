@@ -16,6 +16,7 @@ import { logDomFailure } from "../domDebug.js";
 import { buildAttachmentNamePattern } from "./attachments.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
+import { buildAttachmentEvidenceExpression } from "./attachmentEvidence.js";
 
 const ENTER_KEY_EVENT = {
   key: "Enter",
@@ -36,6 +37,7 @@ export async function submitPrompt(
   deps: {
     runtime: ChromeClient["Runtime"];
     input: ChromeClient["Input"];
+    page?: ChromeClient["Page"];
     attachmentNames?: AttachmentReadyInput[];
     baselineTurns?: number | null;
     inputTimeoutMs?: number | null;
@@ -220,18 +222,10 @@ export async function submitPrompt(
     logger,
     deps?.attachmentNames,
     deps?.attachmentTimeoutMs,
+    deps?.page,
   );
   if (!clicked) {
-    await input.dispatchKeyEvent({
-      type: "keyDown",
-      ...ENTER_KEY_EVENT,
-      text: ENTER_KEY_TEXT,
-      unmodifiedText: ENTER_KEY_TEXT,
-    });
-    await input.dispatchKeyEvent({
-      type: "keyUp",
-      ...ENTER_KEY_EVENT,
-    });
+    await dispatchEnterKey(input);
     logger("Submitted prompt via Enter key");
   } else {
     logger("Clicked send button");
@@ -247,6 +241,19 @@ export async function submitPrompt(
     logger,
     deps.baselineTurns ?? undefined,
   );
+}
+
+async function dispatchEnterKey(Input: ChromeClient["Input"]): Promise<void> {
+  await Input.dispatchKeyEvent({
+    type: "keyDown",
+    ...ENTER_KEY_EVENT,
+    text: ENTER_KEY_TEXT,
+    unmodifiedText: ENTER_KEY_TEXT,
+  });
+  await Input.dispatchKeyEvent({
+    type: "keyUp",
+    ...ENTER_KEY_EVENT,
+  });
 }
 
 export async function clearPromptComposer(Runtime: ChromeClient["Runtime"], logger: BrowserLogger) {
@@ -368,21 +375,6 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
     const expected = ${namesLiteral};
     const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
     const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-    const hasStemFileBoundary = (text, stem) => {
-      if (!stem) return false;
-      let from = 0;
-      while (from < text.length) {
-        const index = text.indexOf(stem, from);
-        if (index === -1) return false;
-        const previous = Array.from(text.slice(0, index)).at(-1) || '';
-        const next = Array.from(text.slice(index + stem.length))[0] || '';
-        const previousOk = !previous || !/[\\p{L}\\p{N}\\p{M}._-]/u.test(previous);
-        const nextOk = !next || !/[\\p{L}\\p{N}\\p{M}._-]/u.test(next);
-        if (previousOk && nextOk) return true;
-        from = index + stem.length;
-      }
-      return false;
-    };
     const matchesExpected = (value, item) => {
       const text = normalize(value);
       if (!text) return false;
@@ -522,32 +514,11 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
     };
     const chipNodes = collectChipNodes();
     const chipLabels = chipNodes.map((node) => collectLabelHaystack(node));
-    const chipOwnLabels = chipNodes.map((node) => collectOwnLabelHaystack(node));
-    const hasEllipsisSuffix = (label) => {
-      const marker = label.includes('…') ? '…' : label.includes('...') ? '...' : '';
-      if (!marker) return false;
-      return normalize(label.split(marker)[1] || '').length > 0;
-    };
-    const chipOwnLabelsWithVisibleNames = chipOwnLabels.filter((label) =>
-      /\\.[a-z][a-z0-9]{0,9}(?:\\b|$)/i.test(label) ||
-      hasEllipsisSuffix(label),
-    );
-    const visibleExtensionLabelsMatchExpected = chipOwnLabelsWithVisibleNames.every((label) =>
-      expected.some((item) => matchesExpected(label, item)),
-    );
-    const visibleStemOnlyMismatch = chipOwnLabels.some((label) =>
-      expected.some(
-        (item) =>
-          !item.generatedBundle &&
-          item.stem &&
-          hasStemFileBoundary(label, item.stem) &&
-          !matchesExpected(label, item),
-      ),
-    );
-
+    const uploadEvidence = ${buildAttachmentEvidenceExpression(attachmentExpectations.map((item) => item.name))};
     const chipsReady = (() => {
       const used = new Set();
-      return expected.every((item) => {
+      return expected.every((item, expectedIndex) => {
+        if (uploadEvidence[expectedIndex]) return true;
         const index = chipLabels.findIndex((label, candidateIndex) =>
           !used.has(candidateIndex) && matchesExpected(label, item),
         );
@@ -565,35 +536,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
         ),
       ),
     );
-    // Count-based fallback: if we cannot match names individually (ChatGPT may strip
-    // the filename out of attribute-readable text into a deeply nested span), but we
-    // do see at least as many distinct "Remove" affordances as attachments we
-    // uploaded, trust the upload without double-counting nested chip/remove nodes.
-    const removeAffordances = [];
-    const removeSeen = new Set();
-    for (const root of attachmentRoots) {
-      for (const node of Array.from(root.querySelectorAll(
-        '[aria-label*="Remove" i], [aria-label*="remove" i], button[aria-label*="Remove" i], button[aria-label*="remove" i]',
-      ))) {
-        if (!(node instanceof HTMLElement)) continue;
-        if (node.closest('textarea,[contenteditable="true"]')) continue;
-        const aria = (node.getAttribute?.('aria-label') ?? '').toLowerCase();
-        const fileSpecific = aria.includes('remove file') || aria.includes('remove attachment');
-        const attachmentOwner = node.closest(
-          '[data-testid*="chip"], [data-testid*="attachment"], [data-testid*="upload"], [data-testid*="file"]',
-        );
-        if (!fileSpecific && !attachmentOwner) continue;
-        if (removeSeen.has(node)) continue;
-        removeSeen.add(node);
-        removeAffordances.push(node);
-      }
-    }
-    const countReady =
-      !visibleStemOnlyMismatch &&
-      visibleExtensionLabelsMatchExpected &&
-      removeAffordances.length >= expected.length;
-
-    return chipsReady || inputsReady || countReady;
+    return chipsReady || inputsReady;
   })()`;
 }
 
@@ -604,9 +547,10 @@ export function buildAttachmentReadyExpressionForTest(attachmentNames: Attachmen
 async function attemptSendButton(
   Runtime: ChromeClient["Runtime"],
   Input: ChromeClient["Input"],
-  _logger?: BrowserLogger,
+  logger?: BrowserLogger,
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
+  Page?: ChromeClient["Page"],
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
   const script = `(() => {
@@ -637,10 +581,19 @@ async function attemptSendButton(
     }
     const button = candidates.find((node) => isVisible(node) && isEnabled(node)) || null;
     if (!button) return { status: 'missing' };
-    button.scrollIntoView({ block: 'center', inline: 'center' });
     const rect = button.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
-      return { status: 'point', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      // Scrolling an already-visible composer can trigger ChatGPT's layout snap.
+      // If scrolling is necessary, discard these coordinates and measure later.
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) {
+        button.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        return { status: 'settling' };
+      }
+      const hit = document.elementFromPoint(x, y);
+      if (!hit || !button.contains(hit)) return { status: 'settling' };
+      return { status: 'point', x, y };
     }
     // Last-resort fallback for unusual DOMs where the button is visible but has no useful rect.
     dispatchClickSequence(button);
@@ -652,6 +605,9 @@ async function attemptSendButton(
   // shorter historical deadline.
   const timeoutMs = sendButtonTimeoutMs(attachmentNames, attachmentTimeoutMs);
   const deadline = Date.now() + timeoutMs;
+  let previousPoint: { x: number; y: number } | undefined;
+  let activated = false;
+  let foundButton = false;
   while (Date.now() < deadline) {
     if (needAttachment) {
       const ready = await Runtime.evaluate({
@@ -663,18 +619,34 @@ async function attemptSendButton(
         continue;
       }
     }
+    // Activating the target can trigger a final compositor/layout pass. Do it before
+    // measuring the button so the trusted click never uses stale coordinates.
+    if (!activated) {
+      await activatePageForTrustedInput(Page, logger);
+      activated = true;
+    }
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
     const value = result.value as
-      | { status?: "clicked" | "missing" | "point"; x?: number; y?: number }
+      | { status?: "clicked" | "missing" | "point" | "settling"; x?: number; y?: number }
       | string
       | undefined;
     const status = typeof value === "string" ? value : value?.status;
+    if (status === "point" || status === "settling") foundButton = true;
     if (
       status === "point" &&
       typeof value === "object" &&
       typeof value.x === "number" &&
       typeof value.y === "number"
     ) {
+      if (
+        !previousPoint ||
+        Math.abs(previousPoint.x - value.x) > 1 ||
+        Math.abs(previousPoint.y - value.y) > 1
+      ) {
+        previousPoint = { x: value.x, y: value.y };
+        await delay(150);
+        continue;
+      }
       await clickTrustedPoint(Runtime, Input, value.x, value.y);
       return true;
     }
@@ -684,6 +656,7 @@ async function attemptSendButton(
     if (status === "missing") {
       break;
     }
+    previousPoint = undefined;
     await delay(100);
   }
   if (Array.isArray(attachmentNames) && attachmentNames.length > 0) {
@@ -699,7 +672,27 @@ async function attemptSendButton(
       },
     );
   }
+  if (foundButton) {
+    throw new BrowserAutomationError("Send button did not settle before input timeout.", {
+      stage: "submit-prompt",
+      code: "send-button-unstable",
+    });
+  }
   return false;
+}
+
+async function activatePageForTrustedInput(
+  Page: ChromeClient["Page"] | undefined,
+  logger?: BrowserLogger,
+): Promise<void> {
+  if (!Page || typeof Page.bringToFront !== "function") {
+    return;
+  }
+  await Page.bringToFront().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.(`[browser] Could not bring ChatGPT target to front before trusted click: ${message}`);
+  });
+  await delay(150);
 }
 
 async function clickTrustedPoint(
@@ -878,17 +871,8 @@ async function verifyPromptCommitted(
     );
     await logDomFailure(Runtime, logger, "prompt-commit");
   }
-  if (prompt.trim().length >= 50_000) {
-    throw new BrowserAutomationError(
-      "Prompt did not appear in conversation before timeout (likely too large).",
-      {
-        stage: "submit-prompt",
-        code: "prompt-too-large",
-        promptLength: prompt.trim().length,
-        timeoutMs,
-      },
-    );
-  }
+  // Input was already dispatched. Even a large staged prompt may commit late;
+  // classifying this as truncation would let the runner submit an upload fallback.
   throw new BrowserAutomationError(
     "Prompt did not appear in conversation before timeout (send may have failed)",
     {
