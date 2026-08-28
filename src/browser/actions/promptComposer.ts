@@ -13,6 +13,7 @@ import {
 } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
+import { buildAttachmentNamePattern } from "./attachments.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 
@@ -354,11 +355,12 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
   const attachmentExpectations = attachmentNames.map((attachment) => {
     const name = typeof attachment === "string" ? attachment : attachment.name;
     const normalized = name.toLowerCase().replace(/\s+/g, " ").trim();
+    const generatedBundle = typeof attachment === "object" && attachment.generatedBundle === true;
     return {
       name: normalized,
       stem: normalized.replace(/\.[a-z0-9]{1,10}$/i, ""),
-      extension: normalized.match(/(\.[a-z0-9]{1,10})$/i)?.[1] ?? "",
-      generatedBundle: typeof attachment === "object" && attachment.generatedBundle === true,
+      namePattern: buildAttachmentNamePattern(normalized, generatedBundle)?.source ?? "",
+      generatedBundle,
     };
   });
   const namesLiteral = JSON.stringify(attachmentExpectations);
@@ -366,74 +368,28 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
     const expected = ${namesLiteral};
     const sendSelectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
     const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-    const hasNameBoundary = (text, name) => {
-      if (!name) return false;
-      let from = 0;
-      while (from < text.length) {
-        const index = text.indexOf(name, from);
-        if (index === -1) return false;
-        const previous = text[index - 1] || '';
-        const next = text[index + name.length] || '';
-        const previousOk = !previous || !/[a-z0-9._-]/.test(previous);
-        const nextOk = !next || !/[a-z0-9._-]/.test(next);
-        if (previousOk && nextOk) return true;
-        from = index + name.length;
-      }
-      return false;
-    };
     const hasStemFileBoundary = (text, stem) => {
       if (!stem) return false;
       let from = 0;
       while (from < text.length) {
         const index = text.indexOf(stem, from);
         if (index === -1) return false;
-        const previous = text[index - 1] || '';
-        const next = text[index + stem.length] || '';
-        const previousOk = !previous || !/[a-z0-9._-]/.test(previous);
-        const nextOk = !next || !/[a-z0-9._-]/.test(next);
+        const previous = Array.from(text.slice(0, index)).at(-1) || '';
+        const next = Array.from(text.slice(index + stem.length))[0] || '';
+        const previousOk = !previous || !/[\\p{L}\\p{N}\\p{M}._-]/u.test(previous);
+        const nextOk = !next || !/[\\p{L}\\p{N}\\p{M}._-]/u.test(next);
         if (previousOk && nextOk) return true;
         from = index + stem.length;
-      }
-      return false;
-    };
-    const hasBareStemBoundary = (text, stem) => {
-      if (!stem) return false;
-      let from = 0;
-      while (from < text.length) {
-        const index = text.indexOf(stem, from);
-        if (index === -1) return false;
-        const previous = text[index - 1] || '';
-        const next = text[index + stem.length] || '';
-        const previousOk = !previous || !/[a-z0-9._-]/.test(previous);
-        const nextOk = !next || !/[a-z0-9._(-]/.test(next);
-        if (previousOk && nextOk) return true;
-        from = index + stem.length;
-      }
-      return false;
-    };
-    const hasExtensionBoundary = (text, extension) => {
-      if (!extension) return false;
-      let from = 0;
-      while (from < text.length) {
-        const index = text.indexOf(extension, from);
-        if (index === -1) return false;
-        const next = text[index + extension.length] || '';
-        if (!next || !/[a-z0-9]/.test(next)) return true;
-        from = index + extension.length;
       }
       return false;
     };
     const matchesExpected = (value, item) => {
       const text = normalize(value);
       if (!text) return false;
-      if (hasNameBoundary(text, item.name)) return true;
-      if (item.generatedBundle && hasBareStemBoundary(text, item.stem)) return true;
+      const namePattern = item.namePattern ? new RegExp(item.namePattern, 'iu') : null;
       if (
-        item.stem &&
-        item.stem.length >= 4 &&
-        item.extension &&
-        text.includes(item.stem + '(') &&
-        hasExtensionBoundary(text, item.extension)
+        namePattern &&
+        String(value || '').split('\\n').some((candidate) => namePattern.test(normalize(candidate)))
       ) {
         return true;
       }
@@ -532,7 +488,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       };
       pushAttrs(node);
       pushText(node);
-      return pieces.join(' ').toLowerCase();
+      return pieces.join('\\n').toLowerCase();
     };
     const collectLabelHaystack = (node) => {
       if (!node) return '';
@@ -545,7 +501,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       push(parent);
       const grandparent = parent?.parentElement;
       push(grandparent);
-      return pieces.join(' ').toLowerCase();
+      return pieces.join('\\n').toLowerCase();
     };
     const attachmentRoots = Array.from(new Set([composer])).filter(Boolean);
     const collectChipNodes = () => {

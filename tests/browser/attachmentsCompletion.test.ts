@@ -3,6 +3,7 @@ import {
   waitForAttachmentCompletion,
   waitForUserTurnAttachments,
 } from "../../src/browser/pageActions.js";
+import { buildAttachmentNamePattern } from "../../src/browser/actions/attachments.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
 const useFakeTime = () => {
@@ -13,6 +14,134 @@ const useFakeTime = () => {
 const useRealTime = () => {
   vi.useRealTimers();
 };
+
+describe("collision-renamed attachment names", () => {
+  test.each([
+    ["01.jpg", "01(5).jpg"],
+    ["document.md", "document(20260818-145702).md"],
+    ["document.md", "document.md"],
+    ["a+b.jpg", "a+b(2).jpg"],
+    ["01.jpg", "remove file 1: 01.jpg"],
+    ["01.jpg", "remove file 2: 01(1).jpg"],
+    ["01.jpg", "remove file 2: 01(5).jpg"],
+    ["document.md", "remove file 1: document(20260818-145702).md"],
+    ["01.jpg", "Remove file 1: 01 (5).jpg"],
+    ["가01.jpg", "Remove file 1: 가01(5).jpg"],
+    ["é01.jpg", "Remove file 1: é01(5).jpg"],
+    ["𐐀01.jpg", "Remove file 1: 𐐀01(5).jpg"],
+  ])("matches %s to %s", (expectedName, actualName) => {
+    expect(buildAttachmentNamePattern(expectedName)?.test(actualName)).toBe(true);
+  });
+
+  test.each([
+    ["01.jpg", "010.jpg"],
+    ["01.jpg", "02(5).jpg"],
+    ["01.jpg", "remove file 1: 001.jpg"],
+    ["01.jpg", "remove file 1: x01.jpg"],
+    ["01.jpg", "remove file 1: 01.jpeg"],
+    ["01.jpg", "remove file 1: photo01.jpg"],
+    ["attachments-bundle.txt", "not-attachments-bundle.txt"],
+    ["report.pdf", "remove file 1: my_report.pdf"],
+    ["report.pdf", "remove file 1: report.pdf.bak"],
+    ["01.jpg", "remove file 1: 가01(5).jpg"],
+    ["01.jpg", "remove file 1: é01(5).jpg"],
+    ["01.jpg", "remove file 1: 01(5).jpgé"],
+    ["01.jpg", "remove file 1: \u030101(5).jpg"],
+    ["01.jpg", "remove file 1: 𐐀01(5).jpg"],
+    ["01.jpg", "remove file 1: ١01(5).jpg"],
+    ["README.md", "remove file 1: 가README(5).md"],
+    ["README.md", "remove file 1: README(5).mdé"],
+    ["README.md", "remove file 1: README (5).pdf"],
+    ["README.md", "remove file 1: README(abc).md"],
+  ])("does not match %s to %s", (expectedName, actualName) => {
+    expect(buildAttachmentNamePattern(expectedName)?.test(actualName)).toBe(false);
+    expect(buildAttachmentNamePattern(expectedName, true)?.test(actualName)).toBe(false);
+  });
+
+  test("waitForAttachmentCompletion resolves for a collision-renamed short filename", async () => {
+    useFakeTime();
+
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: true,
+            attachedNames: ["01(5).jpg"],
+            inputNames: [],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    try {
+      const promise = waitForAttachmentCompletion(runtime, 3_000, ["01.jpg"]);
+      const resolved = promise.then(
+        () => true,
+        () => false,
+      );
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(await resolved).toBe(true);
+    } finally {
+      useRealTime();
+    }
+  });
+
+  test.each([
+    ["01.jpg", "가01(5).jpg"],
+    ["01.jpg", "é01(5).jpg"],
+    ["01.jpg", "01(5).jpgé"],
+    ["01.jpg", "가01.jpg"],
+    ["README.md", "가README(5).md"],
+    ["README.md", "README(5).mdé"],
+    ["README.md", "README(5).pdf"],
+  ])("completion rejects %s when the chip names %s", async (expected, actual) => {
+    useFakeTime();
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            state: "ready",
+            uploading: false,
+            filesAttached: true,
+            attachedNames: [`Remove file 1: ${actual}`],
+            inputNames: [],
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+    try {
+      const assertion = expect(
+        waitForAttachmentCompletion(runtime, 3_000, [expected]),
+      ).rejects.toThrow(/did not finish uploading/i);
+      await vi.advanceTimersByTimeAsync(4_000);
+      await assertion;
+    } finally {
+      useRealTime();
+    }
+  });
+
+  test("sent-turn name verification recognizes a short collision suffix without a count fallback", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: true,
+            text: "01(5).jpg",
+            attrs: [],
+            hasAttachmentUi: true,
+            attachmentUiCount: 0,
+            fileCount: 0,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+    await expect(waitForUserTurnAttachments(runtime, ["01.jpg"], 500)).resolves.toBe(true);
+  });
+});
 
 describe("attachment completion fallbacks", () => {
   test("waitForAttachmentCompletion resolves when ready file input contains expected name (no UI chip)", async () => {

@@ -6,6 +6,31 @@ import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
 
+export function buildAttachmentNamePattern(
+  expectedName: string,
+  allowStemOnly = false,
+): RegExp | null {
+  const baseName = expectedName.split("/").pop()?.split("\\").pop() ?? expectedName;
+  const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalizedExpected) return null;
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Unicode letters, numbers, and combining marks continue a filename, not its label.
+  const filenameChars = String.raw`\p{L}\p{N}\p{M}._-`;
+  const boundary = `(?=$|[^${filenameChars}])`;
+  const extensionIndex = normalizedExpected.lastIndexOf(".");
+  let name = `${escape(normalizedExpected)}${boundary}`;
+  if (extensionIndex > 0 && extensionIndex < normalizedExpected.length - 1) {
+    const stem = normalizedExpected.slice(0, extensionIndex);
+    const extension = escape(normalizedExpected.slice(extensionIndex));
+    name = `${escape(stem)}(?:\\s*\\([0-9]+(?:-[0-9]+)*\\))?${extension}${boundary}`;
+    if (allowStemOnly && stem.length >= 6) {
+      // A visible extension or collision suffix must not fall through to a bare stem.
+      name = `(?:${name}|${escape(stem)}(?!\\s*[.(])${boundary})`;
+    }
+  }
+  return new RegExp(`(?:^|[^${filenameChars}])${name}`, "iu");
+}
+
 export async function uploadAttachmentFile(
   deps: {
     runtime: ChromeClient["Runtime"];
@@ -26,17 +51,19 @@ export async function uploadAttachmentFile(
       : 0;
 
   const readAttachmentSignals = async (name: string) => {
+    const namePattern = buildAttachmentNamePattern(name, true);
     const check = await runtime.evaluate({
       expression: `(() => {
         const expected = ${JSON.stringify(name)};
         const normalizedExpected = String(expected || '').toLowerCase().replace(/\\s+/g, ' ').trim();
         const expectedNoExt = normalizedExpected.replace(/\\.[a-z0-9]{1,10}$/i, '');
+        const namePatternSource = ${JSON.stringify(namePattern?.source ?? "")};
+        const namePattern = namePatternSource ? new RegExp(namePatternSource, 'iu') : null;
         const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
         const matchesExpected = (value) => {
           const text = normalize(value);
           if (!text) return false;
-          if (text.includes(normalizedExpected)) return true;
-          if (expectedNoExt.length >= 6 && text.includes(expectedNoExt)) return true;
+          if (namePattern?.test(text)) return true;
           if (text.includes('…') || text.includes('...')) {
             const marker = text.includes('…') ? '…' : '...';
             const [prefixRaw, suffixRaw] = text.split(marker);
@@ -372,14 +399,11 @@ export async function uploadAttachmentFile(
       .replace(/\s+/g, " ")
       .trim();
   const expectedName = path.basename(attachment.path);
-  const expectedNameLower = normalizeForMatch(expectedName);
-  const expectedNameNoExt = expectedNameLower.replace(/\.[a-z0-9]{1,10}$/i, "");
+  const expectedNamePattern = buildAttachmentNamePattern(expectedName, true);
   const matchesExpectedName = (value: string): boolean => {
     const normalized = normalizeForMatch(value);
     if (!normalized) return false;
-    if (normalized.includes(expectedNameLower)) return true;
-    if (expectedNameNoExt.length >= 6 && normalized.includes(expectedNameNoExt)) return true;
-    return false;
+    return expectedNamePattern?.test(normalized) ?? false;
   };
   const isImageAttachment = /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(expectedName);
   const attachmentUiTimeoutMs = 25_000;
@@ -1603,9 +1627,9 @@ export async function waitForAttachmentCompletion(
         const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
         const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
         const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
+        const namePattern = buildAttachmentNamePattern(normalizedExpected, true);
         return attachedNames.some((raw) => {
-          if (raw.includes(normalizedExpected)) return true;
-          if (expectedNoExt.length >= 6 && raw.includes(expectedNoExt)) return true;
+          if (namePattern?.test(raw)) return true;
           if (raw.includes("…") || raw.includes("...")) {
             const marker = raw.includes("…") ? "…" : "...";
             const [prefixRaw, suffixRaw] = raw.split(marker);
@@ -1668,14 +1692,8 @@ export async function waitForAttachmentCompletion(
       // Fallback: if the file input has the expected names, allow progress once that condition is stable.
       // Some ChatGPT surfaces only render the filename after sending the message.
       const inputMissing = expectedNormalized.filter((expected) => {
-        const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-        const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
-        const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
-        return !inputNames.some(
-          (raw) =>
-            raw.includes(normalizedExpected) ||
-            (expectedNoExt.length >= 6 && raw.includes(expectedNoExt)),
-        );
+        const namePattern = buildAttachmentNamePattern(expected, true);
+        return !inputNames.some((raw) => namePattern?.test(raw));
       });
       // Don't include 'disabled' - a disabled button likely means upload is still in progress.
       const inputStateOk = value.state === "ready" || value.state === "missing";
@@ -1778,12 +1796,7 @@ export async function waitForUserTurnAttachments(
     const attachmentUiSatisfied =
       attachmentUiCount >= expectedNormalized.length && expectedNormalized.length > 0;
     const missing = expectedNormalized.filter((expected) => {
-      const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-      const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
-      const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
-      if (haystack.includes(normalizedExpected)) return false;
-      if (expectedNoExt.length >= 6 && haystack.includes(expectedNoExt)) return false;
-      return true;
+      return !buildAttachmentNamePattern(expected, true)?.test(haystack);
     });
     if (promptMatches && (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied)) {
       return true;
@@ -1934,14 +1947,9 @@ export async function waitForAttachmentVisible(
   // so respect the caller-provided timeout instead of capping at 2s.
   const deadline = Date.now() + timeoutMs;
   const expression = `(() => {
-    const expected = ${JSON.stringify(expectedName)};
-    const normalized = expected.toLowerCase();
-    const normalizedNoExt = normalized.replace(/\\.[a-z0-9]{1,10}$/i, '');
+    const namePattern = new RegExp(${JSON.stringify(buildAttachmentNamePattern(expectedName, true)?.source ?? "(?!)")}, 'iu');
     const matchesExpectedFileName = (value) => {
-      const text = String(value || '').toLowerCase();
-      if (!text) return false;
-      if (text.includes(normalized)) return true;
-      return normalizedNoExt.length >= 6 && text.includes(normalizedNoExt);
+      return namePattern.test(String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim());
     };
     const matchNode = (node) => {
       if (!node) return false;
@@ -1952,7 +1960,7 @@ export async function waitForAttachmentVisible(
       const testId = node.getAttribute?.('data-testid')?.toLowerCase?.() ?? '';
       const alt = node.getAttribute?.('alt')?.toLowerCase?.() ?? '';
       const candidates = [text, aria, title, testId, alt].filter(Boolean);
-      return candidates.some((value) => value.includes(normalized) || (normalizedNoExt.length >= 6 && value.includes(normalizedNoExt)));
+      return candidates.some(matchesExpectedFileName);
     };
 
     const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
@@ -2039,7 +2047,7 @@ export async function waitForAttachmentVisible(
     const cardTexts = Array.from(composerRoot.querySelectorAll('[aria-label*="Remove"]')).map((btn) =>
       btn?.parentElement?.parentElement?.innerText?.toLowerCase?.() ?? '',
     );
-    if (cardTexts.some((text) => text.includes(normalized) || (normalizedNoExt.length >= 6 && text.includes(normalizedNoExt)))) {
+    if (cardTexts.some(matchesExpectedFileName)) {
       return { found: true, source: 'attachment-cards' };
     }
 
@@ -2123,11 +2131,11 @@ async function waitForAttachmentAnchored(
   const expression = `(() => {
     const normalized = ${JSON.stringify(expectedName.toLowerCase())};
     const normalizedNoExt = normalized.replace(/\\.[a-z0-9]{1,10}$/i, '');
+    const namePattern = new RegExp(${JSON.stringify(buildAttachmentNamePattern(expectedName, true)?.source ?? "(?!)")}, 'iu');
     const matchesExpected = (value) => {
-      const text = (value ?? '').toLowerCase();
+      const text = String(value ?? '').toLowerCase().replace(/\\s+/g, ' ').trim();
       if (!text) return false;
-      if (text.includes(normalized)) return true;
-      if (normalizedNoExt.length >= 6 && text.includes(normalizedNoExt)) return true;
+      if (namePattern.test(text)) return true;
       if (text.includes('…') || text.includes('...')) {
         const marker = text.includes('…') ? '…' : '...';
         const [prefixRaw, suffixRaw] = text.split(marker);

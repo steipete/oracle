@@ -5,6 +5,7 @@
 ### Fixed
 
 - Browser: attach to running Chrome when `DevToolsActivePort` metadata is absent, with IPv6 support and bounded endpoint retries that include response-body reads. Fixes #414. Thanks @devYRPauli!
+- Browser: recognize collision-renamed attachment chips, including short filenames, while keeping Unicode filename boundaries and visible extensions distinct across upload and send checks. Fixes #393. Thanks @devYRPauli!
 - Browser: select and verify thinking effort in ChatGPT's direct-slider picker without an Advanced submenu, keeping explicit Pro requests fail-closed. Fixes #422.
 - Browser: preserve Hangul and recognize Korean model/effort picker labels, distinguishing High from Extra High and keeping Pro verification strict. Fixes #423.
 - Browser: restore locally launched macOS Chrome windows to their prior placement for visible runs only when Oracle recorded the window before a `--browser-hide-window` run; unmarked windows remain untouched.

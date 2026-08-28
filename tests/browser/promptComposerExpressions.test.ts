@@ -142,10 +142,6 @@ describe("prompt composer attachment expressions", () => {
     // Walks into ancestor and descendant text so filenames buried in nested spans are still found.
     expect(expression).toContain("collectLabelHaystack");
     expect(expression).toContain("parentElement");
-    // ChatGPT can rename duplicate uploads as e.g. README(1).md; matching on the
-    // expected basename stem keeps the send check aligned with the upload check.
-    expect(expression).toContain("item.stem");
-    expect(expression).toContain("text.includes(item.stem + '(')");
     // Count-based fallback: when ChatGPT hides the filename entirely, accept that we
     // see at least as many chip-shaped nodes (each with a Remove affordance) as we
     // uploaded.
@@ -252,6 +248,64 @@ describe("prompt composer attachment expressions", () => {
 
     expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(true);
   });
+
+  test.each([
+    ["01.jpg", "01(5).jpg"],
+    ["document.md", "document(20260818-145702).md"],
+    ["document.md", "document.md"],
+    ["a+b.jpg", "a+b(2).jpg"],
+    ["가01.jpg", "가01(5).jpg"],
+    ["é01.jpg", "é01(5).jpg"],
+    ["𐐀01.jpg", "𐐀01(5).jpg"],
+    ["01.jpg", "01 (5).jpg"],
+  ])("attachment ready check matches %s to %s", (expectedName, actualName) => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], actualName),
+          new FakeElement("button", { "aria-label": `Remove file 1: ${actualName}` }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression([expectedName], document)).toBe(true);
+  });
+
+  test.each([
+    "010.jpg",
+    "02(5).jpg",
+    "가01(5).jpg",
+    "é01(5).jpg",
+    "01(5).jpgé",
+    "\u030101(5).jpg",
+    "𐐀01(5).jpg",
+  ])("attachment ready check does not match 01.jpg to %s", (actualName) => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-testid": "unified-composer" }, [
+        new FakeElement("div", { "data-testid": "attachment-chip" }, [
+          new FakeElement("span", {}, [], actualName),
+          new FakeElement("button", { "aria-label": `Remove file 1: ${actualName}` }),
+        ]),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["01.jpg"], document)).toBe(false);
+  });
+
+  test.each(["가README(5).md", "éREADME(5).md", "README(5).mdé", "README(5).md.bak"])(
+    "attachment ready check does not match README.md to %s",
+    (actualName) => {
+      const document = new FakeDocument([
+        new FakeElement("div", { "data-testid": "unified-composer" }, [
+          new FakeElement("div", { "data-testid": "attachment-chip" }, [
+            new FakeElement("span", {}, [], actualName),
+            new FakeElement("button", { "aria-label": `Remove file 1: ${actualName}` }),
+          ]),
+        ]),
+      ]);
+      expect(evaluateAttachmentReadyExpression(["README.md"], document)).toBe(false);
+    },
+  );
 
   test("attachment ready check accepts generated bundle chips that expose only the bundle stem", () => {
     const document = new FakeDocument([

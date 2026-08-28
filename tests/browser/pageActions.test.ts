@@ -1817,6 +1817,7 @@ describe("uploadAttachmentFile", () => {
 
     expect(capturedPresenceExpression).toContain("text.includes('…')");
     expect(capturedPresenceExpression).toContain("text.includes('...')");
+    expect(capturedPresenceExpression).toContain("namePattern");
     expect(dom.getDocument).not.toHaveBeenCalled();
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
     expect(logger).toHaveBeenCalledWith(expect.stringMatching(/Attachment already present/i));
