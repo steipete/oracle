@@ -1046,6 +1046,66 @@ function buildThinkingTimeExpression(
       return null;
     };
 
+    // The direct-slider rollout removes the Effort submenu entirely. Its keyboard
+    // owner announces the actual tier via aria-describedby; neither the pill nor
+    // the slider's maximum position alone proves that Pro was selected.
+    const selectDirectEffortSlider = async (menu) => {
+      const view = menu.querySelector?.('[data-model-selection-view="true"]');
+      const simple = view?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
+      if (!simple || simple.getAttribute('data-active') !== 'true' || !isVisible(simple)) return null;
+      const resolve = () => {
+        const currentView = menu.querySelector?.('[data-model-selection-view="true"]');
+        const currentSimple = currentView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
+        if (currentSimple?.getAttribute('data-active') !== 'true') return null;
+        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]');
+        const control = slider?.closest?.('[role="menuitem"]');
+        const thumb = slider?.querySelector?.('[role="slider"]');
+        if (!control || !thumb || !isVisible(control)) return null;
+        const levels = ['light', 'standard', 'extended', 'extra-high', 'pro'];
+        const labels = describedIds(control)
+          .map((id) => (document.getElementById?.(id)?.textContent ?? '').split(/[,，]/)[0].trim())
+          .filter((label) => levels.some((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label))));
+        if (labels.length !== 1) return null;
+        const label = labels[0];
+        const index = levels.findIndex((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label)));
+        // This adapter owns the observed five-tier layout only. A different range
+        // or contradictory announcement must not turn a numeric guess into proof.
+        if (thumb.getAttribute('aria-valuemin') !== '0' || thumb.getAttribute('aria-valuemax') !== '4' ||
+            thumb.getAttribute('aria-valuenow') !== String(index)) return null;
+        return { control, label, index, level: levels[index] };
+      };
+      let current = resolve();
+      const finish = (result) => { closeOpenMenus(); return result; };
+      if (!current) return finish(failure('selection-unverified'));
+      // Preserve the legacy Pro-model + extended contract on unified pickers.
+      const target = TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'extended' ? 'pro' : TARGET_LEVEL;
+      const targetIndex = ['light', 'standard', 'extended', 'extra-high', 'pro'].indexOf(target);
+      if (targetIndex < 0) {
+        if (TARGET_IS_GPT56_MODEL && TARGET_LEVEL === 'heavy' && current.level === 'pro') {
+          return finish({ status: 'already-selected', label: current.label });
+        }
+        return finish(failure('option-not-found'));
+      }
+      if (current.level === target) return finish({ status: 'already-selected', label: current.label });
+      const deadline = performance.now() + MAX_WAIT_MS;
+      for (let attempt = 0; attempt < 4 && performance.now() < deadline; attempt += 1) {
+        if (isOptionDisabled(current.control)) return finish(failure('option-disabled', { label: current.label }));
+        const previousIndex = current.index;
+        const key = targetIndex > previousIndex ? 'ArrowRight' : 'ArrowLeft';
+        current.control.focus?.();
+        current.control.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+        current = null;
+        while (performance.now() < deadline) {
+          await sleep(100);
+          const next = resolve();
+          if (next && next.index !== previousIndex) { current = next; break; }
+        }
+        if (!current) return finish(failure('selection-unverified'));
+        if (current.level === target) return finish({ status: 'switched', label: current.label });
+      }
+      return finish(failure('selection-unverified'));
+    };
+
     // Current ChatGPT exposes a standalone Pro or Thinking composer pill whose
     // controlled menu contains the effort levels. Prefer this ownership boundary
     // before probing older model-picker layouts.
@@ -1170,6 +1230,8 @@ function buildThinkingTimeExpression(
       while (performance.now() < deadline) {
         const menu = findVisibleEffortMenu(composerEffortPill);
         if (menu) {
+          const sliderResult = await selectDirectEffortSlider(menu);
+          if (sliderResult) return sliderResult;
           const proEffortResult = await selectProEffortFromSubmenu();
           if (proEffortResult) {
             return proEffortResult;
