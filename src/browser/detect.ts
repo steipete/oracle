@@ -362,7 +362,7 @@ function deriveDevToolsProfileRoot(activePortPath: string): string {
   return parentDir;
 }
 
-function formatWebSocketHost(host: string): string {
+export function formatWebSocketHost(host: string): string {
   if (host.includes(":") && !host.startsWith("[") && !host.endsWith("]")) {
     return `[${host}]`;
   }

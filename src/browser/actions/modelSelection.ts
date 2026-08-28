@@ -476,10 +476,10 @@ function buildModelSelectionExpression(
     const ADVANCED_VIEW_SELECTOR = '[data-testid="composer-model-picker-slider-advanced-view"]';
     const INTELLIGENCE_PICKER_SELECTOR = '[data-testid="composer-intelligence-picker-content"]';
     const SUBMENU_OPENER_SELECTOR = '[role="menuitem"][aria-haspopup="menu"]';
-    const ADVANCED_WORDS = ['advanced', 'erweitert', '高级', 'avanzado', 'avancado', 'avance'];
-    const MODEL_WORDS = ['model', 'modell', '模型', 'modelo', 'modello', 'modele'];
+    const ADVANCED_WORDS = ['advanced', 'erweitert', '高级', '고급', 'avanzado', 'avancado', 'avance'];
+    const MODEL_WORDS = ['model', 'modell', '模型', '모델', 'modelo', 'modello', 'modele'];
     const EFFORT_WORDS = [
-      'effort', 'aufwand', '强度', '努力',
+      'effort', 'aufwand', '强度', '努力', '추론 수준',
       'esfuerzo', 'esforco', 'sforzo', 'inspanning', 'wysilek',
     ];
     const pickerNodeLabel = (node) => {
@@ -490,6 +490,7 @@ function buildModelSelectionExpression(
           .toLowerCase()
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
+          .normalize('NFC')
           .replace(/\\s+/g, ' ')
           .trim();
       } catch {
@@ -756,6 +757,8 @@ function buildModelSelectionExpression(
         node.getAttribute('data-composer-intelligence-pro-effort-action') === 'true' ||
         Boolean(node.closest('[data-model-picker-thinking-effort-action="true"]')) ||
         Boolean(node.closest('[data-composer-intelligence-pro-effort-action="true"]')) ||
+        (isUnifiedPickerMenu(menu) && isSubmenuOpener(node) &&
+          containsPickerWord(pickerNodeLabel(node), EFFORT_WORDS)) ||
         isDetachedProEffortMenu(menu));
     const optionIsSelected = (node) => {
       if (!(node instanceof HTMLElement)) {

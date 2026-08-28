@@ -292,12 +292,12 @@ function buildThinkingTimeExpression(
     const TARGET_MODEL_KIND = ${targetModelKindLiteral};
     const TARGET_IS_GPT56_MODEL = ${targetIsGpt56ModelLiteral};
 
-    // Multilingual matchers: English level token + observed German/Japanese/Chinese variants.
+    // Multilingual matchers: English level token + observed localized variants.
     const LEVEL_TOKENS = {
-      light: ['light', 'instant', 'sofort', 'leicht', '最速', '轻', '极速'],
-      standard: ['standard', 'medium', 'mittel', '中程度', '标准', '中'],
-      extended: ['extended', 'high', 'hoch', 'erweitert', '高い', '扩展', '深度', '加强', '高'],
-      'extra-high': ['extra high', 'sehr hoch', '非常に高い', '极高'],
+      light: ['light', 'instant', 'sofort', 'leicht', '最速', '轻', '极速', '즉시'],
+      standard: ['standard', 'medium', 'mittel', '中程度', '标准', '中', '중간'],
+      extended: ['extended', 'high', 'hoch', 'erweitert', '高い', '扩展', '深度', '加强', '高', '높음'],
+      'extra-high': ['extra high', 'sehr hoch', '非常に高い', '极高', '매우 높음'],
       heavy: ['heavy', 'schwer', '重度', '加重'],
     };
     // Pro is a tier you can request, but it is also a MODEL name, so it must never
@@ -316,7 +316,7 @@ function buildThinkingTimeExpression(
     const INTELLIGENCE_WAIT_MS = 2500;
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    // Keep CJK characters, including Japanese kana, so localized labels survive
+    // Keep CJK characters, including Japanese kana and Hangul, so labels survive
     // normalization before being matched against LEVEL_TOKENS and picker controls.
     const normalize = (value) => (value || '')
       // Compose first so NFD umlauts fold too, then map them onto ASCII before
@@ -327,7 +327,7 @@ function buildThinkingTimeExpression(
       .replace(/ö/g, 'o')
       .replace(/ü/g, 'u')
       .replace(/ß/g, 'ss')
-      .replace(/[^a-z0-9\\u3040-\\u30ff\\u4e00-\\u9fff]+/g, ' ')
+      .replace(/[^a-z0-9\\u3040-\\u30ff\\u4e00-\\u9fff\\uac00-\\ud7af]+/g, ' ')
       .replace(/\\s+/g, ' ')
       .trim();
     const hasToken = (text, token) => normalize(text).split(' ').includes(token);
@@ -356,6 +356,8 @@ function buildThinkingTimeExpression(
         if (token === 'extra high') return hasPhrase(t, 'extra high');
         if (token === 'hoch') return hasPhrase(t, 'hoch') && !hasPhrase(t, 'sehr hoch');
         if (token === 'sehr hoch') return hasPhrase(t, 'sehr hoch');
+        if (token === '높음') return hasPhrase(t, '높음') && !hasPhrase(t, '매우 높음');
+        if (token === '매우 높음') return hasPhrase(t, '매우 높음');
         if (token === '高い' || token === '非常に高い') {
           return t === token || hasToken(t, token);
         }
@@ -943,11 +945,11 @@ function buildThinkingTimeExpression(
     // token matching cannot be used here — substring is deliberate, as in
     // countEffortLevels above.
     const ADVANCED_WORDS = [
-      'advanced', 'erweitert', '高级', '詳細設定', '詳細表示',
+      'advanced', 'erweitert', '高级', '詳細設定', '詳細表示', '고급',
       'avanzado', 'avancado', 'avance',
     ];
     const EFFORT_WORDS = [
-      'effort', 'aufwand', '强度', '努力', '推論レベル', '思考量',
+      'effort', 'aufwand', '强度', '努力', '推論レベル', '思考量', '추론 수준',
       'esfuerzo', 'esforco', 'sforzo', 'inspanning', 'wysilek',
     ];
     const containsAny = (label, words) => words.some((word) => label.includes(word));
@@ -1044,6 +1046,66 @@ function buildThinkingTimeExpression(
         await sleep(100);
       }
       return null;
+    };
+
+    // The direct-slider rollout removes the Effort submenu entirely. Its keyboard
+    // owner announces the actual tier via aria-describedby; neither the pill nor
+    // the slider's maximum position alone proves that Pro was selected.
+    const selectDirectEffortSlider = async (menu) => {
+      const view = menu.querySelector?.('[data-model-selection-view="true"]');
+      const simple = view?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
+      if (!simple || simple.getAttribute('data-active') !== 'true' || !isVisible(simple)) return null;
+      const resolve = () => {
+        const currentView = menu.querySelector?.('[data-model-selection-view="true"]');
+        const currentSimple = currentView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
+        if (currentSimple?.getAttribute('data-active') !== 'true') return null;
+        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]');
+        const control = slider?.closest?.('[role="menuitem"]');
+        const thumb = slider?.querySelector?.('[role="slider"]');
+        if (!control || !thumb || !isVisible(control)) return null;
+        const levels = ['light', 'standard', 'extended', 'extra-high', 'pro'];
+        const labels = describedIds(control)
+          .map((id) => (document.getElementById?.(id)?.textContent ?? '').split(/[,，]/)[0].trim())
+          .filter((label) => levels.some((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label))));
+        if (labels.length !== 1) return null;
+        const label = labels[0];
+        const index = levels.findIndex((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label)));
+        // This adapter owns the observed five-tier layout only. A different range
+        // or contradictory announcement must not turn a numeric guess into proof.
+        if (thumb.getAttribute('aria-valuemin') !== '0' || thumb.getAttribute('aria-valuemax') !== '4' ||
+            thumb.getAttribute('aria-valuenow') !== String(index)) return null;
+        return { control, label, index, level: levels[index] };
+      };
+      let current = resolve();
+      const finish = (result) => { closeOpenMenus(); return result; };
+      if (!current) return finish(failure('selection-unverified'));
+      // Preserve the legacy Pro-model + extended contract on unified pickers.
+      const target = TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'extended' ? 'pro' : TARGET_LEVEL;
+      const targetIndex = ['light', 'standard', 'extended', 'extra-high', 'pro'].indexOf(target);
+      if (targetIndex < 0) {
+        if (TARGET_IS_GPT56_MODEL && TARGET_LEVEL === 'heavy' && current.level === 'pro') {
+          return finish({ status: 'already-selected', label: current.label });
+        }
+        return finish(failure('option-not-found'));
+      }
+      if (current.level === target) return finish({ status: 'already-selected', label: current.label });
+      const deadline = performance.now() + MAX_WAIT_MS;
+      for (let attempt = 0; attempt < 4 && performance.now() < deadline; attempt += 1) {
+        if (isOptionDisabled(current.control)) return finish(failure('option-disabled', { label: current.label }));
+        const previousIndex = current.index;
+        const key = targetIndex > previousIndex ? 'ArrowRight' : 'ArrowLeft';
+        current.control.focus?.();
+        current.control.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+        current = null;
+        while (performance.now() < deadline) {
+          await sleep(100);
+          const next = resolve();
+          if (next && next.index !== previousIndex) { current = next; break; }
+        }
+        if (!current) return finish(failure('selection-unverified'));
+        if (current.level === target) return finish({ status: 'switched', label: current.label });
+      }
+      return finish(failure('selection-unverified'));
     };
 
     // Current ChatGPT exposes a standalone Pro or Thinking composer pill whose
@@ -1170,6 +1232,8 @@ function buildThinkingTimeExpression(
       while (performance.now() < deadline) {
         const menu = findVisibleEffortMenu(composerEffortPill);
         if (menu) {
+          const sliderResult = await selectDirectEffortSlider(menu);
+          if (sliderResult) return sliderResult;
           const proEffortResult = await selectProEffortFromSubmenu();
           if (proEffortResult) {
             return proEffortResult;

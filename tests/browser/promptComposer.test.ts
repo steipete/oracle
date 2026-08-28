@@ -367,7 +367,87 @@ describe("promptComposer", () => {
     expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
   });
 
-  test("falls back to Enter when a trusted click leaves the exact prompt in the composer", async () => {
+  test("does not send Enter while a trusted click commits after the old fallback deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      let clickedAt: number | null = null;
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("document.readyState")) {
+            return { result: { value: { ready: true, composer: true, fileInput: false } } };
+          }
+          if (expression.includes("focused: true")) {
+            return { result: { value: { focused: true } } };
+          }
+          if (expression.includes("editorText")) {
+            return {
+              result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
+            };
+          }
+          if (expression.includes("button.scrollIntoView")) {
+            return { result: { value: { status: "point", x: 10, y: 20 } } };
+          }
+          if (expression.includes("oracle-post-click-composer-probe")) {
+            const elapsed = clickedAt === null ? 0 : Date.now() - clickedAt;
+            return { result: { value: elapsed < 2_500 } };
+          }
+          const committed = clickedAt !== null && Date.now() - clickedAt >= 2_500;
+          return {
+            result: {
+              value: {
+                baseline: 0,
+                turnsCount: committed ? 1 : 0,
+                userMatched: committed,
+                prefixMatched: false,
+                lastMatched: committed,
+                hasNewTurn: committed,
+                stopVisible: committed,
+                assistantVisible: false,
+                composerCleared: committed,
+                inConversation: true,
+              },
+            },
+          };
+        }),
+      };
+      const input = {
+        insertText: vi.fn(),
+        dispatchKeyEvent: vi.fn(),
+        dispatchMouseEvent: vi.fn(async ({ type }: { type: string }) => {
+          if (type === "mouseReleased") clickedAt = Date.now();
+        }),
+      };
+      const logger = Object.assign(vi.fn(), { verbose: false });
+
+      const result = submitPrompt(
+        {
+          runtime: runtime as never,
+          input: input as never,
+          baselineTurns: 0,
+        },
+        "hello",
+        logger as never,
+      );
+      await vi.advanceTimersByTimeAsync(3_500);
+
+      await expect(result).resolves.toBe(1);
+      expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(input.dispatchMouseEvent).toHaveBeenCalledTimes(3);
+      expect(input.dispatchMouseEvent).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ type: "mousePressed", button: "left" }),
+      );
+      expect(input.dispatchMouseEvent).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({ type: "mouseReleased", button: "left" }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("uses one Enter key sequence only when no send-button click was issued", async () => {
     vi.useFakeTimers();
     try {
       const runtime = {
@@ -384,13 +464,7 @@ describe("promptComposer", () => {
             };
           }
           if (expression.includes("button.scrollIntoView")) {
-            return { result: { value: { status: "clicked" } } };
-          }
-          if (expression.includes("oracle-post-click-composer-probe")) {
-            return { result: { value: true } };
-          }
-          if (expression.includes("input.focus()")) {
-            return { result: { value: true } };
+            return { result: { value: { status: "missing" } } };
           }
           return {
             result: {
@@ -413,6 +487,7 @@ describe("promptComposer", () => {
       const input = {
         insertText: vi.fn(),
         dispatchKeyEvent: vi.fn(),
+        dispatchMouseEvent: vi.fn(),
       };
       const logger = Object.assign(vi.fn(), { verbose: false });
 
@@ -425,7 +500,7 @@ describe("promptComposer", () => {
         "hello",
         logger as never,
       );
-      await vi.advanceTimersByTimeAsync(2_600);
+      await vi.advanceTimersByTimeAsync(1_000);
 
       await expect(result).resolves.toBe(1);
       expect(input.dispatchKeyEvent).toHaveBeenCalledTimes(2);
@@ -433,9 +508,11 @@ describe("promptComposer", () => {
         1,
         expect.objectContaining({ type: "keyDown", key: "Enter" }),
       );
-      expect(logger).toHaveBeenCalledWith(
-        "Trusted click left prompt in composer; submitted via Enter key fallback",
+      expect(input.dispatchKeyEvent).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ type: "keyUp", key: "Enter" }),
       );
+      expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

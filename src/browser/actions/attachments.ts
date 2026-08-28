@@ -6,90 +6,29 @@ import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
 
-// This predicate is also injected into renderer expressions through
-// buildAttachmentReferenceMatcherJs(), so it must stay closure-free.
-export function matchesAttachmentReference(value: unknown, expectedName: string): boolean {
-  const normalize = (candidate: unknown): string =>
-    String(candidate || "")
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .trim();
-  const text = normalize(value);
-  const normalizedExpected = normalize(expectedName);
-  if (!text || !normalizedExpected) return false;
-
-  const escapeRegex = (candidate: string): string =>
-    candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const exactName = new RegExp(
-    `(?:^|[^a-z0-9._-])${escapeRegex(normalizedExpected)}(?=$|[^a-z0-9._-])`,
-    "i",
-  );
-  if (exactName.test(text)) return true;
-
-  const extensionMatch = normalizedExpected.match(/(\.[a-z0-9]{1,10})$/i);
-  const expectedExtension = extensionMatch?.[1] ?? "";
-  const expectedStem = extensionMatch
-    ? normalizedExpected.slice(0, -expectedExtension.length)
-    : normalizedExpected;
-
-  // ChatGPT renames repeated uploads as name(2).ext. Match that exact shape even
-  // for short stems, while keeping filename boundaries and extension equality.
-  if (expectedStem && expectedExtension) {
-    const duplicateName = new RegExp(
-      `(?:^|[^a-z0-9._-])${escapeRegex(expectedStem)}\\s*\\([0-9-]+\\)${escapeRegex(
-        expectedExtension,
-      )}(?=$|[^a-z0-9._-])`,
-      "i",
-    );
-    if (duplicateName.test(text)) return true;
-  }
-
-  if (expectedExtension && expectedStem.length >= 6 && text.includes(expectedStem)) {
-    let offset = 0;
-    let sawReferenceWithoutExtension = false;
-    while (offset < text.length) {
-      const index = text.indexOf(expectedStem, offset);
-      if (index < 0) break;
-      const previous = text[index - 1] ?? "";
-      if (previous && /[a-z0-9._-]/i.test(previous)) {
-        offset = index + expectedStem.length;
-        continue;
-      }
-      const suffix = text.slice(index + expectedStem.length);
-      const directExtension = suffix.match(/^\s*(?:\([0-9-]+\))?(\.[a-z0-9]{1,10})\b/i)?.[1] ?? "";
-      const ellipsizedExtensionMatch = suffix.match(
-        /^\s*(?:\([0-9-]+\))?\s*(?:…|\.{3})\s*\.?([a-z0-9]{1,10})\b/i,
-      );
-      const visibleExtension =
-        directExtension || (ellipsizedExtensionMatch ? `.${ellipsizedExtensionMatch[1]}` : "");
-      const nextCharacter = suffix[0] ?? "";
-      if (!visibleExtension && (!nextCharacter || !/[a-z0-9._-]/i.test(nextCharacter))) {
-        sawReferenceWithoutExtension = true;
-      } else if (visibleExtension === expectedExtension) {
-        return true;
-      }
-      offset = index + expectedStem.length;
+export function buildAttachmentNamePattern(
+  expectedName: string,
+  allowStemOnly = false,
+): RegExp | null {
+  const baseName = expectedName.split("/").pop()?.split("\\").pop() ?? expectedName;
+  const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!normalizedExpected) return null;
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Unicode letters, numbers, and combining marks continue a filename, not its label.
+  const filenameChars = String.raw`\p{L}\p{N}\p{M}._-`;
+  const boundary = `(?=$|[^${filenameChars}])`;
+  const extensionIndex = normalizedExpected.lastIndexOf(".");
+  let name = `${escape(normalizedExpected)}${boundary}`;
+  if (extensionIndex > 0 && extensionIndex < normalizedExpected.length - 1) {
+    const stem = normalizedExpected.slice(0, extensionIndex);
+    const extension = escape(normalizedExpected.slice(extensionIndex));
+    name = `${escape(stem)}(?:\\s*\\([0-9]+(?:-[0-9]+)*\\))?${extension}${boundary}`;
+    if (allowStemOnly && stem.length >= 6) {
+      // A visible extension or collision suffix must not fall through to a bare stem.
+      name = `(?:${name}|${escape(stem)}(?!\\s*[.(])${boundary})`;
     }
-    if (sawReferenceWithoutExtension) return true;
-    return false;
   }
-
-  if (text.includes("…") || text.includes("...")) {
-    const marker = text.includes("…") ? "…" : "...";
-    const [prefixRaw, suffixRaw] = text.split(marker);
-    const prefix = normalize(prefixRaw);
-    const suffix = normalize(suffixRaw);
-    return [normalizedExpected, expectedStem].some((target) => {
-      const matchesPrefix = !prefix || target.includes(prefix);
-      const matchesSuffix = !suffix || target.includes(suffix);
-      return matchesPrefix && matchesSuffix;
-    });
-  }
-  return false;
-}
-
-export function buildAttachmentReferenceMatcherJs(fnName: string): string {
-  return `const ${fnName} = ${matchesAttachmentReference.toString()};`;
+  return new RegExp(`(?:^|[^${filenameChars}])${name}`, "iu");
 }
 
 export async function uploadAttachmentFile(
@@ -112,12 +51,31 @@ export async function uploadAttachmentFile(
       : 0;
 
   const readAttachmentSignals = async (name: string) => {
+    const namePattern = buildAttachmentNamePattern(name, true);
     const check = await runtime.evaluate({
       expression: `(() => {
         const expected = ${JSON.stringify(name)};
-        ${buildAttachmentReferenceMatcherJs("matchesAttachmentReference")}
+        const normalizedExpected = String(expected || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+        const expectedNoExt = normalizedExpected.replace(/\\.[a-z0-9]{1,10}$/i, '');
+        const namePatternSource = ${JSON.stringify(namePattern?.source ?? "")};
+        const namePattern = namePatternSource ? new RegExp(namePatternSource, 'iu') : null;
         const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
-        const matchesExpected = (value) => matchesAttachmentReference(value, expected);
+        const matchesExpected = (value) => {
+          const text = normalize(value);
+          if (!text) return false;
+          if (namePattern?.test(text)) return true;
+          if (text.includes('…') || text.includes('...')) {
+            const marker = text.includes('…') ? '…' : '...';
+            const [prefixRaw, suffixRaw] = text.split(marker);
+            const prefix = normalize(prefixRaw);
+            const suffix = normalize(suffixRaw);
+            const target = expectedNoExt.length >= 6 ? expectedNoExt : normalizedExpected;
+            const matchesPrefix = !prefix || target.includes(prefix);
+            const matchesSuffix = !suffix || target.includes(suffix);
+            return matchesPrefix && matchesSuffix;
+          }
+          return false;
+        };
 
         const promptSelectors = ${JSON.stringify(INPUT_SELECTORS)};
         const findPromptNode = () => {
@@ -436,9 +394,18 @@ export async function uploadAttachmentFile(
 
   await delay(350);
 
+  const normalizeForMatch = (value: string): string =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
   const expectedName = path.basename(attachment.path);
-  const matchesExpectedName = (value: string): boolean =>
-    matchesAttachmentReference(value, expectedName);
+  const expectedNamePattern = buildAttachmentNamePattern(expectedName, true);
+  const matchesExpectedName = (value: string): boolean => {
+    const normalized = normalizeForMatch(value);
+    if (!normalized) return false;
+    return expectedNamePattern?.test(normalized) ?? false;
+  };
   const isImageAttachment = /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/i.test(expectedName);
   const attachmentUiTimeoutMs = 25_000;
   const attachmentUiSignalWaitMs = 5_000;
@@ -924,6 +891,10 @@ export async function uploadAttachmentFile(
         : [];
     const composerText = (chipContainer.innerText || '').toLowerCase();
     return {
+      local:
+        chipContainer !== document &&
+        chipContainer !== document.body &&
+        chipContainer !== document.documentElement,
       chipCount: chipContainer.querySelectorAll(chipSelector).length,
       chips,
       inputNames,
@@ -933,15 +904,46 @@ export async function uploadAttachmentFile(
   })()`;
 
   let confirmedAttachment = false;
+  let causalComposerConfirmed = false;
+  let exactInputNameConfirmed = false;
   let lastInputNames: string[] = [];
   let lastInputValue = "";
-  let finalSnapshot: {
+  type ComposerSnapshot = {
+    local: boolean;
     chipCount: number;
     chips: Array<Record<string, string>>;
     inputNames: string[];
     composerText: string;
     uploading: boolean;
-  } | null = null;
+  };
+  let finalSnapshot: ComposerSnapshot | null = null;
+  const readComposerSnapshot = async (idx: number): Promise<ComposerSnapshot | undefined> => {
+    const snapshot = await runtime
+      .evaluate({ expression: composerSnapshotFor(idx), returnByValue: true })
+      .then(
+        (res) =>
+          res?.result?.value as
+            | {
+                local?: boolean;
+                chipCount?: number;
+                chips?: Array<Record<string, string>>;
+                inputNames?: string[];
+                composerText?: string;
+                uploading?: boolean;
+              }
+            | undefined,
+      )
+      .catch(() => undefined);
+    if (!snapshot) return undefined;
+    return {
+      local: snapshot.local === true,
+      chipCount: Number(snapshot.chipCount ?? 0),
+      chips: Array.isArray(snapshot.chips) ? snapshot.chips : [],
+      inputNames: Array.isArray(snapshot.inputNames) ? snapshot.inputNames : [],
+      composerText: typeof snapshot.composerText === "string" ? snapshot.composerText : "",
+      uploading: Boolean(snapshot.uploading),
+    };
+  };
   const resolveInputNameCandidates = () => {
     const snapshot = finalSnapshot as { inputNames?: string[] } | null;
     const snapshotNames = snapshot?.inputNames;
@@ -980,31 +982,13 @@ export async function uploadAttachmentFile(
         const signalResult = await waitForAttachmentUiSignal(waitMs);
         const postInputSnapshot = await readInputSnapshot(idx);
         const postInputSignals = inputSignalsFor(baselineInputSnapshot, postInputSnapshot);
-        const snapshot = await runtime
-          .evaluate({ expression: composerSnapshotFor(idx), returnByValue: true })
-          .then(
-            (res) =>
-              res?.result?.value as {
-                chipCount?: number;
-                chips?: Array<Record<string, string>>;
-                inputNames?: string[];
-                composerText?: string;
-                uploading?: boolean;
-              },
-          )
-          .catch(() => undefined);
+        const snapshot = await readComposerSnapshot(idx);
         if (snapshot) {
-          finalSnapshot = {
-            chipCount: Number(snapshot.chipCount ?? 0),
-            chips: Array.isArray(snapshot.chips) ? snapshot.chips : [],
-            inputNames: Array.isArray(snapshot.inputNames) ? snapshot.inputNames : [],
-            composerText: typeof snapshot.composerText === "string" ? snapshot.composerText : "",
-            uploading: Boolean(snapshot.uploading),
-          };
+          finalSnapshot = snapshot;
         }
         lastInputNames = postInputSnapshot.names;
         lastInputValue = postInputSnapshot.value;
-        return { signalResult, postInputSignals };
+        return { signalResult, postInputSignals, composerSnapshot: snapshot };
       };
 
       const evaluateSignals = async (
@@ -1019,6 +1003,9 @@ export async function uploadAttachmentFile(
         const inputHasFile =
           inputNameCandidates.some((name) => matchesExpectedName(name)) ||
           (lastInputValue && matchesExpectedName(lastInputValue));
+        if (inputHasFile) {
+          exactInputNameConfirmed = true;
+        }
         const inputEvidence =
           immediateInputMatch ||
           postInputSignals.touched ||
@@ -1055,13 +1042,18 @@ export async function uploadAttachmentFile(
       const runInputAttempt = async (mode: "set" | "transfer") => {
         let immediateInputSnapshot = await readInputSnapshot(idx);
         let hasExpectedFile = snapshotMatchesExpected(immediateInputSnapshot);
+        let attemptIssued = false;
+        let beforeComposer: ComposerSnapshot | undefined;
         if (!hasExpectedFile) {
+          beforeComposer = await readComposerSnapshot(idx);
           if (mode === "set") {
             await dom.setFileInputFiles({ nodeId: resultNode.nodeId, files: [attachment.path] });
+            attemptIssued = true;
           } else {
             const selector = `input[type="file"][data-oracle-upload-idx="${idx}"]`;
             try {
               await transferAttachmentViaDataTransfer(runtime, attachment, selector);
+              attemptIssued = true;
             } catch (error) {
               logger(
                 `Attachment data transfer failed: ${(error as Error)?.message ?? String(error)}`,
@@ -1072,6 +1064,9 @@ export async function uploadAttachmentFile(
           hasExpectedFile = snapshotMatchesExpected(immediateInputSnapshot);
         }
         const immediateSignals = inputSignalsFor(baselineInputSnapshot, immediateInputSnapshot);
+        if (hasExpectedFile || immediateSignals.nameMatch) {
+          exactInputNameConfirmed = true;
+        }
         lastInputNames = immediateInputSnapshot.names;
         lastInputValue = immediateInputSnapshot.value;
         const immediateInputMatch = immediateSignals.touched || hasExpectedFile;
@@ -1080,11 +1075,25 @@ export async function uploadAttachmentFile(
         }
 
         const signalState = await gatherSignals();
-        const evaluation = await evaluateSignals(
-          signalState.signalResult,
-          signalState.postInputSignals,
-          immediateInputMatch,
-        );
+        const afterComposer = signalState.composerSnapshot;
+        // Image previews may omit filenames and consume input.files immediately. Accept that
+        // shape only when this exact assignment causes a strict chip-count increase inside the
+        // active composer; a successful setter or a pre-existing/global chip is not enough.
+        if (
+          attemptIssued &&
+          beforeComposer?.local === true &&
+          afterComposer?.local === true &&
+          afterComposer.chipCount > beforeComposer.chipCount
+        ) {
+          causalComposerConfirmed = true;
+        }
+        const evaluation = causalComposerConfirmed
+          ? { status: "ui" as const }
+          : await evaluateSignals(
+              signalState.signalResult,
+              signalState.postInputSignals,
+              immediateInputMatch,
+            );
         return { evaluation, signalState, immediateInputMatch };
       };
 
@@ -1182,12 +1191,22 @@ export async function uploadAttachmentFile(
       }
     }
   }
+  if (causalComposerConfirmed) {
+    logger("Attachment queued (composer-local chip delta confirmed)");
+    return true;
+  }
   if (confirmedAttachment) {
     const inputNameCandidates = resolveInputNameCandidates();
     const inputHasFile =
+      exactInputNameConfirmed ||
       inputNameCandidates.some((name) => matchesExpectedName(name)) ||
       (lastInputValue && matchesExpectedName(lastInputValue));
-    await waitForAttachmentVisible(runtime, expectedName, attachmentUiTimeoutMs, logger);
+    // Image previews may expose a new composer-local chip without rendering the filename.
+    // Exact current-input evidence plus the UI delta above is already two-source confirmation;
+    // requiring the literal filename again would reject a successfully queued image.
+    if (!inputHasFile) {
+      await waitForAttachmentVisible(runtime, expectedName, attachmentUiTimeoutMs, logger);
+    }
     logger(
       inputHasFile
         ? "Attachment queued (UI anchored, file input confirmed)"
@@ -1198,10 +1217,13 @@ export async function uploadAttachmentFile(
 
   const inputNameCandidates = resolveInputNameCandidates();
   const inputHasFile =
+    exactInputNameConfirmed ||
     inputNameCandidates.some((name) => matchesExpectedName(name)) ||
     (lastInputValue && matchesExpectedName(lastInputValue));
   if (await waitForAttachmentAnchored(runtime, expectedName, attachmentUiTimeoutMs)) {
-    await waitForAttachmentVisible(runtime, expectedName, attachmentUiTimeoutMs, logger);
+    if (!inputHasFile) {
+      await waitForAttachmentVisible(runtime, expectedName, attachmentUiTimeoutMs, logger);
+    }
     logger(
       inputHasFile
         ? "Attachment queued (UI anchored, file input confirmed)"
@@ -1626,7 +1648,23 @@ export async function waitForAttachmentCompletion(
       const fileCount = typeof value.fileCount === "number" ? value.fileCount : 0;
       const matchesExpected = (expected: string): boolean => {
         const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-        return attachedNames.some((raw) => matchesAttachmentReference(raw, baseName));
+        const normalizedExpected = baseName.toLowerCase().replace(/\s+/g, " ").trim();
+        const expectedNoExt = normalizedExpected.replace(/\.[a-z0-9]{1,10}$/i, "");
+        const namePattern = buildAttachmentNamePattern(normalizedExpected, true);
+        return attachedNames.some((raw) => {
+          if (namePattern?.test(raw)) return true;
+          if (raw.includes("…") || raw.includes("...")) {
+            const marker = raw.includes("…") ? "…" : "...";
+            const [prefixRaw, suffixRaw] = raw.split(marker);
+            const prefix = prefixRaw.trim();
+            const suffix = suffixRaw.trim();
+            const target = expectedNoExt.length >= 6 ? expectedNoExt : normalizedExpected;
+            const matchesPrefix = !prefix || target.includes(prefix);
+            const matchesSuffix = !suffix || target.includes(suffix);
+            return matchesPrefix && matchesSuffix;
+          }
+          return false;
+        });
       };
       const missing = expectedNormalized.filter((expected) => !matchesExpected(expected));
       if (missing.length === 0) {
@@ -1777,8 +1815,7 @@ export async function waitForUserTurnAttachments(
     const attachmentUiSatisfied =
       attachmentUiCount >= expectedNormalized.length && expectedNormalized.length > 0;
     const missing = expectedNormalized.filter((expected) => {
-      const baseName = expected.split("/").pop()?.split("\\").pop() ?? expected;
-      return !matchesAttachmentReference(haystack, baseName);
+      return !buildAttachmentNamePattern(expected, true)?.test(haystack);
     });
     if (promptMatches && (missing.length === 0 || fileCountSatisfied || attachmentUiSatisfied)) {
       return true;
@@ -1929,9 +1966,10 @@ export async function waitForAttachmentVisible(
   // so respect the caller-provided timeout instead of capping at 2s.
   const deadline = Date.now() + timeoutMs;
   const expression = `(() => {
-    const expected = ${JSON.stringify(expectedName)};
-    ${buildAttachmentReferenceMatcherJs("matchesAttachmentReference")}
-    const matchesExpectedFileName = (value) => matchesAttachmentReference(value, expected);
+    const namePattern = new RegExp(${JSON.stringify(buildAttachmentNamePattern(expectedName, true)?.source ?? "(?!)")}, 'iu');
+    const matchesExpectedFileName = (value) => {
+      return namePattern.test(String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim());
+    };
     const matchNode = (node) => {
       if (!node) return false;
       if (node.tagName === 'INPUT' && node.type === 'file') return false;
@@ -2040,9 +2078,25 @@ async function waitForAttachmentAnchored(
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   const expression = `(() => {
-    const expected = ${JSON.stringify(expectedName)};
-    ${buildAttachmentReferenceMatcherJs("matchesAttachmentReference")}
-    const matchesExpected = (value) => matchesAttachmentReference(value, expected);
+    const normalized = ${JSON.stringify(expectedName.toLowerCase())};
+    const normalizedNoExt = normalized.replace(/\\.[a-z0-9]{1,10}$/i, '');
+    const namePattern = new RegExp(${JSON.stringify(buildAttachmentNamePattern(expectedName, true)?.source ?? "(?!)")}, 'iu');
+    const matchesExpected = (value) => {
+      const text = String(value ?? '').toLowerCase().replace(/\\s+/g, ' ').trim();
+      if (!text) return false;
+      if (namePattern.test(text)) return true;
+      if (text.includes('…') || text.includes('...')) {
+        const marker = text.includes('…') ? '…' : '...';
+        const [prefixRaw, suffixRaw] = text.split(marker);
+        const prefix = (prefixRaw ?? '').toLowerCase();
+        const suffix = (suffixRaw ?? '').toLowerCase();
+        const target = normalizedNoExt.length >= 6 ? normalizedNoExt : normalized;
+        const matchesPrefix = !prefix || target.includes(prefix);
+        const matchesSuffix = !suffix || target.includes(suffix);
+        return matchesPrefix && matchesSuffix;
+      }
+      return false;
+    };
 
     const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
     for (const input of inputs) {
