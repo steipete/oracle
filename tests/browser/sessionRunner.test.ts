@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import type { RunOracleOptions } from "../../src/oracle.js";
 import type { BrowserSessionConfig } from "../../src/sessionStore.js";
@@ -750,12 +753,56 @@ describe("runBrowserSessionExecution", () => {
     );
     expect(executeBrowser).toHaveBeenCalledWith(
       expect.objectContaining({
-        fallbackSubmission: {
+        fallbackSubmission: expect.objectContaining({
           prompt: "fallback prompt",
           attachments: [expect.objectContaining({ path: "/repo/a.txt", displayPath: "a.txt" })],
-        },
+          prepare: expect.any(Function),
+        }),
       }),
     );
+  });
+
+  test("removes generated browser bundles after execution even when the run fails", async () => {
+    const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
+    const bundlePath = path.join(bundleDir, "attachments-bundle.zip");
+    await fs.writeFile(bundlePath, "zip");
+    const executeBrowser = vi.fn(async () => {
+      throw new Error("browser exploded");
+    });
+
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+        },
+        {
+          assemblePrompt: async () => ({
+            markdown: "prompt",
+            composerText: "prompt",
+            estimatedInputTokens: 5,
+            attachments: [
+              {
+                path: bundlePath,
+                displayPath: bundlePath,
+                sizeBytes: 3,
+                generatedBundle: true,
+              },
+            ],
+            inlineFileCount: 0,
+            tokenEstimateIncludesInlineFiles: false,
+            attachmentsPolicy: "always",
+            attachmentMode: "bundle",
+            fallback: null,
+          }),
+          executeBrowser,
+        },
+      ),
+    ).rejects.toThrow(/browser exploded/i);
+
+    await expect(fs.access(bundleDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("respects verbose logging", async () => {

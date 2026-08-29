@@ -182,6 +182,11 @@ Confirm the logs report a verified GPT-5.5 model followed by `Thinking time: Pro
    `pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5 --prompt "Summarize the key idea from the attached note" --file /tmp/browser-md.txt`
    Ensure upload logs show “Attachment queued” and the answer references the file contents explicitly.
 
+3b. **GPT-5.5 + multi-file ZIP**
+Create `/tmp/oracle-zip-smoke/src/one.txt` and `/tmp/oracle-zip-smoke/src/two.txt` with distinct sentinel text, then run
+`pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5 --browser-attachments always --browser-bundle-format zip --prompt "Extract the attached bundle, report both relative paths, and quote each sentinel." --file /tmp/oracle-zip-smoke/src`
+Confirm Oracle uploads one `attachments-bundle.zip`, the submitted composer text includes the extraction instruction, and the answer reports both paths and sentinels from the extracted tree.
+
 4. **GPT-5.5 + attachment (verbose)**
    Prepare `/tmp/browser-report.txt` with faux metrics, then run
    `pnpm run oracle -- --engine browser --browser-manual-login --model gpt-5.5 --prompt "Use the attachment to report current CPU and memory figures" --file /tmp/browser-report.txt --verbose`

@@ -18,6 +18,10 @@ export interface RemoteRunPayload {
   fallbackSubmission?: {
     prompt: string;
     attachments: RemoteAttachmentPayload[];
+    bundle?: {
+      format: "text" | "zip";
+      scope: "text-only" | "all";
+    };
   };
   browserConfig: BrowserSessionConfig;
   options: {

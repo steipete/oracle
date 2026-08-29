@@ -42,6 +42,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
         ? {
             prompt: options.fallbackSubmission.prompt,
             attachments: await serializeAttachments(options.fallbackSubmission.attachments ?? []),
+            bundle: options.fallbackSubmission.pendingBundle,
           }
         : undefined,
       browserConfig: options.config ?? {},

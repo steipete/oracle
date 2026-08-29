@@ -2,7 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { assembleBrowserPrompt, isRawUploadFile } from "../../src/browser/prompt.js";
+import {
+  assembleBrowserPrompt,
+  cleanupGeneratedBrowserBundles,
+  isRawUploadFile,
+  listGeneratedBrowserBundleDirs,
+  materializeBrowserFallback,
+} from "../../src/browser/prompt.js";
 import { findAttachmentBasenameCollisions } from "../../src/browser/attachmentValidation.js";
 import { createStoredZip } from "../../src/browser/zipBundle.js";
 import { DEFAULT_SYSTEM_PROMPT, type MODEL_CONFIGS } from "../../src/oracle.js";
@@ -172,6 +178,50 @@ describe("assembleBrowserPrompt", () => {
     );
   });
 
+  test("auto inline fallback defers text-bundle creation until materialize", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-inline-fallback-text-"));
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
+    try {
+      await fs.writeFile(path.join(tempDir, "one.txt"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.txt"), "two", "utf8");
+
+      result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.txt", "two.txt"],
+          browserAttachments: "auto",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("inline");
+      expect(result.attachments).toEqual([]);
+      expect(listGeneratedBrowserBundleDirs(result)).toEqual([]);
+      expect(result.fallback?.bundled).toBeNull();
+      expect(result.fallback?.pendingBundle).toEqual({ format: "text", scope: "text-only" });
+      expect(result.fallback?.composerText).toBe("Explain the bug");
+      expect(result.fallback?.attachments).toEqual([
+        expect.objectContaining({ displayPath: "one.txt" }),
+        expect.objectContaining({ displayPath: "two.txt" }),
+      ]);
+
+      const fallback = await materializeBrowserFallback(result);
+      expect(fallback?.attachments).toHaveLength(1);
+      expect(fallback?.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
+      expect(fallback?.bundled?.format).toBe("text");
+      expect(fallback?.pendingBundle).toBeNull();
+      const bundleText = await fs.readFile(fallback!.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: one.txt");
+      expect(bundleText).toContain("1 | one");
+      expect(bundleText).toContain("### File: two.txt");
+      expect(bundleText).toContain("1 | two");
+    } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("always mode forces uploads even when small", async () => {
     const options = buildOptions({
       prompt: "Explain the bug",
@@ -199,15 +249,15 @@ describe("assembleBrowserPrompt", () => {
     expect(result.fallback).toBeNull();
   });
 
-  test("always mode rejects upload attachments with the same basename", async () => {
+  test("always mode rejects native uploads with the same basename", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-duplicate-basename-"));
-    const firstPath = path.join(tempDir, "first", "SKILL.md");
-    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    const firstPath = path.join(tempDir, "first", "photo.png");
+    const secondPath = path.join(tempDir, "second", "photo.png");
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
       await fs.mkdir(path.dirname(secondPath), { recursive: true });
-      await fs.writeFile(firstPath, "first");
-      await fs.writeFile(secondPath, "second");
+      await fs.writeFile(firstPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      await fs.writeFile(secondPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 
       await expect(
         assembleBrowserPrompt(
@@ -218,9 +268,9 @@ describe("assembleBrowserPrompt", () => {
           { cwd: tempDir, tokenizeImpl: fastTokenizer },
         ),
       ).rejects.toMatchObject({
-        message: expect.stringContaining('multiple files named "SKILL.md"'),
+        message: expect.stringContaining('multiple files named "photo.png"'),
         details: {
-          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
+          collisions: [{ basename: "photo.png", files: [firstPath, secondPath] }],
           files: [firstPath, secondPath],
         },
       });
@@ -229,48 +279,40 @@ describe("assembleBrowserPrompt", () => {
     }
   });
 
-  test("auto mode rejects basename collisions when it selects upload", async () => {
+  test("auto mode bundles large duplicate-basename text files as flattened text", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-upload-collision-"));
     const firstPath = path.join(tempDir, "first", "SKILL.md");
     const secondPath = path.join(tempDir, "second", "SKILL.md");
-    const firstUniquePath = path.join(tempDir, "first", "FIRST.md");
-    const secondUniquePath = path.join(tempDir, "second", "SECOND.md");
     const largeContent = "x".repeat(31_000);
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
       await fs.mkdir(path.dirname(secondPath), { recursive: true });
       await Promise.all([
         fs.writeFile(firstPath, largeContent),
         fs.writeFile(secondPath, largeContent),
-        fs.writeFile(firstUniquePath, largeContent),
-        fs.writeFile(secondUniquePath, largeContent),
       ]);
 
-      const uploadControl = await assembleBrowserPrompt(
+      result = await assembleBrowserPrompt(
         buildOptions({
-          file: [firstUniquePath, secondUniquePath],
+          file: [firstPath, secondPath],
           browserAttachments: "auto",
         }),
         { cwd: tempDir, tokenizeImpl: fastTokenizer },
       );
-      expect(uploadControl.attachmentMode).toBe("upload");
-      expect(uploadControl.fallback).toBeNull();
 
-      await expect(
-        assembleBrowserPrompt(
-          buildOptions({
-            file: [firstPath, secondPath],
-            browserAttachments: "auto",
-          }),
-          { cwd: tempDir, tokenizeImpl: fastTokenizer },
-        ),
-      ).rejects.toMatchObject({
-        details: {
-          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
-          files: [firstPath, secondPath],
-        },
-      });
+      expect(result.attachmentMode).toBe("bundle");
+      expect(result.fallback).toBeNull();
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
+      expect(result.bundled?.format).toBe("text");
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: first/SKILL.md");
+      expect(bundleText).toContain("### File: second/SKILL.md");
     } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -338,13 +380,14 @@ describe("assembleBrowserPrompt", () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-bundled-collision-"));
     const firstPath = path.join(tempDir, "first", "SKILL.md");
     const secondPath = path.join(tempDir, "second", "SKILL.md");
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
       await fs.mkdir(path.dirname(secondPath), { recursive: true });
       await fs.writeFile(firstPath, "first");
       await fs.writeFile(secondPath, "second");
 
-      const result = await assembleBrowserPrompt(
+      result = await assembleBrowserPrompt(
         buildOptions({
           file: [firstPath, secondPath],
           browserAttachments: "always",
@@ -361,6 +404,9 @@ describe("assembleBrowserPrompt", () => {
       expect(bundleText).toContain("### File: second/SKILL.md");
       expect(bundleText).toContain("1 | second");
     } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -385,8 +431,11 @@ describe("assembleBrowserPrompt", () => {
     expect(result.fallback).toBeNull();
   });
 
-  test("respects custom cwd and multiple files", async () => {
-    const options = buildOptions({ file: ["docs/one.md", "docs/two.md"] });
+  test("respects custom cwd and multiple inline files", async () => {
+    const options = buildOptions({
+      file: ["docs/one.md", "docs/two.md"],
+      browserAttachments: "never",
+    });
     const result = await assembleBrowserPrompt(options, {
       cwd: "/root/project",
       readFilesImpl: async (paths) =>
@@ -474,6 +523,34 @@ describe("assembleBrowserPrompt", () => {
       ]);
       expect(result.attachmentMode).toBe("upload");
       expect(result.bundled).toBeNull();
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit text format keeps the legacy multi-file text bundle", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-explicit-text-bundle-"));
+    try {
+      await fs.writeFile(path.join(tempDir, "one.txt"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.txt"), "two", "utf8");
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.txt", "two.txt"],
+          browserAttachments: "always",
+          browserBundleFormat: "text",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
+      expect(result.bundled?.format).toBe("text");
+      expect(result.composerText).toBe("Explain the bug");
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: one.txt");
+      expect(bundleText).toContain("1 | one");
+      expect(bundleText).toContain("### File: two.txt");
+      expect(bundleText).toContain("1 | two");
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -623,47 +700,51 @@ describe("assembleBrowserPrompt", () => {
     expect(inline.tokenEstimateIncludesInlineFiles).toBe(true);
   });
 
-  test("bundles attachments when more than 10 files", async () => {
-    const fileNames = Array.from({ length: 11 }, (_, i) => `file${i + 1}.txt`);
-    const options = buildOptions({ file: fileNames, browserAttachments: "always" });
-    const tokenizedContents: string[] = [];
-    const result = await assembleBrowserPrompt(options, {
-      cwd: "/repo",
-      readFilesImpl: async (paths) =>
-        paths.map((entry) => {
-          const displayPath = path.isAbsolute(entry) ? path.relative("/repo", entry) : entry;
-          return {
-            path: path.resolve("/repo", entry),
-            content: `content for ${displayPath}`,
-          };
-        }),
-      tokenizeImpl: (messages) => {
-        const typed = messages as Array<{ content: string }>;
-        tokenizedContents.push(...typed.map((message) => message.content));
-        return fastTokenizer(messages);
-      },
-    });
+  test("auto bundles more than 10 text uploads as flattened text", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-many-text-zip-bundle-"));
+    try {
+      const fileNames = Array.from({ length: 11 }, (_, i) => `file${i + 1}.txt`);
+      await Promise.all(
+        fileNames.map((file) =>
+          fs.writeFile(path.join(tempDir, file), `content for ${file}`, "utf8"),
+        ),
+      );
+      const tokenizedContents: string[] = [];
+      const result = await assembleBrowserPrompt(
+        buildOptions({ file: fileNames, browserAttachments: "always" }),
+        {
+          cwd: tempDir,
+          tokenizeImpl: (messages) => {
+            const typed = messages as Array<{ content: string }>;
+            tokenizedContents.push(...typed.map((message) => message.content));
+            return fastTokenizer(messages);
+          },
+        },
+      );
 
-    expect(result.attachments).toHaveLength(1);
-    expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
-    expect(result.attachments[0]?.generatedBundle).toBe(true);
-    const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
-    expect(bundleText).toContain("### File: file1.txt");
-    expect(bundleText).toContain("Lines: 1-1");
-    expect(bundleText).toContain("1 | content for file1.txt");
-    expect(tokenizedContents.some((content) => content.includes("1 | content for file1.txt"))).toBe(
-      true,
-    );
-    expect(result.inlineFileCount).toBe(0);
-    expect(result.bundled).toEqual({
-      originalCount: 11,
-      bundlePath: result.attachments[0]?.displayPath,
-      format: "text",
-    });
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
+      expect(result.attachments[0]?.generatedBundle).toBe(true);
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: file1.txt");
+      expect(bundleText).toContain("1 | content for file1.txt");
+      expect(
+        tokenizedContents.some((content) => content.includes("1 | content for file1.txt")),
+      ).toBe(true);
+      expect(result.composerText).not.toContain("Extract it into a temporary directory");
+      expect(result.inlineFileCount).toBe(0);
+      expect(result.bundled).toEqual({
+        originalCount: 11,
+        bundlePath: result.attachments[0]?.displayPath,
+        format: "text",
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
-  test("supports opt-in ZIP bundles for browser uploads", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-text-zip-bundle-"));
+  test("auto bundles two text uploads as flattened text", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-text-auto-bundle-"));
     try {
       await fs.mkdir(path.join(tempDir, "src"), { recursive: true });
       await fs.writeFile(path.join(tempDir, "src", "a.ts"), "content for src/a.ts", "utf8");
@@ -671,8 +752,6 @@ describe("assembleBrowserPrompt", () => {
       const options = buildOptions({
         file: ["src/a.ts", "src/b.ts"],
         browserAttachments: "always",
-        browserBundleFiles: true,
-        browserBundleFormat: "zip",
       });
       const tokenizedContents: string[] = [];
       const result = await assembleBrowserPrompt(options, {
@@ -685,31 +764,154 @@ describe("assembleBrowserPrompt", () => {
       });
 
       expect(result.attachments).toHaveLength(1);
-      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
       expect(result.attachments[0]?.generatedBundle).toBe(true);
       expect(result.bundled).toEqual({
         originalCount: 2,
         bundlePath: result.attachments[0]?.displayPath,
-        format: "zip",
+        format: "text",
       });
-      const zipBytes = await fs.readFile(result.attachments[0]!.path);
-      expect(zipBytes.subarray(0, 4).toString("hex")).toBe("504b0304");
-      const entries = readStoredZipEntries(zipBytes);
-      expect(entries.get("src/a.ts")?.toString("utf8")).toBe("content for src/a.ts");
-      expect(entries.get("src/b.ts")?.toString("utf8")).toBe("content for src/b.ts");
-      expect(zipBytes.toString("utf8")).not.toContain("1 | content for src/a.ts");
-      expect(tokenizedContents.some((content) => content.includes("content for src/a.ts"))).toBe(
-        true,
-      );
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: src/a.ts");
+      expect(bundleText).toContain("1 | content for src/a.ts");
+      expect(bundleText).toContain("### File: src/b.ts");
+      expect(bundleText).toContain("1 | content for src/b.ts");
       expect(
         tokenizedContents.some((content) => content.includes("1 | content for src/a.ts")),
-      ).toBe(false);
+      ).toBe(true);
+      expect(result.composerText).not.toContain("Extract it into a temporary directory");
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 
-  test("auto bundle format chooses ZIP and preserves bytes when bundled inputs include an archive", async () => {
+  test("keeps native attachments alongside an automatic source ZIP", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-mixed-native-source-zip-"));
+    try {
+      await fs.writeFile(path.join(tempDir, "one.ts"), "export const one = 1;\n", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.ts"), "export const two = 2;\n", "utf8");
+      const imageBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+      const imagePath = path.join(tempDir, "reference.png");
+      await fs.writeFile(imagePath, imageBytes);
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.ts", "two.ts", "reference.png"],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("bundle");
+      expect(result.attachments).toHaveLength(2);
+      const zipAttachment = result.attachments.find((attachment) => attachment.generatedBundle);
+      expect(zipAttachment?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(result.attachments).toContainEqual(
+        expect.objectContaining({ path: imagePath, displayPath: "reference.png" }),
+      );
+      expect(result.bundled?.originalCount).toBe(2);
+      const entries = readStoredZipEntries(await fs.readFile(zipAttachment!.path));
+      expect(entries.get("one.ts")?.toString("utf8")).toBe("export const one = 1;\n");
+      expect(entries.get("two.ts")?.toString("utf8")).toBe("export const two = 2;\n");
+      expect(entries.has("reference.png")).toBe(false);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps native uploads direct when a source ZIP reduces the upload count to 10", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-source-zip-upload-cap-"));
+    try {
+      const textFiles = ["one.ts", "two.ts"];
+      const rawFiles = Array.from({ length: 9 }, (_, index) => `archive-${index}.zip`);
+      await Promise.all([
+        ...textFiles.map((file) => fs.writeFile(path.join(tempDir, file), file, "utf8")),
+        ...rawFiles.map((file) => fs.writeFile(path.join(tempDir, file), Buffer.from("PK"))),
+      ]);
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [...textFiles, ...rawFiles],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(10);
+      const zipAttachment = result.attachments.find((attachment) => attachment.generatedBundle);
+      expect(zipAttachment?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(result.bundled?.originalCount).toBe(2);
+      expect(result.attachments.filter((attachment) => !attachment.generatedBundle)).toHaveLength(
+        9,
+      );
+      const entries = readStoredZipEntries(await fs.readFile(zipAttachment!.path));
+      expect([...entries.keys()].sort()).toEqual(textFiles);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("automatically folds native uploads into the ZIP when the upload cap still overflows", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-all-files-upload-cap-"));
+    try {
+      const textFiles = ["one.ts", "two.ts"];
+      const rawFiles = Array.from({ length: 10 }, (_, index) => `archive-${index}.zip`);
+      await Promise.all([
+        ...textFiles.map((file) => fs.writeFile(path.join(tempDir, file), file, "utf8")),
+        ...rawFiles.map((file, index) =>
+          fs.writeFile(path.join(tempDir, file), Buffer.from(`PK-${index}`)),
+        ),
+      ]);
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: [...textFiles, ...rawFiles],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(result.bundled?.originalCount).toBe(12);
+      const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
+      expect([...entries.keys()].sort()).toEqual([...textFiles, ...rawFiles].sort());
+      expect(entries.get("one.ts")?.toString("utf8")).toBe("one.ts");
+      expect(entries.get("archive-9.zip")?.toString("utf8")).toBe("PK-9");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps multiple native attachments separate by default", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-native-uploads-"));
+    try {
+      const firstPath = path.join(tempDir, "first.png");
+      const secondPath = path.join(tempDir, "second.pdf");
+      await fs.writeFile(firstPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      await fs.writeFile(secondPath, Buffer.from("%PDF-1.7\n", "utf8"));
+
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["first.png", "second.pdf"],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("upload");
+      expect(result.bundled).toBeNull();
+      expect(result.attachments).toEqual([
+        expect.objectContaining({ path: firstPath, displayPath: "first.png" }),
+        expect.objectContaining({ path: secondPath, displayPath: "second.pdf" }),
+      ]);
+      expect(result.composerText).toBe("Explain the bug");
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("forced auto bundle uses ZIP and preserves archive bytes", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-zip-bundle-"));
     try {
       const notePath = path.join(tempDir, "note.txt");
@@ -751,7 +953,7 @@ describe("assembleBrowserPrompt", () => {
     }
   });
 
-  test("auto bundle format detects archives after directory expansion", async () => {
+  test("forced auto bundle includes archives found by directory expansion", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-dir-zip-bundle-"));
     try {
       const sourceDir = path.join(tempDir, "source");
@@ -824,6 +1026,127 @@ describe("assembleBrowserPrompt", () => {
       const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
       expect(entries.get("src/a.ts")).toEqual(textBytes);
       expect(entries.get("artifact.gz")).toEqual(gzipBytes);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("force-bundle with auto uploads a text bundle instead of inlining small files", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-force-bundle-auto-"));
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
+    try {
+      await fs.writeFile(path.join(tempDir, "one.txt"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.txt"), "two", "utf8");
+
+      result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.txt", "two.txt"],
+          browserAttachments: "auto",
+          browserBundleFiles: true,
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("bundle");
+      expect(result.inlineFileCount).toBe(0);
+      expect(result.fallback).toBeNull();
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.txt$/);
+      expect(result.bundled).toEqual({
+        originalCount: 2,
+        bundlePath: result.attachments[0]?.displayPath,
+        format: "text",
+      });
+      expect(result.composerText).not.toContain("Extract it into a temporary directory");
+      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
+      expect(bundleText).toContain("### File: one.txt");
+      expect(bundleText).toContain("1 | one");
+      expect(bundleText).toContain("### File: two.txt");
+      expect(bundleText).toContain("1 | two");
+    } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit zip format packs text-only uploads into a ZIP", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-explicit-zip-text-"));
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
+    try {
+      await fs.writeFile(path.join(tempDir, "one.txt"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.txt"), "two", "utf8");
+
+      result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.txt", "two.txt"],
+          browserAttachments: "always",
+          browserBundleFormat: "zip",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(result.bundled?.format).toBe("zip");
+      expect(result.composerText).toContain("Extract it into a temporary directory");
+      const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
+      expect(entries.get("one.txt")?.toString("utf8")).toBe("one");
+      expect(entries.get("two.txt")?.toString("utf8")).toBe("two");
+    } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("force-bundle with auto still inlines when attachments are disabled", async () => {
+    const result = await assembleBrowserPrompt(
+      buildOptions({
+        file: ["a.txt", "b.txt"],
+        browserAttachments: "never",
+        browserBundleFiles: true,
+      }),
+      {
+        cwd: "/repo",
+        readFilesImpl: async (paths) =>
+          paths.map((entry, index) => ({
+            path: path.resolve("/repo", entry),
+            content: `file-${index}`,
+          })),
+        tokenizeImpl: fastTokenizer,
+      },
+    );
+
+    expect(result.attachmentsPolicy).toBe("never");
+    expect(result.attachmentMode).toBe("inline");
+    expect(result.attachments).toEqual([]);
+    expect(result.fallback).toBeNull();
+    expect(result.composerText).toContain("### File: a.txt");
+    expect(result.composerText).toContain("### File: b.txt");
+  });
+
+  test("cleanup removes generated browser bundle directories", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-cleanup-bundle-"));
+    try {
+      await fs.writeFile(path.join(tempDir, "one.ts"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.ts"), "two", "utf8");
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.ts", "two.ts"],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      const bundlePath = result.attachments[0]?.path;
+      expect(bundlePath).toBeTruthy();
+      expect(listGeneratedBrowserBundleDirs(result)).toEqual([path.dirname(bundlePath!)]);
+      await expect(fs.access(bundlePath!)).resolves.toBeUndefined();
+      await cleanupGeneratedBrowserBundles(result);
+      await expect(fs.access(path.dirname(bundlePath!))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

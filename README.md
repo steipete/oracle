@@ -82,7 +82,7 @@ oracle --dry-run summary --files-report \
   --file "!**/*.test.ts"
 ```
 
-Generated text bundles include stable line numbers so answers can cite `path:line`. Binary and large browser inputs can be uploaded or bundled without converting their contents. The [CLI reference](docs/cli-reference.md) lists the file, size, output, and browser controls.
+Generated text bundles include stable line numbers so answers can cite `path:line`. In browser mode, one uploaded text/source file stays native and multiple text/source files are packed into one bundle: flattened text for text-only `auto` uploads, or a ZIP when raw files are present or `--browser-bundle-format zip` is set. Native images and documents remain direct attachments when possible. The [CLI reference](docs/cli-reference.md) lists the file, size, output, and browser controls.
 
 ## Sessions and follow-ups
 
