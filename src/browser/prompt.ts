@@ -102,6 +102,11 @@ export function isRawUploadFile(filePath: string): boolean {
   return MEDIA_EXTENSIONS.has(ext) || ARCHIVE_EXTENSIONS.has(ext);
 }
 
+export interface BrowserPendingFallbackBundle {
+  format: Exclude<BrowserBundleFormat, "auto">;
+  scope: "text-only" | "all";
+}
+
 export interface BrowserPromptArtifacts {
   markdown: string;
   composerText: string;
@@ -115,6 +120,7 @@ export interface BrowserPromptArtifacts {
     composerText: string;
     attachments: BrowserAttachment[];
     bundled?: BrowserBundleMetadata | null;
+    pendingBundle?: BrowserPendingFallbackBundle | null;
   } | null;
   bundled?: BrowserBundleMetadata | null;
 }
@@ -168,11 +174,14 @@ function formatSectionsForBundle(
   });
 }
 
-function resolveBrowserBundleFormat(format: BrowserBundleFormat): ResolvedBrowserBundleFormat {
+function resolveBrowserBundleFormat(
+  format: BrowserBundleFormat,
+  { hasRawUploadFiles }: { hasRawUploadFiles: boolean },
+): ResolvedBrowserBundleFormat {
   if (format !== "auto") {
     return format;
   }
-  return "zip";
+  return hasRawUploadFiles ? "zip" : "text";
 }
 
 function resolveBrowserBundleScope(
@@ -328,7 +337,60 @@ export async function materializeBrowserFallback(
   artifacts.fallback.composerText = applied.composerText;
   artifacts.fallback.attachments = applied.attachments;
   artifacts.fallback.bundled = applied.bundled;
+  artifacts.fallback.pendingBundle = null;
   return artifacts.fallback;
+}
+
+export async function materializeStagedFallbackBundle({
+  composerText,
+  attachments,
+  format,
+  scope,
+}: {
+  composerText: string;
+  attachments: BrowserAttachment[];
+  format: BrowserPendingFallbackBundle["format"];
+  scope: BrowserPendingFallbackBundle["scope"];
+}): Promise<{
+  composerText: string;
+  attachments: BrowserAttachment[];
+  bundled: BrowserBundleMetadata;
+}> {
+  const textAttachments = attachments.filter((attachment) => !isRawUploadFile(attachment.path));
+  const rawAttachments = attachments.filter((attachment) => isRawUploadFile(attachment.path));
+  const textSources: BrowserBundleSource[] = textAttachments.map((attachment) => ({
+    absolutePath: attachment.path,
+    displayPath: attachment.displayPath,
+    sizeBytes: attachment.sizeBytes ?? 0,
+  }));
+  const allSources: BrowserBundleSource[] = [
+    ...textSources,
+    ...rawAttachments.map((attachment) => ({
+      absolutePath: attachment.path,
+      displayPath: attachment.displayPath,
+      sizeBytes: attachment.sizeBytes ?? 0,
+    })),
+  ];
+  const sections: FileSection[] = await Promise.all(
+    textAttachments.map(async (attachment, index) => {
+      const content = await fs.readFile(attachment.path, "utf8");
+      return {
+        index: index + 1,
+        absolutePath: attachment.path,
+        displayPath: attachment.displayPath,
+        content,
+        sectionText: "",
+      };
+    }),
+  );
+  return applyWrittenBundle({
+    sections,
+    sources: scope === "all" ? allSources : textSources,
+    format,
+    scope,
+    rawUploadAttachments: rawAttachments,
+    composerText,
+  });
 }
 
 async function writeBrowserBundle(
@@ -482,7 +544,9 @@ export async function assembleBrowserPrompt(
   const allBundleSources = [...textBundleSources, ...rawUploadBundleSources];
   const attachments: BrowserAttachment[] = [...selectedPlan.attachments, ...rawUploadAttachments];
 
-  const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat);
+  const resolvedBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+    hasRawUploadFiles: rawUploadAttachments.length > 0,
+  });
   const bundleScope = resolveBrowserBundleScope(resolvedBundleFormat, {
     bundleRequested,
     rawAttachmentCount: rawUploadAttachments.length,
@@ -558,7 +622,9 @@ export async function assembleBrowserPrompt(
   if (attachmentsPolicy === "auto" && selectedPlan.mode === "inline" && sections.length > 0) {
     const fallbackComposerText = baseComposerSections.join("\n\n").trim();
     const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
-    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat);
+    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+      hasRawUploadFiles: rawUploadAttachments.length > 0,
+    });
     const fallbackBundleScope = resolveBrowserBundleScope(fallbackBundleFormat, {
       bundleRequested,
       rawAttachmentCount: rawUploadAttachments.length,
@@ -568,6 +634,10 @@ export async function assembleBrowserPrompt(
       composerText: fallbackComposerText,
       attachments: fallbackAttachments,
       bundled: null,
+      pendingBundle:
+        fallbackBundleScope === "none"
+          ? null
+          : { format: fallbackBundleFormat, scope: fallbackBundleScope },
     };
     if (fallbackBundleScope !== "none") {
       pendingFallback = {

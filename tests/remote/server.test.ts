@@ -151,6 +151,59 @@ describe("remote browser service", () => {
   );
 
   test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "does not materialize a pending fallback bundle before the primary remote submit",
+    async () => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-lazy-fallback-"));
+      const fallbackPath = path.join(tmpDir, "fallback.txt");
+      await writeFile(fallbackPath, "lazy fallback", "utf8");
+      const prepare = async () => {
+        throw new Error("client prepare must not run for remote fallback");
+      };
+
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async (options) => {
+            expect(options.fallbackSubmission?.prompt).toBe("fallback prompt");
+            expect(options.fallbackSubmission?.attachments).toHaveLength(1);
+            const stored = await readFile(options.fallbackSubmission!.attachments[0]!.path, "utf8");
+            expect(stored).toBe("lazy fallback");
+            expect(options.fallbackSubmission?.prepare).toEqual(expect.any(Function));
+            return {
+              answerText: "ok",
+              answerMarkdown: "ok",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+            };
+          },
+        },
+      );
+
+      try {
+        const executor = createRemoteBrowserExecutor({
+          host: `127.0.0.1:${server.port}`,
+          token: "secret",
+        });
+        const result = await executor({
+          prompt: "remote",
+          fallbackSubmission: {
+            prompt: "fallback prompt",
+            attachments: [{ path: fallbackPath, displayPath: "fallback.txt", sizeBytes: 13 }],
+            prepare,
+            pendingBundle: { format: "text", scope: "text-only" },
+          },
+          config: {},
+        });
+        expect(result.answerText).toBe("ok");
+      } finally {
+        await server.close();
+        await rm(tmpDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
     "stages colliding primary attachment names without losing payloads",
     async () => {
       await expectRemoteAttachmentStaging({

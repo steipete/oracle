@@ -131,6 +131,10 @@ export interface BrowserRunOptions {
     prompt: string;
     attachments: BrowserAttachment[];
     prepare?: () => Promise<void>;
+    pendingBundle?: {
+      format: "text" | "zip";
+      scope: "text-only" | "all";
+    };
   };
   config?: BrowserAutomationConfig;
   log?: BrowserLogger;

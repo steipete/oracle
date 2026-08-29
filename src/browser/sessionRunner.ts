@@ -262,11 +262,13 @@ async function executeAssembledBrowserSession({
     fallbackSubmission = {
       prompt: promptArtifacts.fallback.composerText,
       attachments: promptArtifacts.fallback.attachments,
+      pendingBundle: promptArtifacts.fallback.pendingBundle ?? undefined,
       prepare: async () => {
         const prepared = await materializeBrowserFallback(promptArtifacts);
         if (!prepared || !fallbackSubmission) return;
         fallbackSubmission.prompt = prepared.composerText;
         fallbackSubmission.attachments = prepared.attachments;
+        fallbackSubmission.pendingBundle = undefined;
       },
     };
   }

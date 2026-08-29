@@ -88,13 +88,13 @@ const consultInputShape = {
     .boolean()
     .optional()
     .describe(
-      "Browser-only: force one upload bundle; auto/zip includes all resolved files. Multiple text/source uploads already use ZIP by default.",
+      "Browser-only: force one upload bundle; auto/zip includes all resolved files. Multiple text/source uploads already bundle by default (flattened text unless ZIP is selected).",
     ),
   browserBundleFormat: z
     .enum(["auto", "text", "zip"])
     .optional()
     .describe(
-      'Browser-only: bundle upload format. Defaults to "auto", which uses a byte-preserving ZIP; "text" retains the legacy flattened text bundle.',
+      'Browser-only: bundle upload format. Defaults to "auto", which keeps flattened text for text-only uploads and uses ZIP when raw files are present; "zip" forces a byte-preserving archive.',
     ),
   browserThinkingTime: browserThinkingTimeRawSchema
     .optional()
