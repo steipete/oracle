@@ -65,6 +65,7 @@ Without `--followup-model`, Oracle errors with the available lineage.
 | Anthropic                | ❌ no Oracle-side response id chaining yet                                         |
 | Gemini                   | ❌                                                                                 |
 | OpenRouter               | ❌                                                                                 |
+| OrcaRouter               | ❌                                                                                 |
 | Custom `--base-url`      | ❌ — unknown whether the upstream preserves the id                                 |
 
 If you try to follow up on an unsupported provider, Oracle errors clearly instead of silently starting fresh.

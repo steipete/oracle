@@ -132,6 +132,7 @@ export function sanitizeProviderMessage(message: string): string {
       "$1$2[redacted]",
     )
     .replace(/\bsk-(?:ant-|or-)?[A-Za-z0-9_-]{8,}\b/g, "sk-...[redacted]")
+    .replace(/\bsk-orca-[A-Za-z0-9_-]{8,}\b/g, "sk-orca-...[redacted]")
     .replace(/\bxai-[A-Za-z0-9_-]{8,}\b/g, "xai-...[redacted]")
     .replace(/\bAIza[0-9A-Za-z_-]{8,}\b/g, "AIza...[redacted]");
 }
@@ -160,14 +161,23 @@ function inferFailureRoute(context: ProviderFailureContext): {
     if (plan.providerLabel === "OpenRouter" || plan.keySource.includes("OPENROUTER_API_KEY")) {
       return { provider: "openrouter", keySource };
     }
+    if (plan.providerLabel === "OrcaRouter" || plan.keySource.includes("ORCAROUTER_API_KEY")) {
+      return { provider: "orcarouter", keySource };
+    }
     if (plan.provider === "azure") return { provider: "azure", keySource };
     if (plan.provider === "google") return { provider: "gemini", keySource };
     return { provider: plan.provider, keySource };
   }
   const normalized = context.model?.toLowerCase() ?? "";
   const baseUrl = context.baseUrl?.toLowerCase() ?? "";
+  if (baseUrl.includes("orcarouter.ai")) {
+    return { provider: "orcarouter", keySource: keyEnvForProvider("orcarouter") };
+  }
   if (baseUrl.includes("openrouter.ai") || (normalized.includes("/") && !baseUrl)) {
     return { provider: "openrouter", keySource: keyEnvForProvider("openrouter") };
+  }
+  if (normalized.startsWith("orcarouter/")) {
+    return { provider: "orcarouter", keySource: keyEnvForProvider("orcarouter") };
   }
   if (
     context.azure?.endpoint?.trim() &&
@@ -209,6 +219,8 @@ function keyEnvForProvider(provider: string): string | undefined {
       return "AZURE_OPENAI_API_KEY";
     case "openrouter":
       return "OPENROUTER_API_KEY";
+    case "orcarouter":
+      return "ORCAROUTER_API_KEY";
     case "openai":
       return "OPENAI_API_KEY";
     default:

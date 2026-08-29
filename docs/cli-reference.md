@@ -74,7 +74,7 @@ Notes:
 | `--azure-deployment`  | Azure deployment name.                    |
 | `--azure-api-version` | Azure API version.                        |
 
-See [OpenAI / Azure / OpenRouter](openai-endpoints.md) and [OpenRouter](openrouter.md).
+See [OpenAI / Azure / OpenRouter / OrcaRouter](openai-endpoints.md), [OpenRouter](openrouter.md), and [OrcaRouter](orcarouter.md).
 
 ## Browser mode
 

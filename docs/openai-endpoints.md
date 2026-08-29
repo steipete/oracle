@@ -171,3 +171,16 @@ oracle --model minimax/minimax-m2 --prompt "Summarize the notes"
 - If `OPENROUTER_API_KEY` is set and no provider-specific key is available for the chosen model, Oracle defaults the base URL to `https://openrouter.ai/api/v1`.
 - You can still set `--base-url` explicitly; if it points at OpenRouter (with or without a trailing `/responses`), Oracle will use `OPENROUTER_API_KEY` and forward optional attribution headers (`OPENROUTER_REFERER` / `OPENROUTER_TITLE`).
 - Multi-model runs accept OpenRouter ids alongside built-in ones. See `docs/openrouter.md` for details.
+
+## OrcaRouter
+
+Oracle can also talk to OrcaRouter (OpenAI-compatible) with any model id:
+
+```bash
+export ORCAROUTER_API_KEY="sk-orca-..."
+oracle --model orcarouter/auto --prompt "Summarize the notes"
+```
+
+- If `ORCAROUTER_API_KEY` is set and no provider-specific key is available for the chosen model, Oracle defaults the base URL to `https://api.orcarouter.ai/v1`.
+- You can still set `--base-url` explicitly; if it points at OrcaRouter (with or without a trailing `/responses`), Oracle will use `ORCAROUTER_API_KEY` and forward optional attribution headers (`ORCAROUTER_REFERER` / `ORCAROUTER_TITLE`).
+- Multi-model runs accept OrcaRouter ids alongside built-in ones. See `docs/orcarouter.md` for details.

@@ -10,6 +10,7 @@ delete envWithoutKey.ANTHROPIC_API_KEY;
 delete envWithoutKey.GEMINI_API_KEY;
 delete envWithoutKey.XAI_API_KEY;
 delete envWithoutKey.OPENROUTER_API_KEY;
+delete envWithoutKey.ORCAROUTER_API_KEY;
 delete envWithKey.ORACLE_ENGINE;
 delete envWithoutKey.ORACLE_ENGINE;
 
@@ -22,6 +23,12 @@ describe("resolveEngine", () => {
   it("falls back to browser when no flags and no OPENAI_API_KEY", () => {
     const engine = resolveEngine({ engine: undefined, browserFlag: false, env: envWithoutKey });
     expect(engine).toBe<EngineMode>("browser");
+  });
+
+  it("prefers api when ORCAROUTER_API_KEY is set", () => {
+    const env = { ...envWithoutKey, ORCAROUTER_API_KEY: "sk-orca-test" } as NodeJS.ProcessEnv;
+    const engine = resolveEngine({ engine: undefined, browserFlag: false, env });
+    expect(engine).toBe<EngineMode>("api");
   });
 
   it("respects ORACLE_ENGINE=browser even when OPENAI_API_KEY is set", () => {

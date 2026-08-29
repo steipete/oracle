@@ -13,6 +13,9 @@ import { pricingFromUsdPerToken } from "tokentally";
 
 const OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1";
 const OPENROUTER_MODELS_ENDPOINT = "https://openrouter.ai/api/v1/models";
+const ORCAROUTER_DEFAULT_BASE = "https://api.orcarouter.ai/v1";
+const ORCAROUTER_MODELS_ENDPOINT = "https://api.orcarouter.ai/v1/models";
+const ORCAROUTER_PRICING_ENDPOINT = "https://www.orcarouter.ai/api/pricing";
 const require = createRequire(import.meta.url);
 let countTokensGpt5ProImpl: TokenizerFn | undefined;
 
@@ -48,6 +51,37 @@ export function normalizeOpenRouterBaseUrl(baseUrl: string): string {
   try {
     const url = new URL(baseUrl);
     // If user passed the responses endpoint, trim it so the client does not double-append.
+    if (url.pathname.endsWith("/responses")) {
+      url.pathname = url.pathname.replace(/\/responses\/?$/, "");
+    }
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return baseUrl;
+  }
+}
+
+export function isOrcaRouterBaseUrl(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    const url = new URL(baseUrl);
+    const host = url.hostname.toLowerCase();
+    // Boundary-safe check: only the documented api.orcarouter.ai API host (or a
+    // subdomain of it) is treated as OrcaRouter, so a lookalike hostname or the
+    // www marketing site never receives OrcaRouter credentials or headers.
+    return host === "api.orcarouter.ai" || host.endsWith(".api.orcarouter.ai");
+  } catch {
+    return false;
+  }
+}
+
+export function defaultOrcaRouterBaseUrl(): string {
+  return ORCAROUTER_DEFAULT_BASE;
+}
+
+export function normalizeOrcaRouterBaseUrl(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl);
+    // Same contract as OpenRouter: trim a trailing /responses so the client does not double-append.
     if (url.pathname.endsWith("/responses")) {
       url.pathname = url.pathname.replace(/\/responses\/?$/, "");
     }
@@ -142,6 +176,85 @@ async function fetchOpenRouterCatalog(
   return models;
 }
 
+/**
+ * Convert OrcaRouter pricing ratios to USD-per-token OpenRouter-style pricing.
+ * OrcaRouter bills against a `model_ratio` base of $2 per 1M input tokens, with
+ * `completion_ratio` scaling the output price (see https://www.orcarouter.ai/api/pricing).
+ */
+function orcaRouterPricingEntry(
+  ratio: number | undefined,
+  completionRatio: number | undefined,
+): OpenRouterModelInfo["pricing"] {
+  if (
+    typeof ratio !== "number" ||
+    !Number.isFinite(ratio) ||
+    ratio < 0 ||
+    typeof completionRatio !== "number" ||
+    !Number.isFinite(completionRatio) ||
+    completionRatio < 0
+  ) {
+    return undefined;
+  }
+  return {
+    prompt: (ratio * 2) / 1_000_000,
+    completion: (ratio * completionRatio * 2) / 1_000_000,
+  };
+}
+
+async function fetchOrcaRouterCatalog(
+  apiKey: string,
+  fetcher: FetchFn,
+): Promise<OpenRouterModelInfo[]> {
+  const now = Date.now();
+  const cached = catalogCache.get(apiKey);
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    return cached.models;
+  }
+  const [modelsResponse, pricingResponse] = await Promise.all([
+    fetcher(ORCAROUTER_MODELS_ENDPOINT, {
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+      },
+    }),
+    // /api/pricing is a public endpoint (no auth) that carries the pricing ratios.
+    fetcher(ORCAROUTER_PRICING_ENDPOINT),
+  ]);
+  if (!modelsResponse.ok) {
+    throw new Error(`Failed to load OrcaRouter models (${modelsResponse.status})`);
+  }
+  const modelsJson = (await modelsResponse.json()) as { data?: OpenRouterModelInfo[] };
+  const models = modelsJson?.data ?? [];
+  const pricingByModel = new Map<string, OpenRouterModelInfo["pricing"]>();
+  if (pricingResponse.ok) {
+    try {
+      const pricingJson = (await pricingResponse.json()) as {
+        data?: Array<{
+          model_name?: string;
+          model_ratio?: number;
+          completion_ratio?: number;
+        }>;
+      };
+      for (const entry of pricingJson?.data ?? []) {
+        if (!entry.model_name) continue;
+        const pricing = orcaRouterPricingEntry(entry.model_ratio, entry.completion_ratio);
+        if (pricing) {
+          pricingByModel.set(entry.model_name, pricing);
+        }
+      }
+    } catch {
+      // Pricing is best-effort; keep the /v1/models metadata when the ratios fail to parse.
+    }
+  }
+  const modelsWithPricing = models.map((model) => ({
+    ...model,
+    pricing: pricingByModel.get(model.id),
+  }));
+  catalogCache.set(apiKey, { fetchedAt: now, models: modelsWithPricing });
+  // Prune after insert so the max-size constraint is strictly enforced.
+  pruneCatalogCache(now);
+  return modelsWithPricing;
+}
+
 function mapToOpenRouterId(
   candidate: string,
   catalog: OpenRouterModelInfo[],
@@ -163,6 +276,7 @@ export async function resolveModelConfig(
   options: {
     baseUrl?: string;
     openRouterApiKey?: string;
+    orcaRouterApiKey?: string;
     fetcher?: FetchFn;
     modelOverrides?: ModelOverridesConfig;
   } = {},
@@ -178,6 +292,7 @@ async function resolveBaseModelConfig(
   options: {
     baseUrl?: string;
     openRouterApiKey?: string;
+    orcaRouterApiKey?: string;
     fetcher?: FetchFn;
   } = {},
 ): Promise<ModelConfig> {
@@ -185,12 +300,14 @@ async function resolveBaseModelConfig(
   const fetcher: FetchFn = options.fetcher ?? globalThis.fetch.bind(globalThis);
   const openRouterActive =
     isOpenRouterBaseUrl(options.baseUrl) || Boolean(options.openRouterApiKey);
+  const orcaRouterActive =
+    isOrcaRouterBaseUrl(options.baseUrl) || Boolean(options.orcaRouterApiKey);
 
-  if (known && !openRouterActive) {
+  if (known && !openRouterActive && !orcaRouterActive) {
     return known;
   }
 
-  // Try to enrich from OpenRouter catalog when available.
+  // Try to enrich from the OpenRouter catalog when available.
   if (openRouterActive && options.openRouterApiKey) {
     try {
       const catalog = await fetchOpenRouterCatalog(options.openRouterApiKey, fetcher);
@@ -227,6 +344,51 @@ async function resolveBaseModelConfig(
         }),
         apiModel: targetId,
         openRouterId: targetId,
+        provider: known?.provider ?? "other",
+        supportsBackground: known?.supportsBackground ?? true,
+        supportsSearch: known?.supportsSearch ?? true,
+        pricing: known?.pricing ?? null,
+      };
+    } catch {
+      // If catalog fetch fails, fall back to a synthesized config.
+    }
+  }
+
+  // Enrich from the OrcaRouter catalog (same OpenRouter-shaped response) when available.
+  if (orcaRouterActive && options.orcaRouterApiKey) {
+    try {
+      const catalog = await fetchOrcaRouterCatalog(options.orcaRouterApiKey, fetcher);
+      const targetId = mapToOpenRouterId(
+        typeof model === "string" ? model : String(model),
+        catalog,
+        known?.provider,
+      );
+      const info = catalog.find((entry) => entry.id === targetId) ?? null;
+      if (info) {
+        return {
+          ...(known ?? {
+            model,
+            tokenizer: countTokensGpt5Pro as TokenizerFn,
+            inputLimit: info.context_length ?? 200_000,
+            reasoning: null,
+          }),
+          apiModel: targetId,
+          provider: known?.provider ?? "other",
+          inputLimit: info.context_length ?? known?.inputLimit ?? 200_000,
+          pricing: openRouterPricing(info.pricing) ?? known?.pricing ?? null,
+          supportsBackground: known?.supportsBackground ?? true,
+          supportsSearch: known?.supportsSearch ?? true,
+        };
+      }
+      // No metadata hit; fall through to synthesized config.
+      return {
+        ...(known ?? {
+          model,
+          tokenizer: countTokensGpt5Pro as TokenizerFn,
+          inputLimit: 200_000,
+          reasoning: null,
+        }),
+        apiModel: targetId,
         provider: known?.provider ?? "other",
         supportsBackground: known?.supportsBackground ?? true,
         supportsSearch: known?.supportsSearch ?? true,

@@ -125,6 +125,19 @@ describe("provider failure classification", () => {
     });
   });
 
+  test("uses OrcaRouter key hints for orcarouter/ model routes", () => {
+    expect(
+      classifyProviderFailure(new Error("invalid api key"), {
+        model: "orcarouter/auto",
+        env: { ORCAROUTER_API_KEY: "sk-orca-secret123456789" },
+      }),
+    ).toMatchObject({
+      category: "auth-failed",
+      provider: "orcarouter",
+      keyEnv: "ORCAROUTER_API_KEY",
+    });
+  });
+
   test("uses actual key source in recovery hints", () => {
     expect(
       classifyProviderFailure(new Error("401 invalid api key"), {

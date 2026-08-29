@@ -59,7 +59,7 @@ export function resolveEngine({
 }
 
 function hasApiEnvironment(env: NodeJS.ProcessEnv): boolean {
-  return Boolean(env.OPENAI_API_KEY || env.OPENROUTER_API_KEY);
+  return Boolean(env.OPENAI_API_KEY || env.OPENROUTER_API_KEY || env.ORCAROUTER_API_KEY);
 }
 
 function normalizeEngineMode(raw: unknown): EngineMode | null {

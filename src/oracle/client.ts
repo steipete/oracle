@@ -18,7 +18,7 @@ import type {
 } from "./types.js";
 import { createGeminiClient } from "./gemini.js";
 import { createClaudeClient } from "./claude.js";
-import { isOpenRouterBaseUrl } from "./modelResolver.js";
+import { isOpenRouterBaseUrl, isOrcaRouterBaseUrl } from "./modelResolver.js";
 import { isCustomBaseUrl } from "./baseUrl.js";
 
 export function buildAzureResponsesBaseUrl(endpoint: string): string {
@@ -39,12 +39,13 @@ export function createDefaultClientFactory(): ClientFactory {
     },
   ): ClientLike => {
     const openRouter = isOpenRouterBaseUrl(options?.baseUrl);
+    const orcaRouter = isOrcaRouterBaseUrl(options?.baseUrl);
     const customProxy = isCustomBaseUrl(options?.baseUrl);
 
-    // When using any custom/proxy base URL (OpenRouter, LiteLLM, vLLM, Together, etc.),
+    // When using any custom/proxy base URL (OpenRouter, OrcaRouter, LiteLLM, vLLM, Together, etc.),
     // route ALL models through the OpenAI chat/completions adapter instead of native SDKs
     // which would reject the proxy's API key.
-    if (!openRouter && !customProxy) {
+    if (!openRouter && !orcaRouter && !customProxy) {
       if (options?.model?.startsWith("gemini")) {
         // Gemini client uses its own SDK; allow passing the already-resolved id for transparency/logging.
         return createGeminiClient(key, options.model, options.resolvedModelId);
@@ -57,7 +58,9 @@ export function createDefaultClientFactory(): ClientFactory {
     let instance: OpenAI;
     const defaultHeaders: Record<string, string> | undefined = openRouter
       ? buildOpenRouterHeaders()
-      : undefined;
+      : orcaRouter
+        ? buildOrcaRouterHeaders()
+        : undefined;
 
     const httpTimeoutMs =
       typeof options?.httpTimeoutMs === "number" &&
@@ -80,7 +83,7 @@ export function createDefaultClientFactory(): ClientFactory {
       });
     }
 
-    if (openRouter || customProxy) {
+    if (openRouter || orcaRouter || customProxy) {
       return buildOpenRouterCompletionClient(instance);
     }
 
@@ -104,6 +107,24 @@ function buildOpenRouterHeaders(): Record<string, string> | undefined {
     process.env.OPENROUTER_HTTP_REFERER ??
     "https://github.com/steipete/oracle";
   const title = process.env.OPENROUTER_TITLE ?? "Oracle CLI";
+  if (referer) {
+    headers["HTTP-Referer"] = referer;
+  }
+  if (title) {
+    headers["X-Title"] = title;
+  }
+  return headers;
+}
+
+function buildOrcaRouterHeaders(): Record<string, string> | undefined {
+  const headers: Record<string, string> = {};
+  // OrcaRouter accepts the same attribution headers as OpenRouter so the
+  // console can attribute traffic to Oracle.
+  const referer =
+    process.env.ORCAROUTER_REFERER ??
+    process.env.ORCAROUTER_HTTP_REFERER ??
+    "https://github.com/steipete/oracle";
+  const title = process.env.ORCAROUTER_TITLE ?? "Oracle CLI";
   if (referer) {
     headers["HTTP-Referer"] = referer;
   }
