@@ -35,6 +35,9 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
   return async function remoteBrowserExecutor(
     options: BrowserRunOptions,
   ): Promise<BrowserRunResult> {
+    if (options.fallbackSubmission?.prepare) {
+      await options.fallbackSubmission.prepare();
+    }
     const payload: RemoteRunPayload = {
       prompt: options.prompt,
       attachments: await serializeAttachments(options.attachments ?? []),

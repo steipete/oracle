@@ -4,13 +4,15 @@
 
 ### Changed
 
-- Browser: make byte-preserving ZIP the default representation for multiple uploaded text/source files, preserve single files and native image/document uploads, and add a composer instruction telling ChatGPT to extract the archive into its sandbox. The flattened text bundle remains available explicitly with `--browser-bundle-format text`.
+- Browser: make byte-preserving ZIP the default representation for multiple uploaded text/source files, preserve single files and native image/document uploads, and add a composer instruction telling ChatGPT to extract the archive into its sandbox. The flattened text bundle remains available explicitly with `--browser-bundle-format text`. Small `auto` inputs still paste inline unless `--browser-bundle-files` forces an upload.
 - Dependencies: update provider SDKs, browser tooling, terminal utilities, development tools, pnpm, and transitive overrides while retaining the two-day release-age policy; refresh the Pages pnpm action pin.
 - **Breaking** — Remote: accept only conversation-scoped fields from remote clients. The service overrode six known-dangerous `browserConfig` fields and passed the rest of `BrowserSessionConfig` through to `runBrowserMode` verbatim. The remainder is not inert: `chromePath` names an executable the host spawns, `remoteChrome` a debugger to attach to, `copyProfileSource` a directory to copy a signed-in profile out of, `debugPort` one to expose, and `attachRunning`/`browserTabRef` select an existing ChatGPT tab — with an empty or "current" ref resolving to the first ChatGPT tab in the browser. That makes a bridge token a permission to run code on the host rather than to ask ChatGPT a question. A client may now describe the conversation it wants — URL, model, effort, archive mode, resume target, time budgets — and nothing about the machine. A caller that was setting host-scoped fields is now ignored on them rather than obeyed.
 - Remote: stop advertising addresses the service is not listening on. `oracle serve --host 127.0.0.1` printed the host's LAN and tailnet addresses in its startup banner while bound to loopback only. That banner is how an operator decides whether a port needs a tunnel or a firewall rule, and for browser automation behind a bearer token, erring toward "more exposed than it is" is the wrong direction.
 
 ### Fixed
 
+- Browser: honor `--browser-bundle-files` (and MCP `browserBundleFiles`) with the default `auto` attachment policy, so small files are uploaded as one bundle instead of being pasted inline.
+- Browser: create fallback source ZIPs only when ChatGPT rejects an inline paste, and delete generated `oracle-browser-bundle-*` directories after browser runs and dry-runs.
 - Browser: retain per-file attachment evidence through local/remote upload and send checks, including filename-less images; activate and stabilize the send target without replaying a dispatched prompt. Fixes #418. Thanks @hubofvalley!
 - Remote: allocate unique upload basenames for primary and fallback attachments that collide after sanitization, preserving original display paths and every payload. Fixes #387. Thanks @postoso!
 - Browser: attach to running Chrome when `DevToolsActivePort` metadata is absent, with IPv6 support and bounded endpoint retries that include response-body reads. Fixes #414. Thanks @devYRPauli!

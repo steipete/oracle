@@ -2,7 +2,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { assembleBrowserPrompt, isRawUploadFile } from "../../src/browser/prompt.js";
+import {
+  assembleBrowserPrompt,
+  cleanupGeneratedBrowserBundles,
+  isRawUploadFile,
+  listGeneratedBrowserBundleDirs,
+  materializeBrowserFallback,
+} from "../../src/browser/prompt.js";
 import { findAttachmentBasenameCollisions } from "../../src/browser/attachmentValidation.js";
 import { createStoredZip } from "../../src/browser/zipBundle.js";
 import { DEFAULT_SYSTEM_PROMPT, type MODEL_CONFIGS } from "../../src/oracle.js";
@@ -172,13 +178,14 @@ describe("assembleBrowserPrompt", () => {
     );
   });
 
-  test("auto inline fallback bundles multiple text files as a ZIP", async () => {
+  test("auto inline fallback defers ZIP creation until materialize", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-inline-fallback-zip-"));
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
     try {
       await fs.writeFile(path.join(tempDir, "one.txt"), "one", "utf8");
       await fs.writeFile(path.join(tempDir, "two.txt"), "two", "utf8");
 
-      const result = await assembleBrowserPrompt(
+      result = await assembleBrowserPrompt(
         buildOptions({
           file: ["one.txt", "two.txt"],
           browserAttachments: "auto",
@@ -188,16 +195,26 @@ describe("assembleBrowserPrompt", () => {
 
       expect(result.attachmentMode).toBe("inline");
       expect(result.attachments).toEqual([]);
-      expect(result.fallback?.attachments).toHaveLength(1);
-      expect(result.fallback?.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
-      expect(result.fallback?.bundled?.format).toBe("zip");
-      expect(result.fallback?.composerText).toContain("Extract it into a temporary directory");
-      const entries = readStoredZipEntries(
-        await fs.readFile(result.fallback!.attachments[0]!.path),
-      );
+      expect(listGeneratedBrowserBundleDirs(result)).toEqual([]);
+      expect(result.fallback?.bundled).toBeNull();
+      expect(result.fallback?.composerText).toBe("Explain the bug");
+      expect(result.fallback?.attachments).toEqual([
+        expect.objectContaining({ displayPath: "one.txt" }),
+        expect.objectContaining({ displayPath: "two.txt" }),
+      ]);
+
+      const fallback = await materializeBrowserFallback(result);
+      expect(fallback?.attachments).toHaveLength(1);
+      expect(fallback?.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(fallback?.bundled?.format).toBe("zip");
+      expect(fallback?.composerText).toContain("Extract it into a temporary directory");
+      const entries = readStoredZipEntries(await fs.readFile(fallback!.attachments[0]!.path));
       expect(entries.get("one.txt")?.toString("utf8")).toBe("one");
       expect(entries.get("two.txt")?.toString("utf8")).toBe("two");
     } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -229,15 +246,15 @@ describe("assembleBrowserPrompt", () => {
     expect(result.fallback).toBeNull();
   });
 
-  test("always mode rejects upload attachments with the same basename", async () => {
+  test("always mode rejects native uploads with the same basename", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-duplicate-basename-"));
-    const firstPath = path.join(tempDir, "first", "SKILL.md");
-    const secondPath = path.join(tempDir, "second", "SKILL.md");
+    const firstPath = path.join(tempDir, "first", "photo.png");
+    const secondPath = path.join(tempDir, "second", "photo.png");
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
       await fs.mkdir(path.dirname(secondPath), { recursive: true });
-      await fs.writeFile(firstPath, "first");
-      await fs.writeFile(secondPath, "second");
+      await fs.writeFile(firstPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      await fs.writeFile(secondPath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 
       await expect(
         assembleBrowserPrompt(
@@ -248,9 +265,9 @@ describe("assembleBrowserPrompt", () => {
           { cwd: tempDir, tokenizeImpl: fastTokenizer },
         ),
       ).rejects.toMatchObject({
-        message: expect.stringContaining('multiple files named "SKILL.md"'),
+        message: expect.stringContaining('multiple files named "photo.png"'),
         details: {
-          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
+          collisions: [{ basename: "photo.png", files: [firstPath, secondPath] }],
           files: [firstPath, secondPath],
         },
       });
@@ -259,48 +276,39 @@ describe("assembleBrowserPrompt", () => {
     }
   });
 
-  test("auto mode rejects basename collisions when it selects upload", async () => {
+  test("auto mode bundles large duplicate-basename text files as a ZIP", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-auto-upload-collision-"));
     const firstPath = path.join(tempDir, "first", "SKILL.md");
     const secondPath = path.join(tempDir, "second", "SKILL.md");
-    const firstUniquePath = path.join(tempDir, "first", "FIRST.md");
-    const secondUniquePath = path.join(tempDir, "second", "SECOND.md");
     const largeContent = "x".repeat(31_000);
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
       await fs.mkdir(path.dirname(secondPath), { recursive: true });
       await Promise.all([
         fs.writeFile(firstPath, largeContent),
         fs.writeFile(secondPath, largeContent),
-        fs.writeFile(firstUniquePath, largeContent),
-        fs.writeFile(secondUniquePath, largeContent),
       ]);
 
-      const uploadControl = await assembleBrowserPrompt(
+      result = await assembleBrowserPrompt(
         buildOptions({
-          file: [firstUniquePath, secondUniquePath],
+          file: [firstPath, secondPath],
           browserAttachments: "auto",
         }),
         { cwd: tempDir, tokenizeImpl: fastTokenizer },
       );
-      expect(uploadControl.attachmentMode).toBe("upload");
-      expect(uploadControl.fallback).toBeNull();
 
-      await expect(
-        assembleBrowserPrompt(
-          buildOptions({
-            file: [firstPath, secondPath],
-            browserAttachments: "auto",
-          }),
-          { cwd: tempDir, tokenizeImpl: fastTokenizer },
-        ),
-      ).rejects.toMatchObject({
-        details: {
-          collisions: [{ basename: "SKILL.md", files: [firstPath, secondPath] }],
-          files: [firstPath, secondPath],
-        },
-      });
+      expect(result.attachmentMode).toBe("bundle");
+      expect(result.fallback).toBeNull();
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
+      expect(entries.get("first/SKILL.md")?.toString("utf8")).toBe(largeContent);
+      expect(entries.get("second/SKILL.md")?.toString("utf8")).toBe(largeContent);
     } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -368,13 +376,14 @@ describe("assembleBrowserPrompt", () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-bundled-collision-"));
     const firstPath = path.join(tempDir, "first", "SKILL.md");
     const secondPath = path.join(tempDir, "second", "SKILL.md");
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
     try {
       await fs.mkdir(path.dirname(firstPath), { recursive: true });
       await fs.mkdir(path.dirname(secondPath), { recursive: true });
       await fs.writeFile(firstPath, "first");
       await fs.writeFile(secondPath, "second");
 
-      const result = await assembleBrowserPrompt(
+      result = await assembleBrowserPrompt(
         buildOptions({
           file: [firstPath, secondPath],
           browserAttachments: "always",
@@ -384,13 +393,14 @@ describe("assembleBrowserPrompt", () => {
       );
 
       expect(result.attachments).toHaveLength(1);
-      expect(result.bundled?.format).toBe("text");
-      const bundleText = await fs.readFile(result.attachments[0]!.path, "utf8");
-      expect(bundleText).toContain("### File: first/SKILL.md");
-      expect(bundleText).toContain("1 | first");
-      expect(bundleText).toContain("### File: second/SKILL.md");
-      expect(bundleText).toContain("1 | second");
+      expect(result.bundled?.format).toBe("zip");
+      const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
+      expect(entries.get("first/SKILL.md")?.toString("utf8")).toBe("first");
+      expect(entries.get("second/SKILL.md")?.toString("utf8")).toBe("second");
     } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -1020,6 +1030,94 @@ describe("assembleBrowserPrompt", () => {
       const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
       expect(entries.get("src/a.ts")).toEqual(textBytes);
       expect(entries.get("artifact.gz")).toEqual(gzipBytes);
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("force-bundle with auto uploads a ZIP instead of inlining small files", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-force-bundle-auto-"));
+    let result: Awaited<ReturnType<typeof assembleBrowserPrompt>> | undefined;
+    try {
+      await fs.writeFile(path.join(tempDir, "one.txt"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.txt"), "two", "utf8");
+
+      result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.txt", "two.txt"],
+          browserAttachments: "auto",
+          browserBundleFiles: true,
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      expect(result.attachmentMode).toBe("bundle");
+      expect(result.inlineFileCount).toBe(0);
+      expect(result.fallback).toBeNull();
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.displayPath).toMatch(/attachments-bundle\.zip$/);
+      expect(result.bundled).toEqual({
+        originalCount: 2,
+        bundlePath: result.attachments[0]?.displayPath,
+        format: "zip",
+      });
+      expect(result.composerText).toContain("Extract it into a temporary directory");
+      const entries = readStoredZipEntries(await fs.readFile(result.attachments[0]!.path));
+      expect(entries.get("one.txt")?.toString("utf8")).toBe("one");
+      expect(entries.get("two.txt")?.toString("utf8")).toBe("two");
+    } finally {
+      if (result) {
+        await cleanupGeneratedBrowserBundles(result);
+      }
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("force-bundle with auto still inlines when attachments are disabled", async () => {
+    const result = await assembleBrowserPrompt(
+      buildOptions({
+        file: ["a.txt", "b.txt"],
+        browserAttachments: "never",
+        browserBundleFiles: true,
+      }),
+      {
+        cwd: "/repo",
+        readFilesImpl: async (paths) =>
+          paths.map((entry, index) => ({
+            path: path.resolve("/repo", entry),
+            content: `file-${index}`,
+          })),
+        tokenizeImpl: fastTokenizer,
+      },
+    );
+
+    expect(result.attachmentsPolicy).toBe("never");
+    expect(result.attachmentMode).toBe("inline");
+    expect(result.attachments).toEqual([]);
+    expect(result.fallback).toBeNull();
+    expect(result.composerText).toContain("### File: a.txt");
+    expect(result.composerText).toContain("### File: b.txt");
+  });
+
+  test("cleanup removes generated browser bundle directories", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-cleanup-bundle-"));
+    try {
+      await fs.writeFile(path.join(tempDir, "one.ts"), "one", "utf8");
+      await fs.writeFile(path.join(tempDir, "two.ts"), "two", "utf8");
+      const result = await assembleBrowserPrompt(
+        buildOptions({
+          file: ["one.ts", "two.ts"],
+          browserAttachments: "always",
+        }),
+        { cwd: tempDir, tokenizeImpl: fastTokenizer },
+      );
+
+      const bundlePath = result.attachments[0]?.path;
+      expect(bundlePath).toBeTruthy();
+      expect(listGeneratedBrowserBundleDirs(result)).toEqual([path.dirname(bundlePath!)]);
+      await expect(fs.access(bundlePath!)).resolves.toBeUndefined();
+      await cleanupGeneratedBrowserBundles(result);
+      await expect(fs.access(path.dirname(bundlePath!))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

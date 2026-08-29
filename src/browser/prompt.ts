@@ -146,6 +146,18 @@ interface BrowserBundleSource {
 type ResolvedBrowserBundleFormat = Exclude<BrowserBundleFormat, "auto">;
 type BrowserBundleScope = "none" | "text-only" | "all";
 
+interface PendingFallbackBundle {
+  format: ResolvedBrowserBundleFormat;
+  scope: Exclude<BrowserBundleScope, "none">;
+  sections: FileSection[];
+  textSources: BrowserBundleSource[];
+  allSources: BrowserBundleSource[];
+  rawUploadAttachments: BrowserAttachment[];
+}
+
+const GENERATED_BUNDLE_DIR_PREFIX = "oracle-browser-bundle-";
+const pendingFallbackBundles = new WeakMap<BrowserPromptArtifacts, PendingFallbackBundle>();
+
 function formatSectionsForBundle(
   sections: Array<{ displayPath: string; content: string }>,
   options: { lineNumbers?: boolean } = {},
@@ -233,6 +245,90 @@ function assertUniqueAttachmentBasenames(attachments: BrowserAttachment[], cwd: 
     formatAttachmentBasenameCollisionMessage("Browser upload", details.collisions),
     { ...details },
   );
+}
+
+async function applyWrittenBundle({
+  sections,
+  sources,
+  format,
+  scope,
+  rawUploadAttachments,
+  composerText,
+}: {
+  sections: FileSection[];
+  sources: BrowserBundleSource[];
+  format: ResolvedBrowserBundleFormat;
+  scope: Exclude<BrowserBundleScope, "none">;
+  rawUploadAttachments: BrowserAttachment[];
+  composerText: string;
+}): Promise<{
+  attachments: BrowserAttachment[];
+  bundled: BrowserBundleMetadata;
+  composerText: string;
+  tokenEstimateText: string;
+}> {
+  const writtenBundle = await writeBrowserBundle(sections, sources, format);
+  const attachments = [writtenBundle.attachment];
+  if (scope === "text-only") {
+    attachments.push(...rawUploadAttachments);
+  }
+  assertAttachmentCount(attachments, format);
+  return {
+    attachments,
+    bundled: writtenBundle.metadata,
+    composerText:
+      format === "zip"
+        ? appendZipBundleInstruction(composerText, writtenBundle.metadata.originalCount)
+        : composerText,
+    tokenEstimateText: writtenBundle.tokenEstimateText,
+  };
+}
+
+function generatedBundleDirectory(attachment: BrowserAttachment): string | null {
+  if (!attachment.generatedBundle) return null;
+  const dir = path.dirname(attachment.path);
+  return path.basename(dir).startsWith(GENERATED_BUNDLE_DIR_PREFIX) ? dir : null;
+}
+
+export function listGeneratedBrowserBundleDirs(artifacts: BrowserPromptArtifacts): string[] {
+  const dirs = new Set<string>();
+  for (const attachment of [...artifacts.attachments, ...(artifacts.fallback?.attachments ?? [])]) {
+    const dir = generatedBundleDirectory(attachment);
+    if (dir) dirs.add(dir);
+  }
+  return [...dirs];
+}
+
+export async function cleanupGeneratedBrowserBundles(
+  artifacts: BrowserPromptArtifacts,
+): Promise<void> {
+  await Promise.all(
+    listGeneratedBrowserBundleDirs(artifacts).map((dir) =>
+      fs.rm(dir, { recursive: true, force: true }),
+    ),
+  );
+}
+
+export async function materializeBrowserFallback(
+  artifacts: BrowserPromptArtifacts,
+): Promise<BrowserPromptArtifacts["fallback"]> {
+  const pending = pendingFallbackBundles.get(artifacts);
+  if (!pending || !artifacts.fallback) {
+    return artifacts.fallback ?? null;
+  }
+  pendingFallbackBundles.delete(artifacts);
+  const applied = await applyWrittenBundle({
+    sections: pending.sections,
+    sources: pending.scope === "all" ? pending.allSources : pending.textSources,
+    format: pending.format,
+    scope: pending.scope,
+    rawUploadAttachments: pending.rawUploadAttachments,
+    composerText: artifacts.fallback.composerText,
+  });
+  artifacts.fallback.composerText = applied.composerText;
+  artifacts.fallback.attachments = applied.attachments;
+  artifacts.fallback.bundled = applied.bundled;
+  return artifacts.fallback;
 }
 
 async function writeBrowserBundle(
@@ -365,10 +461,10 @@ export async function assembleBrowserPrompt(
     .join("\n\n")
     .trim();
   const selectedPlan =
-    attachmentsPolicy === "always"
-      ? uploadPlan
-      : attachmentsPolicy === "never"
-        ? inlinePlan
+    attachmentsPolicy === "never"
+      ? inlinePlan
+      : attachmentsPolicy === "always" || bundleRequested
+        ? uploadPlan
         : inlineComposerText.length <= DEFAULT_BROWSER_INLINE_CHAR_BUDGET || sections.length === 0
           ? inlinePlan
           : uploadPlan;
@@ -404,24 +500,23 @@ export async function assembleBrowserPrompt(
 
   let bundleText: string | null = null;
   let bundled: BrowserBundleMetadata | null = null;
-  if (shouldBundle) {
-    const writtenBundle = await writeBrowserBundle(
+  if (bundleScope !== "none") {
+    const writtenBundle = await applyWrittenBundle({
       sections,
-      bundleScope === "all" ? allBundleSources : textBundleSources,
-      resolvedBundleFormat,
-    );
+      sources: bundleScope === "all" ? allBundleSources : textBundleSources,
+      format: resolvedBundleFormat,
+      scope: bundleScope,
+      rawUploadAttachments,
+      composerText,
+    });
     bundleText = writtenBundle.tokenEstimateText;
     attachments.length = 0;
-    attachments.push(writtenBundle.attachment);
-    if (bundleScope === "text-only") {
-      attachments.push(...rawUploadAttachments);
-    }
-    bundled = writtenBundle.metadata;
-    if (resolvedBundleFormat === "zip") {
-      composerText = appendZipBundleInstruction(composerText, writtenBundle.metadata.originalCount);
-    }
+    attachments.push(...writtenBundle.attachments);
+    bundled = writtenBundle.bundled;
+    composerText = writtenBundle.composerText;
+  } else {
+    assertAttachmentCount(attachments, resolvedBundleFormat);
   }
-  assertAttachmentCount(attachments, resolvedBundleFormat);
   assertUniqueAttachmentBasenames(attachments, cwd);
 
   const inlineFileCount = shouldBundle ? 0 : selectedPlan.inlineFileCount;
@@ -459,45 +554,36 @@ export async function assembleBrowserPrompt(
   }
 
   let fallback: BrowserPromptArtifacts["fallback"] = null;
+  let pendingFallback: PendingFallbackBundle | undefined;
   if (attachmentsPolicy === "auto" && selectedPlan.mode === "inline" && sections.length > 0) {
-    let fallbackComposerText = baseComposerSections.join("\n\n").trim();
+    const fallbackComposerText = baseComposerSections.join("\n\n").trim();
     const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
-    let fallbackBundled: BrowserBundleMetadata | null = null;
     const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat);
     const fallbackBundleScope = resolveBrowserBundleScope(fallbackBundleFormat, {
       bundleRequested,
       rawAttachmentCount: rawUploadAttachments.length,
       textAttachmentCount: uploadPlan.attachments.length,
     });
-    const fallbackShouldBundle = fallbackBundleScope !== "none";
-    if (fallbackShouldBundle) {
-      const writtenBundle = await writeBrowserBundle(
-        sections,
-        fallbackBundleScope === "all" ? allBundleSources : textBundleSources,
-        fallbackBundleFormat,
-      );
-      fallbackAttachments.length = 0;
-      fallbackAttachments.push(writtenBundle.attachment);
-      if (fallbackBundleScope === "text-only") {
-        fallbackAttachments.push(...rawUploadAttachments);
-      }
-      fallbackBundled = writtenBundle.metadata;
-      if (fallbackBundleFormat === "zip") {
-        fallbackComposerText = appendZipBundleInstruction(
-          fallbackComposerText,
-          writtenBundle.metadata.originalCount,
-        );
-      }
-    }
-    assertAttachmentCount(fallbackAttachments, fallbackBundleFormat);
     fallback = {
       composerText: fallbackComposerText,
       attachments: fallbackAttachments,
-      bundled: fallbackBundled,
+      bundled: null,
     };
+    if (fallbackBundleScope !== "none") {
+      pendingFallback = {
+        format: fallbackBundleFormat,
+        scope: fallbackBundleScope,
+        sections,
+        textSources: textBundleSources,
+        allSources: allBundleSources,
+        rawUploadAttachments,
+      };
+    } else {
+      assertAttachmentCount(fallbackAttachments, fallbackBundleFormat);
+    }
   }
 
-  return {
+  const artifacts: BrowserPromptArtifacts = {
     markdown,
     composerText,
     estimatedInputTokens,
@@ -515,4 +601,8 @@ export async function assembleBrowserPrompt(
     fallback,
     bundled,
   };
+  if (pendingFallback) {
+    pendingFallbackBundles.set(artifacts, pendingFallback);
+  }
+  return artifacts;
 }

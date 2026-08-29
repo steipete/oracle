@@ -795,6 +795,7 @@ async function captureDeepResearchTargetBaseline(
 type BrowserSubmissionFallback = {
   prompt: string;
   attachments: BrowserAttachment[];
+  prepare?: () => Promise<void>;
 };
 
 async function runSubmissionWithRecovery({
@@ -838,6 +839,9 @@ async function runSubmissionWithRecovery({
         });
         usedFallbackSubmission = true;
         logger("[browser] Inline prompt too large; retrying with file uploads.");
+        if (fallbackSubmission.prepare) {
+          await fallbackSubmission.prepare();
+        }
         await prepareFallbackSubmission();
         currentPrompt = fallbackSubmission.prompt;
         currentAttachments = fallbackSubmission.attachments;

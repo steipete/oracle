@@ -900,6 +900,47 @@ describe("runSubmissionWithRecoveryForTest", () => {
     ]);
   });
 
+  test("materializes fallback attachments before retrying a prompt-too-large submit", async () => {
+    const fallbackSubmission = {
+      prompt: "unbundled fallback",
+      attachments: [{ path: "/tmp/one.txt", displayPath: "one.txt", sizeBytes: 3 }],
+      prepare: vi.fn(async () => {
+        fallbackSubmission.prompt = "bundled fallback";
+        fallbackSubmission.attachments = [
+          {
+            path: "/tmp/attachments-bundle.zip",
+            displayPath: "attachments-bundle.zip",
+            sizeBytes: 12,
+          },
+        ];
+      }),
+    };
+    const submit = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new BrowserAutomationError("prompt too large", { code: "prompt-too-large" }),
+      )
+      .mockResolvedValueOnce({
+        baselineTurns: 1,
+        baselineAssistantText: "ok",
+      });
+
+    await runSubmissionWithRecoveryForTest({
+      prompt: "inline prompt",
+      attachments: [],
+      fallbackSubmission,
+      submit,
+      reloadPromptComposer: vi.fn().mockResolvedValue(undefined),
+      prepareFallbackSubmission: vi.fn().mockResolvedValue(undefined),
+      logger: vi.fn<(message: string) => void>(),
+    });
+
+    expect(fallbackSubmission.prepare).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenNthCalledWith(2, "bundled fallback", [
+      expect.objectContaining({ displayPath: "attachments-bundle.zip" }),
+    ]);
+  });
+
   test("throws when prompt-too-large happens again after fallback", async () => {
     const submit = vi
       .fn()
