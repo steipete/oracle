@@ -1065,7 +1065,7 @@ function buildThinkingTimeExpression(
         if (!control || !thumb || !isVisible(control)) return null;
         const levels = ['light', 'standard', 'extended', 'extra-high', 'pro'];
         const labels = describedIds(control)
-          .map((id) => (document.getElementById?.(id)?.textContent ?? '').split(/[,，]/)[0].trim())
+          .map((id) => (document.getElementById?.(id)?.textContent ?? '').split(/[,，、]/)[0].trim())
           .filter((label) => levels.some((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label))));
         if (labels.length !== 1) return null;
         const label = labels[0];

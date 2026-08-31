@@ -3191,6 +3191,23 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     expect(dom.keys).toEqual([]);
   });
 
+  it("verifies Pro through a Japanese ideographic-comma announcement", async () => {
+    // ja-JP announces "Pro、5件中5件目。" — U+3001 is neither "," nor "，".
+    const dom = buildDirectSlider(4, ["最速", "中程度", "高い", "非常に高い", "Pro"]);
+    dom.announcement.textContent = "Pro、5件中5件目。";
+    dom.control.dispatchEvent = (event: unknown) => {
+      const key = (event as { key?: string }).key;
+      if (key !== "ArrowLeft" && key !== "ArrowRight") return true;
+      dom.keys.push(key);
+      return true;
+    };
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "already-selected",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
   it("selects Pro through the Effort submenu", async () => {
     const dom = buildDom("High");
     await expect(run(dom.documentStub, "pro")).resolves.toEqual({
