@@ -1,7 +1,35 @@
 import { describe, expect, test } from "vitest";
-import { buildProviderRoutePlan } from "../../src/oracle/providerRoutePlan.js";
+import {
+  buildProviderRoutePlan,
+  resolveProviderRoute,
+} from "../../src/oracle/providerRoutePlan.js";
 
 describe("provider route plan", () => {
+  test.each([
+    ["azure", "explicit"],
+    ["azure", "environment"],
+    ["auto", "explicit"],
+    ["auto", "environment"],
+  ] as const)("%s Azure routing excludes %s OpenRouter URLs", (providerMode, source) => {
+    const route = resolveProviderRoute({
+      model: "o3-mini",
+      providerMode,
+      azure: { endpoint: "https://example-resource.openai.azure.com/", deployment: "my-o3" },
+      baseUrl: source === "explicit" ? "https://openrouter.ai/api/v1" : undefined,
+      env: {
+        AZURE_OPENAI_API_KEY: "az-test-key",
+        OPENROUTER_API_KEY: "or-test-key",
+        OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+      },
+    });
+
+    expect(route.isAzureOpenAI).toBe(true);
+    expect(route.azureDeploymentName).toBe("my-o3");
+    expect(route.apiKey).toBe("az-test-key");
+    expect(route.baseUrl).toBeUndefined();
+    expect(route.openRouterFallback).toBe(false);
+  });
+
   test.each(["gpt-5.6", "gpt-5.6-sol"])("routes %s through first-party OpenAI", (model) => {
     const plan = buildProviderRoutePlan({
       model,

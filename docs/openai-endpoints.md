@@ -29,6 +29,7 @@ If Azure env/config is present but you want first-party OpenAI for one run, pass
 Notes:
 
 - Oracle calls Azure at `https://<resource>.openai.azure.com/openai/v1`.
+- When Azure is selected, `--base-url` and `OPENAI_BASE_URL` are ignored for both model metadata and requests; Azure keys are never used for OpenRouter catalog lookups.
 - For Responses API runs, Azure expects `model` to be your deployment name. Oracle fails early when an Azure endpoint is active without a deployment, except for `gpt-5.5-pro` where the CLI model id is used as the implicit deployment.
 - API runs print the selected route without secrets, for example `Provider: Azure OpenAI | endpoint: your-resource.openai.azure.com | deployment: my-deployment | key: AZURE_OPENAI_API_KEY|OPENAI_API_KEY`.
 - `AZURE_OPENAI_API_VERSION` is still accepted for back-compat, but Azure's v1 Responses endpoint does not require it.
