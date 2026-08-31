@@ -507,13 +507,24 @@ describe("collectGeneratedImageArtifacts", () => {
         waitTimeoutMs: 15_000,
       });
       let settled = false;
-      void resultPromise.finally(() => {
-        settled = true;
-      });
-      for (let index = 0; index < 20 && !settled; index += 1) {
-        await vi.advanceTimersByTimeAsync(1500);
-        await fs.readdir(tmpDir);
-      }
+      void resultPromise.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      // Filesystem callbacks can outlive a fixed number of timer advances under
+      // load. Keep driving the fake clock until completion, with a real deadline.
+      await vi.waitFor(
+        async () => {
+          await vi.advanceTimersByTimeAsync(1500);
+          await fs.readdir(tmpDir);
+          expect(settled).toBe(true);
+        },
+        { timeout: 5_000, interval: 10 },
+      );
       const result = await resultPromise;
 
       expect(result.imageCount).toBe(1);

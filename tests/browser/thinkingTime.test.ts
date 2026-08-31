@@ -83,31 +83,42 @@ describe("browser thinking-time selection expression", () => {
     expect(expression).toContain("'思考量'");
   });
 
-  // The tests above only pin each LEVEL_TOKENS/EFFORT_WORDS/ADVANCED_WORDS entry's
-  // leading word(s) as a stand-in for "the array still starts the same way" — a word
-  // dropped from the *middle* or *end* of any of these lists (German/Chinese/Japanese/
-  // Spanish/Portuguese/Italian/Dutch/Polish variants added across #377, #405, and
-  // others) would pass every test above unnoticed. Assert every word in every list so
-  // that kind of drift fails here instead of only surfacing as a live-account report —
-  // see docs/browser-mode.md's "self check" note.
+  // Scope each inventory to its own list: "erweitert" belongs to both the
+  // extended tier and the Advanced menu, so whole-expression checks miss removals.
   it("keeps every LEVEL_TOKENS locale word for every tier", () => {
     const levelWords: Record<Exclude<ThinkingTimeLevel, "pro">, string[]> = {
-      light: ["light", "instant", "sofort", "leicht", "最速", "轻", "极速"],
-      standard: ["standard", "medium", "mittel", "中程度", "标准", "中"],
-      extended: ["extended", "high", "hoch", "erweitert", "高い", "扩展", "深度", "加强", "高"],
-      "extra-high": ["extra high", "sehr hoch", "非常に高い", "极高"],
+      light: ["light", "instant", "sofort", "leicht", "最速", "轻", "极速", "즉시"],
+      standard: ["standard", "medium", "mittel", "中程度", "标准", "中", "중간"],
+      extended: [
+        "extended",
+        "high",
+        "hoch",
+        "erweitert",
+        "高い",
+        "扩展",
+        "深度",
+        "加强",
+        "高",
+        "높음",
+      ],
+      "extra-high": ["extra high", "sehr hoch", "非常に高い", "极高", "매우 높음"],
       heavy: ["heavy", "schwer", "重度", "加重"],
     };
     for (const [level, words] of Object.entries(levelWords)) {
       const expression = buildThinkingTimeExpressionForTest(level as ThinkingTimeLevel);
+      const levelTokens = expression.match(/const LEVEL_TOKENS = \{([\s\S]*?)\};/)?.[1];
+      const tierWords = levelTokens?.match(
+        new RegExp(`(?:'${level}'|${level}): \\[([^\\]]*)\\]`),
+      )?.[1];
       for (const word of words) {
-        expect(expression, `${level} should still list '${word}'`).toContain(`'${word}'`);
+        expect(tierWords, `${level} should still list '${word}'`).toContain(`'${word}'`);
       }
     }
   });
 
   it("keeps every EFFORT_WORDS locale word", () => {
     const expression = buildThinkingTimeExpressionForTest();
+    const effortWords = expression.match(/const EFFORT_WORDS = \[([\s\S]*?)\];/)?.[1];
     for (const word of [
       "effort",
       "aufwand",
@@ -115,29 +126,32 @@ describe("browser thinking-time selection expression", () => {
       "努力",
       "推論レベル",
       "思考量",
+      "추론 수준",
       "esfuerzo",
       "esforco",
       "sforzo",
       "inspanning",
       "wysilek",
     ]) {
-      expect(expression, `EFFORT_WORDS should still list '${word}'`).toContain(`'${word}'`);
+      expect(effortWords, `EFFORT_WORDS should still list '${word}'`).toContain(`'${word}'`);
     }
   });
 
   it("keeps every ADVANCED_WORDS locale word", () => {
     const expression = buildThinkingTimeExpressionForTest();
+    const advancedWords = expression.match(/const ADVANCED_WORDS = \[([\s\S]*?)\];/)?.[1];
     for (const word of [
       "advanced",
       "erweitert",
       "高级",
       "詳細設定",
       "詳細表示",
+      "고급",
       "avanzado",
       "avancado",
       "avance",
     ]) {
-      expect(expression, `ADVANCED_WORDS should still list '${word}'`).toContain(`'${word}'`);
+      expect(advancedWords, `ADVANCED_WORDS should still list '${word}'`).toContain(`'${word}'`);
     }
   });
 
@@ -2819,6 +2833,16 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     private matchesSelector(selector: string): boolean {
       const role = this.attrs.role ?? "";
       const testid = this.attrs["data-testid"] ?? "";
+      if (selector === '[data-model-selection-view="true"]') {
+        return this.attrs["data-model-selection-view"] === "true";
+      }
+      if (selector === "[data-model-reasoning-effort-slider]") {
+        return this.attrs["data-model-reasoning-effort-slider"] !== undefined;
+      }
+      if (selector.includes("composer-model-picker-slider-simple-view")) {
+        return testid === "composer-model-picker-slider-simple-view";
+      }
+      if (selector === '[role="slider"]') return role === "slider";
       if (selector.includes('[role="menuitem"][aria-haspopup="menu"]')) {
         return role === "menuitem" && this.attrs["aria-haspopup"] === "menu";
       }
@@ -2985,6 +3009,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     };
     return {
       documentStub,
+      pickerContent,
       advancedToggle,
       effortOpener,
       modelOpener,
@@ -3025,6 +3050,146 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       FakeKeyboardEvent,
     );
   }
+
+  function buildDirectSlider(
+    currentIndex: number,
+    labels = ["Instant", "Medium", "High", "Extra High", "Pro"],
+  ) {
+    const dom = buildDom(labels[currentIndex]!);
+    const announcement = new Node(`${labels[currentIndex]}, ${currentIndex + 1} of 5.`);
+    const thumb = new Node("", {
+      role: "slider",
+      "aria-hidden": "true",
+      "aria-valuemin": "0",
+      "aria-valuemax": "4",
+      "aria-valuenow": String(currentIndex),
+    });
+    const slider = new Node("", { "data-model-reasoning-effort-slider": "" }, [thumb]);
+    const control = new Node(
+      "",
+      {
+        role: "menuitem",
+        "aria-label": "Power",
+        "aria-describedby": "slider-announcement",
+      },
+      [slider],
+    );
+    slider.closest = () => control;
+    const keys: string[] = [];
+    control.dispatchEvent = (event: unknown) => {
+      const key = (event as { key?: string }).key;
+      if (key !== "ArrowLeft" && key !== "ArrowRight") return true;
+      keys.push(key);
+      currentIndex = Math.max(0, Math.min(4, currentIndex + (key === "ArrowRight" ? 1 : -1)));
+      thumb.setAttribute("aria-valuenow", String(currentIndex));
+      announcement.textContent = `${labels[currentIndex]}, ${currentIndex + 1} of 5.`;
+      return true;
+    };
+    const simple = new Node(
+      "",
+      { "data-testid": "composer-model-picker-slider-simple-view", "data-active": "true" },
+      [control],
+    );
+    const directView = new Node("", { "data-model-selection-view": "true" }, [simple]);
+    dom.pickerContent.children.splice(0, dom.pickerContent.children.length, directView);
+    dom.documentStub.getElementById = (id: string) =>
+      id === "slider-announcement" ? announcement : null;
+    return { ...dom, thumb, announcement, control, simple, keys };
+  }
+
+  it("selects and verifies Pro on the direct slider without an Advanced row", async () => {
+    const dom = buildDirectSlider(2);
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual(["ArrowRight", "ArrowRight"]);
+    expect(dom.modelOpener.clicks).toBe(0);
+  });
+
+  it("accepts a directly verified Pro slider without sending any keys", async () => {
+    const dom = buildDirectSlider(4);
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "already-selected",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  it.each([
+    ["light", "Instant", 4],
+    ["standard", "Medium", 3],
+    ["extended", "High", 2],
+    ["extra-high", "Extra High", 1],
+  ])(
+    "selects %s on the direct slider without mistaking Pro for a lower tier",
+    async (level, label, count) => {
+      const dom = buildDirectSlider(4);
+      await expect(run(dom.documentStub, String(level))).resolves.toEqual({
+        status: "switched",
+        label,
+      });
+      expect(dom.keys).toEqual(Array(count).fill("ArrowLeft"));
+    },
+  );
+
+  it("does not infer Pro from the maximum numeric position", async () => {
+    const dom = buildDirectSlider(4, ["Instant", "Medium", "High", "Extra High", "Extra High"]);
+    expect((await run(dom.documentStub, "pro")).status).not.toMatch(
+      /^(switched|already-selected)$/,
+    );
+    expect(dom.keys).toEqual([]);
+  });
+
+  it.each([
+    ["light", "즉시"],
+    ["standard", "중간"],
+    ["extended", "높음"],
+    ["extra-high", "매우 높음"],
+    ["pro", "Pro"],
+  ])("selects Korean %s through the direct slider", async (level, label) => {
+    const dom = buildDirectSlider(level === "pro" ? 2 : 4, [
+      "즉시",
+      "중간",
+      "높음",
+      "매우 높음",
+      "Pro",
+    ]);
+    await expect(run(dom.documentStub, level)).resolves.toEqual({ status: "switched", label });
+    expect(dom.keys.length).toBeGreaterThan(0);
+    expect(dom.modelOpener.clicks).toBe(0);
+  });
+
+  it("fails closed when the slider ignores keyboard input", async () => {
+    const dom = buildDirectSlider(3);
+    dom.control.dispatchEvent = () => true;
+    expect((await run(dom.documentStub, "pro")).status).toBe("selection-unverified");
+  });
+
+  it("rejects numeric movement with a stale tier announcement", async () => {
+    const dom = buildDirectSlider(3);
+    dom.control.dispatchEvent = () => {
+      dom.thumb.setAttribute("aria-valuenow", "4");
+      return true;
+    };
+    expect((await run(dom.documentStub, "pro")).status).toBe("selection-unverified");
+  });
+
+  it("does not change an unsupported slider range or unknown tier", async () => {
+    const dom = buildDirectSlider(3);
+    dom.thumb.setAttribute("aria-valuemax", "5");
+    expect((await run(dom.documentStub, "pro")).status).toBe("selection-unverified");
+    expect(dom.keys).toEqual([]);
+  });
+
+  it("ignores an inactive slider view", async () => {
+    const dom = buildDirectSlider(3);
+    dom.simple.setAttribute("data-active", "false");
+    expect((await run(dom.documentStub, "pro")).status).not.toMatch(
+      /^(switched|already-selected)$/,
+    );
+    expect(dom.keys).toEqual([]);
+  });
 
   it("selects Pro through the Effort submenu", async () => {
     const dom = buildDom("High");
@@ -3093,6 +3258,50 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     const dom = buildDom("High");
     await run(dom.documentStub, "pro");
     expect(dom.advancedToggle.clicks).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["light", "즉시", 0],
+    ["standard", "중간", 1],
+    ["extended", "높음", 2],
+    ["extra-high", "매우 높음", 3],
+    ["pro", "Pro", 4],
+  ])(
+    "selects Korean %s without confusing neighboring tiers",
+    async (level, label, selectedIndex) => {
+      const dom = buildDom("높음");
+      dom.advancedToggle.textContent = "고급";
+      dom.advancedToggle.setAttribute("aria-label", "고급");
+      dom.modelOpener.textContent = "모델GPT-5.6 Sol";
+      dom.effortOpener.textContent = "추론 수준Pro";
+      ["즉시", "중간", "높음", "매우 높음", "Pro"].forEach((text, index) => {
+        dom.tierRows[index]!.textContent = text;
+      });
+      // Extra High preceding High catches a suffix matcher that would pick it first.
+      if (level === "extended") {
+        dom.tierRows[2]!.textContent = "매우 높음";
+        dom.tierRows[3]!.textContent = "높음";
+        selectedIndex = 3;
+      }
+      const result = await run(dom.documentStub, String(level));
+      expect(result).toEqual({ status: "switched", label });
+      dom.tierRows.forEach((row, index) => expect(row.clicks > 0).toBe(index === selectedIndex));
+      expect(dom.modelOpener.clicks).toBe(0);
+    },
+  );
+
+  it("normalizes decomposed Hangul in a Korean effort opener", async () => {
+    const dom = buildDom("High");
+    dom.advancedToggle.textContent = "고급".normalize("NFD");
+    dom.advancedToggle.setAttribute("aria-label", "고급".normalize("NFD"));
+    dom.effortOpener.textContent = "추론 수준Pro".normalize("NFD");
+    ["즉시", "중간", "높음", "매우 높음", "Pro"].forEach((text, index) => {
+      dom.tierRows[index]!.textContent = text.normalize("NFD");
+    });
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
   });
 
   it("reports Pro as already selected without clicking again", async () => {

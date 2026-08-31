@@ -32,8 +32,8 @@ jobs:
       - run: pnpm run test:packed-cli
         if: matrix.os == 'ubuntu-latest'
 
-  # Linux parity smoke for recoverable CDP disconnect classification (issue #326 / PR #327).
-  # No ChatGPT auth; exercises real Chromium DevTools against the same probe path as macOS proof.
+  # Linux parity smokes for CDP disconnect classification and attachment sends.
+  # No ChatGPT auth; exercises real Chromium DevTools and disk-backed uploads.
   cdp-disconnect-proof-linux:
     runs-on: ubuntu-latest
     steps:
@@ -48,7 +48,7 @@ jobs:
           sudo apt-get install -y -qq chromium-browser || sudo apt-get install -y -qq chromium
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
-      - name: Run CDP disconnect classification proof
+      - name: Resolve Chromium binary
         env:
           CHROME_PATH: /usr/bin/chromium-browser
         run: |
@@ -60,5 +60,8 @@ jobs:
               exit 1
             fi
           fi
-          echo "CHROME_PATH=${CHROME_PATH}"
-          node scripts/cdp-disconnect-proof.mjs
+          echo "CHROME_PATH=${CHROME_PATH}" >> "$GITHUB_ENV"
+      - name: Run CDP disconnect classification proof
+        run: node scripts/cdp-disconnect-proof.mjs
+      - name: Run attachment send proof
+        run: node scripts/attachment-send-proof.mjs

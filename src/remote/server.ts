@@ -15,6 +15,7 @@ import type { BrowserRunResult } from "../browserMode.js";
 import type {
   RemoteArtifactCapabilities,
   RemoteArtifactDescriptor,
+  RemoteAttachmentPayload,
   RemoteRunPayload,
   RemoteRunEvent,
 } from "./types.js";
@@ -213,13 +214,11 @@ export async function createRemoteServer(
     // Each run gets an isolated temp dir so attachments/logs don't collide.
     const runDir = await mkdtemp(path.join(os.tmpdir(), `oracle-serve-${runId}-`));
     const attachmentDir = path.join(runDir, "attachments");
-    await mkdir(attachmentDir, { recursive: true });
 
     const sendEvent = (event: RemoteRunEvent) => {
       res.write(`${JSON.stringify(event)}\n`);
     };
 
-    const attachments: BrowserAttachment[] = [];
     let fallbackSubmission:
       | {
           prompt: string;
@@ -228,34 +227,22 @@ export async function createRemoteServer(
       | undefined;
     try {
       const attachmentsPayload = Array.isArray(payload.attachments) ? payload.attachments : [];
-      for (const [index, attachment] of attachmentsPayload.entries()) {
-        const safeName = sanitizeName(attachment.fileName ?? `attachment-${index + 1}`);
-        const filePath = path.join(attachmentDir, safeName);
-        await writeFile(filePath, Buffer.from(attachment.contentBase64, "base64"));
-        attachments.push({
-          path: filePath,
-          displayPath: attachment.displayPath,
-          sizeBytes: attachment.sizeBytes,
-        });
-      }
+      const attachments = await stageRemoteAttachments(
+        attachmentsPayload,
+        attachmentDir,
+        "attachment",
+      );
 
       if (payload.fallbackSubmission) {
         const fallbackAttachmentDir = path.join(runDir, "fallback-attachments");
-        await mkdir(fallbackAttachmentDir, { recursive: true });
-        const fallbackAttachments: BrowserAttachment[] = [];
         const fallbackPayload = Array.isArray(payload.fallbackSubmission.attachments)
           ? payload.fallbackSubmission.attachments
           : [];
-        for (const [index, attachment] of fallbackPayload.entries()) {
-          const safeName = sanitizeName(attachment.fileName ?? `fallback-attachment-${index + 1}`);
-          const filePath = path.join(fallbackAttachmentDir, safeName);
-          await writeFile(filePath, Buffer.from(attachment.contentBase64, "base64"));
-          fallbackAttachments.push({
-            path: filePath,
-            displayPath: attachment.displayPath,
-            sizeBytes: attachment.sizeBytes,
-          });
-        }
+        const fallbackAttachments = await stageRemoteAttachments(
+          fallbackPayload,
+          fallbackAttachmentDir,
+          "fallback-attachment",
+        );
         fallbackSubmission = {
           prompt: payload.fallbackSubmission.prompt,
           attachments: fallbackAttachments,
@@ -771,8 +758,43 @@ export function pickClientBrowserConfig(
   return accepted;
 }
 
-function sanitizeName(raw: string): string {
-  return raw.replace(/[^a-zA-Z0-9._-]/g, "_");
+async function stageRemoteAttachments(
+  payload: RemoteAttachmentPayload[],
+  directory: string,
+  defaultPrefix: string,
+): Promise<BrowserAttachment[]> {
+  await mkdir(directory, { recursive: true });
+  const names = payload.map((attachment, index) => {
+    const fallback = `${defaultPrefix}-${index + 1}`;
+    const sanitized = (attachment.fileName ?? fallback).replace(/[^a-zA-Z0-9._-]/g, "_");
+    return !sanitized || sanitized === "." || sanitized === ".." ? fallback : sanitized;
+  });
+  // Reserve future names too, and honor case-insensitive host filesystems.
+  const reserved = new Set(names.map((name) => name.toLowerCase()));
+  const used = new Set<string>();
+  const attachments: BrowserAttachment[] = [];
+  for (const [index, attachment] of payload.entries()) {
+    const original = names[index]!;
+    let name = original;
+    if (used.has(name.toLowerCase())) {
+      const extension = path.extname(original);
+      const stem = original.slice(0, original.length - extension.length);
+      let suffix = 2;
+      do {
+        name = `${stem}-${suffix++}${extension}`;
+      } while (reserved.has(name.toLowerCase()));
+    }
+    used.add(name.toLowerCase());
+    reserved.add(name.toLowerCase());
+    const filePath = path.join(directory, name);
+    await writeFile(filePath, Buffer.from(attachment.contentBase64, "base64"), { flag: "wx" });
+    attachments.push({
+      path: filePath,
+      displayPath: attachment.displayPath,
+      sizeBytes: attachment.sizeBytes,
+    });
+  }
+  return attachments;
 }
 
 function sanitizeResult(

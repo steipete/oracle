@@ -1817,6 +1817,7 @@ describe("uploadAttachmentFile", () => {
 
     expect(capturedPresenceExpression).toContain("text.includes('…')");
     expect(capturedPresenceExpression).toContain("text.includes('...')");
+    expect(capturedPresenceExpression).toContain("namePattern");
     expect(dom.getDocument).not.toHaveBeenCalled();
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
     expect(logger).toHaveBeenCalledWith(expect.stringMatching(/Attachment already present/i));
@@ -1832,7 +1833,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           return { result: { value: { ui: false, input: true } } };
         }
         if (expr.includes("baselineChipCount") && expr.includes("baselineChips")) {
@@ -1848,7 +1849,7 @@ describe("uploadAttachmentFile", () => {
             },
           };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: true } } };
         }
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
@@ -1870,17 +1871,17 @@ describe("uploadAttachmentFile", () => {
     expect(logger).toHaveBeenCalledWith(expect.stringMatching(/already queued/i));
   });
 
-  test("skips upload when file count already satisfies expected count", async () => {
+  test("does not skip upload for an unrelated file-count label", async () => {
     logger.mockClear();
     const dom = {
-      getDocument: vi.fn(),
+      getDocument: vi.fn().mockRejectedValue(new Error("UPLOAD_PATH_REACHED")),
       querySelector: vi.fn(),
       setFileInputFiles: vi.fn(),
     } as unknown as ChromeClient["DOM"];
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
@@ -1906,24 +1907,23 @@ describe("uploadAttachmentFile", () => {
         logger,
         { expectedCount: 1 },
       ),
-    ).resolves.toBe(true);
+    ).rejects.toThrow("UPLOAD_PATH_REACHED");
 
-    expect(dom.getDocument).not.toHaveBeenCalled();
+    expect(dom.getDocument).toHaveBeenCalledTimes(1);
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
-    expect(logger).toHaveBeenCalledWith(expect.stringMatching(/composer shows 1 file/i));
   });
 
-  test("skips upload when input count already satisfies expected count", async () => {
+  test("does not skip upload for an unnamed file-input count", async () => {
     logger.mockClear();
     const dom = {
-      getDocument: vi.fn(),
+      getDocument: vi.fn().mockRejectedValue(new Error("UPLOAD_PATH_REACHED")),
       querySelector: vi.fn(),
       setFileInputFiles: vi.fn(),
     } as unknown as ChromeClient["DOM"];
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
@@ -1949,11 +1949,10 @@ describe("uploadAttachmentFile", () => {
         logger,
         { expectedCount: 1 },
       ),
-    ).resolves.toBe(true);
+    ).rejects.toThrow("UPLOAD_PATH_REACHED");
 
-    expect(dom.getDocument).not.toHaveBeenCalled();
+    expect(dom.getDocument).toHaveBeenCalledTimes(1);
     expect(dom.setFileInputFiles).not.toHaveBeenCalled();
-    expect(logger).toHaveBeenCalledWith(expect.stringMatching(/composer shows 1 file/i));
   });
 
   test("avoids retrying other inputs once upload shows progress", async () => {
@@ -1967,7 +1966,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           return {
             result: {
@@ -2016,7 +2015,7 @@ describe("uploadAttachmentFile", () => {
         if (expr.includes("attachmentSelectors") && expr.includes("found")) {
           return { result: { value: { found: true } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: true } } };
         }
         return { result: { value: null } };
@@ -2046,7 +2045,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           if (readSignalCalls < 3) {
             return {
@@ -2106,7 +2105,7 @@ describe("uploadAttachmentFile", () => {
             },
           };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: false } } };
         }
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
@@ -2131,45 +2130,31 @@ describe("uploadAttachmentFile", () => {
     expect(dom.setFileInputFiles).toHaveBeenCalledTimes(1);
   });
 
-  test("defers data transfer fallback when attachment signals appear after setFileInputFiles", async () => {
+  test("retains confirmed per-file upload evidence for a filename-less image", async () => {
     logger.mockClear();
-    vi.spyOn(attachments, "waitForAttachmentVisible").mockResolvedValue(undefined);
-    let readSignalCalls = 0;
+    let inputSet = false;
     const dom = {
       getDocument: vi.fn().mockResolvedValue({ root: { nodeId: 1 } }),
       querySelector: vi.fn().mockResolvedValue({ nodeId: 2 }),
-      setFileInputFiles: vi.fn().mockResolvedValue(undefined),
+      setFileInputFiles: vi.fn().mockImplementation(async ({ files }: { files: string[] }) => {
+        inputSet = files.length > 0;
+      }),
     } as unknown as ChromeClient["DOM"];
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
-          readSignalCalls += 1;
-          if (readSignalCalls === 1) {
-            return {
-              result: {
-                value: {
-                  ui: false,
-                  input: false,
-                  chipCount: 0,
-                  inputCount: 0,
-                  uploading: false,
-                  chipSignature: "",
-                  fileCount: 0,
-                },
-              },
-            };
-          }
+        if (expr.includes('const action = "confirm"')) return { result: { value: inputSet } };
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
-                ui: true,
+                ui: false,
                 input: false,
-                chipCount: 1,
-                inputCount: 1,
+                chipCount: inputSet ? 3 : 2,
+                inputCount: 0,
                 uploading: false,
-                chipSignature: "chip",
-                fileCount: 1,
+                chipSignature: inputSet ? "chip-a|chip-b|image-preview" : "chip-a|chip-b",
+                fileCount: 0,
               },
             },
           };
@@ -2179,7 +2164,7 @@ describe("uploadAttachmentFile", () => {
             result: {
               value: {
                 ok: true,
-                baselineChipCount: 0,
+                baselineChipCount: 2,
                 baselineChips: [],
                 baselineUploading: false,
                 baselineInputCount: 0,
@@ -2197,34 +2182,150 @@ describe("uploadAttachmentFile", () => {
           return {
             result: {
               value: {
-                chipCount: 1,
-                chips: [],
-                inputNames: ["oracle-browser-smoke.txt"],
+                local: true,
+                chipCount: inputSet ? 3 : 2,
+                chips: inputSet
+                  ? [{ text: "chip-a" }, { text: "chip-b" }, { testid: "image-preview" }]
+                  : [{ text: "chip-a" }, { text: "chip-b" }],
+                inputNames: [],
                 composerText: "",
                 uploading: false,
               },
             },
           };
         }
-        if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
-          return { result: { value: { found: true } } };
+        if (expr.includes("return { names: [], value: '', count: 0 }")) {
+          return { result: { value: { names: [], value: "", count: 0 } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
-          return { result: { value: { found: true } } };
+        if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
+          throw new Error("literal filename visibility probe should be redundant");
+        }
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
+          throw new Error("global attachment anchoring should be redundant");
         }
         return { result: { value: null } };
       }),
     } as unknown as ChromeClient["Runtime"];
 
-    await expect(
-      uploadAttachmentFile(
+    vi.useFakeTimers();
+    try {
+      const uploadPromise = uploadAttachmentFile(
         { runtime, dom },
-        { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
+        { path: "/tmp/case412.jpg", displayPath: "case412.jpg" },
         logger,
-      ),
-    ).resolves.toBe(true);
+      );
+      const assertion = expect(uploadPromise).resolves.toBe(true);
+      await vi.runAllTimersAsync();
+      await assertion;
 
-    expect(transferSpy).not.toHaveBeenCalled();
+      expect(dom.setFileInputFiles).toHaveBeenCalledWith({
+        nodeId: 2,
+        files: ["/tmp/case412.jpg"],
+      });
+      expect(transferSpy).not.toHaveBeenCalled();
+      expect(logger).toHaveBeenCalledWith(
+        "Attachment queued (per-file composer evidence confirmed)",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects a filename-less image when the extra chip predates the file assignment", async () => {
+    logger.mockClear();
+    let inputSet = false;
+    let literalProbeCalls = 0;
+    const dom = {
+      getDocument: vi.fn().mockResolvedValue({ root: { nodeId: 1 } }),
+      querySelector: vi.fn().mockResolvedValue({ nodeId: 2 }),
+      setFileInputFiles: vi.fn().mockImplementation(async ({ files }: { files: string[] }) => {
+        inputSet = files.length > 0;
+      }),
+    } as unknown as ChromeClient["DOM"];
+    const runtime = {
+      evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
+        const expr = String(params?.expression ?? "");
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
+          return {
+            result: {
+              value: {
+                ui: false,
+                input: false,
+                chipCount: inputSet ? 3 : 2,
+                inputCount: 0,
+                uploading: false,
+                chipSignature: inputSet ? "chip-a|chip-b|unrelated" : "chip-a|chip-b",
+                fileCount: 0,
+              },
+            },
+          };
+        }
+        if (expr.includes("baselineChipCount") && expr.includes("baselineChips")) {
+          return {
+            result: {
+              value: {
+                ok: true,
+                baselineChipCount: 2,
+                baselineChips: [],
+                baselineUploading: false,
+                baselineInputCount: 0,
+                baselineFileCount: 0,
+                order: [0],
+              },
+            },
+          };
+        }
+        if (
+          expr.includes("chipCount") &&
+          expr.includes("composerText") &&
+          expr.includes("uploading")
+        ) {
+          return {
+            result: {
+              value: {
+                local: true,
+                chipCount: 3,
+                chips: [{ text: "chip-a" }, { text: "chip-b" }, { testid: "unrelated" }],
+                inputNames: [],
+                composerText: "",
+                uploading: false,
+              },
+            },
+          };
+        }
+        if (expr.includes("return { names: [], value: '', count: 0 }")) {
+          return { result: { value: { names: [], value: "", count: 0 } } };
+        }
+        if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
+          literalProbeCalls += 1;
+          return { result: { value: { found: false } } };
+        }
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
+          throw new Error("global attachment anchoring should not confirm this attempt");
+        }
+        return { result: { value: null } };
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    vi.useFakeTimers();
+    try {
+      const uploadPromise = uploadAttachmentFile(
+        { runtime, dom },
+        { path: "/tmp/case412.jpg", displayPath: "case412.jpg" },
+        logger,
+      );
+      const assertion = expect(uploadPromise).rejects.toThrow(
+        /Attachment did not appear in ChatGPT composer/i,
+      );
+      await vi.runAllTimersAsync();
+      await assertion;
+
+      expect(dom.setFileInputFiles).toHaveBeenCalledTimes(1);
+      expect(literalProbeCalls).toBeGreaterThan(0);
+      expect(transferSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("clears stale file inputs before trying alternate candidates", async () => {
@@ -2237,7 +2338,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           return {
             result: {
               value: {
@@ -2290,7 +2391,7 @@ describe("uploadAttachmentFile", () => {
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
           return { result: { value: { found: false } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
           return { result: { value: { found: false } } };
         }
         return { result: { value: null } };
@@ -2314,9 +2415,8 @@ describe("uploadAttachmentFile", () => {
     expect(dom.setFileInputFiles).toHaveBeenCalledWith({ nodeId: 2, files: [] });
   });
 
-  test("uses file-count signal to avoid retrying alternate inputs", async () => {
+  test("does not use a file-count-only signal as upload confirmation", async () => {
     logger.mockClear();
-    vi.spyOn(attachments, "waitForAttachmentVisible").mockResolvedValue(undefined);
     let readSignalCalls = 0;
     const dom = {
       getDocument: vi.fn().mockResolvedValue({ root: { nodeId: 1 } }),
@@ -2326,7 +2426,7 @@ describe("uploadAttachmentFile", () => {
     const runtime = {
       evaluate: vi.fn().mockImplementation(async (params: { expression?: string }) => {
         const expr = String(params?.expression ?? "");
-        if (expr.includes("const normalizedExpected") && expr.includes("matchesExpected")) {
+        if (expr.includes("const normalizedExpected") && expr.includes("chipSignature")) {
           readSignalCalls += 1;
           return {
             result: {
@@ -2375,10 +2475,10 @@ describe("uploadAttachmentFile", () => {
           };
         }
         if (expr.includes("attachmentSelectors") && expr.includes("attachment-cards")) {
-          return { result: { value: { found: true } } };
+          return { result: { value: { found: false } } };
         }
-        if (expr.includes("normalizedNoExt") && expr.includes("selectors")) {
-          return { result: { value: { found: true } } };
+        if (expr.includes("const matchesExpected =") && expr.includes("const selectors =")) {
+          return { result: { value: { found: false } } };
         }
         return { result: { value: null } };
       }),
@@ -2390,13 +2490,34 @@ describe("uploadAttachmentFile", () => {
       { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
       logger,
     );
+    const assertion = expect(uploadPromise).rejects.toThrow(/Attachment did not register/i);
     await Promise.resolve();
     await vi.runAllTimersAsync();
-    await expect(uploadPromise).resolves.toBe(true);
+    await assertion;
     vi.useRealTimers();
 
-    expect(dom.querySelector).toHaveBeenCalledTimes(1);
-    expect(dom.setFileInputFiles).toHaveBeenCalledTimes(1);
+    expect(dom.querySelector).toHaveBeenCalledTimes(2);
+    expect(dom.setFileInputFiles).toHaveBeenCalled();
+
+    const fileCountExpressions = (
+      runtime.evaluate as unknown as { mock: { calls: Array<Array<{ expression?: string }>> } }
+    ).mock.calls
+      .map(([params]) => String(params?.expression ?? ""))
+      .filter((expression) => expression.includes("fileCountSelectors"));
+    expect(fileCountExpressions.length).toBeGreaterThan(1);
+    expect(
+      fileCountExpressions.some((expression) => expression.includes("baselineFileCount")),
+    ).toBe(true);
+    expect(
+      fileCountExpressions.every(
+        (expression) =>
+          expression.includes("scope && scope !== document.body") &&
+          expression.includes("root && root !== document.body"),
+      ),
+    ).toBe(true);
+    for (const expression of fileCountExpressions) {
+      expect(expression).not.toContain("document.querySelectorAll(fileCountSelectors)");
+    }
   });
 });
 
@@ -2419,11 +2540,36 @@ describe("waitForAttachmentVisible", () => {
     const capturedExpression = String(call?.expression ?? "");
     expect(capturedExpression).toContain("source: 'file-input'");
     expect(capturedExpression).toContain('input[type="file"]');
-    expect(capturedExpression).toContain("attachments?");
+    expect(capturedExpression).not.toContain("source: 'file-count'");
+    expect(capturedExpression).not.toContain("visibleRemove");
   });
 });
 
 describe("waitForAttachmentCompletion", () => {
+  test("keeps sidebar file-count labels outside the active composer scan", async () => {
+    const evaluate = vi.fn().mockResolvedValue({
+      result: {
+        value: {
+          state: "missing",
+          uploading: false,
+          filesAttached: true,
+          attachedNames: [],
+          inputNames: [],
+          fileCount: 0,
+        },
+      },
+    });
+    const runtime = { evaluate } as unknown as ChromeClient["Runtime"];
+
+    await expect(waitForAttachmentCompletion(runtime, 200)).resolves.toBeUndefined();
+
+    const call = evaluate.mock.calls[0]?.[0] as { expression?: string } | undefined;
+    const expression = String(call?.expression ?? "");
+    expect(expression).toContain("composerScope !== document");
+    expect(expression).toContain("composerScope !== document.body");
+    expect(expression).not.toContain("document.querySelectorAll(fileCountSelectors)");
+  });
+
   test("resolves when composer ready", async () => {
     const evaluate = vi.fn();
     evaluate.mockImplementation(async () => {

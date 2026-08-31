@@ -10,6 +10,8 @@ import { createRemoteBrowserExecutor } from "../../src/remote/client.js";
 import type { BrowserRunResult } from "../../src/browserMode.js";
 import type { RemoteArtifactDescriptor } from "../../src/remote/types.js";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
+import { runBrowserMode, runSubmissionWithRecoveryForTest } from "../../src/browser/index.js";
+import { BrowserAutomationError } from "../../src/oracle/errors.js";
 
 const CAN_LISTEN_LOCALHOST =
   spawnSync(
@@ -145,6 +147,60 @@ describe("remote browser service", () => {
 
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "stages colliding primary attachment names without losing payloads",
+    async () => {
+      await expectRemoteAttachmentStaging({
+        location: "primary",
+        files: [
+          { fileName: "a b.txt", content: "primary with space", stagedName: "a_b.txt" },
+          { fileName: "a_b.txt", content: "primary with underscore", stagedName: "a_b-2.txt" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "stages colliding fallback attachment names without losing payloads",
+    async () => {
+      await expectRemoteAttachmentStaging({
+        location: "fallback",
+        files: [
+          { fileName: "a b.txt", content: "fallback with space", stagedName: "a_b.txt" },
+          { fileName: "a_b.txt", content: "fallback with underscore", stagedName: "a_b-2.txt" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "preserves ordinary non-colliding attachment names and payload order",
+    async () => {
+      await expectRemoteAttachmentStaging({
+        location: "primary",
+        files: [
+          { fileName: "alpha.txt", content: "first", stagedName: "alpha.txt" },
+          { fileName: "beta.md", content: "second", stagedName: "beta.md" },
+        ],
+      });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST).each(["primary", "fallback"] as const)(
+    "reserves supplied suffixes and case-folded basenames in %s staging",
+    async (location) => {
+      await expectRemoteAttachmentStaging({
+        location,
+        files: [
+          { fileName: "a b.txt", content: "space", stagedName: "a_b.txt" },
+          { fileName: "a_b.txt", content: "underscore", stagedName: "a_b-3.txt" },
+          { fileName: "a_b-2.txt", content: "reserved suffix", stagedName: "a_b-2.txt" },
+          { fileName: "A_B.TXT", content: "uppercase", stagedName: "A_B-4.TXT" },
+        ],
+      });
     },
   );
 
@@ -449,6 +505,118 @@ describe("remote browser service", () => {
     },
   );
 });
+
+async function expectRemoteAttachmentStaging({
+  location,
+  files,
+}: {
+  location: "primary" | "fallback";
+  files: Array<{ fileName: string; content: string; stagedName: string }>;
+}): Promise<void> {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-staging-test-"));
+  const sourceAttachments = [];
+  for (const [index, file] of files.entries()) {
+    const sourceDir = path.join(tmpDir, String(index));
+    await mkdir(sourceDir);
+    const sourcePath = path.join(sourceDir, file.fileName);
+    await writeFile(sourcePath, file.content, "utf8");
+    sourceAttachments.push({
+      path: sourcePath,
+      displayPath: file.fileName,
+      sizeBytes: Buffer.byteLength(file.content),
+    });
+  }
+
+  const server = await createRemoteServer(
+    { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+    {
+      runBrowser: async (options) => {
+        const stagedAttachments =
+          location === "primary" ? options.attachments : options.fallbackSubmission?.attachments;
+        expect(stagedAttachments).toHaveLength(files.length);
+        if (!stagedAttachments) {
+          throw new Error(`missing ${location} attachments`);
+        }
+
+        const stagedPaths = stagedAttachments.map((attachment) => attachment.path);
+        expect(new Set(stagedPaths).size).toBe(files.length);
+        expect(stagedAttachments.map((attachment) => path.basename(attachment.path))).toEqual(
+          files.map((file) => file.stagedName),
+        );
+        expect(stagedAttachments.map((attachment) => attachment.displayPath)).toEqual(
+          files.map((file) => file.fileName),
+        );
+        await expect(
+          Promise.all(stagedPaths.map((stagedPath) => readFile(stagedPath, "utf8"))),
+        ).resolves.toEqual(files.map((file) => file.content));
+
+        if (location === "primary") {
+          // Reach the real browser guard, then stop at a later config check before Chrome starts.
+          await expect(
+            runBrowserMode({
+              prompt: options.prompt,
+              attachments: stagedAttachments,
+              config: {
+                copyProfileSource: "/unused-test-profile",
+                remoteChrome: { host: "127.0.0.1", port: 1 },
+              },
+            }),
+          ).rejects.toMatchObject({ details: { stage: "profile-config" } });
+        } else {
+          let submissions = 0;
+          let prepared = false;
+          await runSubmissionWithRecoveryForTest({
+            prompt: options.prompt,
+            attachments: [],
+            fallbackSubmission: options.fallbackSubmission,
+            submit: async (_prompt, uploaded) => {
+              if (submissions++ === 0) {
+                throw new BrowserAutomationError("prompt too large", { code: "prompt-too-large" });
+              }
+              expect(uploaded).toEqual(stagedAttachments);
+              return { baselineTurns: null, baselineAssistantText: null };
+            },
+            prepareFallbackSubmission: async () => {
+              prepared = true;
+            },
+            reloadPromptComposer: async () => {},
+            logger: () => {},
+          });
+          expect(submissions).toBe(2);
+          expect(prepared).toBe(true);
+        }
+
+        return {
+          answerText: "done",
+          answerMarkdown: "done",
+          tookMs: 1,
+          answerTokens: 1,
+          answerChars: 4,
+        };
+      },
+    },
+  );
+
+  try {
+    const executor = createRemoteBrowserExecutor({
+      host: `127.0.0.1:${server.port}`,
+      token: "secret",
+    });
+    const result = await executor({
+      prompt: "remote attachment staging",
+      attachments: location === "primary" ? sourceAttachments : [],
+      fallbackSubmission:
+        location === "fallback"
+          ? { prompt: "fallback attachment staging", attachments: sourceAttachments }
+          : undefined,
+      config: {},
+    });
+    expect(result.answerText).toBe("done");
+  } finally {
+    await server.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
 
 function createArtifactDescriptor(
   payload: Buffer,

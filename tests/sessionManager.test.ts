@@ -419,6 +419,44 @@ describe("session lifecycle", () => {
     expect(rawAfterList.status).toBe("error");
     expect(rawAfterList.errorMessage).toMatch(/chrome/i);
   });
+
+  test("marks running browser sessions as error when only controllerPid is recorded and it is gone", async () => {
+    // chromePid / chromePort absent → signals[] starts empty → falls through to controllerPid check
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Controller dead", model: "gpt-5.2-pro", mode: "browser" },
+      "/tmp/cwd",
+    );
+    await sessionModule.updateSessionMetadata(meta.id, {
+      status: "running",
+      mode: "browser",
+      browser: {
+        runtime: {
+          controllerPid: 999_999_999, // definitely not alive
+        },
+      },
+    });
+    const refreshed = await sessionModule.readSessionMetadata(meta.id);
+    expect(refreshed?.status).toBe("error");
+    expect(refreshed?.errorMessage).toMatch(/chrome.*no longer reachable/i);
+  });
+
+  test("keeps running browser sessions when only controllerPid is recorded and it is alive", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Controller live", model: "gpt-5.2-pro", mode: "browser" },
+      "/tmp/cwd",
+    );
+    await sessionModule.updateSessionMetadata(meta.id, {
+      status: "running",
+      mode: "browser",
+      browser: {
+        runtime: {
+          controllerPid: process.pid, // current process is definitely alive
+        },
+      },
+    });
+    const refreshed = await sessionModule.readSessionMetadata(meta.id);
+    expect(refreshed?.status).toBe("running");
+  });
 });
 
 describe("session listing and filtering", () => {

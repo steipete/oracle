@@ -170,3 +170,100 @@ describe("archiveChatGptConversation", () => {
     expect(expression).toContain("アーカイブしました");
   });
 });
+
+// Every locale label this matcher relies on, one line per literal, checked against the
+// SPECIFIC matcher function that consumes it (not the whole serialized expression) — a
+// global `expression.toContain(label)` would still pass if a label were deleted from one
+// matcher while an identical label happened to survive in a sibling matcher, since several
+// of these labels (e.g. "archive", "アーカイブ") are deliberately repeated across matchers.
+// Labels are matched as quoted literals (`'label'`), not bare substrings: "アーカイブ" is
+// itself a substring of "アーカイブする", so a bare check would stay green even after the
+// standalone "アーカイブ" literal is deleted, as long as "アーカイブする" still exists.
+// A future PR that silently drops or renames a label now fails here instead of only
+// showing up as a live-account regression report — see docs/browser-mode.md's "self check"
+// ask and the localized-controls history in #407/#405.
+describe("archive expression locale label inventory", () => {
+  const expression = buildArchiveConversationExpressionForTest();
+  const quoted = (label: string) => `'${label}'`;
+
+  // Slice out one matcher function's own source, bounded by the next function's start,
+  // so an assertion against the slice can only be satisfied by that matcher's own labels.
+  const matcherSlice = (startMarker: string, endMarker: string): string => {
+    const start = expression.indexOf(startMarker);
+    if (start === -1) {
+      throw new Error(`matcher start marker not found in expression: ${startMarker}`);
+    }
+    const end = expression.indexOf(endMarker, start + startMarker.length);
+    if (end === -1) {
+      throw new Error(`matcher end marker not found in expression: ${endMarker}`);
+    }
+    return expression.slice(start, end);
+  };
+
+  const menuButtonSlice = matcherSlice("findConversationMenuButton", "visibleMenuCandidates");
+  const archiveItemSlice = matcherSlice("findArchiveMenuItem", "findArchiveConfirmationButton");
+  const confirmButtonSlice = matcherSlice("findArchiveConfirmationButton", "hasUnarchiveMenuItem");
+  const unarchiveMenuSlice = matcherSlice("hasUnarchiveMenuItem", "hasArchiveConfirmation");
+  const confirmationToastSlice = matcherSlice(
+    "hasArchiveConfirmation",
+    "waitForArchiveConfirmation",
+  );
+
+  test("conversation menu ('more options') labels are present", () => {
+    for (const label of [
+      "more",
+      "conversation options",
+      "open menu",
+      "więcej",
+      "opcje",
+      "その他",
+      "会話オプション",
+    ]) {
+      expect(menuButtonSlice).toContain(quoted(label));
+    }
+  });
+
+  test("archive menu-item labels are present", () => {
+    for (const label of ["archive", "archiwizuj", "アーカイブ", "アーカイブする"]) {
+      expect(archiveItemSlice).toContain(quoted(label));
+    }
+  });
+
+  test("archive confirmation-button labels are present", () => {
+    for (const label of [
+      "archive",
+      "archiwizuj",
+      "アーカイブ",
+      "アーカイブする",
+      "archive conversation",
+    ]) {
+      expect(confirmButtonSlice).toContain(quoted(label));
+    }
+  });
+
+  test("unarchive/restore exclusion labels are present in every matcher that excludes them", () => {
+    for (const label of ["unarchive", "restore", "アーカイブを解除"]) {
+      expect(archiveItemSlice).toContain(quoted(label));
+      expect(confirmButtonSlice).toContain(quoted(label));
+      expect(unarchiveMenuSlice).toContain(quoted(label));
+    }
+    // Polish restore/unarchive words only appear in the standalone unarchive-detection matcher.
+    for (const label of ["przywróć", "przywroc"]) {
+      expect(unarchiveMenuSlice).toContain(quoted(label));
+    }
+  });
+
+  test("post-archive confirmation toast labels are present", () => {
+    for (const label of [
+      "archived",
+      "conversation archived",
+      "chat archived",
+      "zarchiwizowano",
+      "archiwum",
+      "アーカイブしました",
+      "アーカイブされました",
+    ]) {
+      expect(confirmationToastSlice).toContain(quoted(label));
+    }
+  });
+});

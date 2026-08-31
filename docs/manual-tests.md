@@ -16,6 +16,12 @@ and run the live API suite before shipping major transport changes.
 
 ## Test Cases
 
+### Attachment evidence and single-send regression (no login)
+
+Run `pnpm build && node scripts/attachment-send-proof.mjs` with Chrome installed (`CHROME_PATH` can select Chromium on Linux). This uses a disposable profile and a controlled local page, not a signed-in consultation. It exercises local and remote three-file uploads, a filename-less JPEG with a consumed FileList, sidebar-count rejection, byte integrity, delayed commitment, and offscreen button recovery. Each send must produce exactly one trusted click, zero Enter events, and one committed turn. The Linux Chrome CI job runs it too.
+
+The disposable profile and fixtures live in a temporary, non-hidden directory under your home directory and are removed afterward. This lets Snap Chromium read the same files as Node instead of looking in its private `/tmp`. An optional directory argument retains the fixtures for manual testing; that directory must also be readable by the selected browser.
+
 ### Quick browser port smoke
 
 - `pnpm test:browser` — launches headful Chrome and checks the DevTools endpoint is reachable. Set `ORACLE_BROWSER_PORT` (or `ORACLE_BROWSER_DEBUG_PORT`) to reuse a fixed port when you’ve already opened a firewall rule.
