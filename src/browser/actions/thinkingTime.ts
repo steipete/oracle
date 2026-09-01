@@ -1064,17 +1064,38 @@ function buildThinkingTimeExpression(
         const thumb = slider?.querySelector?.('[role="slider"]');
         if (!control || !thumb || !isVisible(control)) return null;
         const levels = ['light', 'standard', 'extended', 'extra-high', 'pro'];
-        const labels = describedIds(control)
-          .map((id) => (document.getElementById?.(id)?.textContent ?? '').split(/[,，]/)[0].trim())
-          .filter((label) => levels.some((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label))));
-        if (labels.length !== 1) return null;
-        const label = labels[0];
-        const index = levels.findIndex((level) => TARGET_LEVEL_TOKENS[level].some((token) => normalize(token) === normalize(label)));
+        // The selected label leads localized aria-describedby prose, while punctuation
+        // and ordinal grammar vary by locale. Match only that leading label and let
+        // the thumb's numeric ARIA state independently prove its position.
+        const readLeadingLevel = (description) => {
+          const value = (description ?? '').normalize('NFC').trim();
+          if (!value) return null;
+          const matches = levels.flatMap((level, index) => {
+            const token = [...TARGET_LEVEL_TOKENS[level]]
+              .sort((left, right) => right.length - left.length)
+              .find((candidate) => {
+                const normalizedCandidate = candidate.normalize('NFC');
+                const prefix = value.slice(0, normalizedCandidate.length);
+                if (normalize(prefix) !== normalize(normalizedCandidate)) return false;
+                const next = normalize(value.slice(prefix.length, prefix.length + 1));
+                return !next;
+              });
+            return token
+              ? [{ level, index, label: value.slice(0, token.normalize('NFC').length) }]
+              : [];
+          });
+          return matches.length === 1 ? matches[0] : null;
+        };
+        const selections = describedIds(control)
+          .map((id) => readLeadingLevel(document.getElementById?.(id)?.textContent ?? ''))
+          .filter(Boolean);
+        if (selections.length !== 1) return null;
+        const { label, index, level } = selections[0];
         // This adapter owns the observed five-tier layout only. A different range
         // or contradictory announcement must not turn a numeric guess into proof.
         if (thumb.getAttribute('aria-valuemin') !== '0' || thumb.getAttribute('aria-valuemax') !== '4' ||
             thumb.getAttribute('aria-valuenow') !== String(index)) return null;
-        return { control, label, index, level: levels[index] };
+        return { control, label, index, level };
       };
       let current = resolve();
       const finish = (result) => { closeOpenMenus(); return result; };

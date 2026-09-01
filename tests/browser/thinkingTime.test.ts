@@ -3117,6 +3117,47 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
   });
 
   it.each([
+    ["Portuguese", "Pro, 5 de 5."],
+    ["Japanese", "Pro、5件中5件目。"],
+    ["Unicode punctuation", "Pro — position 5 of 5"],
+    ["whitespace", "Pro 5/5"],
+  ])(
+    "verifies Pro through a %s direct-slider announcement",
+    async (_locale: string, announcement: string) => {
+      const dom = buildDirectSlider(4);
+      dom.announcement.textContent = announcement;
+
+      await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+        status: "already-selected",
+        label: "Pro",
+      });
+      expect(dom.keys).toEqual([]);
+    },
+  );
+
+  it("verifies a localized non-Pro label without a comma delimiter", async () => {
+    const dom = buildDirectSlider(3, ["Sofort", "Mittel", "Hoch", "Sehr hoch", "Pro"]);
+    dom.announcement.textContent = "Sehr hoch – 4 von 5";
+
+    await expect(run(dom.documentStub, "extra-high")).resolves.toEqual({
+      status: "already-selected",
+      label: "Sehr hoch",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  it.each(["Professional, 5 of 5", "Selected Pro, 5 of 5", "Pro5/5", "5 of 5"])(
+    "does not infer Pro from the direct-slider announcement %j",
+    async (announcement: string) => {
+      const dom = buildDirectSlider(4);
+      dom.announcement.textContent = announcement;
+
+      expect((await run(dom.documentStub, "pro")).status).toBe("selection-unverified");
+      expect(dom.keys).toEqual([]);
+    },
+  );
+
+  it.each([
     ["light", "Instant", 4],
     ["standard", "Medium", 3],
     ["extended", "High", 2],
