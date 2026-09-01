@@ -15,6 +15,7 @@ import { PromptValidationError } from "../oracle/errors.js";
 import { normalizeChatGptModelForBrowser } from "./browserConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "./fileSize.js";
 import { isAzureOpenAICandidateModel } from "../oracle/providerRouting.js";
+import { isPerplexityModel } from "../perplexity-web/models.js";
 
 export interface ResolveRunOptionsInput {
   prompt: string;
@@ -78,7 +79,7 @@ export function resolveRunOptionsFromConfig({
   const browserCompatibilityModels: ModelName[] =
     normalizedRequestedModels.length > 0 ? allModels : [browserModel];
   const isBrowserCompatible = (m: string) =>
-    m.startsWith("gpt-") || m.startsWith("gemini") || m.startsWith("perplexity");
+    m.startsWith("gpt-") || m.startsWith("gemini") || isPerplexityModel(m);
   const hasNonBrowserCompatibleTarget =
     browserEngineRequested && browserCompatibilityModels.some((m) => !isBrowserCompatible(m));
   if (hasNonBrowserCompatibleTarget) {
@@ -105,11 +106,9 @@ export function resolveRunOptionsFromConfig({
   // `perplexity/sonar-pro` contain a slash and stay valid OpenRouter API models.
   // Multi-model runs force the API engine, so every requested id is checked, not
   // just the primary one.
-  const isBrowserOnlyPerplexityId = (candidate: string) =>
-    candidate.startsWith("perplexity") && !candidate.includes("/");
   const perplexityApiTargets = (
     normalizedRequestedModels.length > 0 ? allModels : [resolvedModel]
-  ).filter(isBrowserOnlyPerplexityId);
+  ).filter(isPerplexityModel);
   if (fixedEngine !== "browser" && perplexityApiTargets.length > 0) {
     throw new PromptValidationError(
       "Perplexity is browser-only. Use --engine browser --model perplexity (or perplexity-research). For the API, use an OpenRouter id such as perplexity/sonar-pro.",

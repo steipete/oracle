@@ -11,8 +11,16 @@ const MODEL_MODES: Record<PerplexityWebModelId, PerplexityMode> = {
   "perplexity-research": "research",
 };
 
+/**
+ * True only for the bare browser model ids. Provider-qualified ids such as
+ * `perplexity/sonar-pro` are OpenRouter API models and must keep routing to the
+ * API provider — accepting them here would open the signed-in Perplexity web UI
+ * and silently answer in Search mode instead.
+ */
 export function isPerplexityModel(model: string | null | undefined): boolean {
-  return typeof model === "string" && model.trim().toLowerCase().startsWith("perplexity");
+  if (typeof model !== "string") return false;
+  const normalized = model.trim().toLowerCase();
+  return normalized.startsWith("perplexity") && !normalized.includes("/");
 }
 
 export function perplexityModeForModel(model: PerplexityWebModelId): PerplexityMode {

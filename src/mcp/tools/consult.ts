@@ -13,6 +13,7 @@ import { sessionStore } from "../../sessionStore.js";
 import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js";
 import { createRemoteBrowserExecutor } from "../../remote/client.js";
 import type { BrowserSessionRunnerDeps } from "../../browser/sessionRunner.js";
+import { isPerplexityModel } from "../../perplexity-web/models.js";
 
 async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<string | null> {
   try {
@@ -653,11 +654,7 @@ export async function runConsultTool(
   let browserDeps: BrowserSessionRunnerDeps | undefined;
   // The remote browser service runs ChatGPT automation only, so a Perplexity model
   // would silently be answered by ChatGPT on the remote host.
-  if (
-    resolvedEngine === "browser" &&
-    resolvedRemote.host &&
-    runOptions.model.startsWith("perplexity")
-  ) {
+  if (resolvedEngine === "browser" && resolvedRemote.host && isPerplexityModel(runOptions.model)) {
     return {
       isError: true,
       content: textContent(
@@ -680,7 +677,7 @@ export async function runConsultTool(
         token: resolvedRemote.token,
       }),
     };
-  } else if (resolvedEngine === "browser" && runOptions.model.startsWith("perplexity")) {
+  } else if (resolvedEngine === "browser" && isPerplexityModel(runOptions.model)) {
     // Mirrors the CLI dispatch; without it a Perplexity consult falls through to
     // the ChatGPT automation and fails looking for a ChatGPT session.
     const { createPerplexityWebExecutor } = await import("../../perplexity-web/index.js");

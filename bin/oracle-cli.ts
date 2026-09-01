@@ -73,6 +73,7 @@ import {
 import { loadUserConfig, type UserConfig } from "../src/config.js";
 import { shouldBlockDuplicatePrompt } from "../src/cli/duplicatePromptGuard.js";
 import { resolveRemoteServiceConfig } from "../src/remote/remoteServiceConfig.js";
+import { isPerplexityModel } from "../src/perplexity-web/models.js";
 import { resolveConfiguredMaxFileSizeBytes } from "../src/cli/fileSize.js";
 import {
   isAzureOpenAICandidateModel,
@@ -1971,7 +1972,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const userForcedBrowser = options.browser || options.engine === "browser";
   const browserExplicitlyRequested = browserEngineRequested;
   const isBrowserCompatible = (model: string) =>
-    model.startsWith("gpt-") || model.startsWith("gemini") || model.startsWith("perplexity");
+    model.startsWith("gpt-") || model.startsWith("gemini") || isPerplexityModel(model);
   const hasNonBrowserCompatibleTarget =
     normalizedMultiModels.length > 0
       ? normalizedMultiModels.some((model) => !isBrowserCompatible(model))
@@ -2003,7 +2004,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   // The remote browser service runs ChatGPT automation only, so a Perplexity model
   // would silently be answered by ChatGPT on the remote host. Checked here so the
   // dry-run preview reports it too, not just live runs.
-  if (remoteHost && resolvedModel.startsWith("perplexity")) {
+  if (remoteHost && isPerplexityModel(resolvedModel)) {
     throw new Error(
       "--remote-host cannot run Perplexity: the remote browser service drives ChatGPT automation only. Run Perplexity locally, or choose a GPT model for the remote host.",
     );
@@ -2013,7 +2014,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   // force the API engine, so every requested id is checked, not just the primary.
   const browserOnlyPerplexityTargets = (
     normalizedMultiModels.length > 0 ? normalizedMultiModels : [resolvedModel]
-  ).filter((candidate) => candidate.startsWith("perplexity") && !candidate.includes("/"));
+  ).filter(isPerplexityModel);
   if (engine !== "browser" && browserOnlyPerplexityTargets.length > 0) {
     throw new Error(
       `Perplexity is browser-only (${browserOnlyPerplexityTargets.join(", ")}). Use --engine browser --model perplexity (or perplexity-research). For the API, use an OpenRouter id such as perplexity/sonar-pro.`,
@@ -2313,7 +2314,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     if (browserConfig.modelStrategy && browserConfig.modelStrategy !== "select") {
       console.log(chalk.dim("Browser model strategy is ignored for Gemini web runs."));
     }
-  } else if (browserConfig && activeModel.startsWith("perplexity")) {
+  } else if (browserConfig && isPerplexityModel(activeModel)) {
     const { createPerplexityWebExecutor } = await import("../src/perplexity-web/index.js");
     browserDeps = {
       executeBrowser: createPerplexityWebExecutor({
@@ -2729,7 +2730,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     if (browserConfig.modelStrategy && browserConfig.modelStrategy !== "select") {
       console.log(chalk.dim("Browser model strategy is ignored for Gemini web runs."));
     }
-  } else if (browserConfig && runOptions.model.startsWith("perplexity")) {
+  } else if (browserConfig && isPerplexityModel(runOptions.model)) {
     const { createPerplexityWebExecutor } = await import("../src/perplexity-web/index.js");
     browserDeps = {
       executeBrowser: createPerplexityWebExecutor({

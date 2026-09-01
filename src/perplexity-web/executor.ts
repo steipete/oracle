@@ -9,6 +9,7 @@ import type {
 import { runProviderDomFlow } from "../browser/providerDomFlow.js";
 import { formatBrowserTurnTranscript, type BrowserConversationTurn } from "../browser/index.js";
 import { openWebBrowserSession } from "../browser/webSessionManager.js";
+import { appendArtifacts } from "../browser/artifacts.js";
 import { delay } from "../browser/utils.js";
 import {
   perplexityDomProvider,
@@ -227,6 +228,10 @@ export function createPerplexityWebExecutor(
         answerMarkdown,
         generatedImages: images.length > 0 ? images : undefined,
         savedImages: savedImages.length > 0 ? savedImages : undefined,
+        // The session runner persists `artifacts` only, and the MCP result derives
+        // its images from persisted artifacts, so a saved image must appear here or
+        // callers get a file on disk that the response never mentions.
+        artifacts: appendArtifacts(undefined, savedImages),
         tookMs,
         answerTokens: estimateTokenCount(answerText),
         answerChars: answerText.length,

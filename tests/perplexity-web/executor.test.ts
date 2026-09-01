@@ -53,6 +53,13 @@ async function runExecutor(runOptions: Record<string, unknown>) {
   } as never);
 }
 
+describe("createPerplexityWebExecutor artifacts", () => {
+  it("returns no artifacts when nothing was saved", async () => {
+    const result = await runExecutor({});
+    expect(result.artifacts).toBeUndefined();
+  });
+});
+
 describe("createPerplexityWebExecutor follow-ups", () => {
   it("returns the single answer unchanged when there are no follow-ups", async () => {
     const result = await runExecutor({});

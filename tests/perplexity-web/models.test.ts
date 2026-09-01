@@ -57,4 +57,11 @@ describe("isPerplexityModel", () => {
     expect(isPerplexityModel(undefined)).toBe(false);
     expect(isPerplexityModel(null)).toBe(false);
   });
+
+  it("rejects provider-qualified OpenRouter ids", () => {
+    // `perplexity/sonar-pro` is an API model. Routing it to the browser provider
+    // would open the signed-in web UI and answer in Search mode instead.
+    expect(isPerplexityModel("perplexity/sonar-pro")).toBe(false);
+    expect(isPerplexityModel("perplexity/sonar-reasoning")).toBe(false);
+  });
 });
