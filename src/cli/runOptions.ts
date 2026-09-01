@@ -77,12 +77,13 @@ export function resolveRunOptionsFromConfig({
       : [apiModel];
   const browserCompatibilityModels: ModelName[] =
     normalizedRequestedModels.length > 0 ? allModels : [browserModel];
-  const isBrowserCompatible = (m: string) => m.startsWith("gpt-") || m.startsWith("gemini");
+  const isBrowserCompatible = (m: string) =>
+    m.startsWith("gpt-") || m.startsWith("gemini") || m.startsWith("perplexity");
   const hasNonBrowserCompatibleTarget =
     browserEngineRequested && browserCompatibilityModels.some((m) => !isBrowserCompatible(m));
   if (hasNonBrowserCompatibleTarget) {
     throw new PromptValidationError(
-      "Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.",
+      "Browser engine only supports GPT, Gemini, and Perplexity models. Re-run with --engine api for Grok, Claude, or other models.",
       { engine: "browser", models: allModels },
     );
   }
@@ -99,6 +100,19 @@ export function resolveRunOptionsFromConfig({
       : resolvedEngine;
   // Browser runs use ChatGPT picker labels/aliases; API runs must keep API model ids intact.
   const resolvedModel = fixedEngine === "browser" ? browserModel : apiModel;
+
+  // Bare Perplexity ids only exist in the web UI. Provider-qualified ids such as
+  // `perplexity/sonar-pro` contain a slash and stay valid OpenRouter API models.
+  if (
+    fixedEngine !== "browser" &&
+    resolvedModel.startsWith("perplexity") &&
+    !resolvedModel.includes("/")
+  ) {
+    throw new PromptValidationError(
+      "Perplexity is browser-only. Use --engine browser --model perplexity (or perplexity-research). For the API, use an OpenRouter id such as perplexity/sonar-pro.",
+      { engine: fixedEngine, model: resolvedModel },
+    );
+  }
 
   const promptWithSuffix =
     userConfig?.promptSuffix && userConfig.promptSuffix.trim().length > 0

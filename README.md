@@ -102,14 +102,14 @@ For agent integrations, run the `oracle-mcp` stdio server or install the Oracle 
 
 ## Documentation
 
-| Topic                      | Guide                                                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installation and first run | [Install](docs/install.md) · [Quickstart](docs/quickstart.md)                                                                               |
-| Browser automation         | [Browser mode](docs/browser-mode.md) · [Linux](docs/linux.md) · [Windows](docs/windows.md)                                                  |
-| Providers                  | [OpenAI and Azure](docs/openai-endpoints.md) · [Anthropic](docs/anthropic.md) · [Gemini](docs/gemini.md) · [OpenRouter](docs/openrouter.md) |
-| Runs and models            | [Sessions](docs/sessions.md) · [Follow-ups](docs/followup.md) · [Multi-model](docs/multimodel.md)                                           |
-| Configuration and commands | [Configuration](docs/configuration.md) · [CLI reference](docs/cli-reference.md)                                                             |
-| Agent integrations         | [Agents](docs/agents.md) · [MCP](docs/mcp.md) · [Bridge](docs/bridge.md)                                                                    |
+| Topic                      | Guide                                                                                                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Installation and first run | [Install](docs/install.md) · [Quickstart](docs/quickstart.md)                                                                                                                  |
+| Browser automation         | [Browser mode](docs/browser-mode.md) · [Linux](docs/linux.md) · [Windows](docs/windows.md)                                                                                     |
+| Providers                  | [OpenAI and Azure](docs/openai-endpoints.md) · [Anthropic](docs/anthropic.md) · [Gemini](docs/gemini.md) · [Perplexity](docs/perplexity.md) · [OpenRouter](docs/openrouter.md) |
+| Runs and models            | [Sessions](docs/sessions.md) · [Follow-ups](docs/followup.md) · [Multi-model](docs/multimodel.md)                                                                              |
+| Configuration and commands | [Configuration](docs/configuration.md) · [CLI reference](docs/cli-reference.md)                                                                                                |
+| Agent integrations         | [Agents](docs/agents.md) · [MCP](docs/mcp.md) · [Bridge](docs/bridge.md)                                                                                                       |
 
 ## Related projects
 

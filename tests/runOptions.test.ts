@@ -499,7 +499,7 @@ describe("resolveRunOptionsFromConfig", () => {
         userConfig: { engine: "browser" },
         env: {},
       }),
-    ).toThrow(/Browser engine only supports GPT and Gemini/);
+    ).toThrow(/Browser engine only supports GPT, Gemini, and Perplexity/);
   });
 
   it("normalizes shorthand multi-model entries", () => {
@@ -519,7 +519,7 @@ describe("resolveRunOptionsFromConfig", () => {
         model: "grok",
         engine: "browser",
       }),
-    ).toThrow(/Browser engine only supports GPT and Gemini/);
+    ).toThrow(/Browser engine only supports GPT, Gemini, and Perplexity/);
   });
 
   it("forces api engine for grok when auto-selected browser and applies XAI base url", () => {

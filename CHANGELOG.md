@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
+- Perplexity: drive perplexity.ai from browser mode. `--model perplexity` runs Search and `--model perplexity-research` runs Deep research against your signed-in session in the persistent Oracle Chrome profile, returning the answer with its cited sources under a `## Sources` heading. `--file` behaves as it does elsewhere (text pasted inline, media and PDFs uploaded), image prompts save through `--generate-image`/`--output`, and `--browser-follow-up` continues the same conversation as a multi-turn transcript. Only the documented aliases select the web provider, so OpenRouter ids such as `perplexity/sonar-pro` keep working on the API path. Available from both the CLI and the MCP `consult` tool; see `docs/perplexity.md`.
 
 ## 0.18.1 - 2026-09-05
 

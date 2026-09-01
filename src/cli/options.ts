@@ -211,6 +211,15 @@ export function parseDurationOption(value: string | undefined, label: string): n
   return parsed;
 }
 
+/**
+ * Bare Perplexity aliases are browser-only. Provider-qualified ids such as
+ * `perplexity/sonar-pro` are OpenRouter models and are handled earlier by the
+ * slash passthrough, so they never reach this check.
+ */
+function isPerplexityAlias(normalized: string): boolean {
+  return normalized === "pplx" || normalized.startsWith("perplexity");
+}
+
 function isGeminiDeepThinkAlias(normalized: string): boolean {
   return (
     (normalized.includes("gemini") && normalized.includes("deep")) ||
@@ -286,6 +295,13 @@ export function resolveApiModel(modelValue: string): ModelName {
       "Gemini Deep Think is browser-only today. Use --engine browser --model gemini-3-deep-think.",
     );
   }
+  // Browser-only, but the engine is not known here (this runs before the engine
+  // branch), so normalize the id and let the engine-aware check in runOptions
+  // reject an API run. Provider-qualified `perplexity/...` ids returned earlier
+  // by the slash passthrough stay OpenRouter models.
+  if (isPerplexityAlias(normalized)) {
+    return (normalized.includes("research") ? "perplexity-research" : "perplexity") as ModelName;
+  }
   if (normalized.includes("gemini")) {
     if (normalized.includes("3.5") && normalized.includes("flash")) {
       return "gemini-3.5-flash";
@@ -348,6 +364,9 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   }
   if (isGeminiDeepThinkAlias(normalized)) {
     return "gemini-3-pro-deep-think" as ModelName;
+  }
+  if (isPerplexityAlias(normalized)) {
+    return (normalized.includes("research") ? "perplexity-research" : "perplexity") as ModelName;
   }
   if (normalized.includes("gemini")) {
     if (normalized.includes("3.5") && normalized.includes("flash")) {
