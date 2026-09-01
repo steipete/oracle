@@ -89,7 +89,10 @@ export function createPerplexityWebExecutor(
     log?.("[perplexity-web] Starting Perplexity web executor");
 
     const attachments = runOptions.attachments ?? [];
-    const model = resolvePerplexityWebModel(runOptions.config?.desiredModel, log);
+    const model = resolvePerplexityWebModel(
+      perplexityOptions.modelId ?? runOptions.config?.desiredModel,
+      log,
+    );
     const mode = perplexityModeForModel(model);
     const includeSources = perplexityOptions.includeSources ?? true;
 
@@ -98,6 +101,7 @@ export function createPerplexityWebExecutor(
       keepBrowserDefault: true,
       purpose: `Perplexity (${model})`,
       logPrefix: "perplexity-web",
+      closeTabWhenKeepingBrowser: true,
       log,
     });
 

@@ -483,16 +483,25 @@ async function typePrompt(ctx: ProviderDomFlowContext): Promise<void> {
   await ctx.delay(400);
 }
 
-/** True once the composer has actually produced a new answer turn or conversation. */
-async function hasSubmitted(ctx: ProviderDomFlowContext, baselineTurns: number): Promise<boolean> {
+/**
+ * True once the composer has actually sent. A follow-up starts on the conversation
+ * URL already, so navigation only counts as a signal when the URL actually changes
+ * from what it was before the click — otherwise every follow-up reports an instant
+ * success and the Enter retry below can never run.
+ */
+async function hasSubmitted(
+  ctx: ProviderDomFlowContext,
+  baselineTurns: number,
+  hrefBeforeSubmit: string,
+): Promise<boolean> {
   const turnSel = asSelectorLiteral(PERPLEXITY_SELECTORS.answerTurn);
   const submitted = await ctx.evaluate<boolean>(
     `(() => {
       const turns = document.querySelectorAll(${turnSel}).length;
-      const onConversation = /\\/search\\//.test(location.pathname);
+      const navigated = location.href !== ${JSON.stringify(hrefBeforeSubmit)};
       const generating = Array.from(document.querySelectorAll('button[aria-label="Stop"]'))
         .some((b) => b instanceof HTMLElement && b.offsetParent !== null);
-      return turns > ${baselineTurns} || onConversation || generating;
+      return turns > ${baselineTurns} || navigated || generating;
     })()`,
   );
   return Boolean(submitted);
@@ -504,6 +513,7 @@ async function submitPrompt(ctx: ProviderDomFlowContext): Promise<void> {
   const inputSelector = asSelectorLiteral(PERPLEXITY_SELECTORS.input);
   const state = readState(ctx);
   const baselineTurns = state.baselineTurns ?? 0;
+  const hrefBeforeSubmit = (await ctx.evaluate<string>("location.href")) ?? "";
 
   await clickTrusted(ctx, `document.querySelector(${submitSel})`);
 
@@ -512,7 +522,7 @@ async function submitPrompt(ctx: ProviderDomFlowContext): Promise<void> {
   // Enter keypress rather than assuming it landed.
   for (let attempt = 0; attempt < 2; attempt += 1) {
     for (let poll = 0; poll < 6; poll += 1) {
-      if (await hasSubmitted(ctx, baselineTurns)) return;
+      if (await hasSubmitted(ctx, baselineTurns, hrefBeforeSubmit)) return;
       await ctx.delay(1_000);
     }
     if (attempt === 0) {

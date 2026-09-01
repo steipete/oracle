@@ -2009,14 +2009,14 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     );
   }
   // Bare Perplexity ids only exist in the web UI; `perplexity/sonar-pro` and other
-  // provider-qualified ids keep working as OpenRouter API models.
-  if (
-    engine !== "browser" &&
-    resolvedModel.startsWith("perplexity") &&
-    !resolvedModel.includes("/")
-  ) {
+  // provider-qualified ids keep working as OpenRouter API models. Multi-model runs
+  // force the API engine, so every requested id is checked, not just the primary.
+  const browserOnlyPerplexityTargets = (
+    normalizedMultiModels.length > 0 ? normalizedMultiModels : [resolvedModel]
+  ).filter((candidate) => candidate.startsWith("perplexity") && !candidate.includes("/"));
+  if (engine !== "browser" && browserOnlyPerplexityTargets.length > 0) {
     throw new Error(
-      "Perplexity is browser-only. Use --engine browser --model perplexity (or perplexity-research). For the API, use an OpenRouter id such as perplexity/sonar-pro.",
+      `Perplexity is browser-only (${browserOnlyPerplexityTargets.join(", ")}). Use --engine browser --model perplexity (or perplexity-research). For the API, use an OpenRouter id such as perplexity/sonar-pro.`,
     );
   }
   // A user-config apiModel override (known models only) wins over Gemini alias
@@ -2317,6 +2317,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     const { createPerplexityWebExecutor } = await import("../src/perplexity-web/index.js");
     browserDeps = {
       executeBrowser: createPerplexityWebExecutor({
+        modelId: activeModel,
         generateImage: options.generateImage,
         outputPath: options.output,
       }),
@@ -2732,6 +2733,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     const { createPerplexityWebExecutor } = await import("../src/perplexity-web/index.js");
     browserDeps = {
       executeBrowser: createPerplexityWebExecutor({
+        modelId: runOptions.model,
         generateImage: storedOptions.generateImage,
         outputPath: storedOptions.outputPath,
       }),

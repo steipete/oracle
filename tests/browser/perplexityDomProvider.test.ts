@@ -218,14 +218,19 @@ describe("extractPerplexitySources", () => {
 });
 
 describe("perplexityDomProvider.submitPrompt", () => {
-  function submitCtx(options: { submittedAfter: number; input?: Record<string, unknown> }): {
+  function submitCtx(options: {
+    submittedAfter: number;
+    input?: Record<string, unknown>;
+    href?: string;
+  }): {
     ctx: ProviderDomFlowContext;
     calls: { submitChecks: number };
   } {
     const calls = { submitChecks: 0 };
     const evaluate = vi.fn(async (expression: string) => {
       if (expression.includes("getBoundingClientRect")) return { x: 5, y: 5 };
-      if (expression.includes("onConversation")) {
+      if (expression === "location.href") return options.href ?? "https://www.perplexity.ai/";
+      if (expression.includes("navigated")) {
         calls.submitChecks += 1;
         return calls.submitChecks > options.submittedAfter;
       }
@@ -253,6 +258,22 @@ describe("perplexityDomProvider.submitPrompt", () => {
     const { ctx } = submitCtx({ submittedAfter: 6, input: { dispatchKeyEvent } });
 
     await expect(perplexityDomProvider.submitPrompt(ctx)).resolves.toBeUndefined();
+    expect(dispatchKeyEvent).toHaveBeenCalled();
+  });
+
+  it("still verifies the send on a follow-up that starts on the conversation URL", async () => {
+    // A follow-up begins on /search/<id>. Treating "we are on a conversation page"
+    // as proof of sending reported instant success and made the retry below dead
+    // code for every follow-up.
+    const dispatchKeyEvent = vi.fn(async () => undefined);
+    const { ctx, calls } = submitCtx({
+      submittedAfter: 6,
+      input: { dispatchKeyEvent },
+      href: "https://www.perplexity.ai/search/abc-123",
+    });
+
+    await expect(perplexityDomProvider.submitPrompt(ctx)).resolves.toBeUndefined();
+    expect(calls.submitChecks).toBeGreaterThan(1);
     expect(dispatchKeyEvent).toHaveBeenCalled();
   });
 

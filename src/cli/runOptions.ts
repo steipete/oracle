@@ -103,14 +103,17 @@ export function resolveRunOptionsFromConfig({
 
   // Bare Perplexity ids only exist in the web UI. Provider-qualified ids such as
   // `perplexity/sonar-pro` contain a slash and stay valid OpenRouter API models.
-  if (
-    fixedEngine !== "browser" &&
-    resolvedModel.startsWith("perplexity") &&
-    !resolvedModel.includes("/")
-  ) {
+  // Multi-model runs force the API engine, so every requested id is checked, not
+  // just the primary one.
+  const isBrowserOnlyPerplexityId = (candidate: string) =>
+    candidate.startsWith("perplexity") && !candidate.includes("/");
+  const perplexityApiTargets = (
+    normalizedRequestedModels.length > 0 ? allModels : [resolvedModel]
+  ).filter(isBrowserOnlyPerplexityId);
+  if (fixedEngine !== "browser" && perplexityApiTargets.length > 0) {
     throw new PromptValidationError(
       "Perplexity is browser-only. Use --engine browser --model perplexity (or perplexity-research). For the API, use an OpenRouter id such as perplexity/sonar-pro.",
-      { engine: fixedEngine, model: resolvedModel },
+      { engine: fixedEngine, models: perplexityApiTargets },
     );
   }
 

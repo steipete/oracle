@@ -26,6 +26,13 @@ export interface OpenWebBrowserSessionInput {
   purpose: string;
   /** Log prefix identifying the calling provider, e.g. "gemini-web". */
   logPrefix: string;
+  /**
+   * Close the tab this session opened even when Chrome is kept running. Providers
+   * that route every run through here would otherwise leave one tab per consult in
+   * the shared profile. An explicit --browser-keep-browser still keeps the tab, so
+   * debugging runs remain inspectable.
+   */
+  closeTabWhenKeepingBrowser?: boolean;
   log?: BrowserLogger;
 }
 
@@ -40,6 +47,7 @@ export async function openWebBrowserSession(
   input: OpenWebBrowserSessionInput,
 ): Promise<WebBrowserSession> {
   const { browserConfig, keepBrowserDefault, purpose, logPrefix, log } = input;
+  const closeTabWhenKeepingBrowser = input.closeTabWhenKeepingBrowser ?? false;
   const resolvedConfig = resolveBrowserConfig({
     ...browserConfig,
     manualLogin: true,
@@ -49,6 +57,8 @@ export async function openWebBrowserSession(
     resolvedConfig.manualLoginProfileDir ?? path.join(os.homedir(), ".oracle", "browser-profile");
   await mkdir(profileDir, { recursive: true });
   const keepBrowser = Boolean(resolvedConfig.keepBrowser);
+  // Distinguish "the caller defaulted to keeping Chrome" from "the user asked for it".
+  const explicitKeepBrowser = browserConfig?.keepBrowser === true;
 
   let port = await readDevToolsPort(profileDir);
   let launchedChrome: Awaited<ReturnType<typeof launchChrome>> | null = null;
@@ -82,6 +92,9 @@ export async function openWebBrowserSession(
 
   const close = async (): Promise<void> => {
     if (keepBrowser) {
+      if (closeTabWhenKeepingBrowser && !explicitKeepBrowser && targetId && port) {
+        await closeTab(port, targetId, log ?? (() => {})).catch(() => undefined);
+      }
       try {
         await client.close();
       } catch {

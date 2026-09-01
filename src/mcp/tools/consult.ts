@@ -686,6 +686,7 @@ export async function runConsultTool(
     const { createPerplexityWebExecutor } = await import("../../perplexity-web/index.js");
     browserDeps = {
       executeBrowser: createPerplexityWebExecutor({
+        modelId: runOptions.model,
         generateImage: runOptions.generateImage,
         outputPath: runOptions.outputPath,
       }),
