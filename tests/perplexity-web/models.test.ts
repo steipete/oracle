@@ -3,6 +3,7 @@ import {
   resolvePerplexityWebModel,
   perplexityModeForModel,
   isPerplexityModel,
+  perplexityAliasToModelId,
   DEFAULT_PERPLEXITY_WEB_MODEL,
 } from "../../src/perplexity-web/models.js";
 
@@ -37,6 +38,25 @@ describe("resolvePerplexityWebModel", () => {
     expect(resolvePerplexityWebModel("perplexity-labs", log)).toBe(DEFAULT_PERPLEXITY_WEB_MODEL);
     expect(log).toHaveBeenCalledWith(expect.stringContaining("perplexity-labs"));
   });
+
+  it('no longer coerces any string containing "research"', () => {
+    const log = vi.fn();
+    expect(resolvePerplexityWebModel("some-research-thing", log)).toBe(
+      DEFAULT_PERPLEXITY_WEB_MODEL,
+    );
+    expect(log).toHaveBeenCalled();
+  });
+});
+
+describe("perplexityAliasToModelId", () => {
+  it("maps only the documented aliases", () => {
+    expect(perplexityAliasToModelId("perplexity")).toBe("perplexity");
+    expect(perplexityAliasToModelId("pplx")).toBe("perplexity");
+    expect(perplexityAliasToModelId("perplexity_deep_research")).toBe("perplexity-research");
+    expect(perplexityAliasToModelId("perplexity-labs")).toBeNull();
+    expect(perplexityAliasToModelId("perplexity/sonar-pro")).toBeNull();
+    expect(perplexityAliasToModelId(undefined)).toBeNull();
+  });
 });
 
 describe("perplexityModeForModel", () => {
@@ -56,6 +76,13 @@ describe("isPerplexityModel", () => {
     expect(isPerplexityModel("gpt-5.5-pro")).toBe(false);
     expect(isPerplexityModel(undefined)).toBe(false);
     expect(isPerplexityModel(null)).toBe(false);
+  });
+
+  it("rejects unrecognized perplexity-* ids so they stay custom models", () => {
+    // A prefix match would swallow these, rejecting them on the API path and
+    // silently running Search on the browser path.
+    expect(isPerplexityModel("perplexity-labs")).toBe(false);
+    expect(isPerplexityModel("perplexity-sonar-custom")).toBe(false);
   });
 
   it("rejects provider-qualified OpenRouter ids", () => {

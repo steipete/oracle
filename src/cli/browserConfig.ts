@@ -55,6 +55,7 @@ const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   ["gemini-3-pro-deep-think", "gemini-3-deep-think"],
   ["perplexity-research", "Deep research"],
   ["perplexity", "Search"],
+  ["pplx", "Search"],
 ];
 
 export interface BrowserFlagOptions {

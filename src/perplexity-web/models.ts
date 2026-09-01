@@ -12,15 +12,40 @@ const MODEL_MODES: Record<PerplexityWebModelId, PerplexityMode> = {
 };
 
 /**
- * True only for the bare browser model ids. Provider-qualified ids such as
- * `perplexity/sonar-pro` are OpenRouter API models and must keep routing to the
- * API provider — accepting them here would open the signed-in Perplexity web UI
- * and silently answer in Search mode instead.
+ * The exact aliases that select the Perplexity web provider, mapped to their model
+ * id. Matching must stay exact: a prefix test would also swallow unqualified custom
+ * ids such as `perplexity-labs`, which belong on the custom/OpenRouter passthrough,
+ * and provider-qualified ids such as `perplexity/sonar-pro`, which are API models.
  */
+const PERPLEXITY_ALIASES: Record<string, PerplexityWebModelId> = {
+  perplexity: "perplexity",
+  "perplexity-search": "perplexity",
+  pplx: "perplexity",
+  "perplexity-research": "perplexity-research",
+  "perplexity-deep-research": "perplexity-research",
+  "perplexity-deepresearch": "perplexity-research",
+};
+
+function normalizeAlias(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+/** Resolves an exact Perplexity alias to its model id, or null when unrecognized. */
+export function perplexityAliasToModelId(
+  value: string | null | undefined,
+): PerplexityWebModelId | null {
+  if (typeof value !== "string") return null;
+  return PERPLEXITY_ALIASES[normalizeAlias(value)] ?? null;
+}
+
+/** True only for the two ids that route to the Perplexity web provider. */
 export function isPerplexityModel(model: string | null | undefined): boolean {
   if (typeof model !== "string") return false;
-  const normalized = model.trim().toLowerCase();
-  return normalized.startsWith("perplexity") && !normalized.includes("/");
+  const normalized = normalizeAlias(model);
+  return normalized === "perplexity" || normalized === "perplexity-research";
 }
 
 export function perplexityModeForModel(model: PerplexityWebModelId): PerplexityMode {
@@ -33,28 +58,18 @@ export function resolvePerplexityWebModel(
 ): PerplexityWebModelId {
   const desired = typeof desiredModel === "string" ? desiredModel.trim() : "";
   if (!desired) return DEFAULT_PERPLEXITY_WEB_MODEL;
-  const normalized = desired.toLowerCase().replace(/[_\s]+/g, "-");
+  const normalized = normalizeAlias(desired);
 
-  switch (normalized) {
-    // Model ids, plus the browser picker labels that reach the executor as
-    // `config.desiredModel` (see BROWSER_MODEL_LABELS).
-    case "perplexity":
-    case "perplexity-search":
-    case "search":
-    case "pplx":
-      return "perplexity";
-    case "perplexity-research":
-    case "perplexity-deep-research":
-    case "perplexity-deepresearch":
-    case "deep-research":
-      return "perplexity-research";
-    default:
-      if (normalized.includes("research")) {
-        return "perplexity-research";
-      }
-      log?.(
-        `[perplexity-web] Unsupported Perplexity model "${desired}". Falling back to ${DEFAULT_PERPLEXITY_WEB_MODEL}.`,
-      );
-      return DEFAULT_PERPLEXITY_WEB_MODEL;
-  }
+  const byAlias = PERPLEXITY_ALIASES[normalized];
+  if (byAlias) return byAlias;
+
+  // Browser picker labels reach the executor as `config.desiredModel`
+  // (see BROWSER_MODEL_LABELS), so they resolve here too.
+  if (normalized === "search") return "perplexity";
+  if (normalized === "deep-research") return "perplexity-research";
+
+  log?.(
+    `[perplexity-web] Unsupported Perplexity model "${desired}". Falling back to ${DEFAULT_PERPLEXITY_WEB_MODEL}.`,
+  );
+  return DEFAULT_PERPLEXITY_WEB_MODEL;
 }
