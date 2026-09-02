@@ -211,6 +211,146 @@ describe("browser run target cleanup", () => {
       }),
     ).toBe(false);
   });
+
+  test("keeps shared Chrome alive when another tab lease remains", async () => {
+    const terminateSharedChrome = vi.fn(async () => true);
+    const closeOwnedRunTarget = vi.fn(async () => undefined);
+    const cleanupBlankTabs = vi.fn(async () => undefined);
+    const logger = vi.fn();
+    const lease = {
+      id: "lease-one",
+      update: vi.fn(async () => undefined),
+      release: vi.fn(async ({ onRelease }) => {
+        await onRelease?.({ isLastLease: false });
+      }),
+    };
+
+    const result = await __test__.releaseLocalBrowserTabLease({
+      lease,
+      closeOwnedRunTarget,
+      cleanupBlankTabs,
+      terminateSharedChrome,
+      logger,
+    });
+
+    expect(result).toEqual({ keepBrowserOpen: true, terminationHandled: false });
+    expect(closeOwnedRunTarget).toHaveBeenCalledOnce();
+    expect(cleanupBlankTabs).not.toHaveBeenCalled();
+    expect(terminateSharedChrome).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("Other ChatGPT tab leases"));
+  });
+
+  test("terminates shared Chrome only inside the final tab lease release", async () => {
+    const order: string[] = [];
+    const logger = vi.fn();
+    const lease = {
+      id: "lease-last",
+      update: vi.fn(async () => undefined),
+      release: vi.fn(async ({ onRelease }) => {
+        order.push("release-start");
+        await onRelease?.({ isLastLease: true });
+        order.push("release-finish");
+      }),
+    };
+
+    const result = await __test__.releaseLocalBrowserTabLease({
+      lease,
+      closeOwnedRunTarget: async () => {
+        order.push("close-target");
+      },
+      cleanupBlankTabs: async () => {
+        order.push("cleanup-blank");
+      },
+      terminateSharedChrome: async () => {
+        order.push("terminate-chrome");
+        return true;
+      },
+      logger,
+    });
+
+    expect(result).toEqual({ keepBrowserOpen: false, terminationHandled: true });
+    expect(order).toEqual([
+      "release-start",
+      "close-target",
+      "cleanup-blank",
+      "terminate-chrome",
+      "release-finish",
+    ]);
+  });
+
+  test("fails closed when final shared Chrome termination cannot be verified", async () => {
+    const logger = vi.fn();
+    const lease = {
+      id: "lease-last-failed-termination",
+      update: vi.fn(async () => undefined),
+      release: vi.fn(async ({ onRelease }) => {
+        await onRelease?.({ isLastLease: true });
+      }),
+    };
+
+    const result = await __test__.releaseLocalBrowserTabLease({
+      lease,
+      closeOwnedRunTarget: async () => undefined,
+      cleanupBlankTabs: async () => undefined,
+      terminateSharedChrome: async () => false,
+      logger,
+    });
+
+    expect(result).toEqual({ keepBrowserOpen: true, terminationHandled: false });
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("Could not verify shared Chrome termination"),
+    );
+  });
+
+  test("surfaces a registry unlock failure after final-lease cleanup succeeds", async () => {
+    const logger = vi.fn();
+    const releaseFailure = new Error("registry lock removal exhausted");
+    const lease = {
+      id: "lease-last-unlock-failure",
+      update: vi.fn(async () => undefined),
+      release: vi.fn(async ({ onRelease }) => {
+        await onRelease?.({ isLastLease: true });
+        throw releaseFailure;
+      }),
+    };
+
+    const result = await __test__.releaseLocalBrowserTabLease({
+      lease,
+      closeOwnedRunTarget: async () => undefined,
+      cleanupBlankTabs: async () => undefined,
+      terminateSharedChrome: async () => true,
+      logger,
+    });
+
+    expect(result).toEqual({
+      keepBrowserOpen: false,
+      terminationHandled: true,
+      releaseError: releaseFailure,
+    });
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("restart Oracle/Codex MCP"));
+  });
+
+  test("fails closed when the tab lease release decision is unavailable", async () => {
+    const terminateSharedChrome = vi.fn(async () => true);
+    const logger = vi.fn();
+    const lease = {
+      id: "lease-unknown",
+      update: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+
+    const result = await __test__.releaseLocalBrowserTabLease({
+      lease,
+      closeOwnedRunTarget: async () => undefined,
+      cleanupBlankTabs: async () => undefined,
+      terminateSharedChrome,
+      logger,
+    });
+
+    expect(result).toEqual({ keepBrowserOpen: true, terminationHandled: false });
+    expect(terminateSharedChrome).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("Could not verify final"));
+  });
 });
 
 describe("manual-login profile setup gate", () => {

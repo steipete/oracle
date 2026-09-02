@@ -109,7 +109,7 @@ function findChromeDebugTargetForProfileFromProcessList(
     const lower = command.toLowerCase();
     if (!Number.isFinite(pid) || pid <= 0) continue;
     if (!lower.includes("chrome") && !lower.includes("chromium")) continue;
-    if (!lower.includes("user-data-dir") || !command.includes(userDataDir)) continue;
+    if (!isChromeCommandForUserDataDir(command, userDataDir)) continue;
     const portMatch = command.match(/--remote-debugging-port(?:=|\s+)(\d+)/);
     const port = Number.parseInt(portMatch?.[1] ?? "", 10);
     if (!Number.isFinite(port) || port <= 0) continue;
@@ -139,10 +139,28 @@ export async function terminateRecordedChromeForProfile(
     return false;
   }
   try {
-    process.kill(pid, "SIGTERM");
+    if (process.platform === "win32") {
+      await execFileAsync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+      });
+    } else {
+      process.kill(pid, "SIGTERM");
+    }
+    for (let attempt = 0; attempt < 30 && isProcessAlive(pid); attempt += 1) {
+      await delay(100);
+    }
+    if (isProcessAlive(pid)) {
+      logger?.(`Shared manual-login Chrome pid ${pid} remained alive after termination.`);
+      return false;
+    }
     logger?.(`Terminated shared manual-login Chrome pid ${pid}`);
     return true;
   } catch (error) {
+    if (!isProcessAlive(pid)) {
+      logger?.(`Terminated shared manual-login Chrome pid ${pid}`);
+      return true;
+    }
     const message = error instanceof Error ? error.message : String(error);
     logger?.(`Failed to terminate shared manual-login Chrome pid ${pid}: ${message}`);
     return false;
@@ -151,12 +169,38 @@ export async function terminateRecordedChromeForProfile(
 
 function isChromeCommandForUserDataDir(command: string | null, userDataDir: string): boolean {
   if (!command) return false;
-  const lower = command.toLowerCase();
+  const match = command.match(/(?:^|\s)--user-data-dir(?:=|\s+)(?:"([^"]*)"|'([^']*)'|([^\s]+))/iu);
+  if (!match) return false;
+  const commandProfile = match[1] ?? match[2] ?? match[3];
+  if (!commandProfile || !startsWithChromeExecutable(command)) return false;
   return (
-    (lower.includes("chrome") || lower.includes("chromium")) &&
-    lower.includes("user-data-dir") &&
-    command.includes(userDataDir)
+    normalizeProfilePathForComparison(commandProfile) ===
+    normalizeProfilePathForComparison(userDataDir)
   );
+}
+
+function startsWithChromeExecutable(command: string): boolean {
+  const names =
+    "(?:google chrome(?: canary)?|google-chrome(?:-stable)?|chrome|chromium|chromium-browser|chrome-headless-shell)";
+  const bare = new RegExp(`^${names}(?:\\.exe)?(?=\\s--|\\s*$)`, "iu");
+  const rooted = new RegExp(
+    `^(?:"?(?:[a-z]:[\\\\/]|/|\\\\\\\\).*?[\\\\/]${names}(?:\\.exe)?"?)(?=\\s--|\\s*$)`,
+    "iu",
+  );
+  const trimmed = command.trimStart();
+  return bare.test(trimmed) || rooted.test(trimmed);
+}
+
+function normalizeProfilePathForComparison(value: string): string {
+  let normalized = path.normalize(path.resolve(value.trim()));
+  if (process.platform === "win32") {
+    normalized = normalized.replace(/^\\\\\?\\/u, "").toLowerCase();
+  }
+  const root = path.parse(normalized).root;
+  while (normalized.length > root.length && /[\\/]$/u.test(normalized)) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
 }
 
 export function isChromeCommandForUserDataDirForTest(
@@ -182,6 +226,33 @@ export function isProcessAlive(pid: number): boolean {
       return true;
     }
     return false;
+  }
+}
+
+export async function readProcessStartTimeMs(pid: number): Promise<number | null> {
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  if (Math.trunc(pid) === process.pid) {
+    return Date.now() - process.uptime() * 1000;
+  }
+  try {
+    const executable = process.platform === "win32" ? "powershell.exe" : "ps";
+    const args =
+      process.platform === "win32"
+        ? [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `$process = Get-Process -Id ${Math.trunc(pid)} -ErrorAction Stop; $process.StartTime.ToUniversalTime().ToString('o')`,
+          ]
+        : ["-p", String(Math.trunc(pid)), "-o", "lstart="];
+    const { stdout } = await execFileAsync(executable, args, {
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    });
+    const startedAt = Date.parse(String(stdout ?? "").trim());
+    return Number.isFinite(startedAt) ? startedAt : null;
+  } catch {
+    return null;
   }
 }
 
@@ -434,13 +505,20 @@ async function isChromeUsingUserDataDir(userDataDir: string): Promise<boolean> {
 
 async function readProcessCommand(pid: number): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync(
-      "ps",
-      ["-p", String(Math.trunc(pid)), "-o", "command="],
-      {
-        maxBuffer: 1024 * 1024,
-      },
-    );
+    const executable = process.platform === "win32" ? "powershell.exe" : "ps";
+    const args =
+      process.platform === "win32"
+        ? [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${Math.trunc(pid)}').CommandLine`,
+          ]
+        : ["-p", String(Math.trunc(pid)), "-o", "command="];
+    const { stdout } = await execFileAsync(executable, args, {
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    });
     const command = String(stdout ?? "").trim();
     return command || null;
   } catch {
