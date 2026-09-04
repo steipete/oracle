@@ -1565,6 +1565,18 @@ describe("browser model selection matchers", () => {
     expect(result).toEqual({ status: "already-selected", label: "Thinking" });
   });
 
+  it("reports the composer pill for a Latest target under the current strategy", () => {
+    // No checked advanced radio and no picker button: must resolve on the pill without throwing.
+    expect(evaluateNoModelButtonExpression("Latest", "current", "6Pro")).toEqual({
+      status: "already-selected",
+      label: "6Pro",
+    });
+    expect(evaluateNoModelButtonExpression("Latest", "current")).toEqual({
+      status: "already-selected",
+      label: null,
+    });
+  });
+
   it("keeps strict selection failed when ChatGPT hides the model picker", () => {
     const result = evaluateNoModelButtonExpression("Pro", "select");
     expect(result).toEqual({ status: "button-missing" });

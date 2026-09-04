@@ -377,6 +377,14 @@ function buildModelSelectionExpression(
     };
 
     const getButtonLabel = () => (findModelButton()?.textContent ?? '').trim();
+    // With the picker closed the only evidence for "Latest" is the composer pill, so a version-less
+    // "latest" target must be decided on it: the blank composer signal would otherwise pass as
+    // "already selected" while GPT-5.6 Sol is active. Defined here, before getResolvedLabel, because
+    // the "current" strategy resolves the label before the selection helpers further down exist.
+    const latestButtonSelected = () => {
+      const label = normalizeText(getButtonLabel());
+      return /^(chatgpt |gpt )?6(?![0-9 .]*[0-9])/.test(label) && !/(^| )5 6/.test(label);
+    };
     const getComposerModelLabel = () =>
       (document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR)?.textContent ?? '').trim();
     const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
@@ -595,7 +603,11 @@ function buildModelSelectionExpression(
         if (checkedAdvancedRadio) return (checkedAdvancedRadio.textContent ?? '').trim();
         // Picker closed: the pill ("6 Pro") is the evidence; report the radio's name so callers
         // can compare against the requested target instead of the tier-suffixed pill text.
-        return latestButtonSelected() ? 'Latest' : getButtonLabel();
+        if (latestButtonSelected()) return 'Latest';
+        const currentButtonLabel = getButtonLabel();
+        if (currentButtonLabel) return currentButtonLabel;
+        // No picker button at all (e.g. the "current" strategy on a page that hides it): fall back
+        // to the generic composer/observed label resolution below.
       }
       if (configuredSelectionMatchesTarget()) {
         const variant = getConfiguredVariantLabel();
@@ -736,13 +748,6 @@ function buildModelSelectionExpression(
         return true;
       }
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
-    };
-    // With the picker closed the only evidence for "Latest" is the composer pill, so a version-less
-    // "latest" target must be decided on it: the blank composer signal would otherwise pass as
-    // "already selected" while GPT-5.6 Sol is active.
-    const latestButtonSelected = () => {
-      const label = normalizeText(getButtonLabel());
-      return /^(chatgpt |gpt )?6(?![0-9 .]*[0-9])/.test(label) && !/(^| )5 6/.test(label);
     };
     const activeSelectionMatchesTarget = () => {
       if (targetIsLatest) {
