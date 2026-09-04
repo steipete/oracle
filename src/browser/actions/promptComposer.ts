@@ -5,7 +5,9 @@ import {
   PROMPT_FALLBACK_SELECTOR,
   SEND_BUTTON_SELECTORS,
   STOP_BUTTON_SELECTOR,
+  STOP_BUTTON_SELECTORS,
   ASSISTANT_ROLE_SELECTOR,
+  DEEP_RESEARCH_PILL_LABEL,
 } from "../constants.js";
 import {
   buildConversationTurnCountExpression,
@@ -230,17 +232,121 @@ export async function submitPrompt(
   } else {
     logger("Clicked send button");
   }
-  await deps.onPromptSubmitted?.();
 
   const commitTimeoutMs = Math.max(60_000, deps.inputTimeoutMs ?? 0);
   // Learned: the send button can succeed but the turn doesn't appear immediately; verify commit via turns/stop button.
-  return await verifyPromptCommitted(
-    runtime,
-    prompt,
-    commitTimeoutMs,
-    logger,
-    deps.baselineTurns ?? undefined,
-  );
+  let committedTurns: number | null;
+  try {
+    committedTurns = await verifyPromptCommitted(
+      runtime,
+      prompt,
+      commitTimeoutMs,
+      logger,
+      deps.baselineTurns ?? undefined,
+    );
+  } catch (error) {
+    const clickTimedOut =
+      clicked &&
+      error instanceof BrowserAutomationError &&
+      (error.details as { code?: string } | undefined)?.code === "prompt-commit-timeout";
+    if (!clickTimedOut) {
+      throw error;
+    }
+    const retried = await submitStagedPromptViaEnter(
+      runtime,
+      input,
+      prompt,
+      deps.baselineTurns ?? undefined,
+      logger,
+    );
+    if (!retried) {
+      throw error;
+    }
+    committedTurns = await verifyPromptCommitted(
+      runtime,
+      prompt,
+      commitTimeoutMs,
+      logger,
+      deps.baselineTurns ?? undefined,
+    );
+  }
+  // Persist promptSubmitted only after ChatGPT exposes the user turn, so a
+  // no-op click cannot make an unsubmitted session look live.
+  await deps.onPromptSubmitted?.();
+  return committedTurns;
+}
+
+async function submitStagedPromptViaEnter(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  prompt: string,
+  baselineTurns: number | undefined,
+  logger: BrowserLogger,
+): Promise<boolean> {
+  // Called only after the normal commit verifier exhausts its full deadline.
+  // Retry only while the exact same prompt is still staged and no generation
+  // or user-turn signal has appeared.
+  const normalizedPrompt = prompt.replace(/\s+/gu, " ").trim();
+  const normalizedPromptLiteral = JSON.stringify(normalizedPrompt);
+  const deepResearchLabelsLiteral = JSON.stringify([DEEP_RESEARCH_PILL_LABEL, "深度研究"]);
+  const inputSelectorsLiteral = JSON.stringify(INPUT_SELECTORS);
+  const stopSelectorsLiteral = JSON.stringify(STOP_BUTTON_SELECTORS);
+  const baselineLiteral =
+    typeof baselineTurns === "number" && Number.isFinite(baselineTurns)
+      ? Math.max(0, Math.floor(baselineTurns))
+      : -1;
+  const outcome = await Runtime.evaluate({
+    expression: `(() => {
+      const selectors = ${inputSelectorsLiteral};
+      const stopSelectors = ${stopSelectorsLiteral};
+      const deepResearchLabels = ${deepResearchLabelsLiteral};
+      const normalize = (value) => String(value ?? '').replace(/\\s+/gu, ' ').trim();
+      const isVisible = (node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        const rect = node.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const readValue = (node) => {
+        if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+          return node.value ?? '';
+        }
+        return node.innerText ?? node.textContent ?? '';
+      };
+      const candidates = selectors
+        .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+        .filter(isVisible);
+      const editor = candidates.find((node) => {
+        const stagedValue = normalize(readValue(node));
+        const promptValue = ${normalizedPromptLiteral};
+        return stagedValue === promptValue || deepResearchLabels.some((label) =>
+          stagedValue === label + ' ' + promptValue || stagedValue === promptValue + ' ' + label
+        );
+      }) ?? null;
+      const stopVisible = stopSelectors.some((selector) =>
+        Array.from(document.querySelectorAll(selector)).some(isVisible),
+      );
+      const turns = ${buildConversationTurnListExpression()};
+      const baseline = ${baselineLiteral};
+      const hasNewTurn = baseline >= 0 && turns.length > baseline;
+      if (!(editor instanceof HTMLElement) || stopVisible || hasNewTurn) {
+        return { staged: false, focused: false, stopVisible, hasNewTurn };
+      }
+      editor.focus();
+      return {
+        staged: true,
+        focused: document.activeElement === editor,
+        stopVisible,
+        hasNewTurn,
+      };
+    })()`,
+    returnByValue: true,
+  }).catch(() => null);
+  if (!outcome?.result?.value?.staged || !outcome.result.value.focused) {
+    return false;
+  }
+  logger("Send click did not commit before timeout; submitting staged prompt once via Enter");
+  await dispatchEnterKey(Input);
+  return true;
 }
 
 async function dispatchEnterKey(Input: ChromeClient["Input"]): Promise<void> {
@@ -924,5 +1030,6 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
 export const __test__ = {
   attemptSendButton,
   sendButtonTimeoutMs,
+  submitStagedPromptViaEnter,
   verifyPromptCommitted,
 };

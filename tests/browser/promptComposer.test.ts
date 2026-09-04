@@ -71,6 +71,59 @@ const evaluateAttachmentReady = (expectedName: string, visibleName: string): boo
   return Boolean(evaluate(document, FakeElement, FakeInputElement));
 };
 
+const retryStagedPrompt = async (stagedText: string, prompt: string) => {
+  let focused = false;
+  class FakeHTMLElement {
+    innerText = stagedText;
+    textContent = stagedText;
+
+    getBoundingClientRect() {
+      return { width: 100, height: 30 };
+    }
+
+    focus() {
+      focused = true;
+    }
+  }
+  class FakeTextAreaElement extends FakeHTMLElement {
+    value = "";
+  }
+  class FakeInputElement extends FakeHTMLElement {
+    value = "";
+  }
+  const editor = new FakeHTMLElement();
+  const document = {
+    get activeElement() {
+      return focused ? editor : null;
+    },
+    querySelectorAll: (selector: string) =>
+      selector === "#prompt-textarea" || selector === ".ProseMirror" ? [editor] : [],
+  };
+  const runtime = {
+    evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+      result: {
+        value: Function(
+          "document",
+          "HTMLElement",
+          "HTMLTextAreaElement",
+          "HTMLInputElement",
+          `return ${expression};`,
+        )(document, FakeHTMLElement, FakeTextAreaElement, FakeInputElement),
+      },
+    })),
+  };
+  const input = { dispatchKeyEvent: vi.fn() };
+  const logger = Object.assign(vi.fn(), { verbose: false });
+  const retried = await promptComposer.submitStagedPromptViaEnter(
+    runtime as never,
+    input as never,
+    prompt,
+    0,
+    logger as never,
+  );
+  return { retried, input, logger };
+};
+
 describe("promptComposer", () => {
   test.each([
     ["mcp.md", "mcp(7).md", true],
@@ -320,7 +373,7 @@ describe("promptComposer", () => {
     expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"], 120_000)).toBe(120_000);
   });
 
-  test("marks prompt submitted before commit verification finishes", async () => {
+  test("marks prompt submitted after commit verification succeeds", async () => {
     const onPromptSubmitted = vi.fn();
     const runtime = {
       evaluate: vi.fn(async ({ expression }: { expression: string }) => {
@@ -338,6 +391,7 @@ describe("promptComposer", () => {
         if (expression.includes("button.scrollIntoView")) {
           return { result: { value: { status: "clicked" } } };
         }
+        expect(onPromptSubmitted).not.toHaveBeenCalled();
         return {
           result: {
             value: {
@@ -452,6 +506,103 @@ describe("promptComposer", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("retries a still-staged prompt only after the full click commit deadline expires", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      let entered = false;
+      const onPromptSubmitted = vi.fn();
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("document.readyState")) {
+            return { result: { value: { ready: true, composer: true, fileInput: false } } };
+          }
+          if (expression.includes("focused: true")) {
+            return { result: { value: { focused: true } } };
+          }
+          if (expression.includes("editorText") && expression.includes("activeValue")) {
+            return {
+              result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
+            };
+          }
+          if (expression.includes("button.scrollIntoView")) {
+            return { result: { value: { status: "clicked" } } };
+          }
+          if (expression.includes("deepResearchLabels")) {
+            return {
+              result: {
+                value: { staged: true, focused: true, stopVisible: false, hasNewTurn: false },
+              },
+            };
+          }
+          return {
+            result: {
+              value: {
+                baseline: 0,
+                turnsCount: entered ? 1 : 0,
+                userMatched: entered,
+                prefixMatched: false,
+                lastMatched: entered,
+                hasNewTurn: entered,
+                stopVisible: entered,
+                assistantVisible: false,
+                composerCleared: entered,
+                inConversation: true,
+              },
+            },
+          };
+        }),
+      };
+      const input = {
+        insertText: vi.fn(),
+        dispatchKeyEvent: vi.fn(async ({ type }: { type: string }) => {
+          if (type === "keyUp") entered = true;
+        }),
+      };
+      const logger = Object.assign(vi.fn(), { verbose: false });
+
+      const result = submitPrompt(
+        {
+          runtime: runtime as never,
+          input: input as never,
+          baselineTurns: 0,
+          inputTimeoutMs: 1_000,
+          onPromptSubmitted,
+        },
+        "hello",
+        logger as never,
+      );
+      await vi.advanceTimersByTimeAsync(61_000);
+
+      await expect(result).resolves.toBe(1);
+      expect(input.dispatchKeyEvent).toHaveBeenCalledTimes(2);
+      expect(onPromptSubmitted).toHaveBeenCalledTimes(1);
+      expect(logger).toHaveBeenCalledWith(
+        "Send click did not commit before timeout; submitting staged prompt once via Enter",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("retries an exact Deep Research prompt wrapped by the mode label", async () => {
+    const { retried, input } = await retryStagedPrompt(
+      "Deep research\nLine 1\nLine 2",
+      "Line 1\nLine 2",
+    );
+    expect(retried).toBe(true);
+    expect(input.dispatchKeyEvent).toHaveBeenCalledTimes(2);
+  });
+
+  test("does not retry when the staged Deep Research prompt has extra text", async () => {
+    const { retried, input } = await retryStagedPrompt(
+      "Deep research\nLine 1\nLine 2\nextra instruction",
+      "Line 1\nLine 2",
+    );
+    expect(retried).toBe(false);
+    expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
   });
 
   test("uses one Enter key sequence only when no send-button click was issued", async () => {

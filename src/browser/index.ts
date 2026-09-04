@@ -10,6 +10,7 @@ import type {
   BrowserLogger,
   ChromeClient,
   BrowserAttachment,
+  BrowserResearchPlanMetadata,
   ResolvedBrowserConfig,
   BrowserArchiveResult,
 } from "./types.js";
@@ -1001,6 +1002,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let researchPlan: BrowserResearchPlanMetadata | undefined;
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let tabLease: BrowserTabLease | null = null;
   let conversationUrlMonitor: ConversationUrlMonitor | null = null;
@@ -1017,6 +1019,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
       tabUrl: lastUrl,
       conversationId,
       promptSubmitted,
+      researchPlan,
       userDataDir,
       controllerPid: process.pid,
     };
@@ -1276,6 +1279,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
                     ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
                     : undefined,
                 promptSubmitted,
+                researchPlan,
                 controllerPid: process.pid,
               },
             }),
@@ -1752,7 +1756,19 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
     }
     const imageArtifactMinTurnIndex = baselineTurns;
     if (deepResearch) {
-      await raceWithDisconnect(waitForResearchPlanAutoConfirm(Runtime, logger));
+      await raceWithDisconnect(
+        waitForResearchPlanAutoConfirm(Runtime, logger, undefined, {
+          Page,
+          client,
+          ignoredTargetKeys: deepResearchTargetKeys,
+          targetBaselineCaptured: deepResearchTargetBaselineCaptured,
+          minTurnIndex: baselineTurns,
+          onPlan: async (plan) => {
+            researchPlan = plan;
+            await emitRuntimeHint();
+          },
+        }),
+      );
       const researchResult = await raceWithDisconnect(
         waitForDeepResearchCompletion(
           Runtime,
@@ -1820,6 +1836,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        researchPlan,
         controllerPid: process.pid,
       };
     }
@@ -2439,6 +2456,7 @@ export async function runBrowserMode(options: BrowserRunOptions): Promise<Browse
               ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
               : undefined,
           promptSubmitted,
+          researchPlan,
           controllerPid: process.pid,
         },
       },
@@ -2945,6 +2963,7 @@ async function runRemoteBrowserMode(
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let researchPlan: BrowserResearchPlanMetadata | undefined;
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let attachedExistingTab = false;
   let ownsTarget = true;
@@ -2963,6 +2982,7 @@ async function runRemoteBrowserMode(
           tabUrl: lastUrl,
           conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
           promptSubmitted,
+          researchPlan,
           controllerPid: process.pid,
         },
         modelSelectionEvidence,
@@ -3293,7 +3313,17 @@ async function runRemoteBrowserMode(
     deepResearchTargetBaselineCaptured = submission.deepResearchTargetBaselineCaptured ?? false;
     const imageArtifactMinTurnIndex = baselineTurns;
     if (deepResearch) {
-      await waitForResearchPlanAutoConfirm(Runtime, logger);
+      await waitForResearchPlanAutoConfirm(Runtime, logger, undefined, {
+        Page,
+        client,
+        ignoredTargetKeys: deepResearchTargetKeys,
+        targetBaselineCaptured: deepResearchTargetBaselineCaptured,
+        minTurnIndex: baselineTurns,
+        onPlan: async (plan) => {
+          researchPlan = plan;
+          await emitRuntimeHint();
+        },
+      });
       const researchResult = await waitForDeepResearchCompletion(
         Runtime,
         logger,
@@ -3357,6 +3387,7 @@ async function runRemoteBrowserMode(
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        researchPlan,
         controllerPid: process.pid,
       };
     }
@@ -3866,6 +3897,7 @@ async function runRemoteBrowserMode(
             ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
             : undefined,
         promptSubmitted,
+        researchPlan,
         controllerPid: process.pid,
       },
     });
