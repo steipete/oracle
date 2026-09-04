@@ -162,6 +162,8 @@ Notes:
 
 All options are persisted with the session so restarts (`oracle restart <id>`) reuse the same automation settings.
 
+For the direct five-tier effort slider, Oracle verifies the leading effort label and the numeric slider position independently. Localized punctuation and ordinal wording, including Japanese `Pro、5件中5件目。`, do not affect selection. The label must end or be followed by whitespace or punctuation; word continuations such as `Professional` or `Proé`, missing labels, and contradictory positions cannot verify Pro.
+
 ### Deep Research mode
 
 Use `--browser-research deep` when the task needs broad web discovery, source comparison, or a cited report:

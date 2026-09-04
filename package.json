@@ -58,7 +58,7 @@
   },
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
-    "@google/genai": "^2.19.0",
+    "@google/genai": "^2.20.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@steipete/sweet-cookie": "^0.4.2",
@@ -74,27 +74,27 @@
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
     "markdansi": "0.3.3",
-    "openai": "^7.8.0",
+    "openai": "^7.9.0",
     "osc-progress": "^0.3.3",
-    "qs": "^6.15.3",
+    "qs": "^6.16.0",
     "shiki": "^4.4.3",
     "toasted-notifier": "^10.1.0",
     "tokentally": "^0.1.4",
-    "zod": "^4.5.2"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/inquirer": "^9.0.10",
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.4.1",
     "@vitest/coverage-v8": "4.1.11",
     "devtools-protocol": "0.0.1687809",
     "es-toolkit": "^1.52.0",
     "esbuild": "^0.28.2",
-    "oxfmt": "0.65.0",
-    "oxlint": "^1.80.0",
+    "oxfmt": "0.66.0",
+    "oxlint": "^1.81.0",
     "puppeteer-core": "^25.9.0",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   },
@@ -109,5 +109,5 @@
   "engines": {
     "node": ">=24"
   },
-  "packageManager": "pnpm@11.24.0"
+  "packageManager": "pnpm@11.25.0"
 }

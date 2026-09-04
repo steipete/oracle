@@ -11,7 +11,7 @@
 - Browser: recognize collision-renamed attachment chips, including short filenames, while keeping Unicode filename boundaries and visible extensions distinct across upload and send checks. Fixes #393. Thanks @devYRPauli!
 - Browser: select and verify thinking effort in ChatGPT's direct-slider picker without an Advanced submenu, keeping explicit Pro requests fail-closed. Fixes #422.
 - Browser: preserve Hangul and recognize Korean model/effort picker labels, distinguishing High from Extra High and keeping Pro verification strict. Fixes #423.
-- Browser: verify direct-slider effort labels without depending on locale-specific announcement punctuation or ordinal grammar. Fixes #440.
+- Browser: verify direct-slider effort labels across localized punctuation, including Japanese, while rejecting Unicode word continuations and requiring matching slider positions. Fixes #440. Thanks @Gabrielgvl and @kiyo-e!
 - Browser: restore locally launched macOS Chrome windows to their prior placement for visible runs only when Oracle recorded the window before a `--browser-hide-window` run; unmarked windows remain untouched.
 - Browser: archive completed ChatGPT conversations when the interface is Japanese by recognizing the current `その他`, `アーカイブ`, and `アーカイブを解除する` controls.
 - Browser: apply the configured input timeout to prompt preparation so stalled local file assembly fails clearly before launching Chrome. Fixes #381.
@@ -19,7 +19,7 @@
 
 ### Changed
 
-- Dependencies: update provider SDKs (including OpenAI streaming cancellation fixes), cookie utilities, browser tooling, terminal utilities, development tools, pnpm, and transitive overrides while retaining the two-day release-age policy; refresh the Pages pnpm action pin.
+- Dependencies: update provider SDKs (OpenAI 7.9 and Google GenAI 2.20), schema and query utilities, cookie utilities, browser tooling, terminal utilities, development tools, pnpm 11.25, and transitive overrides while retaining the two-day release-age policy; refresh the Pages pnpm and deployment action pins.
 
 - **Breaking** — Remote: accept only conversation-scoped fields from remote clients. The service overrode six known-dangerous `browserConfig` fields and passed the rest of `BrowserSessionConfig` through to `runBrowserMode` verbatim. The remainder is not inert: `chromePath` names an executable the host spawns, `remoteChrome` a debugger to attach to, `copyProfileSource` a directory to copy a signed-in profile out of, `debugPort` one to expose, and `attachRunning`/`browserTabRef` select an existing ChatGPT tab — with an empty or "current" ref resolving to the first ChatGPT tab in the browser. That makes a bridge token a permission to run code on the host rather than to ask ChatGPT a question. A client may now describe the conversation it wants — URL, model, effort, archive mode, resume target, time budgets — and nothing about the machine. A caller that was setting host-scoped fields is now ignored on them rather than obeyed.
 - Remote: stop advertising addresses the service is not listening on. `oracle serve --host 127.0.0.1` printed the host's LAN and tailnet addresses in its startup banner while bound to loopback only. That banner is how an operator decides whether a port needs a tunnel or a firewall rule, and for browser automation behind a bearer token, erring toward "more exposed than it is" is the wrong direction.

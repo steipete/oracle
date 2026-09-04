@@ -1077,8 +1077,9 @@ function buildThinkingTimeExpression(
                 const normalizedCandidate = candidate.normalize('NFC');
                 const prefix = value.slice(0, normalizedCandidate.length);
                 if (normalize(prefix) !== normalize(normalizedCandidate)) return false;
-                const next = normalize(value.slice(prefix.length, prefix.length + 1));
-                return !next;
+                // normalize() erases Unicode letters and marks; inspect the boundary intact.
+                const suffix = value.slice(prefix.length);
+                return !suffix || /^[\\s\\p{P}]/u.test(suffix);
               });
             return token
               ? [{ level, index, label: value.slice(0, token.normalize('NFC').length) }]
