@@ -69,7 +69,7 @@ Oracle chooses API mode when an OpenAI key is available and browser mode otherwi
 | Browser | You want Oracle to use a signed-in ChatGPT or Gemini browser session.       | Install Chrome and complete the one-time login flow. |
 | Render  | You want to inspect, copy, or paste the bundle yourself.                    | No account or key is required.                       |
 
-API mode supports OpenAI, Azure OpenAI, Anthropic, Gemini, xAI, OpenRouter, and compatible endpoints. Browser mode uses Chrome automation for ChatGPT and a cookie-based Gemini client. See [browser mode](docs/browser-mode.md) and [provider endpoints](docs/openai-endpoints.md) for setup and limits.
+API mode supports OpenAI, Azure OpenAI, Anthropic, Gemini, xAI, OpenRouter, OrcaRouter, and compatible endpoints. Browser mode uses Chrome automation for ChatGPT and a cookie-based Gemini client. See [browser mode](docs/browser-mode.md) and [provider endpoints](docs/openai-endpoints.md) for setup and limits.
 
 ## Control the context
 
@@ -102,14 +102,14 @@ For agent integrations, run the `oracle-mcp` stdio server or install the Oracle 
 
 ## Documentation
 
-| Topic                      | Guide                                                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installation and first run | [Install](docs/install.md) · [Quickstart](docs/quickstart.md)                                                                               |
-| Browser automation         | [Browser mode](docs/browser-mode.md) · [Linux](docs/linux.md) · [Windows](docs/windows.md)                                                  |
-| Providers                  | [OpenAI and Azure](docs/openai-endpoints.md) · [Anthropic](docs/anthropic.md) · [Gemini](docs/gemini.md) · [OpenRouter](docs/openrouter.md) |
-| Runs and models            | [Sessions](docs/sessions.md) · [Follow-ups](docs/followup.md) · [Multi-model](docs/multimodel.md)                                           |
-| Configuration and commands | [Configuration](docs/configuration.md) · [CLI reference](docs/cli-reference.md)                                                             |
-| Agent integrations         | [Agents](docs/agents.md) · [MCP](docs/mcp.md) · [Bridge](docs/bridge.md)                                                                    |
+| Topic                      | Guide                                                                                                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Installation and first run | [Install](docs/install.md) · [Quickstart](docs/quickstart.md)                                                                                                                  |
+| Browser automation         | [Browser mode](docs/browser-mode.md) · [Linux](docs/linux.md) · [Windows](docs/windows.md)                                                                                     |
+| Providers                  | [OpenAI and Azure](docs/openai-endpoints.md) · [Anthropic](docs/anthropic.md) · [Gemini](docs/gemini.md) · [OpenRouter](docs/openrouter.md) · [OrcaRouter](docs/orcarouter.md) |
+| Runs and models            | [Sessions](docs/sessions.md) · [Follow-ups](docs/followup.md) · [Multi-model](docs/multimodel.md)                                                                              |
+| Configuration and commands | [Configuration](docs/configuration.md) · [CLI reference](docs/cli-reference.md)                                                                                                |
+| Agent integrations         | [Agents](docs/agents.md) · [MCP](docs/mcp.md) · [Bridge](docs/bridge.md)                                                                                                       |
 
 ## Related projects
 

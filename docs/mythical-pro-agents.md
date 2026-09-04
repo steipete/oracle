@@ -24,7 +24,7 @@ The headline frontier models — the ones marked **Pro** — are slow, expensive
 | Claude Opus 4.1       | API only       | `claude-4.1-opus`       | —                         | Deepest single-shot reasoning               |
 | Claude Sonnet 4.6     | API only       | `claude-4.6-sonnet`     | —                         | Fast Claude                                 |
 
-Plus any **OpenRouter** id — e.g. `minimax/minimax-m2`, `openai/gpt-4o-mini`, `qwen/qwen-2.5-coder-32b-instruct` — when you set `OPENROUTER_API_KEY`.
+Plus any **OpenRouter** or **OrcaRouter** id — e.g. `minimax/minimax-m2`, `openai/gpt-4o-mini`, `orcarouter/auto` — when you set `OPENROUTER_API_KEY` or `ORCAROUTER_API_KEY`.
 
 ## When to reach for which
 
@@ -106,7 +106,7 @@ oracle --engine browser --model gpt-5.5-pro \
 - **GPT-5.x Pro** (browser): "free" with ChatGPT Pro / Plus subscription, but slow.
 - **Gemini 3.1 Pro / 3.5 Flash / 3.1 Flash-Lite** (browser): available through a signed-in Google account, subject to account access.
 - **Claude Opus 4.1**: per-token API only.
-- **OpenRouter ids**: pricing varies wildly per provider; always preview with `--dry-run summary`.
+- **OpenRouter / OrcaRouter ids**: pricing varies wildly per provider; always preview with `--dry-run summary`.
 
 `--files-report` plus `--dry-run summary` is the right reflex before any Pro run on a large bundle. Token counts ≠ dollars, but they're a close-enough proxy.
 
@@ -125,4 +125,4 @@ oracle --engine browser --model gpt-5.5-pro \
 | Deep Research              | —                 | ✅                   | —                |
 | `--render --copy` fallback | ✅                | ✅                   | ✅               |
 
-See provider-specific docs for the gory details: [OpenAI / Azure / OpenRouter](openai-endpoints.md), [Gemini](gemini.md), [Anthropic](anthropic.md), [Grok](grok.md).
+See provider-specific docs for the gory details: [OpenAI / Azure / OpenRouter / OrcaRouter](openai-endpoints.md), [Gemini](gemini.md), [Anthropic](anthropic.md), [Grok](grok.md).

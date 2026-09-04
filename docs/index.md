@@ -30,7 +30,7 @@ oracle --followup <id> -p "Re-evaluate with this new context" --file "src/**/*.t
 
 ## What Oracle does
 
-- **One CLI to a stable of pro agents.** GPT-5.5 Pro (default), GPT-5.5, GPT-5.4 Pro, GPT-5.4, GPT-5.2 Pro, GPT-5.1 Pro, GPT-5.1 Codex, Gemini 3.1 Pro, Gemini 3.5 Flash, Gemini 3.1 Flash-Lite, Claude Sonnet 4.6, Claude Opus 4.1 — plus any OpenRouter id.
+- **One CLI to a stable of pro agents.** GPT-5.5 Pro (default), GPT-5.5, GPT-5.4 Pro, GPT-5.4, GPT-5.2 Pro, GPT-5.1 Pro, GPT-5.1 Codex, Gemini 3.1 Pro, Gemini 3.5 Flash, Gemini 3.1 Flash-Lite, Claude Sonnet 4.6, Claude Opus 4.1 — plus any OpenRouter or OrcaRouter id.
 - **Engines, plural.** API mode for reliability, browser mode (Chrome over CDP) when you don't want to pay or want the Pro tier, `--render --copy` when neither is an option.
 - **Multi-model in one run.** Aggregate cost, token usage, and lineage across providers in a single command.
 - **Recoverable panels.** `doctor --providers`, `--preflight`, `--route`, and `--allow-partial` make provider/key failures clear without losing successful model output.

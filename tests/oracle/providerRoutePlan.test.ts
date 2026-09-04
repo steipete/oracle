@@ -210,6 +210,67 @@ describe("provider route plan", () => {
     expect(plan.keySource).toBe("OPENROUTER_API_KEY");
   });
 
+  test("orcarouter/ model ids route through OrcaRouter", () => {
+    const plan = buildProviderRoutePlan({
+      model: "orcarouter/auto",
+      providerMode: "auto",
+      env: {
+        ORCAROUTER_API_KEY: "sk-orca-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("OrcaRouter");
+    expect(plan.base).toBe("api.orcarouter.ai/v1");
+    expect(plan.keySource).toBe("ORCAROUTER_API_KEY");
+  });
+
+  test("orcarouter/ model ids report missing OrcaRouter key", () => {
+    const plan = buildProviderRoutePlan({
+      model: "orcarouter/auto",
+      providerMode: "auto",
+      env: {},
+    });
+
+    expect(plan.ok).toBe(false);
+    expect(plan.providerLabel).toBe("OrcaRouter");
+    expect(plan.base).toBe("api.orcarouter.ai/v1");
+    expect(plan.keySource).toBe("ORCAROUTER_API_KEY");
+    expect(plan.error).toBe("Missing ORCAROUTER_API_KEY.");
+  });
+
+  test("explicit OrcaRouter base URL routes through OrcaRouter", () => {
+    const plan = buildProviderRoutePlan({
+      model: "openai/gpt-4o-mini",
+      providerMode: "auto",
+      baseUrl: "https://api.orcarouter.ai/v1",
+      env: {
+        ORCAROUTER_API_KEY: "sk-orca-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("OrcaRouter");
+    expect(plan.base).toBe("api.orcarouter.ai/v1");
+    expect(plan.keySource).toBe("ORCAROUTER_API_KEY");
+  });
+
+  test("unprefixed custom ids still fall back to OpenRouter, not OrcaRouter", () => {
+    const plan = buildProviderRoutePlan({
+      model: "llama-3",
+      providerMode: "auto",
+      env: {
+        ORCAROUTER_API_KEY: "sk-orca-test-key",
+        OPENROUTER_API_KEY: "or-openrouter-test-key",
+      },
+    });
+
+    expect(plan.ok).toBe(true);
+    expect(plan.providerLabel).toBe("OpenRouter");
+    expect(plan.base).toBe("openrouter.ai/api/...");
+    expect(plan.keySource).toBe("OPENROUTER_API_KEY");
+  });
+
   test("provider-qualified ids ignore native provider base URLs", () => {
     const plan = buildProviderRoutePlan({
       model: "anthropic/claude-sonnet-4.5",

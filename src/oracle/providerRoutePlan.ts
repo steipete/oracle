@@ -2,8 +2,11 @@ import { isCustomBaseUrl } from "./baseUrl.js";
 import { formatBaseUrlForLog, maskApiKey } from "./logging.js";
 import {
   defaultOpenRouterBaseUrl,
+  defaultOrcaRouterBaseUrl,
   isOpenRouterBaseUrl,
+  isOrcaRouterBaseUrl,
   normalizeOpenRouterBaseUrl,
+  normalizeOrcaRouterBaseUrl,
 } from "./modelResolver.js";
 import { resolveProviderRoutingState, validateProviderRouting } from "./providerRouting.js";
 import type { ApiProviderMode, AzureOptions, ModelConfig, ModelName } from "./types.js";
@@ -45,6 +48,7 @@ export interface ResolvedProviderRoute extends ProviderRoutePlan {
   baseUrl?: string;
   apiKey?: string;
   openRouterFallback: boolean;
+  orcaRouterFallback: boolean;
   azureEndpoint?: string;
 }
 
@@ -58,6 +62,7 @@ export function buildProviderRoutePlan(input: ProviderRoutePlanInput): ProviderR
     baseUrl: _baseUrl,
     nativeProvider: _nativeProvider,
     openRouterFallback: _openRouterFallback,
+    orcaRouterFallback: _orcaRouterFallback,
     azureEndpoint: _azureEndpoint,
     ...plan
   } = buildResolvedProviderRoute(input);
@@ -92,6 +97,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
       isAzureOpenAI,
       baseUrl: input.baseUrl,
       openRouterFallback: false,
+      orcaRouterFallback: false,
       apiKey: input.apiKey,
       env,
     });
@@ -110,6 +116,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
       nativeProvider: provider,
       baseUrl: input.baseUrl,
       openRouterFallback: false,
+      orcaRouterFallback: false,
       isAzureOpenAI,
       azureEndpoint: state?.azureEndpoint ?? input.azure?.endpoint,
       azureConfigured,
@@ -129,11 +136,25 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
   // Azure owns the endpoint, including metadata lookups before request dispatch.
   let baseUrl = isAzureOpenAI ? undefined : input.baseUrl?.trim();
   const providerQualifiedOpenRouterCandidate =
-    !isAzureOpenAI && providerMode !== "openai" && input.model.includes("/");
+    !isAzureOpenAI &&
+    providerMode !== "openai" &&
+    input.model.includes("/") &&
+    !input.model.startsWith("orcarouter/");
+  const providerQualifiedOrcaRouterCandidate =
+    !isAzureOpenAI && providerMode !== "openai" && input.model.startsWith("orcarouter/");
   if (
     baseUrl &&
     providerQualifiedOpenRouterCandidate &&
     !isOpenRouterBaseUrl(baseUrl) &&
+    !isOrcaRouterBaseUrl(baseUrl) &&
+    !isCustomBaseUrl(baseUrl)
+  ) {
+    baseUrl = undefined;
+  }
+  if (
+    baseUrl &&
+    providerQualifiedOrcaRouterCandidate &&
+    !isOrcaRouterBaseUrl(baseUrl) &&
     !isCustomBaseUrl(baseUrl)
   ) {
     baseUrl = undefined;
@@ -147,7 +168,10 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     } else {
       envBaseUrl = env.OPENAI_BASE_URL?.trim();
     }
-    if (!providerQualifiedOpenRouterCandidate || (envBaseUrl && isCustomBaseUrl(envBaseUrl))) {
+    if (
+      (!providerQualifiedOpenRouterCandidate && !providerQualifiedOrcaRouterCandidate) ||
+      (envBaseUrl && isCustomBaseUrl(envBaseUrl))
+    ) {
       baseUrl = envBaseUrl;
     }
   }
@@ -161,9 +185,10 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     env,
   });
   const providerQualifiedOpenRouterRoute = providerQualifiedOpenRouterCandidate && !baseUrl;
+  const providerQualifiedOrcaRouterRoute = providerQualifiedOrcaRouterCandidate && !baseUrl;
   const providerKeyMissing =
     !isAzureOpenAI &&
-    (providerQualifiedOpenRouterRoute
+    (providerQualifiedOpenRouterRoute || providerQualifiedOrcaRouterRoute
       ? true
       : providerMode === "openai"
         ? !nativeKey.present
@@ -179,12 +204,23 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
       (providerMode !== "openai" &&
         providerKeyMissing &&
         (provider === "other" || openRouterKey.present)));
+  // Explicit orcarouter/ model ids always route through OrcaRouter, even when the
+  // key is missing (so the error reports the right env var). Unprefixed custom
+  // model ids keep the OpenRouter fallback below, preserving the existing behavior
+  // for generic OpenAI-compatible ids.
+  const orcaRouterFallback = !baseUrl && providerQualifiedOrcaRouterRoute;
 
   if (openRouterFallback) {
     baseUrl = defaultOpenRouterBaseUrl();
   }
   if (baseUrl && isOpenRouterBaseUrl(baseUrl)) {
     baseUrl = normalizeOpenRouterBaseUrl(baseUrl);
+  }
+  if (orcaRouterFallback) {
+    baseUrl = defaultOrcaRouterBaseUrl();
+  }
+  if (baseUrl && isOrcaRouterBaseUrl(baseUrl)) {
+    baseUrl = normalizeOrcaRouterBaseUrl(baseUrl);
   }
 
   const key = getKeyForRoute({
@@ -194,6 +230,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     isAzureOpenAI,
     baseUrl,
     openRouterFallback,
+    orcaRouterFallback,
     apiKey: input.apiKey,
     env,
   });
@@ -201,6 +238,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     provider,
     baseUrl,
     openRouterFallback,
+    orcaRouterFallback,
     isAzureOpenAI,
   });
   const fallbackHost = DEFAULT_PROVIDER_HOSTS[provider] ?? DEFAULT_PROVIDER_HOSTS.openai;
@@ -220,6 +258,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
     nativeProvider: provider,
     baseUrl,
     openRouterFallback,
+    orcaRouterFallback,
     isAzureOpenAI,
     azureEndpoint: state.azureEndpoint,
     azureConfigured,
@@ -251,6 +290,7 @@ function getNativeKey({
     isAzureOpenAI,
     baseUrl: undefined,
     openRouterFallback: false,
+    orcaRouterFallback: false,
     apiKey,
     env,
   });
@@ -263,6 +303,7 @@ function getKeyForRoute({
   isAzureOpenAI,
   baseUrl,
   openRouterFallback,
+  orcaRouterFallback,
   apiKey,
   env,
 }: {
@@ -272,6 +313,7 @@ function getKeyForRoute({
   isAzureOpenAI: boolean;
   baseUrl?: string;
   openRouterFallback: boolean;
+  orcaRouterFallback: boolean;
   apiKey?: string;
   env: NodeJS.ProcessEnv;
 }): { source: string; preview: string; present: boolean; value?: string } {
@@ -288,6 +330,9 @@ function getKeyForRoute({
   }
   if (providerMode === "openai") {
     return readKey(["OPENAI_API_KEY"], env);
+  }
+  if (isOrcaRouterBaseUrl(baseUrl) || orcaRouterFallback || model.startsWith("orcarouter/")) {
+    return readKey(["ORCAROUTER_API_KEY"], env);
   }
   if (isOpenRouterBaseUrl(baseUrl) || openRouterFallback) {
     return readKey(["OPENROUTER_API_KEY"], env);
@@ -335,14 +380,17 @@ function routeProviderLabel({
   provider,
   baseUrl,
   openRouterFallback,
+  orcaRouterFallback,
   isAzureOpenAI,
 }: {
   provider: NonNullable<ModelConfig["provider"]>;
   baseUrl?: string;
   openRouterFallback: boolean;
+  orcaRouterFallback: boolean;
   isAzureOpenAI: boolean;
 }): string {
   if (isAzureOpenAI) return "Azure OpenAI";
+  if (isOrcaRouterBaseUrl(baseUrl) || orcaRouterFallback) return "OrcaRouter";
   if (isOpenRouterBaseUrl(baseUrl) || openRouterFallback) return "OpenRouter";
   if (baseUrl && isCustomBaseUrl(baseUrl)) return "OpenAI-compatible";
   return providerLabel(provider);

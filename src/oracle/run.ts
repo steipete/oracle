@@ -42,6 +42,7 @@ import { formatTokenEstimate, formatTokenValue, resolvePreviewMode } from "./run
 import { estimateUsdCost } from "tokentally";
 import {
   isOpenRouterBaseUrl,
+  isOrcaRouterBaseUrl,
   isProModel,
   resolveModelConfig,
   resolveOverriddenApiModel,
@@ -101,6 +102,13 @@ function runtimeKeySource({
   if (providerMode === "openai") {
     return "OPENAI_API_KEY";
   }
+  if (
+    isOrcaRouterBaseUrl(route.baseUrl) ||
+    route.orcaRouterFallback ||
+    route.model.startsWith("orcarouter/")
+  ) {
+    return "ORCAROUTER_API_KEY";
+  }
   if (isOpenRouterBaseUrl(route.baseUrl) || route.openRouterFallback || route.model.includes("/")) {
     return "OPENROUTER_API_KEY";
   }
@@ -142,11 +150,13 @@ function validateReasoningOptions(options: RunOracleOptions, route: ResolvedProv
     reasoningMode &&
     !route.isAzureOpenAI &&
     (route.openRouterFallback ||
+      route.orcaRouterFallback ||
       isOpenRouterBaseUrl(route.baseUrl) ||
+      isOrcaRouterBaseUrl(route.baseUrl) ||
       isCustomBaseUrl(route.baseUrl))
   ) {
     throw new PromptValidationError(
-      "--reasoning-mode requires the OpenAI or Azure OpenAI Responses API; OpenRouter and custom --base-url routes use the Chat Completions adapter.",
+      "--reasoning-mode requires the OpenAI or Azure OpenAI Responses API; OpenRouter, OrcaRouter, and custom --base-url routes use the Chat Completions adapter.",
       { model: options.model, reasoningMode },
     );
   }
@@ -208,6 +218,7 @@ export async function runOracle(
   const { isAzureOpenAI, azureDeploymentName } = route;
   const baseUrl = route.baseUrl;
   const openRouterFallback = route.openRouterFallback;
+  const orcaRouterFallback = route.orcaRouterFallback;
   validateReasoningOptions(options, route);
 
   const logVerbose = (message: string): void => {
@@ -222,9 +233,11 @@ export async function runOracle(
       ? "AZURE_OPENAI_API_KEY (or OPENAI_API_KEY)"
       : providerMode === "openai"
         ? "OPENAI_API_KEY"
-        : isOpenRouterBaseUrl(baseUrl) || openRouterFallback
-          ? "OPENROUTER_API_KEY"
-          : route.keySource;
+        : isOrcaRouterBaseUrl(baseUrl) || orcaRouterFallback
+          ? "ORCAROUTER_API_KEY"
+          : isOpenRouterBaseUrl(baseUrl) || openRouterFallback
+            ? "OPENROUTER_API_KEY"
+            : route.keySource;
     const browserModeHint = options.model.startsWith("gpt")
       ? ' If you have a ChatGPT Pro subscription, retry with --engine browser (or MCP engine:"browser" / preset:"chatgpt-pro-heavy"); browser mode uses your signed-in ChatGPT session instead of an API key.'
       : "";
@@ -251,9 +264,12 @@ export async function runOracle(
 
   const resolverOpenRouterApiKey =
     openRouterFallback || isOpenRouterBaseUrl(baseUrl) ? apiKey : undefined;
+  const resolverOrcaRouterApiKey =
+    orcaRouterFallback || isOrcaRouterBaseUrl(baseUrl) ? apiKey : undefined;
   const modelConfig = await resolveModelConfig(options.model, {
     baseUrl,
     openRouterApiKey: resolverOpenRouterApiKey,
+    orcaRouterApiKey: resolverOrcaRouterApiKey,
     modelOverrides: options.modelOverrides,
   });
   const isLongRunningModel = isProTierModel;
@@ -452,7 +468,9 @@ export async function runOracle(
   }
 
   const proxyCompatibleBaseUrl =
-    !isAzureOpenAI && baseUrl && (isOpenRouterBaseUrl(baseUrl) || isCustomBaseUrl(baseUrl))
+    !isAzureOpenAI &&
+    baseUrl &&
+    (isOpenRouterBaseUrl(baseUrl) || isOrcaRouterBaseUrl(baseUrl) || isCustomBaseUrl(baseUrl))
       ? baseUrl
       : undefined;
   const apiEndpoint = isAzureOpenAI
