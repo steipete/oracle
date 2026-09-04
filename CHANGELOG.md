@@ -7,6 +7,7 @@
 - Azure: ignore generic base URLs during model metadata resolution as well as request dispatch, preventing OpenRouter catalog lookups with Azure credentials.
 - Browser: retain per-file attachment evidence through local/remote upload and send checks, including filename-less images; activate and stabilize the send target without replaying a dispatched prompt. Fixes #418. Thanks @hubofvalley!
 - Remote: allocate unique upload basenames for primary and fallback attachments that collide after sanitization, preserving original display paths and every payload. Fixes #387. Thanks @postoso!
+- Browser: recognize Chinese `深度研究` / `获取详细报告` composer controls when activating Deep Research, including the localized selected-tool pill and add-files fallback.
 - Browser: attach to running Chrome when `DevToolsActivePort` metadata is absent, with IPv6 support and bounded endpoint retries that include response-body reads. Fixes #414. Thanks @devYRPauli!
 - Browser: recognize collision-renamed attachment chips, including short filenames, while keeping Unicode filename boundaries and visible extensions distinct across upload and send checks. Fixes #393. Thanks @devYRPauli!
 - Browser: select and verify thinking effort in ChatGPT's direct-slider picker without an Advanced submenu, keeping explicit Pro requests fail-closed. Fixes #422.
