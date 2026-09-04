@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Browser: GPT-6 Astra as `gpt-6-astra` / `gpt-6-pro` / `gpt-6` (API alias `gpt-6-astra`). ChatGPT exposes it as the "Latest" radio of the advanced picker (Pro tier via the power slider, pill "6 Pro"), so a version-less target is now decided on the checked radio or that pill instead of the blank composer signal, which reported "already selected" while GPT-5.6 Sol was active.
+
 ### Fixed
 
 - Azure: ignore generic base URLs during model metadata resolution as well as request dispatch, preventing OpenRouter catalog lookups with Azure credentials.

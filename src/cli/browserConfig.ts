@@ -33,6 +33,10 @@ const CURRENT_CHATGPT_PRO_ALIASES = new Set([
 // The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
+  // GPT-6 (Astra) has no entry of its own in the ChatGPT picker: it is the "Latest" radio of the
+  // advanced view, and "GPT-6 Pro" is that radio with the power slider at Pro (composer pill "6 Pro").
+  ["gpt-6-pro", "Latest"],
+  ["gpt-6-astra", "Latest"],
   ["gpt-5.6-sol", "GPT-5.6 Sol"],
   ["gpt-5.6", "GPT-5.6 Sol"],
   ["gpt-5.5-pro", "GPT-5.5"],
@@ -106,6 +110,13 @@ export interface BrowserFlagOptions {
 
 export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
   const normalized = model.toLowerCase() as ModelName;
+  // Browser-only alias: gpt-6-pro keeps its name so the Pro tier default survives (label "Latest").
+  if (isGpt6ProAlias(normalized)) {
+    return "gpt-6-pro" as ModelName;
+  }
+  if (isGpt6Alias(normalized)) {
+    return "gpt-6-astra";
+  }
   if (!normalized.startsWith("gpt-") || normalized.includes("codex")) {
     return model;
   }
@@ -139,6 +150,18 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
   return model;
 }
 
+// gpt-6, gpt-6-astra, gpt-6-pro (and "latest"): ChatGPT's "Latest" model. The -pro alias also
+// selects the Pro power tier by default (see resolveDefaultBrowserThinkingTime).
+export function isGpt6Alias(model: string | undefined): boolean {
+  const normalized = model?.trim().toLowerCase() ?? "";
+  return normalized === "latest" || /^gpt[-_ ]?6(?![0-9.])/.test(normalized);
+}
+
+export function isGpt6ProAlias(model: string | undefined): boolean {
+  const normalized = model?.trim().toLowerCase() ?? "";
+  return isGpt6Alias(normalized) && /(^|[-_ ])pro$/.test(normalized);
+}
+
 export function isCurrentChatGptProAlias(model: string | undefined): boolean {
   return CURRENT_CHATGPT_PRO_ALIASES.has(model?.trim().toLowerCase() ?? "");
 }
@@ -155,7 +178,10 @@ export function resolveDefaultBrowserThinkingTime({
   const strategy = normalizeBrowserModelStrategy(modelStrategy) ?? DEFAULT_MODEL_STRATEGY;
   if (strategy !== "select") return undefined;
   const normalizedModel = normalizeChatGptModelForBrowser(model as ModelName);
-  return isCurrentChatGptProAlias(requestedModel ?? model) || normalizedModel === "gpt-5.5-pro"
+  return isCurrentChatGptProAlias(requestedModel ?? model) ||
+    isGpt6ProAlias(requestedModel ?? model) ||
+    normalizedModel === "gpt-6-pro" ||
+    normalizedModel === "gpt-5.5-pro"
     ? "pro"
     : undefined;
 }

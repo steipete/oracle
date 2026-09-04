@@ -544,7 +544,23 @@ function buildModelSelectionExpression(
       if (wantsInstant) return label.includes('instant');
       if (wantsThinking) return Boolean(desiredVersion) && !labelHasProWord(label);
       if (desiredVersion) return true;
+      // A version-less target ("Latest") must match the radio that is actually checked in the
+      // advanced view: the opener's text lists every radio label, so a substring test would
+      // report "Latest" as selected while GPT-5.6 Sol is the checked model.
+      const checkedAdvancedRadio = findCheckedAdvancedModelRadio(parentMenu);
+      if (checkedAdvancedRadio) {
+        const checkedLabel = normalizeText(checkedAdvancedRadio.textContent ?? '');
+        return normalizedTokens.some((token) => token && checkedLabel === token);
+      }
       return normalizedTokens.some((token) => token && label.includes(token));
+    };
+    const findCheckedAdvancedModelRadio = (menu = null) => {
+      const scope = menu || findUnifiedPickerMenu() || document;
+      return (
+        scope?.querySelector?.(
+          '[data-testid="composer-model-picker-slider-advanced-view"] [role="menuitemradio"][aria-checked="true"]',
+        ) ?? null
+      );
     };
     const getAdvancedModelLabel = () => {
       const opener = findModelSubmenuOpener(findUnifiedPickerMenu());
@@ -552,7 +568,11 @@ function buildModelSelectionExpression(
       const raw = (opener.textContent ?? '').trim();
       const normalized = normalizeText(pickerNodeLabel(opener));
       const version = versionFromLabel(normalized);
-      if (!version) return raw;
+      if (!version) {
+        const checkedAdvancedRadio = findCheckedAdvancedModelRadio(findUnifiedPickerMenu());
+        const checkedLabel = (checkedAdvancedRadio?.textContent ?? '').trim();
+        return checkedLabel || raw;
+      }
       const [major, minor] = version.split('-');
       const suffix = normalized.split(' ').includes('sol') ? ' Sol' : '';
       return 'GPT-' + major + '.' + minor + suffix;
@@ -566,6 +586,13 @@ function buildModelSelectionExpression(
       );
     };
     const getResolvedLabel = (observedOptionLabel = '') => {
+      if (targetIsLatest) {
+        const checkedAdvancedRadio = findCheckedAdvancedModelRadio();
+        if (checkedAdvancedRadio) return (checkedAdvancedRadio.textContent ?? '').trim();
+        // Picker closed: the pill ("6 Pro") is the evidence; report the radio's name so callers
+        // can compare against the requested target instead of the tier-suffixed pill text.
+        return latestButtonSelected() ? 'Latest' : getButtonLabel();
+      }
       if (configuredSelectionMatchesTarget()) {
         const variant = getConfiguredVariantLabel();
         const version = formatModelOptionLabel(getConfiguredVersionLabel());
@@ -706,7 +733,23 @@ function buildModelSelectionExpression(
       }
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
     };
+    // "Latest" (GPT-6 since 2026-09) is a radio in the advanced view whose composer pill reads
+    // "6 Pro" / "6 High"…, while GPT-5.6 Sol's reads "5.6 Pro". With the picker closed the only
+    // evidence is that pill, so a version-less "latest" target must be decided on it: the blank
+    // composer signal would otherwise pass as "already selected" while Sol is active.
+    const targetIsLatest = normalizedTarget === 'latest';
+    const latestButtonSelected = () => {
+      const label = normalizeText(getButtonLabel());
+      return /^(chatgpt |gpt )?6(?![0-9 .]*[0-9])/.test(label) && !/(^| )5 6/.test(label);
+    };
     const activeSelectionMatchesTarget = () => {
+      if (targetIsLatest) {
+        const checkedAdvancedRadio = findCheckedAdvancedModelRadio();
+        if (checkedAdvancedRadio) {
+          return normalizeText(checkedAdvancedRadio.textContent ?? '') === 'latest';
+        }
+        return latestButtonSelected();
+      }
       if (advancedModelSignalMatchesTarget()) {
         return true;
       }
