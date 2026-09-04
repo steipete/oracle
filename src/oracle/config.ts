@@ -46,6 +46,18 @@ const countTokensAnthropic: TokenizerFn = (input: unknown): number => {
 const GPT_5_6_BASE_RATE_INPUT_LIMIT = 272_000;
 
 export const MODEL_CONFIGS: Record<KnownModelName, ModelConfig> = {
+  "gpt-6-astra": {
+    model: "gpt-6-astra",
+    provider: "openai",
+    tokenizer: countTokensGpt5 as TokenizerFn,
+    // Same base-rate window as GPT-5.6: prompts above 272K input tokens are billed at the long-context multiplier.
+    inputLimit: GPT_5_6_BASE_RATE_INPUT_LIMIT,
+    pricing: {
+      inputPerToken: 10 / 1_000_000,
+      outputPerToken: 50 / 1_000_000,
+    },
+    reasoning: { effort: "xhigh" },
+  },
   "gpt-5.6": {
     model: "gpt-5.6",
     provider: "openai",
