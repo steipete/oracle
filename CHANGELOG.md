@@ -33,6 +33,7 @@
 
 ### Fixed
 
+- Browser: copy authenticated ChatGPT file artifacts beside `--write-output` answers with collision-safe names and recorded hashes, while retaining the canonical session copies.
 - Browser: detect a disabled ChatGPT effort tier (e.g. an exhausted Pro allotment) before clicking it, and report the account's own reset notice instead of a misleading "selection unverified" failure. Thanks @enieuwy!
 
 ## 0.17.3 — 2026-08-13

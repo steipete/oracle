@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import os from "node:os";
@@ -157,6 +158,7 @@ beforeEach(() => {
   sessionStoreMock.sessionsDir.mockReturnValue("/tmp/.oracle/sessions");
   vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
   vi.spyOn(fsPromises, "writeFile").mockResolvedValue(undefined);
+  vi.spyOn(fsPromises, "copyFile").mockResolvedValue(undefined);
 });
 
 describe("performSessionRun", () => {
@@ -1122,6 +1124,124 @@ describe("performSessionRun", () => {
       expect.stringContaining("browser answer\n"),
       "utf8",
     ]);
+  });
+
+  test("preserves browser saved files beside write-output without overwriting collisions", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "oracle-browser-output-"));
+    const canonicalDir = path.join(tmpDir, "session", "artifacts");
+    const outputDir = path.join(tmpDir, "output");
+    const failureOutputDir = path.join(tmpDir, "failed-output");
+    fs.mkdirSync(canonicalDir, { recursive: true });
+    fs.mkdirSync(outputDir, { recursive: true });
+    const canonicalPath = path.join(canonicalDir, "report.md");
+    const canonicalBytes = Buffer.from("# Saved report\n\nAuthenticated artifact bytes.\n", "utf8");
+    const sha256 = createHash("sha256").update(canonicalBytes).digest("hex");
+    fs.writeFileSync(canonicalPath, canonicalBytes);
+    const collidingPath = path.join(outputDir, "report.md");
+    fs.writeFileSync(collidingPath, "existing file must survive\n", "utf8");
+
+    const savedFile = {
+      kind: "file" as const,
+      path: canonicalPath,
+      label: "report.md",
+      mimeType: "text/markdown",
+      sizeBytes: canonicalBytes.length,
+      sourceUrl: "sandbox:/mnt/data/report.md",
+      sha256,
+      validation: { type: "generic" as const, ok: true },
+      transfer: { status: "not-needed" as const },
+      origin: { mode: "local" as const },
+      url: "https://chatgpt.com/backend-api/files/report",
+      sandboxUrl: "sandbox:/mnt/data/report.md",
+      filename: "report.md",
+    };
+    vi.mocked(runBrowserSessionExecution).mockResolvedValue({
+      usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 0, totalTokens: 15 },
+      elapsedMs: 500,
+      runtime: { chromePid: 1, chromePort: 9222, userDataDir: "/tmp/chrome" },
+      answerText: "sandbox:/mnt/data/report.md",
+      artifacts: [savedFile],
+      savedFiles: [savedFile],
+    });
+    vi.mocked(fsPromises.mkdir).mockImplementation(async (target, options) => {
+      fs.mkdirSync(target, options);
+      return undefined;
+    });
+    vi.mocked(fsPromises.writeFile).mockImplementation(async (target, data) => {
+      fs.writeFileSync(target as fs.PathLike, data as string, "utf8");
+    });
+    vi.mocked(fsPromises.copyFile).mockImplementation(async (source, destination, mode) => {
+      fs.copyFileSync(source, destination, mode);
+    });
+
+    try {
+      const answerPath = path.join(outputDir, "answer.md");
+      await performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: { ...baseRunOptions, writeOutputPath: answerPath },
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: tmpDir,
+        log,
+        write,
+        version: cliVersion,
+      });
+
+      const adjacentPath = path.join(outputDir, "report-2.md");
+      expect(fs.readFileSync(answerPath, "utf8")).toBe("sandbox:/mnt/data/report.md\n");
+      expect(fs.readFileSync(canonicalPath)).toEqual(canonicalBytes);
+      expect(fs.readFileSync(collidingPath, "utf8")).toBe("existing file must survive\n");
+      expect(fs.readFileSync(adjacentPath)).toEqual(canonicalBytes);
+      expect(createHash("sha256").update(fs.readFileSync(adjacentPath)).digest("hex")).toBe(sha256);
+
+      const successUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+      expect(successUpdate).toMatchObject({
+        status: "completed",
+        artifacts: expect.arrayContaining([
+          expect.objectContaining({ path: canonicalPath, sha256 }),
+          expect.objectContaining({ path: adjacentPath, sha256, sizeBytes: canonicalBytes.length }),
+        ]),
+      });
+      expect(log.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        `Saved write-output file artifact to ${adjacentPath} sha256=${sha256}`,
+      );
+
+      const copyError = Object.assign(new Error("simulated copy failure"), { code: "EIO" });
+      vi.mocked(fsPromises.copyFile).mockRejectedValueOnce(copyError);
+      const failureAnswerPath = path.join(failureOutputDir, "answer.md");
+      await performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: { ...baseRunOptions, writeOutputPath: failureAnswerPath },
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: tmpDir,
+        log,
+        write,
+        version: cliVersion,
+      });
+
+      expect(fs.readFileSync(failureAnswerPath, "utf8")).toBe("sandbox:/mnt/data/report.md\n");
+      expect(fs.existsSync(path.join(failureOutputDir, "report.md"))).toBe(false);
+      expect(fs.readFileSync(canonicalPath)).toEqual(canonicalBytes);
+      const failureUpdate = sessionStoreMock.updateSession.mock.calls.at(-1)?.[1];
+      expect(failureUpdate).toMatchObject({
+        status: "completed",
+        browser: {
+          warnings: [
+            expect.objectContaining({
+              code: "browser-output-artifact-copy-failed",
+              message: expect.stringContaining("simulated copy failure"),
+            }),
+          ],
+        },
+        artifacts: [expect.objectContaining({ path: canonicalPath, sha256 })],
+      });
+      expect(log.mock.calls.map((call) => call[0]).join("\n")).toContain(
+        `Failed to copy saved file artifact ${canonicalPath}`,
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test("write-output failures warn but keep session successful", async () => {
