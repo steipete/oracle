@@ -33,6 +33,14 @@ export function resolveBrowserResumeConversationUrl(
   metadata: SessionMetadata,
   fallbackBaseUrl = CHATGPT_URL,
 ): string | null {
+  // Only ChatGPT browser sessions can be resumed here. The other web providers
+  // store their own conversation ids, and rebuilding one against the ChatGPT base
+  // produces a plausible-looking chatgpt.com/c/<id> that resumes the wrong
+  // provider against a conversation that does not exist.
+  const sessionModel = typeof metadata.model === "string" ? metadata.model : "";
+  if (sessionModel.startsWith("perplexity") || sessionModel.startsWith("gemini")) {
+    return null;
+  }
   const gatedUrl = resolveRecoveryUrl(metadata);
   if (gatedUrl) {
     return gatedUrl;

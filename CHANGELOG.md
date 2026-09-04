@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Perplexity: drive perplexity.ai from browser mode. `--engine browser --model perplexity` runs Search and `--model perplexity-research` runs Deep research against your signed-in session in the persistent Oracle Chrome profile, returning the answer plus its cited sources under a `## Sources` heading. `--file` behaves as it does elsewhere (text pasted inline, media and PDFs uploaded), image prompts save through `--generate-image`/`--output`, and `--browser-follow-up` continues the same conversation as a multi-turn transcript. Bare `perplexity` ids are browser-only and are rejected on `--engine api`, which leaves OpenRouter ids such as `perplexity/sonar-pro` working unchanged; `--remote-host` is rejected up front because the remote browser service drives ChatGPT automation only. Available from both the CLI and the MCP `consult` tool. See `docs/perplexity.md`.
+
 ### Fixed
 
 - Azure: ignore generic base URLs during model metadata resolution as well as request dispatch, preventing OpenRouter catalog lookups with Azure credentials.

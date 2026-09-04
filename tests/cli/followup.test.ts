@@ -26,6 +26,25 @@ describe("browser follow-up resolution", () => {
     expect(resolveBrowserResumeConversationUrl(metadata)).toBe("https://chatgpt.com/c/abc-123");
   });
 
+  test("refuses to resume a non-ChatGPT browser session", () => {
+    // A Perplexity session stores its own conversation id with no ChatGPT base URL,
+    // so rebuilding it produced a plausible chatgpt.com/c/<id> and silently resumed
+    // ChatGPT against a conversation that does not exist.
+    for (const model of ["perplexity", "perplexity-research", "gemini-3.1-pro"]) {
+      const metadata: SessionMetadata = {
+        ...baseMetadata,
+        mode: "browser",
+        model,
+        browser: {
+          config: {},
+          runtime: { conversationId: "894a98ce-491f-47d8-af82-ad2f55b667e7" },
+        },
+      };
+
+      expect(resolveBrowserResumeConversationUrl(metadata)).toBeNull();
+    }
+  });
+
   test("derives a resume URL from tabUrl", () => {
     const metadata: SessionMetadata = {
       ...baseMetadata,

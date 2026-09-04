@@ -1,4 +1,5 @@
 import { InvalidArgumentError, type Command } from "commander";
+import { perplexityAliasToModelId } from "../perplexity-web/models.js";
 import { parseDuration } from "../duration.js";
 import path from "node:path";
 import fg from "fast-glob";
@@ -211,6 +212,16 @@ export function parseDurationOption(value: string | undefined, label: string): n
   return parsed;
 }
 
+/**
+ * Exact Perplexity aliases are browser-only. Matching is exact so unqualified
+ * custom ids such as `perplexity-labs` keep reaching the custom-model passthrough,
+ * and provider-qualified ids such as `perplexity/sonar-pro` stay OpenRouter models
+ * (those are handled earlier by the slash passthrough anyway).
+ */
+function perplexityAlias(normalized: string): ModelName | null {
+  return perplexityAliasToModelId(normalized);
+}
+
 function isGeminiDeepThinkAlias(normalized: string): boolean {
   return (
     (normalized.includes("gemini") && normalized.includes("deep")) ||
@@ -286,6 +297,14 @@ export function resolveApiModel(modelValue: string): ModelName {
       "Gemini Deep Think is browser-only today. Use --engine browser --model gemini-3-deep-think.",
     );
   }
+  // Browser-only, but the engine is not known here (this runs before the engine
+  // branch), so normalize the id and let the engine-aware check in runOptions
+  // reject an API run. Provider-qualified `perplexity/...` ids returned earlier
+  // by the slash passthrough stay OpenRouter models.
+  const perplexityApiAlias = perplexityAlias(normalized);
+  if (perplexityApiAlias) {
+    return perplexityApiAlias as ModelName;
+  }
   if (normalized.includes("gemini")) {
     if (normalized.includes("3.5") && normalized.includes("flash")) {
       return "gemini-3.5-flash";
@@ -348,6 +367,16 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   }
   if (isGeminiDeepThinkAlias(normalized)) {
     return "gemini-3-pro-deep-think" as ModelName;
+  }
+  const perplexityLabelAlias = perplexityAlias(normalized);
+  if (perplexityLabelAlias) {
+    return perplexityLabelAlias as ModelName;
+  }
+  if (normalized.startsWith("perplexity")) {
+    // An unrecognized perplexity-* id is a custom model, not a browser alias. Keep
+    // it verbatim so the browser gate rejects it by name instead of letting it fall
+    // through to the GPT label heuristics below.
+    return normalized as ModelName;
   }
   if (normalized.includes("gemini")) {
     if (normalized.includes("3.5") && normalized.includes("flash")) {
