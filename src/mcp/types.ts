@@ -36,6 +36,7 @@ export const consultInputSchema = z
     browserKeepBrowser: z.boolean().optional(),
     generateImage: z.string().optional(),
     outputPath: z.string().optional(),
+    waitForCompletion: z.boolean().optional(),
     dryRun: z.boolean().optional(),
     search: z.boolean().optional(),
     slug: z.string().optional(),
@@ -53,3 +54,12 @@ export const sessionsInputSchema = z.object({
 });
 
 export type SessionsInput = z.infer<typeof sessionsInputSchema>;
+
+export const waitInputSchema = z
+  .object({
+    id: z.string().min(1, "Session id is required."),
+    timeoutMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export type WaitInput = z.infer<typeof waitInputSchema>;

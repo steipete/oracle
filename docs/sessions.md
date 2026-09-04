@@ -74,6 +74,8 @@ oracle --wait --model gpt-5.5-pro -p "Long architecture review" --file "src/**"
 
 For API runs, `--wait` executes the request in the foreground. Local Pro browser runs use a detached worker even with `--wait`, while the original CLI stays attached to the session log. This lets the browser worker capture and save the answer if the foreground CLI exits unexpectedly. Pressing Ctrl-C still cancels the worker and exits with code 130.
 
+MCP callers can make the same ownership split explicit for any local run: call `consult` with `waitForCompletion:false`, then call `wait` with the returned session id. `wait.timeoutMs` bounds only the caller's wait; timeout, request cancellation, or MCP transport closure does not cancel the detached worker. Omit the timeout to wait until a terminal status, or use `0` for an immediate snapshot.
+
 For browser runs, ChatGPT sometimes redirects mid-page-load. The auto-reattach flags poll the existing tab without manual intervention:
 
 ```bash

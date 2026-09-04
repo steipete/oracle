@@ -493,9 +493,41 @@ async function writeSessionMetadataFile(
       encoding: "utf8",
       mode: 0o600,
     });
-    await fs.rename(temporaryPath, targetPath);
+    await renameSessionMetadataFile(temporaryPath, targetPath);
   } finally {
     await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+}
+
+const METADATA_RENAME_RETRY_DELAYS_MS = [10, 25, 50, 100, 200, 400, 800] as const;
+const RETRIABLE_METADATA_RENAME_CODES = new Set(["EACCES", "EBUSY", "EPERM"]);
+
+function isRetriableMetadataRenameError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    RETRIABLE_METADATA_RENAME_CODES.has(error.code)
+  );
+}
+
+async function renameSessionMetadataFile(temporaryPath: string, targetPath: string): Promise<void> {
+  for (const delayMs of [0, ...METADATA_RENAME_RETRY_DELAYS_MS]) {
+    if (delayMs > 0) {
+      await wait(delayMs);
+    }
+    try {
+      await fs.rename(temporaryPath, targetPath);
+      return;
+    } catch (error) {
+      if (
+        !isRetriableMetadataRenameError(error) ||
+        delayMs === METADATA_RENAME_RETRY_DELAYS_MS.at(-1)
+      ) {
+        throw error;
+      }
+    }
   }
 }
 

@@ -14,7 +14,10 @@ import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js"
 import { createRemoteBrowserExecutor } from "../../remote/client.js";
 import type { BrowserSessionRunnerDeps } from "../../browser/sessionRunner.js";
 
-async function readSessionLogTail(sessionId: string, maxBytes: number): Promise<string | null> {
+export async function readSessionLogTail(
+  sessionId: string,
+  maxBytes: number,
+): Promise<string | null> {
   try {
     const log = await sessionStore.readLog(sessionId);
     if (log.length <= maxBytes) {
@@ -40,6 +43,8 @@ import {
 import type { BrowserModelStrategy } from "../../browser/types.js";
 import { normalizeThinkingTimeLevel } from "../../oracle/thinkingTime.js";
 import type { ThinkingTimeLevel } from "../../oracle/types.js";
+import { launchDetachedSession } from "../../cli/detachedSession.js";
+import { buildSessionLifecycle } from "../../cli/sessionLifecycle.js";
 
 // Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
 const consultInputShape = {
@@ -135,6 +140,12 @@ const consultInputShape = {
     .describe(
       "Browser-only image output fallback path, mirroring the CLI --output option for image operations.",
     ),
+  waitForCompletion: z
+    .boolean()
+    .optional()
+    .describe(
+      "When false, start the Oracle run in a detached worker and return its sessionId immediately. Use the wait tool to block for completion without agent-side polling. Defaults to true for compatibility.",
+    ),
   dryRun: z
     .boolean()
     .optional()
@@ -151,7 +162,7 @@ const consultInputShape = {
     .describe("Optional human-friendly session id (used for later `oracle sessions` lookups)."),
 } satisfies z.ZodRawShape;
 
-const consultModelSummaryShape = z.object({
+export const consultModelSummaryShape = z.object({
   model: z.string(),
   status: z.string(),
   startedAt: z.string().optional(),
@@ -181,7 +192,7 @@ const consultModelSummaryShape = z.object({
   logPath: z.string().optional(),
 });
 
-const consultArtifactSummaryShape = z.object({
+export const consultArtifactSummaryShape = z.object({
   kind: z.enum(["transcript", "deep-research-report", "image", "file"]),
   path: z.string(),
   label: z.string().optional(),
@@ -189,7 +200,7 @@ const consultArtifactSummaryShape = z.object({
   sizeBytes: z.number().optional(),
 });
 
-const consultImageSummaryShape = consultArtifactSummaryShape.extend({
+export const consultImageSummaryShape = consultArtifactSummaryShape.extend({
   kind: z.literal("image"),
   alt: z.string().optional(),
   width: z.number().optional(),
@@ -231,6 +242,7 @@ export const consultOutputShape = {
   models: z.array(consultModelSummaryShape).optional(),
   artifacts: z.array(consultArtifactSummaryShape).optional(),
   images: z.array(consultImageSummaryShape).optional(),
+  detached: z.boolean().optional(),
 } satisfies z.ZodRawShape;
 
 export type ConsultModelSummary = z.infer<typeof consultModelSummaryShape>;
@@ -508,7 +520,13 @@ type McpLoggingServer = Pick<McpServer["server"], "sendLoggingMessage">;
 
 export async function runConsultTool(
   input: unknown,
-  { server }: { server: McpLoggingServer },
+  {
+    server,
+    launchDetached = launchDetachedSession,
+  }: {
+    server: McpLoggingServer;
+    launchDetached?: typeof launchDetachedSession;
+  },
 ): Promise<CallToolResult> {
   const textContent = (text: string) => [{ type: "text" as const, text }];
   let parsedInput;
@@ -539,6 +557,7 @@ export async function runConsultTool(
     browserKeepBrowser,
     generateImage,
     outputPath,
+    waitForCompletion = true,
     dryRun,
     slug,
   } = parsedInput;
@@ -589,7 +608,6 @@ export async function runConsultTool(
       ),
     };
   }
-
   let browserConfig: BrowserSessionConfig | undefined;
   if (resolvedEngine === "browser") {
     browserConfig = buildConsultBrowserConfig({
@@ -640,6 +658,23 @@ export async function runConsultTool(
     };
   }
 
+  if (!waitForCompletion && resolvedEngine === "browser" && resolvedRemote.host) {
+    return {
+      isError: true,
+      content: textContent(
+        "Detached MCP consults are not supported with a remote browser service yet. Keep waitForCompletion:true for this run.",
+      ),
+    };
+  }
+  if (!waitForCompletion && process.env.ORACLE_NO_DETACH === "1") {
+    return {
+      isError: true,
+      content: textContent(
+        "Detached MCP consults are disabled by ORACLE_NO_DETACH=1. Remove it or keep waitForCompletion:true.",
+      ),
+    };
+  }
+
   const browserGuard = ensureBrowserAvailable(resolvedEngine, {
     remoteHost: resolvedRemote.host,
   });
@@ -681,11 +716,63 @@ export async function runConsultTool(
       mode: resolvedEngine,
       slug,
       browserConfig,
-      waitPreference: true,
+      waitPreference: waitForCompletion,
     },
     cwd,
     notifications,
   );
+
+  if (!waitForCompletion) {
+    try {
+      await launchDetached({
+        sessionId: sessionMeta.id,
+        prepare: async (workerPid) => {
+          const lifecycle = buildSessionLifecycle({
+            engine: resolvedEngine,
+            detached: true,
+            workerPid,
+            reattachCommand: `oracle session ${sessionMeta.id}`,
+          });
+          await sessionStore.updateSession(sessionMeta.id, {
+            status: "running",
+            startedAt: new Date().toISOString(),
+            lifecycle,
+          });
+        },
+      });
+      const started = (await sessionStore.readSession(sessionMeta.id)) ?? sessionMeta;
+      const summary = `Session ${sessionMeta.id} (${started.status}; detached)`;
+      return {
+        content: textContent(
+          `${summary}\nUse the wait tool with id=${JSON.stringify(sessionMeta.id)} to wait without polling.`,
+        ),
+        structuredContent: {
+          sessionId: sessionMeta.id,
+          status: started.status,
+          output: "",
+          models: summarizeModelRunsForConsult(started.models),
+          artifacts: summarizeArtifactsForConsult(started.artifacts),
+          images: summarizeImageArtifactsForConsult(started.artifacts),
+          detached: true,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await sessionStore
+        .updateSession(sessionMeta.id, {
+          status: "error",
+          completedAt: new Date().toISOString(),
+          errorMessage: message,
+          response: { status: "error" },
+          error: { category: "internal", message },
+        })
+        .catch(() => undefined);
+      return {
+        isError: true,
+        content: textContent(`Unable to start detached session ${sessionMeta.id}: ${message}`),
+      };
+    }
+  }
 
   const logWriter = sessionStore.createLogWriter(sessionMeta.id);
   // Stream logs to both the session log and MCP logging notifications, but avoid buffering in memory
@@ -761,7 +848,7 @@ export function registerConsultTool(server: McpServer): void {
     {
       title: "Run an oracle session",
       description:
-        'Run an Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. Browser GPT-5.5 Pro consults can take many minutes; use `dryRun:true` first when configuring an agent and inspect `sessions`/`oracle status` before retrying. Browser manual-login uses a private Oracle Chrome profile separate from the user\'s normal Chrome; dry-run output includes first-time setup guidance when that path is active. For browser-based image/file uploads, set `browserAttachments:"always"`. For ChatGPT image generation, set `generateImage` to enable the same image wait/download path as CLI --generate-image and read returned paths from `images`. Browser consults can include `browserFollowUps` for a multi-turn ChatGPT review in one conversation. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
+        'Run an Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. Browser GPT-5.5 Pro consults can take many minutes; set `waitForCompletion:false` to return a durable sessionId immediately, then use `wait` to block without agent-side polling. Use `dryRun:true` first when configuring an agent and inspect `sessions`/`oracle status` before retrying. Browser manual-login uses a private Oracle Chrome profile separate from the user\'s normal Chrome; dry-run output includes first-time setup guidance when that path is active. For browser-based image/file uploads, set `browserAttachments:"always"`. For ChatGPT image generation, set `generateImage` to enable the same image wait/download path as CLI --generate-image and read returned paths from `images`. Browser consults can include `browserFollowUps` for a multi-turn ChatGPT review in one conversation. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
       // Cast to any to satisfy SDK typings across differing Zod versions.
       inputSchema: consultInputShape,
       outputSchema: consultOutputShape,

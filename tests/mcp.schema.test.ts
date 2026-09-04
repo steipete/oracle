@@ -86,6 +86,7 @@ describe("oracle-mcp schemas", () => {
     if (!client) throw new Error("MCP client not connected");
     const { tools } = await client.listTools({}, { timeout: 10_000 });
     expect(tools.length).toBeGreaterThan(0);
+    expect(tools.map((tool) => tool.name)).toContain("wait");
     for (const tool of tools) {
       for (const schema of [tool.inputSchema, tool.outputSchema]) {
         if (!schema) continue;

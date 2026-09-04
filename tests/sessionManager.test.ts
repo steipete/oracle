@@ -11,6 +11,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { setOracleHomeDirOverrideForTest } from "../src/oracleHome.js";
@@ -225,6 +226,35 @@ describe("session lifecycle", () => {
     const updated = await sessionModule.readSessionMetadata(meta.id);
     expect(updated?.status).toBe("complete");
     expect(updated?.promptPreview).toBe("value");
+    const sessionFiles = await readdir(path.join(sessionModule.getSessionsDir(), meta.id));
+    expect(sessionFiles.filter((name) => name.endsWith(".tmp"))).toEqual([]);
+  });
+
+  test("retries transient metadata rename failures without leaving temporary files", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Retry metadata rename", model: "gpt-5.2-pro" },
+      "/tmp/cwd",
+    );
+    const originalRename = fs.rename.bind(fs);
+    let attempts = 0;
+    const renameSpy = vi.spyOn(fs, "rename").mockImplementation(async (source, target) => {
+      attempts += 1;
+      if (attempts <= 2) {
+        throw Object.assign(new Error("transient Windows metadata lock"), { code: "EPERM" });
+      }
+      return originalRename(source, target);
+    });
+
+    try {
+      await sessionModule.updateSessionMetadata(meta.id, { promptPreview: "retry succeeded" });
+    } finally {
+      renameSpy.mockRestore();
+    }
+
+    expect(attempts).toBe(3);
+    expect((await sessionModule.readSessionMetadata(meta.id))?.promptPreview).toBe(
+      "retry succeeded",
+    );
     const sessionFiles = await readdir(path.join(sessionModule.getSessionsDir(), meta.id));
     expect(sessionFiles.filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });

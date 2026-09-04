@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import "dotenv/config";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
@@ -52,6 +51,7 @@ import {
 import { copyToClipboard } from "../src/cli/clipboard.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
 import { shouldDetachSession, stopDetachedWorker } from "../src/cli/detach.js";
+import { launchDetachedSession } from "../src/cli/detachedSession.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
@@ -2392,14 +2392,19 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   });
   const workerPid = !detachAllowed
     ? undefined
-    : await launchDetachedSession(sessionMeta.id, async (pid) => {
-        lifecycle = buildSessionLifecycle({
-          engine,
-          detached: true,
-          workerPid: pid,
-          reattachCommand: `oracle session ${sessionMeta.id}`,
-        });
-        await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+    : await launchDetachedSession({
+        sessionId: sessionMeta.id,
+        cliEntrypoint: CLI_ENTRYPOINT,
+        env: buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionMeta.id),
+        prepare: async (pid) => {
+          lifecycle = buildSessionLifecycle({
+            engine,
+            detached: true,
+            workerPid: pid,
+            reattachCommand: `oracle session ${sessionMeta.id}`,
+          });
+          await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+        },
       }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(
@@ -2513,44 +2518,6 @@ async function runInteractiveSession(
   } finally {
     stream.end();
   }
-}
-
-async function launchDetachedSession(
-  sessionId: string,
-  prepare: (pid: number) => Promise<void>,
-): Promise<number> {
-  return new Promise((resolve, reject) => {
-    try {
-      const args = ["--", CLI_ENTRYPOINT, "--exec-session", sessionId];
-      const env = {
-        ...buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionId),
-        ORACLE_DETACHED_START_GATE: "1",
-      };
-      const child = spawn(process.execPath, args, {
-        detached: true,
-        stdio: ["pipe", "ignore", "ignore"],
-        env,
-      });
-      child.once("error", reject);
-      child.once("spawn", async () => {
-        if (child.pid === undefined) {
-          reject(new Error("Detached session worker started without a process ID."));
-          return;
-        }
-        try {
-          await prepare(child.pid);
-          child.stdin.end("ready\n");
-          child.unref();
-          resolve(child.pid);
-        } catch (error) {
-          child.kill();
-          reject(error);
-        }
-      });
-    } catch (error) {
-      reject(error);
-    }
-  });
 }
 
 async function waitForDetachedStartGate(): Promise<void> {
@@ -2746,14 +2713,19 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   });
   const workerPid = !detachAllowed
     ? undefined
-    : await launchDetachedSession(sessionMeta.id, async (pid) => {
-        lifecycle = buildSessionLifecycle({
-          engine,
-          detached: true,
-          workerPid: pid,
-          reattachCommand: `oracle session ${sessionMeta.id}`,
-        });
-        await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+    : await launchDetachedSession({
+        sessionId: sessionMeta.id,
+        cliEntrypoint: CLI_ENTRYPOINT,
+        env: buildDetachedPerfTraceEnv(process.env, perfTraceArgs.value, sessionMeta.id),
+        prepare: async (pid) => {
+          lifecycle = buildSessionLifecycle({
+            engine,
+            detached: true,
+            workerPid: pid,
+            reattachCommand: `oracle session ${sessionMeta.id}`,
+          });
+          await sessionStore.updateSession(sessionMeta.id, { lifecycle });
+        },
       }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         console.log(

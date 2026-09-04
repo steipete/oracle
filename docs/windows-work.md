@@ -8,6 +8,8 @@ Read this file whenever you're working from Windows and add new findings so the 
 - browser-tools binary: not built in `agent-scripts/bin` on Windows; `pnpm tsx scripts/browser-tools.ts` also fails there (no package manifest). Use a macOS-built binary or run from macOS if you need it.
 - Prefer PowerShell + pnpm directly; watch for CRLF warnings when touching tracked files.
 - WSL browser launch host detection: a systemd-resolved stub such as `nameserver 127.0.0.53` is guest loopback, not the Windows host. Keep resolver-derived non-loopback hosts for Windows Chrome compatibility, but route resolver-derived `127/8` values to the standard local Chrome launcher.
+- Detached session workers launched by either CLI or MCP must use the shared launcher with `windowsHide: true`; a bounded MCP `wait` releases only the waiter and leaves that hidden worker running.
+- A waiter can read `meta.json` while the detached worker atomically replaces it. Windows may transiently reject that replacement with `EPERM`, `EBUSY`, or `EACCES`; retry only those lock-like errors with a short bounded backoff.
 
 Future Windows gotchas belong here. Update this doc when you learn something new.
 

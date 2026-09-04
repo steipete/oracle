@@ -1,9 +1,9 @@
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import type { SessionModelRun } from "../../src/sessionStore.js";
+import { sessionStore, type SessionModelRun } from "../../src/sessionStore.js";
 import { applyConsultPreset } from "../../src/mcp/consultPresets.ts";
 import { consultInputSchema } from "../../src/mcp/types.ts";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
@@ -12,12 +12,97 @@ import {
   buildConsultDryRunResolved,
   formatConsultDryRunResolved,
   registerConsultTool,
+  runConsultTool,
   summarizeArtifactsForConsult,
   summarizeImageArtifactsForConsult,
   summarizeModelRunsForConsult,
 } from "../../src/mcp/tools/consult.ts";
 
 describe("summarizeModelRunsForConsult", () => {
+  test("starts a detached consult and returns a durable session id", async () => {
+    const home = mkdtempSync(path.join(tmpdir(), "oracle-home-"));
+    setOracleHomeDirOverrideForTest(home);
+    const previousNoDetach = process.env.ORACLE_NO_DETACH;
+    delete process.env.ORACLE_NO_DETACH;
+    try {
+      const launchDetached = vi.fn(
+        async ({ prepare }: { prepare: (pid: number) => Promise<void> }) => {
+          await prepare(4242);
+          return 4242;
+        },
+      );
+      const result = await runConsultTool(
+        {
+          prompt: "review this plan",
+          files: [],
+          model: "gpt-5.4",
+          engine: "api",
+          waitForCompletion: false,
+        },
+        {
+          server: { sendLoggingMessage: vi.fn(async () => undefined) },
+          launchDetached: launchDetached as never,
+        },
+      );
+      const structured = result.structuredContent as {
+        sessionId?: string;
+        status?: string;
+        detached?: boolean;
+      };
+
+      expect(result.isError).not.toBe(true);
+      expect(structured).toMatchObject({ status: "running", detached: true });
+      expect(structured.sessionId).toBeTruthy();
+      expect(launchDetached).toHaveBeenCalledTimes(1);
+
+      const stored = await sessionStore.readSession(structured.sessionId!);
+      expect(stored).toMatchObject({
+        status: "running",
+        lifecycle: {
+          execution: "background",
+          attached: false,
+          detached: true,
+          workerPid: 4242,
+        },
+        options: { waitPreference: false },
+      });
+    } finally {
+      if (previousNoDetach === undefined) delete process.env.ORACLE_NO_DETACH;
+      else process.env.ORACLE_NO_DETACH = previousNoDetach;
+      setOracleHomeDirOverrideForTest(null);
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps detached dry-runs non-mutating when detaching is disabled", async () => {
+    const previousNoDetach = process.env.ORACLE_NO_DETACH;
+    process.env.ORACLE_NO_DETACH = "1";
+    try {
+      const launchDetached = vi.fn();
+      const result = await runConsultTool(
+        {
+          prompt: "preview a long run",
+          files: [],
+          model: "gpt-5.4",
+          engine: "api",
+          waitForCompletion: false,
+          dryRun: true,
+        },
+        {
+          server: { sendLoggingMessage: vi.fn(async () => undefined) },
+          launchDetached: launchDetached as never,
+        },
+      );
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ status: "dry-run", dryRun: true });
+      expect(launchDetached).not.toHaveBeenCalled();
+    } finally {
+      if (previousNoDetach === undefined) delete process.env.ORACLE_NO_DETACH;
+      else process.env.ORACLE_NO_DETACH = previousNoDetach;
+    }
+  });
+
   test("applies the ChatGPT Pro Heavy consult preset as overridable defaults", () => {
     expect(
       applyConsultPreset({
