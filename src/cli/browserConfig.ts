@@ -150,16 +150,20 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
   return model;
 }
 
-// gpt-6, gpt-6-astra, gpt-6-pro (and "latest"): ChatGPT's "Latest" model. The -pro alias also
-// selects the Pro power tier by default (see resolveDefaultBrowserThinkingTime).
+// Documented spellings only: gpt-6, gpt-6-astra, gpt-6-pro (plus their label forms such as
+// "GPT-6 Pro") and "latest" map to ChatGPT's "Latest" model. Any other gpt-6-* id (gpt-6-codex,
+// gpt-6-custom, ...) is not an alias and must pass through unchanged for custom/OpenRouter use.
+const GPT6_ALIAS_PATTERN = /^gpt[-_ ]?6(?:[-_ ](?:astra|pro))?$/;
+const GPT6_PRO_ALIAS_PATTERN = /^gpt[-_ ]?6[-_ ]pro$/;
+
+// The -pro alias also selects the Pro power tier by default (see resolveDefaultBrowserThinkingTime).
 export function isGpt6Alias(model: string | undefined): boolean {
   const normalized = model?.trim().toLowerCase() ?? "";
-  return normalized === "latest" || /^gpt[-_ ]?6(?![0-9.])/.test(normalized);
+  return normalized === "latest" || GPT6_ALIAS_PATTERN.test(normalized);
 }
 
 export function isGpt6ProAlias(model: string | undefined): boolean {
-  const normalized = model?.trim().toLowerCase() ?? "";
-  return isGpt6Alias(normalized) && /(^|[-_ ])pro$/.test(normalized);
+  return GPT6_PRO_ALIAS_PATTERN.test(model?.trim().toLowerCase() ?? "");
 }
 
 export function isCurrentChatGptProAlias(model: string | undefined): boolean {

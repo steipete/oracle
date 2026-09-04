@@ -232,6 +232,10 @@ function buildModelSelectionExpression(
     const hasToken = (value, token) => normalizeText(value).split(' ').includes(token);
     // Normalize every candidate token to keep fuzzy matching deterministic.
     const normalizedTarget = normalizeText(PRIMARY_LABEL);
+    // "Latest" (GPT-6 since 2026-09) is a radio in the advanced view whose composer pill reads
+    // "6 Pro" / "6 High"…, while GPT-5.6 Sol's reads "5.6 Pro". Declared up front: getResolvedLabel
+    // runs on the picker-less path before the selection helpers below are initialized.
+    const targetIsLatest = normalizedTarget === 'latest';
     const normalizedTokens = Array.from(new Set([normalizedTarget, ...LABEL_TOKENS]))
       .map((token) => normalizeText(token))
       .filter(Boolean);
@@ -733,11 +737,9 @@ function buildModelSelectionExpression(
       }
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
     };
-    // "Latest" (GPT-6 since 2026-09) is a radio in the advanced view whose composer pill reads
-    // "6 Pro" / "6 High"…, while GPT-5.6 Sol's reads "5.6 Pro". With the picker closed the only
-    // evidence is that pill, so a version-less "latest" target must be decided on it: the blank
-    // composer signal would otherwise pass as "already selected" while Sol is active.
-    const targetIsLatest = normalizedTarget === 'latest';
+    // With the picker closed the only evidence for "Latest" is the composer pill, so a version-less
+    // "latest" target must be decided on it: the blank composer signal would otherwise pass as
+    // "already selected" while GPT-5.6 Sol is active.
     const latestButtonSelected = () => {
       const label = normalizeText(getButtonLabel());
       return /^(chatgpt |gpt )?6(?![0-9 .]*[0-9])/.test(label) && !/(^| )5 6/.test(label);

@@ -1304,6 +1304,20 @@ describe("browser model selection matchers", () => {
     ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
   });
 
+  it("accepts a GPT-6 composer pill as the selected Latest model", () => {
+    expect(evaluateImmediateModelSelectionExpression("Latest", "6 Pro")).toEqual({
+      status: "already-selected",
+      label: "Latest",
+    });
+  });
+
+  it("does not report Latest as selected while GPT-5.6 Sol is the active model", () => {
+    expect(evaluateImmediateModelSelectionExpression("Latest", "5.6 Pro")).toBeInstanceOf(Promise);
+    expect(evaluateImmediateModelSelectionExpression("Latest", "GPT-5.6 Sol")).toBeInstanceOf(
+      Promise,
+    );
+  });
+
   it("includes real pointer coordinates when opening version submenus", () => {
     const expression = buildModelSelectionExpressionForTest("GPT-5.6 Sol");
     expect(expression).toContain("rect.x + rect.width / 2");

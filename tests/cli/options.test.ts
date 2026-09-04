@@ -270,6 +270,24 @@ describe("resolveApiModel", () => {
     );
   });
 
+  test("maps the documented GPT-6 aliases to the gpt-6-astra API model", () => {
+    expect(resolveApiModel("gpt-6")).toBe("gpt-6-astra");
+    expect(resolveApiModel("gpt-6-astra")).toBe("gpt-6-astra");
+    expect(resolveApiModel("latest")).toBe("gpt-6-astra");
+    expect(resolveApiModel("GPT-6 Pro")).toBe("gpt-6-astra");
+    // Browser-only tier alias: the API side runs gpt-6-astra.
+    expect(resolveApiModel("gpt-6-pro")).toBe("gpt-6-astra");
+  });
+
+  test("preserves unknown gpt-6-* ids verbatim (OpenRouter/custom)", () => {
+    expect(resolveApiModel("gpt-6-custom")).toBe("gpt-6-custom");
+    expect(resolveApiModel("gpt-6-astra-mini")).toBe("gpt-6-astra-mini");
+    expect(resolveApiModel("gpt-6.1")).toBe("gpt-6.1");
+    expect(resolveApiModel("openai/gpt-6-astra")).toBe("openai/gpt-6-astra");
+    // Not intercepted as an alias either: the pre-existing codex heuristic still owns this id.
+    expect(resolveApiModel("gpt-6-codex")).toBe("gpt-5.1-codex");
+  });
+
   test("passes through unknown names (OpenRouter/custom)", () => {
     expect(resolveApiModel("instant")).toBe("instant");
     expect(resolveApiModel("openai/gpt-5.4")).toBe("openai/gpt-5.4");
@@ -297,6 +315,24 @@ describe("inferModelFromLabel", () => {
   test("infers the browser GPT-5.6 Sol family", () => {
     expect(inferModelFromLabel("GPT-5.6 Sol")).toBe("gpt-5.6-sol");
     expect(inferModelFromLabel("ChatGPT 5_6")).toBe("gpt-5.6");
+  });
+
+  test("infers the documented GPT-6 aliases and keeps the browser-only Pro alias", () => {
+    expect(inferModelFromLabel("gpt-6")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("gpt-6-astra")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("GPT-6 Astra")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("latest")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("Latest")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("gpt-6-pro")).toBe("gpt-6-pro");
+    expect(inferModelFromLabel("GPT-6 Pro")).toBe("gpt-6-pro");
+  });
+
+  test("does not treat unknown gpt-6-* ids as the Latest alias", () => {
+    // Undeclared suffixes are not GPT-6 aliases: they follow the pre-existing label heuristics
+    // (codex -> gpt-5.1-codex, otherwise the generic fallback) instead of becoming gpt-6-astra.
+    expect(inferModelFromLabel("gpt-6-codex")).toBe("gpt-5.1-codex");
+    expect(inferModelFromLabel("gpt-6-custom")).not.toMatch(/^gpt-6/);
+    expect(inferModelFromLabel("gpt-6-astra-mini")).not.toMatch(/^gpt-6/);
   });
 
   test("does not reserve unrelated slashless API model ids containing 5.6", () => {
