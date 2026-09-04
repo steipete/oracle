@@ -18,9 +18,19 @@ and run the live API suite before shipping major transport changes.
 
 ### Attachment evidence and single-send regression (no login)
 
-Run `pnpm build && node scripts/attachment-send-proof.mjs` with Chrome installed (`CHROME_PATH` can select Chromium on Linux). This uses a disposable profile and a controlled local page, not a signed-in consultation. It exercises local and remote three-file uploads, a filename-less JPEG with a consumed FileList, sidebar-count rejection, byte integrity, delayed commitment, and offscreen button recovery. Each send must produce exactly one trusted click, zero Enter events, and one committed turn. The Linux Chrome CI job runs it too.
+Run `pnpm build && node scripts/attachment-send-proof.mjs` with Chrome installed (`CHROME_PATH` can select Chromium on Linux). This uses a disposable profile and a controlled local page, not a signed-in consultation. It exercises local and remote three-file uploads, a filename-less JPEG with a consumed FileList, sidebar-count rejection, byte integrity, delayed commitment, exact-button keyboard activation for attachment sends, and offscreen button recovery. Each send must produce exactly one trusted button activation, zero editor-Enter submissions, and one committed turn. The Linux Chrome CI job runs it too.
 
 The disposable profile and fixtures live in a temporary, non-hidden directory under your home directory and are removed afterward. This lets Snap Chromium read the same files as Node instead of looking in its private `/tmp`. An optional directory argument retains the fixtures for manual testing; that directory must also be readable by the selected browser.
+
+### Signed-in attachment / Work-mode guard
+
+Run this after changing attachment-menu activation or Chat/Work detection. Use a signed-in persistent profile, one small attachment, and `--browser-keep-browser`; do not use **Answer now** to complete the response.
+
+1. Record the newest sidebar Chat and Work entries, then start an attachment consultation from the Chat landing page.
+2. Verify the prompt becomes a committed user turn in an ordinary `/c/<id>` Chat conversation. A project rewrite such as `/c/<id>` to `/g/<project>/.../c/<id>` is allowed only when the conversation id is unchanged. A delayed Work/conversation navigation or switch between non-conversation landing/project paths injected after upload readiness but before final dispatch must fail without keyboard or mouse send events; query, hash, and trailing-slash-only rewrites remain allowed.
+3. Verify no new Work task was created, the session records `promptSubmitted=true`, and the attachment appears in the committed user turn.
+4. Repeat from an already selected Work composer. Oracle must fail before file assignment or prompt submission with an attachment Work-mode error.
+5. For image generation, also require terminal completion and decode the downloaded image from the configured output path; `running`, a visible upload, or an enabled send button is not completion evidence.
 
 ### Quick browser port smoke
 

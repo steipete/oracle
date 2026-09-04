@@ -13,7 +13,7 @@ import {
 } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
-import { buildAttachmentNamePattern } from "./attachments.js";
+import { assertComposerPlusStayedInPlace, buildAttachmentNamePattern } from "./attachments.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 import { buildAttachmentEvidenceExpression } from "./attachmentEvidence.js";
@@ -25,6 +25,12 @@ const ENTER_KEY_EVENT = {
   nativeVirtualKeyCode: 13,
 } as const;
 const ENTER_KEY_TEXT = "\r";
+const ESCAPE_KEY_EVENT = {
+  key: "Escape",
+  code: "Escape",
+  windowsVirtualKeyCode: 27,
+  nativeVirtualKeyCode: 27,
+} as const;
 
 export interface AttachmentReadyExpectation {
   name: string;
@@ -39,6 +45,7 @@ export async function submitPrompt(
     input: ChromeClient["Input"];
     page?: ChromeClient["Page"];
     attachmentNames?: AttachmentReadyInput[];
+    attachmentNavigationUrl?: string;
     baselineTurns?: number | null;
     inputTimeoutMs?: number | null;
     attachmentTimeoutMs?: number | null;
@@ -48,6 +55,16 @@ export async function submitPrompt(
   logger: BrowserLogger,
 ): Promise<number | null> {
   const { runtime, input } = deps;
+  const hasAttachments = Array.isArray(deps.attachmentNames) && deps.attachmentNames.length > 0;
+  if (hasAttachments && !deps.attachmentNavigationUrl) {
+    throw new BrowserAutomationError(
+      "Oracle cannot safely submit attachments without the pre-upload ChatGPT page identity.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-navigation-identity-unavailable",
+      },
+    );
+  }
 
   await waitForDomReady(runtime, logger, deps.inputTimeoutMs ?? undefined);
   const encodedPrompt = JSON.stringify(prompt);
@@ -223,12 +240,13 @@ export async function submitPrompt(
     deps?.attachmentNames,
     deps?.attachmentTimeoutMs,
     deps?.page,
+    deps?.attachmentNavigationUrl,
   );
   if (!clicked) {
     await dispatchEnterKey(input);
     logger("Submitted prompt via Enter key");
   } else {
-    logger("Clicked send button");
+    logger("Activated send button");
   }
   await deps.onPromptSubmitted?.();
 
@@ -551,8 +569,18 @@ async function attemptSendButton(
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
   Page?: ChromeClient["Page"],
+  attachmentNavigationUrl?: string,
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
+  if (needAttachment && !attachmentNavigationUrl) {
+    throw new BrowserAutomationError(
+      "Oracle cannot safely submit attachments without the pre-upload ChatGPT page identity.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-navigation-identity-unavailable",
+      },
+    );
+  }
   const script = `(() => {
     ${buildClickDispatcher()}
     const selectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
@@ -608,6 +636,7 @@ async function attemptSendButton(
   let previousPoint: { x: number; y: number } | undefined;
   let activated = false;
   let foundButton = false;
+  let attachmentMenuChecked = !needAttachment;
   while (Date.now() < deadline) {
     if (needAttachment) {
       const ready = await Runtime.evaluate({
@@ -618,6 +647,25 @@ async function attemptSendButton(
         await delay(150);
         continue;
       }
+    }
+    if (!attachmentMenuChecked) {
+      await activatePageForTrustedInput(Page, logger);
+      activated = true;
+      await dismissOpenComposerPlusMenu(Runtime, Input, logger);
+      attachmentMenuChecked = true;
+      previousPoint = undefined;
+      await delay(150);
+      continue;
+    }
+    if (needAttachment) {
+      if (
+        await activateExactAttachmentSendButton(Runtime, Input, logger, attachmentNavigationUrl)
+      ) {
+        return true;
+      }
+      previousPoint = undefined;
+      await delay(100);
+      continue;
     }
     // Activating the target can trigger a final compositor/layout pass. Do it before
     // measuring the button so the trusted click never uses stale coordinates.
@@ -661,7 +709,7 @@ async function attemptSendButton(
   }
   if (Array.isArray(attachmentNames) && attachmentNames.length > 0) {
     throw new BrowserAutomationError(
-      `Attachments never reached a clickable send button after ${Math.ceil(
+      `Attachments never reached the exact ready send button after ${Math.ceil(
         timeoutMs / 1000,
       )}s; tune --browser-attachment-timeout.`,
       {
@@ -679,6 +727,117 @@ async function attemptSendButton(
     });
   }
   return false;
+}
+
+async function activateExactAttachmentSendButton(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  logger?: BrowserLogger,
+  attachmentNavigationUrl?: string,
+): Promise<boolean> {
+  const probe = await Runtime.evaluate({
+    expression: `(() => {
+      const button = document.querySelector('button[data-testid="send-button"]');
+      if (!(button instanceof HTMLElement)) return { status: 'absent' };
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      const enabled = !button.hasAttribute('disabled') &&
+        button.getAttribute('aria-disabled') !== 'true' &&
+        button.getAttribute('data-disabled') !== 'true' &&
+        style.pointerEvents !== 'none' &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden';
+      if (rect.width <= 0 || rect.height <= 0 || !enabled) return { status: 'unavailable' };
+      button.focus({ preventScroll: true });
+      return { status: document.activeElement === button ? 'focused' : 'unavailable' };
+    })()`,
+    returnByValue: true,
+  });
+  const status = (probe?.result?.value as { status?: string } | undefined)?.status;
+  if (status !== "focused") {
+    return false;
+  }
+  if (!Input || typeof Input.dispatchKeyEvent !== "function") {
+    throw new BrowserAutomationError(
+      "ChatGPT's attachment send button is ready but Oracle cannot activate it safely.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-send-keyboard-unavailable",
+      },
+    );
+  }
+  if (attachmentNavigationUrl) {
+    await assertComposerPlusStayedInPlace(Runtime, attachmentNavigationUrl);
+  }
+  await Input.dispatchKeyEvent({
+    type: "keyDown",
+    ...ENTER_KEY_EVENT,
+    text: ENTER_KEY_TEXT,
+    unmodifiedText: ENTER_KEY_TEXT,
+  });
+  await Input.dispatchKeyEvent({ type: "keyUp", ...ENTER_KEY_EVENT });
+  logger?.("Activated exact attachment send button via keyboard");
+  return true;
+}
+
+async function dismissOpenComposerPlusMenu(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  logger?: BrowserLogger,
+): Promise<boolean> {
+  const probe = await Runtime.evaluate({
+    expression: `(() => {
+      const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+      const button = selectors
+        .map(selector => document.querySelector(selector))
+        .find(node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+      if (!(button instanceof HTMLElement)) return { status: 'absent' };
+      if (button.getAttribute('aria-expanded') !== 'true') return { status: 'closed' };
+      button.focus({ preventScroll: true });
+      return { status: 'open', focused: document.activeElement === button };
+    })()`,
+    returnByValue: true,
+  });
+  const status = (probe?.result?.value as { status?: string } | undefined)?.status;
+  if (status !== "open") {
+    return false;
+  }
+  if (!Input || typeof Input.dispatchKeyEvent !== "function") {
+    throw new BrowserAutomationError(
+      "ChatGPT's attachment menu is still open and Oracle cannot dismiss it safely before sending.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-menu-dismiss-unavailable",
+      },
+    );
+  }
+  await Input.dispatchKeyEvent({ type: "keyDown", ...ESCAPE_KEY_EVENT });
+  await Input.dispatchKeyEvent({ type: "keyUp", ...ESCAPE_KEY_EVENT });
+
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const state = await Runtime.evaluate({
+      expression: `(() => {
+        const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+        return !selectors.some(selector =>
+          document.querySelector(selector)?.getAttribute?.('aria-expanded') === 'true'
+        );
+      })()`,
+      returnByValue: true,
+    });
+    if (state?.result?.value === true) {
+      logger?.("Closed attachment menu before send");
+      return true;
+    }
+    await delay(50);
+  }
+  throw new BrowserAutomationError(
+    "ChatGPT's attachment menu did not close before send; prompt was left staged.",
+    {
+      stage: "submit-prompt",
+      code: "attachment-menu-stuck-open",
+    },
+  );
 }
 
 async function activatePageForTrustedInput(
@@ -922,7 +1081,9 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  activateExactAttachmentSendButton,
   attemptSendButton,
+  dismissOpenComposerPlusMenu,
   sendButtonTimeoutMs,
   verifyPromptCommitted,
 };

@@ -190,9 +190,17 @@ try {
     };
     const prompt =
       "Read the three attached public synthetic fixtures. Return each test-token-not-real marker.";
+    const attachmentNavigationUrl = await evaluate("location.href");
     const started = Date.now();
     const turns = await submitPrompt(
-      { runtime, input, page, attachmentNames: names, baselineTurns: 0 },
+      {
+        runtime,
+        input,
+        page,
+        attachmentNames: names,
+        attachmentNavigationUrl,
+        baselineTurns: 0,
+      },
       prompt,
       logger,
     );
@@ -213,14 +221,7 @@ try {
     assert.equal(state.commits, 1);
     assert.equal(state.scrolls, 0);
     assert.deepEqual(state.trusted, [true]);
-    assert.deepEqual(events, [
-      "activate",
-      "measure",
-      "measure",
-      "mouseMoved",
-      "mousePressed",
-      "mouseReleased",
-    ]);
+    assert.deepEqual(events, ["activate", "key:keyDown", "key:keyUp"]);
     assert.deepEqual(await evaluate(buildAttachmentEvidenceExpression(names)), [
       false,
       false,

@@ -4,7 +4,9 @@ import { INPUT_SELECTORS, SEND_BUTTON_SELECTORS, UPLOAD_STATUS_SELECTORS } from 
 import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
+import { BrowserAutomationError } from "../../oracle/errors.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
+import { conversationIdFromUrl } from "./navigation.js";
 import {
   beginAttachmentEvidence,
   confirmAttachmentEvidence,
@@ -34,6 +36,222 @@ export function buildAttachmentNamePattern(
     }
   }
   return new RegExp(`(?:^|[^${filenameChars}])${name}`, "iu");
+}
+
+export interface ComposerPlusActivationResult {
+  method: "trusted-keyboard" | "synthetic" | "unavailable";
+  startUrl: string;
+}
+
+type ComposerPlusProbe = {
+  status?: "focused" | "missing" | "work-selected";
+  startUrl?: string;
+  focused?: boolean;
+};
+
+export async function captureComposerNavigationUrl(
+  runtime: ChromeClient["Runtime"],
+): Promise<string> {
+  const result = await runtime.evaluate({
+    expression: "location.href",
+    returnByValue: true,
+  });
+  const url = result?.result?.value;
+  if (typeof url !== "string" || !url) {
+    throw new BrowserAutomationError(
+      "Oracle could not capture ChatGPT's page identity before attachment upload.",
+      {
+        stage: "upload-attachment",
+        code: "attachment-navigation-identity-unavailable",
+      },
+    );
+  }
+  return url;
+}
+
+export async function activateComposerPlus(
+  runtime: ChromeClient["Runtime"],
+  input?: ChromeClient["Input"],
+): Promise<ComposerPlusActivationResult> {
+  const probe = await Promise.resolve(
+    runtime.evaluate({
+      expression: `(() => {
+        const startUrl = location.href;
+        const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const isWorkLabel = value => ['work', '工作'].includes(normalize(value));
+        const selected = node =>
+          node?.getAttribute?.('aria-checked') === 'true' ||
+          node?.getAttribute?.('aria-selected') === 'true' ||
+          node?.getAttribute?.('aria-pressed') === 'true' ||
+          node?.getAttribute?.('data-state') === 'on' ||
+          node?.getAttribute?.('data-state') === 'active';
+        const workToggleSelected = Array.from(
+          document.querySelectorAll('button[role="radio"],button[role="tab"],button[aria-pressed]'),
+        ).some(node => isWorkLabel(node.textContent) && selected(node));
+        const prompt = document.querySelector('#prompt-textarea');
+        const fallbackPrompt = document.querySelector('textarea[name="prompt-textarea"]');
+        const placeholder = normalize(
+          prompt?.getAttribute?.('data-placeholder') ||
+          prompt?.getAttribute?.('placeholder') ||
+          fallbackPrompt?.getAttribute?.('placeholder'),
+        );
+        if (workToggleSelected || placeholder === 'work on anything') {
+          return { status: 'work-selected', startUrl };
+        }
+        const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+        for (const selector of selectors) {
+          const node = document.querySelector(selector);
+          if (!(node instanceof HTMLElement)) continue;
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          node.focus({ preventScroll: true });
+          return { status: 'focused', startUrl, focused: document.activeElement === node };
+        }
+        return { status: 'missing', startUrl };
+      })()`,
+      returnByValue: true,
+    }),
+  )
+    .then((result) => result?.result?.value as ComposerPlusProbe | undefined)
+    .catch(() => undefined);
+
+  const startUrl = typeof probe?.startUrl === "string" ? probe.startUrl : "";
+  if (probe?.status === "work-selected") {
+    throw new BrowserAutomationError(
+      "Oracle refused to open the attachment menu because ChatGPT is in Work mode.",
+      {
+        stage: "upload-attachment",
+        code: "attachment-control-work-mode",
+        startUrl,
+      },
+    );
+  }
+  if (probe?.status !== "focused") {
+    return { method: "unavailable", startUrl };
+  }
+
+  if (probe.focused && input && typeof input.dispatchKeyEvent === "function") {
+    try {
+      const enter = {
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+      } as const;
+      await input.dispatchKeyEvent({
+        type: "keyDown",
+        ...enter,
+        text: "\r",
+        unmodifiedText: "\r",
+      });
+      await input.dispatchKeyEvent({ type: "keyUp", ...enter });
+      return { method: "trusted-keyboard", startUrl };
+    } catch {
+      // Fall through to an exact-selector synthetic click. Never use page coordinates here.
+    }
+  }
+
+  const clicked = await Promise.resolve(
+    runtime.evaluate({
+      expression: `(() => {
+        const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+        for (const selector of selectors) {
+          const node = document.querySelector(selector);
+          if (!(node instanceof HTMLElement)) continue;
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) continue;
+          node.click();
+          return true;
+        }
+        return false;
+      })()`,
+      returnByValue: true,
+    }),
+  )
+    .then((result) => Boolean(result?.result?.value))
+    .catch(() => false);
+  return { method: clicked ? "synthetic" : "unavailable", startUrl };
+}
+
+export async function assertComposerPlusStayedInPlace(
+  runtime: ChromeClient["Runtime"],
+  startUrl: string,
+): Promise<void> {
+  const result = await runtime.evaluate({
+    expression: `(() => {
+      const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      const isWorkLabel = value => ['work', '工作'].includes(normalize(value));
+      const selected = node =>
+        node?.getAttribute?.('aria-checked') === 'true' ||
+        node?.getAttribute?.('aria-selected') === 'true' ||
+        node?.getAttribute?.('aria-pressed') === 'true' ||
+        node?.getAttribute?.('data-state') === 'on' ||
+        node?.getAttribute?.('data-state') === 'active';
+      const workToggleSelected = Array.from(
+        document.querySelectorAll('button[role="radio"],button[role="tab"],button[aria-pressed]'),
+      ).some(node => isWorkLabel(node.textContent) && selected(node));
+      const prompt = document.querySelector('#prompt-textarea');
+      const fallbackPrompt = document.querySelector('textarea[name="prompt-textarea"]');
+      const placeholder = normalize(
+        prompt?.getAttribute?.('data-placeholder') ||
+        prompt?.getAttribute?.('placeholder') ||
+        fallbackPrompt?.getAttribute?.('placeholder'),
+      );
+      return {
+        currentUrl: location.href,
+        workSelected: workToggleSelected || placeholder === 'work on anything',
+      };
+    })()`,
+    returnByValue: true,
+  });
+  const value = result?.result?.value as
+    | { currentUrl?: string; workSelected?: boolean }
+    | undefined;
+  const currentUrl = typeof value?.currentUrl === "string" ? value.currentUrl : "";
+  const startIdentity = composerNavigationIdentityFromUrl(startUrl);
+  const currentIdentity = composerNavigationIdentityFromUrl(currentUrl);
+  const unexpectedNavigation =
+    !startIdentity ||
+    !currentIdentity ||
+    startIdentity.origin !== currentIdentity.origin ||
+    (startIdentity.conversationId !== null
+      ? currentIdentity.conversationId !== startIdentity.conversationId
+      : currentIdentity.conversationId !== null ||
+        currentIdentity.landingPath !== startIdentity.landingPath);
+  if (value?.workSelected || unexpectedNavigation) {
+    throw new BrowserAutomationError(
+      "ChatGPT navigated to Work or another ChatGPT context during attachment preparation; upload/send was stopped before prompt submission.",
+      {
+        stage: "upload-attachment",
+        code: "attachment-control-unexpected-navigation",
+        startUrl,
+        currentUrl,
+        workSelected: Boolean(value?.workSelected),
+        startNavigationIdentity: startIdentity,
+        currentNavigationIdentity: currentIdentity,
+      },
+    );
+  }
+}
+
+interface ComposerNavigationIdentity {
+  origin: string;
+  conversationId: string | null;
+  landingPath: string | null;
+}
+
+function composerNavigationIdentityFromUrl(value: string): ComposerNavigationIdentity | null {
+  try {
+    const url = new URL(value);
+    const conversationId = conversationIdFromUrl(url.href);
+    return {
+      origin: url.origin.toLowerCase(),
+      conversationId,
+      landingPath: conversationId === null ? url.pathname.replace(/\/+$/, "") || "/" : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function uploadAttachmentFile(
@@ -331,71 +549,13 @@ export async function uploadAttachmentFile(
     };
   };
 
-  // New ChatGPT UI hides the real file input behind a composer "+" menu; click it pre-emptively.
-  // Learned: synthetic `.click()` is sometimes ignored (isTrusted checks). Prefer a CDP mouse click when possible.
-  const clickPlusTrusted = async (): Promise<boolean> => {
-    if (!input || typeof input.dispatchMouseEvent !== "function") return false;
-    const locate = await runtime
-      .evaluate({
-        expression: `(() => {
-          const selectors = [
-            '#composer-plus-btn',
-            'button[data-testid="composer-plus-btn"]',
-            '[data-testid*="plus"]',
-            'button[aria-label^="add" i]',
-            'button[aria-label^="upload" i]',
-          ];
-          for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            if (!(el instanceof HTMLElement)) continue;
-            const rect = el.getBoundingClientRect();
-            if (rect.width <= 0 || rect.height <= 0) continue;
-            el.scrollIntoView({ block: 'center', inline: 'center' });
-            const nextRect = el.getBoundingClientRect();
-            return { ok: true, x: nextRect.left + nextRect.width / 2, y: nextRect.top + nextRect.height / 2 };
-          }
-          return { ok: false };
-        })()`,
-        returnByValue: true,
-      })
-      .then((res) => res?.result?.value as { ok?: boolean; x?: number; y?: number } | undefined)
-      .catch(() => undefined);
-    if (!locate?.ok || typeof locate.x !== "number" || typeof locate.y !== "number") return false;
-    const x = locate.x;
-    const y = locate.y;
-    await input.dispatchMouseEvent({ type: "mouseMoved", x, y });
-    await input.dispatchMouseEvent({ type: "mousePressed", x, y, button: "left", clickCount: 1 });
-    await input.dispatchMouseEvent({ type: "mouseReleased", x, y, button: "left", clickCount: 1 });
-    return true;
-  };
-
-  const clickedTrusted = await clickPlusTrusted().catch(() => false);
-  if (!clickedTrusted) {
-    await Promise.resolve(
-      runtime.evaluate({
-        expression: `(() => {
-          const selectors = [
-            '#composer-plus-btn',
-            'button[data-testid="composer-plus-btn"]',
-            '[data-testid*="plus"]',
-            'button[aria-label^="add" i]',
-            'button[aria-label^="upload" i]',
-          ];
-          for (const selector of selectors) {
-            const el = document.querySelector(selector);
-            if (el instanceof HTMLElement) {
-              el.click();
-              return true;
-            }
-          }
-          return false;
-        })()`,
-        returnByValue: true,
-      }),
-    ).catch(() => undefined);
-  }
-
+  // Work suggestions sit close to the composer. Activate only the exact plus control and
+  // verify that the page did not enter Work or another conversation before touching files.
+  const plusActivation = await activateComposerPlus(runtime, input);
   await delay(350);
+  if (plusActivation.method !== "unavailable") {
+    await assertComposerPlusStayedInPlace(runtime, plusActivation.startUrl);
+  }
 
   const normalizeForMatch = (value: string): string =>
     String(value || "")
@@ -2036,7 +2196,7 @@ export async function waitForAttachmentVisible(
     };
     const composerRoot = locateComposerRoot() ?? document.body;
 
-    const attachmentMatch = ['[data-testid*="attachment"]','[data-testid*="chip"]','[data-testid*="upload"]','[data-testid*="file"]'].some((selector) =>
+    const attachmentMatch = ['[data-testid*="attachment"]','[data-testid*="chip"]','[data-testid*="upload"]','[data-testid*="file"]','[aria-label*="Remove" i]'].some((selector) =>
       Array.from(composerRoot.querySelectorAll(selector)).some(matchNode),
     );
     if (attachmentMatch) {

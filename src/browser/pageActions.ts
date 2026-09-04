@@ -11,6 +11,7 @@ export {
 export { ensureModelSelection } from "./actions/modelSelection.js";
 export { submitPrompt, clearPromptComposer } from "./actions/promptComposer.js";
 export {
+  captureComposerNavigationUrl,
   clearComposerAttachments,
   uploadAttachmentFile,
   waitForAttachmentCompletion,

@@ -304,6 +304,9 @@ describe("promptComposer", () => {
         (() => undefined) as never,
         undefined,
         ["oracle-attach-verify.txt"],
+        undefined,
+        undefined,
+        "https://chatgpt.com/",
       );
       const assertion = expect(promise).rejects.toThrow(/after 45s/i);
       await vi.advanceTimersByTimeAsync(46_000);
@@ -318,6 +321,306 @@ describe("promptComposer", () => {
     expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
     expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"])).toBe(45_000);
     expect(promptComposer.sendButtonTimeoutMs(["oracle-attach-verify.txt"], 120_000)).toBe(120_000);
+  });
+
+  test("fails before staging an attachment prompt when the pre-upload page identity is missing", async () => {
+    const runtime = { evaluate: vi.fn() };
+    const input = { insertText: vi.fn(), dispatchKeyEvent: vi.fn() };
+
+    await expect(
+      submitPrompt(
+        {
+          runtime: runtime as never,
+          input: input as never,
+          attachmentNames: ["signed-in-image.png"],
+        },
+        "do not stage this prompt",
+        Object.assign(vi.fn(), { verbose: false }) as never,
+      ),
+    ).rejects.toMatchObject({
+      name: "BrowserAutomationError",
+      details: expect.objectContaining({
+        code: "attachment-navigation-identity-unavailable",
+        stage: "submit-prompt",
+      }),
+    });
+    expect(runtime.evaluate).not.toHaveBeenCalled();
+    expect(input.insertText).not.toHaveBeenCalled();
+    expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+  });
+
+  test("dismisses the attachment menu before keyboard-activating the exact send button", async () => {
+    vi.useFakeTimers();
+    try {
+      const events: string[] = [];
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("const uploadEvidence")) {
+            return { result: { value: true } };
+          }
+          if (
+            expression.includes("composer-plus-btn") &&
+            expression.includes("button.focus({ preventScroll: true })")
+          ) {
+            return { result: { value: { status: "open", focused: true } } };
+          }
+          if (expression.includes("return !selectors.some")) {
+            return { result: { value: true } };
+          }
+          if (expression.includes('button[data-testid="send-button"]')) {
+            events.push("focusSendButton");
+            return { result: { value: { status: "focused" } } };
+          }
+          if (expression.includes("currentUrl: location.href")) {
+            events.push("navigationGuard");
+            return {
+              result: {
+                value: { currentUrl: "https://chatgpt.com/", workSelected: false },
+              },
+            };
+          }
+          if (expression.includes("dispatchClickSequence")) {
+            events.push("measurePoint");
+            return { result: { value: { status: "point", x: 30, y: 40 } } };
+          }
+          throw new Error(`unexpected expression: ${expression.slice(0, 80)}`);
+        }),
+      };
+      const input = {
+        dispatchKeyEvent: vi.fn(async ({ type, key }: { type: string; key: string }) => {
+          events.push(`${type}:${key}`);
+        }),
+        dispatchMouseEvent: vi.fn(async ({ type }: { type: string }) => {
+          events.push(type);
+        }),
+      };
+      const page = {
+        bringToFront: vi.fn(async () => {
+          events.push("bringToFront");
+        }),
+      };
+      const logger = Object.assign(vi.fn(), { verbose: false });
+
+      const result = promptComposer.attemptSendButton(
+        runtime as never,
+        input as never,
+        logger as never,
+        ["signed-in-image.png"],
+        5_000,
+        page as never,
+        "https://chatgpt.com/",
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await expect(result).resolves.toBe(true);
+      expect(events).toEqual([
+        "bringToFront",
+        "keyDown:Escape",
+        "keyUp:Escape",
+        "focusSendButton",
+        "navigationGuard",
+        "keyDown:Enter",
+        "keyUp:Enter",
+      ]);
+      expect(logger).toHaveBeenCalledWith("Closed attachment menu before send");
+      expect(logger).toHaveBeenCalledWith("Activated exact attachment send button via keyboard");
+      expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects delayed Work navigation at the final attachment dispatch boundary", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("const uploadEvidence")) {
+            return { result: { value: true } };
+          }
+          if (expression.includes("composer-plus-btn")) {
+            return { result: { value: { status: "closed" } } };
+          }
+          if (expression.includes('button[data-testid="send-button"]')) {
+            return { result: { value: { status: "focused" } } };
+          }
+          if (expression.includes("currentUrl: location.href")) {
+            return {
+              result: {
+                value: {
+                  currentUrl: "https://chatgpt.com/c/WEB:delayed-work",
+                  workSelected: false,
+                },
+              },
+            };
+          }
+          if (expression.includes("dispatchClickSequence")) {
+            throw new Error("attachment flow must not reach coordinate fallback");
+          }
+          throw new Error(`unexpected expression: ${expression.slice(0, 80)}`);
+        }),
+      };
+      const input = {
+        dispatchKeyEvent: vi.fn(),
+        dispatchMouseEvent: vi.fn(),
+      };
+
+      const result = promptComposer.attemptSendButton(
+        runtime as never,
+        input as never,
+        undefined,
+        ["signed-in-image.png"],
+        1_000,
+        undefined,
+        "https://chatgpt.com/",
+      );
+      const assertion = expect(result).rejects.toMatchObject({
+        name: "BrowserAutomationError",
+        details: expect.objectContaining({
+          code: "attachment-control-unexpected-navigation",
+          stage: "upload-attachment",
+        }),
+      });
+      await vi.advanceTimersByTimeAsync(500);
+
+      await assertion;
+      expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects a delayed switch between non-conversation landing contexts", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("const uploadEvidence")) {
+            return { result: { value: true } };
+          }
+          if (expression.includes("composer-plus-btn")) {
+            return { result: { value: { status: "closed" } } };
+          }
+          if (expression.includes('button[data-testid="send-button"]')) {
+            return { result: { value: { status: "focused" } } };
+          }
+          if (expression.includes("currentUrl: location.href")) {
+            return {
+              result: {
+                value: {
+                  currentUrl: "https://chatgpt.com/g/g-project-b/project",
+                  workSelected: false,
+                },
+              },
+            };
+          }
+          if (expression.includes("dispatchClickSequence")) {
+            throw new Error("attachment flow must not reach coordinate fallback");
+          }
+          throw new Error(`unexpected expression: ${expression.slice(0, 80)}`);
+        }),
+      };
+      const input = {
+        dispatchKeyEvent: vi.fn(),
+        dispatchMouseEvent: vi.fn(),
+      };
+
+      const result = promptComposer.attemptSendButton(
+        runtime as never,
+        input as never,
+        undefined,
+        ["signed-in-image.png"],
+        1_000,
+        undefined,
+        "https://chatgpt.com/g/g-project-a/project",
+      );
+      const assertion = expect(result).rejects.toMatchObject({
+        name: "BrowserAutomationError",
+        details: expect.objectContaining({
+          code: "attachment-control-unexpected-navigation",
+          stage: "upload-attachment",
+          startUrl: "https://chatgpt.com/g/g-project-a/project",
+          currentUrl: "https://chatgpt.com/g/g-project-b/project",
+        }),
+      });
+      await vi.advanceTimersByTimeAsync(500);
+
+      await assertion;
+      expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("never falls back to broad selectors or coordinates when the exact attachment send button is absent", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("const uploadEvidence")) {
+            return { result: { value: true } };
+          }
+          if (expression.includes("composer-plus-btn")) {
+            return { result: { value: { status: "closed" } } };
+          }
+          if (expression.includes('button[data-testid="send-button"]')) {
+            return { result: { value: { status: "absent" } } };
+          }
+          if (expression.includes("dispatchClickSequence")) {
+            throw new Error("attachment flow must not reach coordinate fallback");
+          }
+          throw new Error(`unexpected expression: ${expression.slice(0, 80)}`);
+        }),
+      };
+      const input = {
+        dispatchKeyEvent: vi.fn(),
+        dispatchMouseEvent: vi.fn(),
+      };
+
+      const result = promptComposer.attemptSendButton(
+        runtime as never,
+        input as never,
+        undefined,
+        ["signed-in-image.png"],
+        500,
+        undefined,
+        "https://chatgpt.com/",
+      );
+      const assertion = expect(result).rejects.toMatchObject({
+        name: "BrowserAutomationError",
+        details: expect.objectContaining({
+          code: "attachment-send-not-ready",
+          stage: "submit-prompt",
+        }),
+      });
+      await vi.runAllTimersAsync();
+
+      await assertion;
+      expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+      expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("fails closed when an open attachment menu cannot receive trusted keys", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: { value: { status: "open", focused: true } },
+      }),
+    };
+
+    await expect(
+      promptComposer.dismissOpenComposerPlusMenu(runtime as never, {} as never),
+    ).rejects.toMatchObject({
+      name: "BrowserAutomationError",
+      details: expect.objectContaining({
+        code: "attachment-menu-dismiss-unavailable",
+        stage: "submit-prompt",
+      }),
+    });
   });
 
   test("marks prompt submitted before commit verification finishes", async () => {

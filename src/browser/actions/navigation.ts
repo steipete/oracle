@@ -635,7 +635,7 @@ export interface ResumedConversationHydrationDeps {
   expectedConversationUrl?: string;
 }
 
-function conversationIdFromUrl(value: string | undefined): string | null {
+export function conversationIdFromUrl(value: string | undefined): string | null {
   if (!value) return null;
   try {
     return new URL(value).pathname.match(/(?:^|\/)c\/([^/]+)/)?.[1] ?? null;

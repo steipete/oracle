@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Browser: open ChatGPT's attachment menu through the exact composer plus control instead of page coordinates, recognize signed-in image tiles by their removal label, close the menu before sending, and keyboard-activate only the exact attachment send button. Preserve the pre-upload page identity and recheck it at final dispatch so delayed Work, conversation, or landing/project navigation fails closed, while still allowing project-scoped rewrites of the same conversation.
 - Azure: ignore generic base URLs during model metadata resolution as well as request dispatch, preventing OpenRouter catalog lookups with Azure credentials.
 - Browser: retain per-file attachment evidence through local/remote upload and send checks, including filename-less images; activate and stabilize the send target without replaying a dispatched prompt. Fixes #418. Thanks @hubofvalley!
 - Remote: allocate unique upload basenames for primary and fallback attachments that collide after sanitization, preserving original display paths and every payload. Fixes #387. Thanks @postoso!
