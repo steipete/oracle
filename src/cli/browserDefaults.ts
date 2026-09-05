@@ -65,7 +65,6 @@ export function applyBrowserDefaultsFromConfig(
     options.browserModelStrategy === "current" && getSource("browserModelStrategy") === "cli";
 
   if (
-    !attachRunningRequested &&
     !options.copyProfile &&
     isUnset("remoteChrome") &&
     options.remoteChrome === undefined &&

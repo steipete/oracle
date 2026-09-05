@@ -5,6 +5,7 @@ import {
   type BrowserDefaultsOptions,
 } from "../../src/cli/browserDefaults.js";
 import type { UserConfig } from "../../src/config.js";
+import { buildBrowserConfig } from "../../src/cli/browserConfig.js";
 
 const source = (_key: keyof BrowserDefaultsOptions) => undefined;
 
@@ -43,13 +44,20 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.remoteChrome).toBe("programmatic.example:9555");
   });
 
-  test("respects configured attach-running unless the CLI explicitly turns it off", () => {
+  test("retains the configured endpoint as the attach-running destination", async () => {
     const config: UserConfig = {
       browser: { attachRunning: true, remoteChrome: { host: "remote.example", port: 9444 } },
     };
     const inherited: BrowserDefaultsOptions = {};
     applyBrowserDefaultsFromConfig(inherited, config, source);
-    expect(inherited.remoteChrome).toBeUndefined();
+    expect(inherited.remoteChrome).toBe("remote.example:9444");
+    const resolved = await buildBrowserConfig({
+      model: "gpt-5.6-sol",
+      browserAttachRunning: inherited.browserAttachRunning,
+      remoteChrome: inherited.remoteChrome,
+    });
+    expect(resolved.attachRunning).toBe(true);
+    expect(resolved.remoteChrome).toEqual({ host: "remote.example", port: 9444 });
     const explicit: BrowserDefaultsOptions = { browserAttachRunning: false };
     applyBrowserDefaultsFromConfig(explicit, config, (key) =>
       key === "browserAttachRunning" ? "cli" : undefined,
@@ -57,18 +65,24 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(explicit.remoteChrome).toBe("remote.example:9444");
   });
 
-  test("preserves explicit attach-running and copy-profile connection choices", () => {
-    for (const options of [
-      { browserAttachRunning: true },
-      { copyProfile: "/profile" },
-    ] as BrowserDefaultsOptions[]) {
-      applyBrowserDefaultsFromConfig(
-        options,
-        { browser: { remoteChrome: { host: "127.0.0.1", port: 9222 } } },
-        source,
-      );
-      expect(options.remoteChrome).toBeUndefined();
-    }
+  test("preserves the configured endpoint with an explicit attach-running flag", () => {
+    const options: BrowserDefaultsOptions = { browserAttachRunning: true };
+    applyBrowserDefaultsFromConfig(
+      options,
+      { browser: { remoteChrome: { host: "explicit.example", port: 9555 } } },
+      source,
+    );
+    expect(options.remoteChrome).toBe("explicit.example:9555");
+  });
+
+  test("does not inject remote Chrome into an explicit copy-profile launch", () => {
+    const options: BrowserDefaultsOptions = { copyProfile: "/profile" };
+    applyBrowserDefaultsFromConfig(
+      options,
+      { browser: { remoteChrome: { host: "127.0.0.1", port: 9222 } } },
+      source,
+    );
+    expect(options.remoteChrome).toBeUndefined();
   });
 
   test("leaves an unset or null remote Chrome configuration local", () => {
