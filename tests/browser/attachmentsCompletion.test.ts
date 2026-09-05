@@ -186,9 +186,9 @@ describe("attachment completion fallbacks", () => {
       }),
     } as unknown as ChromeClient["Runtime"];
 
-    const promise = waitForAttachmentCompletion(runtime, 800, ["oracle-attach-verify.txt"]);
+    const promise = waitForAttachmentCompletion(runtime, 5_000, ["oracle-attach-verify.txt"]);
     const assertion = expect(promise).rejects.toThrow(/did not finish uploading/i);
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(6_000);
     await assertion;
     useRealTime();
   });

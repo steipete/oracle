@@ -149,6 +149,37 @@ try {
       await evaluate('document.querySelector("#chips").innerText.includes("case418.jpg")'),
       false,
     );
+    await evaluate(`(() => {
+      const progress = document.createElement('div'); progress.id = 'upload-progress';
+      progress.dataset.state = 'uploading'; progress.textContent = 'Uploading 50%';
+      document.querySelector('form').append(progress);
+    })()`);
+    await assert.rejects(
+      waitForAttachmentCompletion(Runtime, 4500, names, logger),
+      /did not finish uploading/,
+    );
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), false);
+    await assert.rejects(
+      submitPrompt(
+        {
+          runtime: Runtime,
+          input: Input,
+          page: Page,
+          attachmentNames: names,
+          attachmentTimeoutMs: 1000,
+          baselineTurns: 0,
+        },
+        "Do not send while a file is still uploading.",
+        logger,
+      ),
+      /Attachments never reached a clickable send button/,
+    );
+    assert.equal(await evaluate("window.proof.clicks + window.proof.enters"), 0);
+    await evaluate(`(() => {
+      document.querySelector('#upload-progress').remove();
+      const unrelated = document.createElement('div'); unrelated.dataset.state = 'uploading';
+      unrelated.textContent = 'Uploading another conversation'; document.querySelector('aside').append(unrelated);
+    })()`);
     await waitForAttachmentCompletion(Runtime, 4000, names, logger);
     assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), true);
     const bytes = await evaluate(
@@ -227,7 +258,15 @@ try {
       false,
     ]);
     console.log(
-      JSON.stringify({ mode, filenameLessImage: true, elapsedMs, events, payloads, ...state }),
+      JSON.stringify({
+        mode,
+        uploadProgressBlocksSend: true,
+        filenameLessImage: true,
+        elapsedMs,
+        events,
+        payloads,
+        ...state,
+      }),
     );
   }
   await reset(true);

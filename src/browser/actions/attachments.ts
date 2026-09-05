@@ -5,6 +5,7 @@ import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
 import { transferAttachmentViaDataTransfer } from "./attachmentDataTransfer.js";
+import { buildAttachmentProgressExpression } from "./attachmentProgress.js";
 import {
   beginAttachmentEvidence,
   confirmAttachmentEvidence,
@@ -1446,19 +1447,7 @@ export async function waitForAttachmentCompletion(
         button.getAttribute('data-disabled') === 'true' ||
         window.getComputedStyle(button).pointerEvents === 'none'
       : null;
-    const uploadingSelectors = ${JSON.stringify(UPLOAD_STATUS_SELECTORS)};
-    const uploading = uploadingSelectors.some((selector) => {
-      return Array.from(document.querySelectorAll(selector)).some((node) => {
-        const ariaBusy = node.getAttribute?.('aria-busy');
-        const dataState = node.getAttribute?.('data-state');
-        if (ariaBusy === 'true' || dataState === 'loading' || dataState === 'uploading' || dataState === 'pending') {
-          return true;
-        }
-        // Avoid false positives from user prompts ("upload:") or generic UI copy; only treat explicit progress strings as uploading.
-        const text = node.textContent?.toLowerCase?.() ?? '';
-        return /\buploading\b/.test(text) || /\bprocessing\b/.test(text);
-      });
-    });
+    const uploading = ${buildAttachmentProgressExpression("composerRoot")};
     const attachmentChipSelectors = [
       '[data-testid*="chip"]',
       '[data-testid*="attachment"]',
@@ -1630,6 +1619,14 @@ export async function waitForAttachmentCompletion(
           );
         }
       }
+      if (value.uploading) {
+        attachmentMatchSince = null;
+        inputMatchSince = null;
+        inputOnlyReadySince = null;
+        inputOnlySignature = "";
+        await delay(250);
+        continue;
+      }
       const attachedNames = (value.attachedNames ?? [])
         .map((name) => name.toLowerCase().replace(/\s+/g, " ").trim())
         .filter(Boolean);
@@ -1660,7 +1657,7 @@ export async function waitForAttachmentCompletion(
       };
       const missing = expectedNormalized.filter((expected) => !matchesExpected(expected));
       if (missing.length === 0) {
-        const stableThresholdMs = value.uploading ? 3000 : 1500;
+        const stableThresholdMs = 1500;
         if (attachmentMatchSince === null) {
           attachmentMatchSince = Date.now();
         }
@@ -1710,7 +1707,7 @@ export async function waitForAttachmentCompletion(
       const inputStateOk = value.state === "ready" || value.state === "missing";
       const inputSeenNow = inputOnlyNamesSatisfied;
       const inputEvidenceOk = inputSeenNow;
-      const stableThresholdMs = value.uploading ? 3000 : 1500;
+      const stableThresholdMs = 1500;
       if (inputSeenNow && inputStateOk && inputEvidenceOk) {
         if (inputMatchSince === null) {
           inputMatchSince = Date.now();

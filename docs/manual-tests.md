@@ -22,6 +22,8 @@ Run `pnpm build && node scripts/attachment-send-proof.mjs` with Chrome installed
 
 The disposable profile and fixtures live in a temporary, non-hidden directory under your home directory and are removed afterward. This lets Snap Chromium read the same files as Node instead of looking in its private `/tmp`. An optional directory argument retains the fixtures for manual testing; that directory must also be readable by the selected browser.
 
+The attachment proof also holds composer upload progress active for longer than three seconds, verifies completion and send both refuse it without input, then clears it and verifies one successful send despite unrelated page progress.
+
 ### Quick browser port smoke
 
 - `pnpm test:browser` — launches headful Chrome and checks the DevTools endpoint is reachable. Set `ORACLE_BROWSER_PORT` (or `ORACLE_BROWSER_DEBUG_PORT`) to reuse a fixed port when you’ve already opened a firewall rule.
