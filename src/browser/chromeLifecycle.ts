@@ -396,6 +396,7 @@ export async function connectToRemoteChrome(
   browserWSEndpoint?: string,
   options?: {
     approvalWaitMs?: number;
+    fallbackToDefault?: boolean;
   },
 ): Promise<RemoteChromeConnection> {
   if (browserWSEndpoint) {
@@ -406,13 +407,15 @@ export async function connectToRemoteChrome(
       approvalWaitMs: options?.approvalWaitMs,
     });
   }
-  if (targetUrl) {
-    const targetConnection = await connectToNewTarget(host, port, targetUrl, logger, {
-      opened: () => `Opened dedicated remote Chrome tab targeting ${targetUrl}`,
+  const newTargetUrl =
+    targetUrl || (options?.fallbackToDefault === false ? "about:blank" : undefined);
+  if (newTargetUrl) {
+    const targetConnection = await connectToNewTarget(host, port, newTargetUrl, logger, {
+      opened: () => `Opened dedicated remote Chrome tab targeting ${newTargetUrl}`,
       openFailed: (message) =>
-        `Failed to open dedicated remote Chrome tab (${message}); falling back to first target.`,
+        `Failed to open dedicated remote Chrome tab (${message}); ${options?.fallbackToDefault === false ? "refusing to reuse an unrelated tab" : "falling back to first target"}.`,
       attachFailed: (targetId, message) =>
-        `Failed to attach to dedicated remote Chrome tab ${targetId} (${message}); falling back to first target.`,
+        `Failed to attach to dedicated remote Chrome tab ${targetId} (${message}); ${options?.fallbackToDefault === false ? "refusing to reuse an unrelated tab" : "falling back to first target"}.`,
       closeFailed: (targetId, message) =>
         `Failed to close unused remote Chrome tab ${targetId}: ${message}`,
     });
@@ -425,6 +428,11 @@ export async function connectToRemoteChrome(
           await closeRemoteChromeTarget(host, port, targetConnection.targetId, logger);
         },
       };
+    }
+    if (options?.fallbackToDefault === false) {
+      throw new Error(
+        "Unable to create a dedicated remote Chrome tab; refusing to reuse an unrelated conversation.",
+      );
     }
   }
   const fallbackClient = await CDP({ host, port });
