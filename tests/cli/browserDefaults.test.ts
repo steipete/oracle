@@ -9,6 +9,75 @@ import type { UserConfig } from "../../src/config.js";
 const source = (_key: keyof BrowserDefaultsOptions) => undefined;
 
 describe("applyBrowserDefaultsFromConfig", () => {
+  test("uses the same configured remote Chrome as MCP unless CLI overrides it", () => {
+    const options: BrowserDefaultsOptions = {};
+    const config: UserConfig = { browser: { remoteChrome: { host: "127.0.0.1", port: 9222 } } };
+    applyBrowserDefaultsFromConfig(options, config, source);
+    expect(options.remoteChrome).toBe("127.0.0.1:9222");
+    options.remoteChrome = "another-host:9444";
+    applyBrowserDefaultsFromConfig(options, config, () => "cli");
+    expect(options.remoteChrome).toBe("another-host:9444");
+  });
+
+  test("formats IPv6 remote Chrome defaults for the existing target parser", () => {
+    for (const host of ["::1", "[::1]"]) {
+      const options: BrowserDefaultsOptions = {};
+      applyBrowserDefaultsFromConfig(
+        options,
+        { browser: { remoteChrome: { host, port: 9222 } } },
+        source,
+      );
+      expect(options.remoteChrome).toBe("[::1]:9222");
+    }
+  });
+
+  test("uses the configured host/port and respects non-CLI endpoint overrides", () => {
+    const config: UserConfig = {
+      browser: { remoteChrome: { host: "devbox.example", port: 9444 } },
+    };
+    const options: BrowserDefaultsOptions = {};
+    applyBrowserDefaultsFromConfig(options, config, source);
+    expect(options.remoteChrome).toBe("devbox.example:9444");
+    options.remoteChrome = "programmatic.example:9555";
+    applyBrowserDefaultsFromConfig(options, config, source);
+    expect(options.remoteChrome).toBe("programmatic.example:9555");
+  });
+
+  test("respects configured attach-running unless the CLI explicitly turns it off", () => {
+    const config: UserConfig = {
+      browser: { attachRunning: true, remoteChrome: { host: "remote.example", port: 9444 } },
+    };
+    const inherited: BrowserDefaultsOptions = {};
+    applyBrowserDefaultsFromConfig(inherited, config, source);
+    expect(inherited.remoteChrome).toBeUndefined();
+    const explicit: BrowserDefaultsOptions = { browserAttachRunning: false };
+    applyBrowserDefaultsFromConfig(explicit, config, (key) =>
+      key === "browserAttachRunning" ? "cli" : undefined,
+    );
+    expect(explicit.remoteChrome).toBe("remote.example:9444");
+  });
+
+  test("preserves explicit attach-running and copy-profile connection choices", () => {
+    for (const options of [
+      { browserAttachRunning: true },
+      { copyProfile: "/profile" },
+    ] as BrowserDefaultsOptions[]) {
+      applyBrowserDefaultsFromConfig(
+        options,
+        { browser: { remoteChrome: { host: "127.0.0.1", port: 9222 } } },
+        source,
+      );
+      expect(options.remoteChrome).toBeUndefined();
+    }
+  });
+
+  test("leaves an unset or null remote Chrome configuration local", () => {
+    for (const config of [{}, { browser: { remoteChrome: null } }]) {
+      const options: BrowserDefaultsOptions = {};
+      applyBrowserDefaultsFromConfig(options, config, source);
+      expect(options.remoteChrome).toBeUndefined();
+    }
+  });
   test("applies chatgptUrl from user config when flags are absent", () => {
     const options: BrowserDefaultsOptions = {};
     const config: UserConfig = {

@@ -19,6 +19,7 @@ export interface NotifyConfig {
 }
 
 export interface BrowserConfigDefaults {
+  remoteChrome?: { host: string; port: number } | null;
   chromeProfile?: string | null;
   chromePath?: string | null;
   chromeCookiePath?: string | null;
