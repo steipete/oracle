@@ -19,7 +19,7 @@
 
 ### Changed
 
-- Dependencies: update OpenAI 7.10, Google GenAI 2.21, Inquirer 14.2.1, Puppeteer 25.10, Chrome DevTools protocol, and Vitest 5 after the two-day release-age window.
+- Dependencies: update OpenAI 7.10, Google GenAI 2.21, Inquirer 14.2.1, Puppeteer 25.10, Chrome DevTools protocol, Fast URI 4.1.4, and Vitest 5 after the two-day release-age window.
 - Dependencies: update provider SDKs (OpenAI 7.9 and Google GenAI 2.20), schema and query utilities, cookie utilities, browser tooling, terminal utilities, development tools, pnpm 11.25, and transitive overrides while retaining the two-day release-age policy; refresh the Pages pnpm and deployment action pins.
 
 - **Breaking** — Remote: accept only conversation-scoped fields from remote clients. The service overrode six known-dangerous `browserConfig` fields and passed the rest of `BrowserSessionConfig` through to `runBrowserMode` verbatim. The remainder is not inert: `chromePath` names an executable the host spawns, `remoteChrome` a debugger to attach to, `copyProfileSource` a directory to copy a signed-in profile out of, `debugPort` one to expose, and `attachRunning`/`browserTabRef` select an existing ChatGPT tab — with an empty or "current" ref resolving to the first ChatGPT tab in the browser. That makes a bridge token a permission to run code on the host rather than to ask ChatGPT a question. A client may now describe the conversation it wants — URL, model, effort, archive mode, resume target, time budgets — and nothing about the machine. A caller that was setting host-scoped fields is now ignored on them rather than obeyed.
