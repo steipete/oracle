@@ -152,7 +152,9 @@ try {
     await evaluate(`(() => {
       const progress = document.createElement('div'); progress.id = 'upload-progress';
       progress.dataset.state = 'uploading'; progress.textContent = 'Uploading 50%';
-      document.querySelector('form').append(progress);
+      const editor = document.createElement('div'); editor.contentEditable = 'true';
+      const widget = document.createElement('div'); widget.contentEditable = 'false';
+      widget.append(progress); editor.append(widget); document.querySelector('form').append(editor);
     })()`);
     await assert.rejects(
       waitForAttachmentCompletion(Runtime, 4500, names, logger),

@@ -9,7 +9,9 @@ export function buildAttachmentProgressExpression(composerExpression: string): s
     if (selectors.some(selector => root.matches?.(selector))) candidates.add(root);
     return Array.from(candidates).some(node => {
       if (typeof node.getBoundingClientRect !== 'function') return false;
-      const editor = node.closest('textarea,[contenteditable=""],[contenteditable="true" i],[contenteditable="plaintext-only" i]');
+      // Non-editable widgets inside rich-text editors own their upload controls.
+      const boundary = node.closest('textarea,[contenteditable=""],[contenteditable="true" i],[contenteditable="plaintext-only" i],[contenteditable="false" i]');
+      const editor = boundary?.matches('[contenteditable="false" i]') ? null : boundary;
       if (editor && editor !== node) return false;
       const state = node.getAttribute('data-state');
       const pending = node.getAttribute('aria-busy') === 'true' || ['loading', 'uploading', 'pending'].includes(state);

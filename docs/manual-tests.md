@@ -22,7 +22,7 @@ Run `pnpm build && node scripts/attachment-send-proof.mjs` with Chrome installed
 
 The disposable profile and fixtures live in a temporary, non-hidden directory under your home directory and are removed afterward. This lets Snap Chromium read the same files as Node instead of looking in its private `/tmp`. An optional directory argument retains the fixtures for manual testing; that directory must also be readable by the selected browser.
 
-The attachment proof also holds composer upload progress active for longer than three seconds, verifies completion and send both refuse it without input, then clears it and verifies one successful send despite unrelated page progress. Readiness uses explicit loading/busy state and native/ARIA progress controls; filenames and status prose alone cannot establish an active transfer.
+The attachment proof also holds composer upload progress active for longer than three seconds inside a non-editable attachment widget nested in a rich-text editor, verifies completion and send both refuse it without input, then clears it and verifies one successful send despite unrelated page progress. Readiness uses explicit loading/busy state and native/ARIA progress controls; filenames and status prose alone cannot establish an active transfer.
 
 ### Quick browser port smoke
 

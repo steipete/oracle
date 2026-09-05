@@ -49,6 +49,50 @@ test.each(["", "true", "plaintext-only", "TRUE"])(
   },
 );
 
+test.each(["false", "FALSE"])(
+  "non-editable attachment widgets inside an editor retain upload state (%s)",
+  async (value) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const progress = new FakeElement("div", { "data-state": "uploading" });
+    const editor = new FakeElement("div", { contenteditable: "true" }, [
+      new FakeElement("div", { contenteditable: value }, [progress]),
+    ]);
+    const { evaluate, runtime } = fixture(editor);
+    expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(false);
+    const outcome = waitForAttachmentCompletion(runtime, 5_000, ["a.txt", "b.txt"]).then(
+      () => "resolved",
+      () => "timed-out",
+    );
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(await outcome).toBe("timed-out");
+  },
+);
+
+test("hidden file inputs inside non-editable attachment widgets remain authoritative", () => {
+  const input = new FakeInputElement([]);
+  const get = input.getAttribute.bind(input);
+  input.getAttribute = (name) => (name === "aria-busy" ? "true" : get(name));
+  input.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  const editor = new FakeElement("div", { contenteditable: "true" }, [
+    new FakeElement("div", { contenteditable: "false" }, [input]),
+  ]);
+  const { evaluate } = fixture(editor);
+  expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(false);
+});
+
+test("a nested editable host inside an attachment widget still excludes prompt markup", () => {
+  const editor = new FakeElement("div", { contenteditable: "true" }, [
+    new FakeElement("div", { contenteditable: "false" }, [
+      new FakeElement("div", { contenteditable: "true" }, [
+        new FakeElement("span", { "data-state": "uploading" }),
+      ]),
+    ]),
+  ]);
+  const { evaluate } = fixture(editor);
+  expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(true);
+});
+
 test.each([0.5, 1, null])(
   "native progress value %s has matching completion and send state",
   async (value) => {
