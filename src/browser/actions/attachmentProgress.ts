@@ -1,11 +1,10 @@
-import { UPLOAD_STATUS_SELECTORS } from "../constants.js";
-
 // Use the same composer-scoped signal at completion and immediately before send.
 export function buildAttachmentProgressExpression(composerExpression: string): string {
   return String.raw`(() => {
     const root = ${composerExpression};
     if (!root || root === document || root === document.body) return false;
-    const selectors = ${JSON.stringify([...UPLOAD_STATUS_SELECTORS, '[aria-busy="true"]', '[role="status"]', '[role="progressbar"]', "progress"])};
+    // Text can name a file or describe a completed operation; only explicit state blocks sending.
+    const selectors = ['[data-state="loading"]', '[data-state="uploading"]', '[data-state="pending"]', '[aria-busy="true"]', '[role="progressbar"]', 'progress'];
     const candidates = new Set(selectors.flatMap(selector => Array.from(root.querySelectorAll(selector))));
     if (selectors.some(selector => root.matches?.(selector))) candidates.add(root);
     return Array.from(candidates).some(node => {
@@ -15,6 +14,9 @@ export function buildAttachmentProgressExpression(composerExpression: string): s
       for (let ancestor = node; ancestor && typeof ancestor.getBoundingClientRect === 'function'; ancestor = ancestor.parentElement) {
         const style = typeof window === 'undefined' ? {} : window.getComputedStyle(ancestor);
         if (style.display === 'none' || style.visibility === 'hidden' || Number.parseFloat(style.opacity) === 0) return false;
+        const clip = style.clip?.match(/^rect\((.*)\)$/)?.[1].split(/[,\s]+/).filter(Boolean).map(Number.parseFloat);
+        if (clip?.length === 4 && clip.every(Number.isFinite) && (clip[2] <= clip[0] || clip[1] <= clip[3])) return false;
+        if (style.clipPath === 'inset(50%)') return false;
       }
       const state = node.getAttribute('data-state');
       if (node.getAttribute('aria-busy') === 'true' || ['loading', 'uploading', 'pending'].includes(state)) return true;
@@ -26,12 +28,7 @@ export function buildAttachmentProgressExpression(composerExpression: string): s
         const maximum = nativeProgress ? node.max : Number.parseFloat(node.getAttribute('aria-valuemax') ?? '100');
         return !Number.isFinite(current) || !Number.isFinite(maximum) || current < maximum;
       }
-      // Attachment labels are filenames, not status announcements.
-      if (!node.matches('[aria-live="polite"],[aria-live="assertive"],[role="status"],[role="progressbar"],[data-testid*="progress"],[data-testid*="status"]')) return false;
-      const text = [node.textContent, node.getAttribute('aria-label')].filter(Boolean).join(' ')
-        .replace(/\b(?:uploading|processing)\s+(?:is\s+)?(?:complete[ds]?|finished|done)\b/gi, '')
-        .replace(/\b(?:complete[ds]?|finished|done)\s+(?:uploading|processing)\b/gi, '');
-      return /(?:^|[^\p{L}\p{N}\p{M}])(?:uploading|processing)(?=$|[^\p{L}\p{N}\p{M}])/iu.test(text);
+      return false;
     });
   })()`;
 }

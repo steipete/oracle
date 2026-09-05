@@ -41,7 +41,7 @@ function fixture(progress: FakeElement, outside = false) {
   ]);
   if (!outside) form.append(progress);
   const document = new FakeDocument(outside ? [progress, form] : [form]);
-  const styles = new Map<FakeElement, { opacity: string }>();
+  const styles = new Map<FakeElement, Record<string, string>>();
   const evaluate = (expression: string) =>
     new Function("document", "HTMLElement", "HTMLInputElement", "window", `return ${expression};`)(
       document,
@@ -60,14 +60,10 @@ function fixture(progress: FakeElement, outside = false) {
 test.each([
   ["upload state", { "data-state": "uploading" }, ""],
   ["pending state", { "data-state": "pending" }, ""],
+  ["loading state", { "data-state": "loading" }, ""],
+  ["ARIA busy", { "aria-busy": "true" }, ""],
   ["ARIA progress", { role: "progressbar", "aria-valuenow": "50" }, ""],
   ["indeterminate ARIA progress", { role: "progressbar" }, ""],
-  ["progress text", { "aria-live": "polite" }, "Uploading 50%"],
-  ["filename-prefixed progress", { "aria-live": "polite" }, "a.txt — Uploading 50%"],
-  ["colon progress", { "aria-live": "polite" }, "Uploading: 50%"],
-  ["dash progress", { "aria-live": "polite" }, "Uploading—50%"],
-  ["mixed status", { role: "status" }, "Processing complete. Uploading: 50%"],
-  ["processing text", { "data-testid": "attachment-status" }, "Processing…"],
 ] as const)(
   "completion and final send reject active %s beyond three seconds",
   async (_, attrs, text) => {
@@ -195,3 +191,42 @@ test.each(["Processing complete", "Finished uploading", "Processing is complete"
     await completion;
   },
 );
+
+test.each(["one-pixel", "offscreen", "clip", "clip-path"])(
+  "visually hidden %s status does not block attachments",
+  async (kind) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const progress = new FakeElement(
+      "div",
+      kind.startsWith("clip") ? { "data-state": "uploading" } : { role: "status" },
+      [],
+      "Uploading",
+    );
+    const { evaluate, runtime, styles } = fixture(progress);
+    if (kind === "one-pixel") progress.getBoundingClientRect = () => ({ width: 1, height: 1 });
+    if (kind === "offscreen")
+      progress.getBoundingClientRect = () => ({ width: 100, height: 20, bottom: -1, right: -1 });
+    if (kind === "clip") styles.set(progress, { clip: "rect(0px, 0px, 0px, 0px)" });
+    if (kind === "clip-path") styles.set(progress, { clipPath: "inset(50%)" });
+    expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(true);
+    const completion = waitForAttachmentCompletion(runtime, 5_000, ["a.txt", "b.txt"]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await completion;
+  },
+);
+
+test("explicit upload state remains blocking when the attachment is below the viewport", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const progress = new FakeElement("div", { "data-state": "uploading" });
+  progress.getBoundingClientRect = () => ({ width: 100, height: 20, bottom: -1, right: -1 });
+  const { evaluate, runtime } = fixture(progress);
+  expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(false);
+  const outcome = waitForAttachmentCompletion(runtime, 5_000, ["a.txt", "b.txt"]).then(
+    () => "resolved",
+    () => "timed-out",
+  );
+  await vi.advanceTimersByTimeAsync(6_000);
+  expect(await outcome).toBe("timed-out");
+});
