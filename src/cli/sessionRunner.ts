@@ -1,4 +1,5 @@
 import kleur from "kleur";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -7,6 +8,7 @@ import type {
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
   BrowserModelSelectionEvidence,
+  BrowserRunWarning,
   SessionArtifact,
   SessionModelRun,
 } from "../sessionStore.js";
@@ -49,7 +51,8 @@ import { cwd as getCwd } from "node:process";
 import { resumeBrowserSession } from "../browser/reattach.js";
 import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
 import { estimateTokenCount } from "../browser/utils.js";
-import type { BrowserLogger } from "../browser/types.js";
+import type { BrowserLogger, SavedBrowserFile } from "../browser/types.js";
+import { computeFileSha256, sanitizeArtifactFilename } from "../browser/artifacts.js";
 import { formatElapsed } from "../oracle/format.js";
 import { formatBrowserReattachGuidance } from "./reattachGuidance.js";
 
@@ -140,7 +143,17 @@ export async function performSessionRun({
         },
         runnerDeps,
       );
-      await writeAssistantOutput(runOptions.writeOutputPath, result.answerText ?? "", log);
+      const writtenOutputPath = await writeAssistantOutput(
+        runOptions.writeOutputPath,
+        result.answerText ?? "",
+        log,
+      );
+      const outputArtifacts = await copyBrowserOutputArtifacts({
+        outputPath: writtenOutputPath,
+        savedFiles: result.savedFiles,
+        log,
+      });
+      const browserWarnings = [...(result.warnings ?? []), ...outputArtifacts.warnings];
       await sendSessionNotification(
         {
           sessionId: sessionMeta.id,
@@ -172,9 +185,12 @@ export async function performSessionRun({
           runtime: result.runtime,
           archive: result.archive,
           modelSelection: result.modelSelection,
-          warnings: result.warnings,
+          warnings: browserWarnings.length > 0 ? browserWarnings : undefined,
         },
-        artifacts: mergeArtifacts(sessionMeta.artifacts, result.artifacts),
+        artifacts: mergeArtifacts(
+          sessionMeta.artifacts,
+          mergeArtifacts(result.artifacts, outputArtifacts.artifacts),
+        ),
         response: undefined,
         transport: undefined,
         error: undefined,
@@ -1081,6 +1097,97 @@ function resolveSessionPath(sessionDir: string | null, targetPath: string): stri
   return path.join(sessionDir, targetPath);
 }
 
+interface BrowserOutputArtifactCopyResult {
+  artifacts: SessionArtifact[];
+  warnings: BrowserRunWarning[];
+}
+
+async function copyBrowserOutputArtifacts(params: {
+  outputPath?: string;
+  savedFiles?: SavedBrowserFile[];
+  log: (message: string) => void;
+}): Promise<BrowserOutputArtifactCopyResult> {
+  const artifacts: SessionArtifact[] = [];
+  const warnings: BrowserRunWarning[] = [];
+  if (!params.outputPath || !params.savedFiles?.length) {
+    return { artifacts, warnings };
+  }
+
+  const outputDir = path.dirname(params.outputPath);
+  for (const savedFile of params.savedFiles) {
+    const filename = sanitizeArtifactFilename(
+      savedFile.filename ?? path.basename(savedFile.path),
+      "artifact.bin",
+    );
+    let copied: string | undefined;
+    try {
+      copied = await copyFileWithoutOverwrite(savedFile.path, path.join(outputDir, filename));
+      const [stat, sha256] = await Promise.all([fs.stat(copied), computeFileSha256(copied)]);
+      if (savedFile.sizeBytes != null && stat.size !== savedFile.sizeBytes) {
+        throw new Error(`size mismatch (expected ${savedFile.sizeBytes}, received ${stat.size})`);
+      }
+      if (savedFile.sha256 && sha256 !== savedFile.sha256) {
+        throw new Error(`sha256 mismatch (expected ${savedFile.sha256}, received ${sha256})`);
+      }
+      const artifact: SessionArtifact = {
+        kind: "file",
+        path: copied,
+        label: `${savedFile.label ?? filename} (write-output)`,
+        mimeType: savedFile.mimeType,
+        sizeBytes: stat.size,
+        sourceUrl: savedFile.sourceUrl,
+        sha256,
+        validation: savedFile.validation,
+        transfer: { status: "not-needed" },
+        origin: { mode: "local" },
+      };
+      artifacts.push(artifact);
+      params.log(dim(`[browser] Saved write-output file artifact to ${copied} sha256=${sha256}`));
+    } catch (error) {
+      if (copied) {
+        await fs.unlink(copied).catch(() => undefined);
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      const message = `Failed to copy saved file artifact ${savedFile.path} beside ${params.outputPath}: ${reason}`;
+      params.log(dim(`[browser] ${message}`));
+      warnings.push({
+        code: "browser-output-artifact-copy-failed",
+        severity: "warning",
+        message,
+        details: {
+          sourcePath: savedFile.path,
+          outputPath: params.outputPath,
+          sha256: savedFile.sha256,
+        },
+      });
+    }
+  }
+  return { artifacts, warnings };
+}
+
+async function copyFileWithoutOverwrite(
+  sourcePath: string,
+  baseTargetPath: string,
+): Promise<string> {
+  const ext = path.extname(baseTargetPath);
+  const stem = ext ? path.basename(baseTargetPath, ext) : path.basename(baseTargetPath);
+  const dir = path.dirname(baseTargetPath);
+  let suffix = 1;
+  for (;;) {
+    const targetPath = suffix === 1 ? baseTargetPath : path.join(dir, `${stem}-${suffix}${ext}`);
+    try {
+      await fs.copyFile(sourcePath, targetPath, fsConstants.COPYFILE_EXCL);
+      return targetPath;
+    } catch (error) {
+      if (isErrorCode(error, "EEXIST")) {
+        suffix += 1;
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 async function writeAssistantOutput(
   targetPath: string | undefined,
   content: string,
@@ -1344,10 +1451,12 @@ export function deriveModelOutputPath(
   return path.join(dir, suffix);
 }
 
+function isErrorCode(error: unknown, expected: string): boolean {
+  return error instanceof Error && (error as { code?: string }).code === expected;
+}
+
 function isPermissionError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  const code = (error as { code?: string }).code;
-  return code === "EACCES" || code === "EPERM";
+  return isErrorCode(error, "EACCES") || isErrorCode(error, "EPERM");
 }
 
 function buildFallbackPath(original: string): string | null {

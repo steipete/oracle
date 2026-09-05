@@ -100,7 +100,19 @@ describe("runBrowserSessionExecution", () => {
       return {
         answerText: "ok",
         answerMarkdown: "ok",
-        artifacts: [{ kind: "transcript" as const, path: "/tmp/transcript.md" }],
+        artifacts: [
+          { kind: "file" as const, path: "/tmp/report.md", sha256: "a".repeat(64) },
+          { kind: "transcript" as const, path: "/tmp/transcript.md" },
+        ],
+        savedFiles: [
+          {
+            kind: "file" as const,
+            path: "/tmp/report.md",
+            sha256: "a".repeat(64),
+            url: "https://chatgpt.com/backend-api/files/report",
+            filename: "report.md",
+          },
+        ],
         tookMs: 1000,
         answerTokens: 12,
         answerChars: 20,
@@ -137,7 +149,13 @@ describe("runBrowserSessionExecution", () => {
       totalTokens: 54,
     });
     expect(result.runtime).toMatchObject({ chromePid: undefined, conversationId: "foo" });
-    expect(result.artifacts).toEqual([{ kind: "transcript", path: "/tmp/transcript.md" }]);
+    expect(result.artifacts).toEqual([
+      { kind: "file", path: "/tmp/report.md", sha256: "a".repeat(64) },
+      { kind: "transcript", path: "/tmp/transcript.md" },
+    ]);
+    expect(result.savedFiles).toEqual([
+      expect.objectContaining({ path: "/tmp/report.md", sha256: "a".repeat(64) }),
+    ]);
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
       expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
