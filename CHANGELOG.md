@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Browser: GPT-6 Astra as `gpt-6-astra` / `gpt-6-pro` / `gpt-6` (API alias `gpt-6-astra`). ChatGPT exposes it as the "Latest" radio of the advanced picker (Pro tier via the power slider, pill "6 Pro"), so a version-less target is now decided on the checked radio or that pill instead of the blank composer signal, which reported "already selected" while GPT-5.6 Sol was active.
+
 ### Fixed
 
 - CLI: inherit browser.remoteChrome from user configuration, matching MCP behavior while preserving explicit connection choices; thanks @ShunmeiCho.

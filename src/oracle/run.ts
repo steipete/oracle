@@ -60,7 +60,13 @@ const dim = (text: string): string => (isStdoutTty ? kleur.dim(text) : text);
 // Default timeout for non-pro API runs (fast models) — give them up to 120s.
 const DEFAULT_TIMEOUT_NON_PRO_MS = 120_000;
 const DEFAULT_TIMEOUT_PRO_MS = 60 * 60 * 1000;
-const GPT_5_6_API_MODELS = new Set(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
+const GPT_5_6_API_MODELS = new Set([
+  "gpt-6-astra",
+  "gpt-5.6",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+]);
 const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 const REASONING_MODES = new Set(["standard", "pro"]);
 
@@ -134,7 +140,7 @@ function validateReasoningOptions(options: RunOracleOptions, route: ResolvedProv
       ? `Use --model gpt-5.6-sol --reasoning-mode ${reasoningMode}.`
       : `Use --model gpt-5.6-sol --reasoning-effort ${reasoningEffort}.`;
     throw new PromptValidationError(
-      `${option} is available only for GPT-5.6 API models. ${guidance}`,
+      `${option} is available only for GPT-6 and GPT-5.6 API models. ${guidance}`,
       { model: options.model, reasoningEffort, reasoningMode },
     );
   }
