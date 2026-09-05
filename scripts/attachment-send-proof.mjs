@@ -175,6 +175,30 @@ try {
       /Attachments never reached a clickable send button/,
     );
     assert.equal(await evaluate("window.proof.clicks + window.proof.enters"), 0);
+    await evaluate('document.querySelector("#upload-progress").style.opacity = "0"');
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), true);
+    await evaluate('document.querySelector("#upload-progress").style.opacity = "1"');
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), false);
+    await evaluate(`(() => {
+      document.querySelector('#upload-progress').remove();
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.id = 'upload-progress'; svg.setAttribute('role', 'progressbar');
+      svg.setAttribute('aria-valuenow', '50'); svg.setAttribute('width', '20'); svg.setAttribute('height', '20');
+      document.querySelector('form').append(svg);
+    })()`);
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), false);
+    await evaluate(
+      'document.querySelector("#upload-progress").setAttribute("aria-valuenow", "100")',
+    );
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), true);
+    await evaluate(`(() => {
+      document.querySelector('#upload-progress').remove();
+      const progress = document.createElement('progress'); progress.id = 'upload-progress';
+      progress.value = 50; progress.max = 100; document.querySelector('form').append(progress);
+    })()`);
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), false);
+    await evaluate('document.querySelector("#upload-progress").value = 100');
+    assert.equal(await evaluate(buildAttachmentReadyExpressionForTest(names)), true);
     await evaluate(`(() => {
       document.querySelector('#upload-progress').remove();
       const unrelated = document.createElement('div'); unrelated.dataset.state = 'uploading';
