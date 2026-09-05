@@ -3036,6 +3036,7 @@ async function runRemoteBrowserMode(
         browserWSEndpoint,
         {
           approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
+          fallbackToDefault: false,
         },
       );
       client = connection.client;
