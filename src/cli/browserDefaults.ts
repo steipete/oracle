@@ -10,6 +10,8 @@ import type {
 } from "../browser/types.js";
 
 export interface BrowserDefaultsOptions {
+  remoteChrome?: string;
+  copyProfile?: string;
   chatgptUrl?: string;
   browserUrl?: string;
   browserChromeProfile?: string;
@@ -61,6 +63,16 @@ export function applyBrowserDefaultsFromConfig(
     (isUnset("browserAttachRunning") && browser.attachRunning === true);
   const currentModelRequestedByCli =
     options.browserModelStrategy === "current" && getSource("browserModelStrategy") === "cli";
+
+  if (
+    !options.copyProfile &&
+    isUnset("remoteChrome") &&
+    options.remoteChrome === undefined &&
+    browser.remoteChrome
+  ) {
+    const { host, port } = browser.remoteChrome;
+    options.remoteChrome = `${host.includes(":") && !host.startsWith("[") ? `[${host}]` : host}:${port}`;
+  }
 
   const configuredChatgptUrl = browser.chatgptUrl ?? browser.url;
   const cliChatgptSet = options.chatgptUrl !== undefined || options.browserUrl !== undefined;
