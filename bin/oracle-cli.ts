@@ -170,6 +170,7 @@ interface CliOptions extends OptionValues {
   output?: string;
   aspect?: string;
   geminiShowThoughts?: boolean;
+  geminiFallback?: boolean;
   copyMarkdown?: boolean;
   copy?: boolean;
   verbose?: boolean;
@@ -916,6 +917,10 @@ program
       "--gemini-show-thoughts",
       "Display Gemini thinking process (Gemini web/cookie mode only).",
     ).default(false),
+  )
+  .option(
+    "--no-gemini-fallback",
+    "Fail if the requested Gemini web model is unavailable instead of using Flash-Lite.",
   )
   .option(
     "--retain-hours <hours>",
@@ -2288,6 +2293,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
         outputPath: options.output,
         aspectRatio: options.aspect,
         showThoughts: options.geminiShowThoughts,
+        allowModelFallback: options.geminiFallback,
       }),
     };
     console.log(chalk.dim("Using Gemini web client for browser automation"));
@@ -2366,6 +2372,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       outputPath: options.output,
       aspectRatio: options.aspect,
       geminiShowThoughts: options.geminiShowThoughts,
+      geminiAllowModelFallback: options.geminiFallback,
     },
     process.cwd(),
     notifications,
@@ -2684,6 +2691,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
         outputPath: storedOptions.outputPath,
         aspectRatio: storedOptions.aspectRatio,
         showThoughts: storedOptions.geminiShowThoughts,
+        allowModelFallback: storedOptions.geminiAllowModelFallback,
       }),
     };
     console.log(chalk.dim("Using Gemini web client for browser automation"));
@@ -2717,6 +2725,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
       outputPath: storedOptions.outputPath,
       aspectRatio: storedOptions.aspectRatio,
       geminiShowThoughts: storedOptions.geminiShowThoughts,
+      geminiAllowModelFallback: storedOptions.geminiAllowModelFallback,
     },
     cwd,
     notifications,
