@@ -3116,6 +3116,26 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     expect(dom.keys).toEqual([]);
   });
 
+  it("waits for the animated keyboard owner to become visible before changing power", async () => {
+    const dom = buildDirectSlider(3);
+    const originalRect = dom.control.getBoundingClientRect.bind(dom.control);
+    let reads = 0;
+    dom.control.getBoundingClientRect = () =>
+      ++reads < 3 ? { width: 200, height: 0 } : originalRect();
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual(["ArrowRight"]);
+  });
+
+  it("fails without keyboard input when the direct slider remains hidden", async () => {
+    const dom = buildDirectSlider(3);
+    dom.control.getBoundingClientRect = () => ({ width: 200, height: 0 });
+    expect((await run(dom.documentStub, "pro")).status).toBe("selection-unverified");
+    expect(dom.keys).toEqual([]);
+  });
+
   it.each([
     ["Portuguese", "Pro, 5 de 5."],
     ["Japanese", "Pro、5件中5件目。"],
