@@ -2,29 +2,28 @@
 
 ## Unreleased
 
-### Fixed
+**Highlights:** More reliable browser uploads, strict remote-tab isolation, and broader support for ChatGPT's current thinking controls.
 
-- CLI: inherit browser.remoteChrome from user configuration, matching MCP behavior while preserving explicit connection choices; thanks @ShunmeiCho.
-- Azure: ignore generic base URLs during model metadata resolution as well as request dispatch, preventing OpenRouter catalog lookups with Azure credentials.
-- Browser: retain per-file attachment evidence through local/remote upload and send checks, including filename-less images; activate and stabilize the send target without replaying a dispatched prompt. Fixes #418. Thanks @hubofvalley!
-- Remote: allocate unique upload basenames for primary and fallback attachments that collide after sanitization, preserving original display paths and every payload. Fixes #387. Thanks @postoso!
-- Browser: attach to running Chrome when `DevToolsActivePort` metadata is absent, with IPv6 support and bounded endpoint retries that include response-body reads. Fixes #414. Thanks @devYRPauli!
-- Browser: recognize collision-renamed attachment chips, including short filenames, while keeping Unicode filename boundaries and visible extensions distinct across upload and send checks. Fixes #393. Thanks @devYRPauli!
-- Browser: select and verify thinking effort in ChatGPT's direct-slider picker without an Advanced submenu, keeping explicit Pro requests fail-closed. Fixes #422.
-- Browser: preserve Hangul and recognize Korean model/effort picker labels, distinguishing High from Extra High and keeping Pro verification strict. Fixes #423.
-- Browser: verify direct-slider effort labels across localized punctuation, including Japanese, while rejecting Unicode word continuations and requiring matching slider positions. Fixes #440. Thanks @Gabrielgvl and @kiyo-e!
-- Browser: restore locally launched macOS Chrome windows to their prior placement for visible runs only when Oracle recorded the window before a `--browser-hide-window` run; unmarked windows remain untouched.
-- Browser: archive completed ChatGPT conversations when the interface is Japanese by recognizing the current `その他`, `アーカイブ`, and `アーカイブを解除する` controls.
-- Browser: apply the configured input timeout to prompt preparation so stalled local file assembly fails clearly before launching Chrome. Fixes #381.
-- Browser: report ChatGPT's rate limit as a rate limit. When ChatGPT covers the page with its "Too many requests — we've temporarily limited access to your conversations" modal, the model-switcher scrape walked it like any other menu and reported its "Got it" button as an available model, so a throttled run failed with `Unable to find model option matching "…". Available: Got it` — a message that sends the reader after a model-naming bug when the correct response is to wait a few minutes. Model selection now probes for the notice first and raises a `chatgpt-throttled` error carrying `retryable: true` and the notice text; without a notice the original diagnosis is unchanged.
-
-### Changed
-
-- Dependencies: update OpenAI 7.10, Google GenAI 2.21, Inquirer 14.2.1, Puppeteer 25.10, Chrome DevTools protocol, Fast URI 4.1.4, and Vitest 5 after the two-day release-age window.
-- Dependencies: update provider SDKs (OpenAI 7.9 and Google GenAI 2.20), schema and query utilities, cookie utilities, browser tooling, terminal utilities, development tools, pnpm 11.25, and transitive overrides while retaining the two-day release-age policy; refresh the Pages pnpm and deployment action pins.
-
-- **Breaking** — Remote: accept only conversation-scoped fields from remote clients. The service overrode six known-dangerous `browserConfig` fields and passed the rest of `BrowserSessionConfig` through to `runBrowserMode` verbatim. The remainder is not inert: `chromePath` names an executable the host spawns, `remoteChrome` a debugger to attach to, `copyProfileSource` a directory to copy a signed-in profile out of, `debugPort` one to expose, and `attachRunning`/`browserTabRef` select an existing ChatGPT tab — with an empty or "current" ref resolving to the first ChatGPT tab in the browser. That makes a bridge token a permission to run code on the host rather than to ask ChatGPT a question. A client may now describe the conversation it wants — URL, model, effort, archive mode, resume target, time budgets — and nothing about the machine. A caller that was setting host-scoped fields is now ignored on them rather than obeyed.
-- Remote: stop advertising addresses the service is not listening on. `oracle serve --host 127.0.0.1` printed the host's LAN and tailnet addresses in its startup banner while bound to loopback only. That banner is how an operator decides whether a port needs a tunnel or a firewall rule, and for browser automation behind a bearer token, erring toward "more exposed than it is" is the wrong direction.
+- Browser: wait for explicit upload state to clear before completing attachments or sending; ignore unrelated activity, hidden indicators, and filenames that resemble status text. Fixes #446; thanks @HJC704.
+- Browser: retain per-file attachment evidence, including filename-less images, and stabilize the send target without replaying a dispatched prompt. Fixes #418; thanks @hubofvalley.
+- Browser: refuse default-tab fallback when an ordinary remote run cannot create or attach its dedicated tab; thanks @ShunmeiCho.
+- **Breaking — Remote:** accept only conversation-scoped client settings; executable paths, profiles, debugging endpoints, cookie selection, existing-tab selection, and other host settings remain controlled by the service host. Thanks @frontierkodiak.
+- Azure: ignore generic base URLs during model-metadata resolution, preventing OpenRouter catalog requests with Azure credentials.
+- Browser: select and verify thinking effort in ChatGPT's direct slider while keeping explicit Pro requests fail-closed. Fixes #422.
+- Browser: recognize Korean picker labels and localized effort-label punctuation, including Japanese, without confusing High, Extra High, or Unicode word continuations. Fixes #423 and #440; thanks @Gabrielgvl and @kiyo-e.
+- Browser: recognize the Japanese 思考量 effort label and Japanese archive controls.
+- Browser: honor the requested thinking time during Deep Research.
+- CLI: inherit browser.remoteChrome from user configuration while preserving explicit endpoints, attach-running destinations, and copy-profile choices; thanks @ShunmeiCho.
+- Browser: attach to running Chrome without DevToolsActivePort metadata, with IPv6 support and bounded endpoint retries. Fixes #414; thanks @devYRPauli.
+- Remote: preserve every attachment when upload basenames collide after sanitization. Fixes #387; thanks @postoso.
+- Browser: recognize collision-renamed attachment chips while keeping filenames, extensions, and Unicode boundaries distinct. Fixes #393; thanks @devYRPauli.
+- Browser: report ChatGPT rate limiting directly instead of presenting the modal's dismissal button as an available model.
+- Browser: retire dead running-session records when only the controller PID is available. Fixes #391; thanks @OfficialAbhinavSingh.
+- Browser: bound prompt preparation by the configured input timeout. Fixes #381.
+- Browser: restore visible macOS Chrome windows to their prior placement only when Oracle recorded that placement before hiding them.
+- CLI: keep dry-run previews free of session side effects.
+- Remote: advertise only addresses on which the service is listening.
+- Dependencies: refresh provider SDKs, browser and terminal utilities, schema/query tooling, development dependencies, pnpm, and Pages actions; update OpenAI to 7.10, Google GenAI to 2.21, Inquirer to 14.2.1, Puppeteer to 25.10, Fast URI to 4.1.4, and Vitest to 5 while retaining Node >=24 and the two-day release-age policy.
 
 ## 0.18.0 — 2026-08-14
 
