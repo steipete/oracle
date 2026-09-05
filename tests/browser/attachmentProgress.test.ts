@@ -6,6 +6,49 @@ import { FakeDocument, FakeElement, FakeInputElement } from "./domFixture.js";
 
 afterEach(() => vi.useRealTimers());
 
+test.each(["input", "textarea", "contenteditable", "hidden-input", "hidden-textarea"])(
+  "explicit busy state on %s blocks completion and send",
+  async (kind) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const progress = new FakeElement(
+      "div",
+      kind === "contenteditable" ? { contenteditable: "true", "aria-busy": "true" } : {},
+    );
+    const { evaluate, runtime, form } = fixture(progress);
+    if (kind !== "contenteditable") {
+      const control = form.querySelector(kind.replace("hidden-", ""))!;
+      const get = control.getAttribute.bind(control);
+      control.getAttribute = (name) => (name === "aria-busy" ? "true" : get(name));
+      if (kind.startsWith("hidden-"))
+        control.getBoundingClientRect = () => ({ width: 0, height: 0 });
+    }
+    expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(false);
+    const outcome = waitForAttachmentCompletion(runtime, 5_000, ["a.txt", "b.txt"]).then(
+      () => "resolved",
+      () => "timed-out",
+    );
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(await outcome).toBe("timed-out");
+  },
+);
+
+test.each(["", "true", "plaintext-only", "TRUE"])(
+  "markup inside contenteditable=%s cannot assert upload state",
+  async (value) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const editor = new FakeElement("div", { contenteditable: value }, [
+      new FakeElement("span", { "data-state": "uploading" }),
+    ]);
+    const { evaluate, runtime } = fixture(editor);
+    expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(true);
+    const completion = waitForAttachmentCompletion(runtime, 5_000, ["a.txt", "b.txt"]);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await completion;
+  },
+);
+
 test.each([0.5, 1, null])(
   "native progress value %s has matching completion and send state",
   async (value) => {
@@ -63,6 +106,8 @@ test.each([
   ["loading state", { "data-state": "loading" }, ""],
   ["ARIA busy", { "aria-busy": "true" }, ""],
   ["ARIA progress", { role: "progressbar", "aria-valuenow": "50" }, ""],
+  ["ARIA role tokens", { role: "progressbar status", "aria-valuenow": "50" }, ""],
+  ["ARIA role whitespace", { role: " progressbar ", "aria-valuenow": "50" }, ""],
   ["indeterminate ARIA progress", { role: "progressbar" }, ""],
 ] as const)(
   "completion and final send reject active %s beyond three seconds",
