@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: wait for the direct effort slider keyboard owner to become visible before selecting a tier; fail without input if it never becomes ready.
 - Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
 
 ## 0.18.1 - 2026-09-05
