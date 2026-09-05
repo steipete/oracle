@@ -1123,9 +1123,9 @@ export function buildDeepResearchCompletionPollExpressionForTest(minTurnIndex = 
 }
 
 function buildFindDeepResearchPillExpression(functionName = "findDeepResearchPill"): string {
-  const pillLabel = JSON.stringify(DEEP_RESEARCH_PILL_LABEL);
+  const pillLabels = JSON.stringify([DEEP_RESEARCH_PILL_LABEL, "深度研究"]);
   return `const ${functionName} = () => {
-      const label = ${pillLabel}.toLowerCase();
+      const labels = ${pillLabels}.map(label => label.toLowerCase());
       const selectors = [
         '.__composer-pill-composite',
         '.__composer-pill',
@@ -1148,7 +1148,7 @@ function buildFindDeepResearchPillExpression(functionName = "findDeepResearchPil
           pill.querySelector('button')?.getAttribute('aria-label') ||
           ''
         ).toLowerCase();
-        if (text.includes(label) || aria.includes(label)) {
+        if (labels.some(label => text.includes(label) || aria.includes(label))) {
           return pill;
         }
       }
@@ -1171,6 +1171,18 @@ function buildWaitForDeepResearchPillExpression(timeoutMs: number): string {
 function buildActivateDeepResearchExpression(): string {
   const plusBtnSelector = JSON.stringify(DEEP_RESEARCH_PLUS_BUTTON);
   const targetText = JSON.stringify(DEEP_RESEARCH_DROPDOWN_ITEM_TEXT);
+  const targetLabels = JSON.stringify([DEEP_RESEARCH_DROPDOWN_ITEM_TEXT, "深度研究"]);
+  const descriptionLabels = JSON.stringify(["Get a detailed report", "获取详细报告"]);
+  const addFilesLabels = JSON.stringify(["add files", "添加文件"]);
+  const dropdownReadyLabels = JSON.stringify([
+    "add photos",
+    "create image",
+    "web search",
+    "deep research",
+    "get a detailed report",
+    "深度研究",
+    "获取详细报告",
+  ]);
 
   return `(async () => {
     ${buildClickDispatcher()}
@@ -1217,8 +1229,12 @@ function buildActivateDeepResearchExpression(): string {
       '[data-radix-popper-content-wrapper]',
       '[data-floating-ui-portal]',
     ].join(',');
-    const target = ${targetText}.toLowerCase();
     const normalizeText = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+    const compactText = (value) => normalizeText(value).replace(/\\s+/g, '');
+    const targetLabels = ${targetLabels}.map(normalizeText);
+    const descriptionLabels = ${descriptionLabels}.map(normalizeText);
+    const addFilesLabels = ${addFilesLabels}.map(normalizeText);
+    const dropdownReadyLabels = ${dropdownReadyLabels}.map(normalizeText);
     const getText = (item) => normalizeText(item.textContent || item.getAttribute?.('aria-label') || '');
     const isInPopover = (item) => Boolean(item.closest?.(popoverSelector));
     const isVisible = (item) => {
@@ -1244,14 +1260,16 @@ function buildActivateDeepResearchExpression(): string {
       input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    const isDeepResearchText = (text) => (
-      text === target ||
-      text.startsWith(target + ' ') ||
-      text === 'get a detailed report' ||
-      text.startsWith('get a detailed report ') ||
-      (text.includes(target) && text.includes('detailed report')) ||
-      text.replace(/\\s+/g, '').startsWith('deepresearch')
-    );
+    const isDeepResearchText = (text) => {
+      const compact = compactText(text);
+      const exactLabel = targetLabels.some(label => text === label || text.startsWith(label + ' '));
+      const exactDescription = descriptionLabels.some(
+        label => text === label || text.startsWith(label + ' ')
+      );
+      const combinedLabel = targetLabels.some(label => compact.startsWith(compactText(label))) &&
+        descriptionLabels.some(label => compact.includes(compactText(label)));
+      return exactLabel || exactDescription || combinedLabel;
+    };
     const getClickableItem = (item) => item.closest?.(
       '[data-radix-collection-item], [role="option"], [cmdk-item], button, [role="menuitem"], [role="menuitemradio"], .__menu-item, [class*="__menu-item"], [class*="menu-item"]'
     ) || item;
@@ -1268,7 +1286,7 @@ function buildActivateDeepResearchExpression(): string {
         .map(item => {
           const text = getText(item);
           const clickable = getClickableItem(item);
-          const exact = text === target ? 0 : 1;
+          const exact = targetLabels.includes(text) ? 0 : 1;
           const menuRow = /(^|\\s)__menu-item(\\s|$)/.test(clickable.className || '') ? 0 : 1;
           return { item: clickable, score: exact + menuRow, textLength: text.length };
         })
@@ -1299,7 +1317,9 @@ function buildActivateDeepResearchExpression(): string {
     // mutate the main composer and can be submitted as normal prompt text.
     const plusBtn = document.querySelector(${plusBtnSelector}) ||
       Array.from(document.querySelectorAll('button')).find(
-        b => (b.getAttribute('aria-label') || '').toLowerCase().includes('add files')
+        b => addFilesLabels.some(label =>
+          normalizeText(b.getAttribute('aria-label') || '').includes(label)
+        )
       );
     if (!plusBtn) return { status: 'plus-button-missing' };
     dispatchClickSequence(plusBtn);
@@ -1311,11 +1331,7 @@ function buildActivateDeepResearchExpression(): string {
         const items = collectAvailableItems({ requirePopover: true });
         if (findDeepResearchItem({ requirePopover: true }) || items.some(text => {
           const normalized = normalizeText(text);
-          return normalized.includes('add photos') ||
-            normalized.includes('create image') ||
-            normalized.includes('web search') ||
-            normalized.includes('deep research') ||
-            normalized.includes('get a detailed report');
+          return dropdownReadyLabels.some(label => normalized.includes(label));
         })) { resolve(items); return; }
         elapsed += 150;
         if (elapsed > 3000) { resolve(items.length ? items : null); return; }
