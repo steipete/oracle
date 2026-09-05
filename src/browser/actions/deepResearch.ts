@@ -1,4 +1,4 @@
-import type { ChromeClient, BrowserLogger } from "../types.js";
+import type { ChromeClient, BrowserLogger, BrowserResearchPlanMetadata } from "../types.js";
 import {
   DEEP_RESEARCH_PLUS_BUTTON,
   DEEP_RESEARCH_DROPDOWN_ITEM_TEXT,
@@ -126,35 +126,118 @@ export async function waitForResearchPlanAutoConfirm(
   Runtime: ChromeClient["Runtime"],
   logger: BrowserLogger,
   autoConfirmWaitMs: number = DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS,
-): Promise<void> {
+  options?: {
+    Page?: ChromeClient["Page"];
+    client?: ChromeClient;
+    ignoredTargetKeys?: readonly string[];
+    targetBaselineCaptured?: boolean;
+    minTurnIndex?: number | null;
+    onPlan?: (plan: BrowserResearchPlanMetadata) => void | Promise<void>;
+  },
+): Promise<BrowserResearchPlanMetadata | null> {
+  const ignoredTargetKeys = new Set(options?.ignoredTargetKeys ?? []);
+  const minTurnIndex =
+    typeof options?.minTurnIndex === "number" && Number.isFinite(options.minTurnIndex)
+      ? Math.floor(options.minTurnIndex)
+      : -1;
+  let capturedPlan: BrowserResearchPlanMetadata | null = null;
+  let loggedPlan = false;
+  const targetOwnerMinTurnIndex =
+    minTurnIndex >= 0 && options?.targetBaselineCaptured !== true ? minTurnIndex : -1;
+
+  const readPlanStatus = async (): Promise<DeepResearchFrameStatus | null> => {
+    const targetRead = options?.client
+      ? ((
+          await readDeepResearchTargetResult(
+            options.client,
+            ignoredTargetKeys,
+            targetOwnerMinTurnIndex,
+          ).catch(() => null)
+        )?.read ?? null)
+      : null;
+    if (targetRead?.planTitle || targetRead?.researchStarted) {
+      return targetRead;
+    }
+    const inPageRead = options?.Page
+      ? await readDeepResearchFrameResult(
+          Runtime,
+          options.Page,
+          options.client,
+          minTurnIndex,
+        ).catch(() => null)
+      : null;
+    return inPageRead?.read ?? targetRead;
+  };
+
+  const capturePlan = async (
+    status: DeepResearchFrameStatus,
+  ): Promise<BrowserResearchPlanMetadata | null> => {
+    if (!status.planTitle || !status.planSteps || status.planSteps.length === 0) {
+      return capturedPlan;
+    }
+    const next: BrowserResearchPlanMetadata = {
+      title: status.planTitle,
+      steps: status.planSteps,
+      phase: status.researchStarted ? "researching" : "planning",
+      ...(status.planActionText ? { actionText: status.planActionText } : {}),
+      capturedAt: capturedPlan?.capturedAt ?? new Date().toISOString(),
+    };
+    const changed =
+      !capturedPlan ||
+      capturedPlan.phase !== next.phase ||
+      capturedPlan.title !== next.title ||
+      capturedPlan.steps.join("\n") !== next.steps.join("\n") ||
+      capturedPlan.actionText !== next.actionText;
+    capturedPlan = next;
+    if (!loggedPlan) {
+      logger(
+        `[browser] Deep Research plan detected:\n${[next.title, ...next.steps.map((step, index) => `${index + 1}. ${step}`)].join("\n")}`,
+      );
+      loggedPlan = true;
+    }
+    if (changed) {
+      await options?.onPlan?.(next);
+    }
+    return next;
+  };
+
   // Phase A: Detect research plan appearance (up to 60s)
   const planDeadline = Date.now() + 60_000;
   let planDetected = false;
 
   while (Date.now() < planDeadline) {
+    const frameStatus = await readPlanStatus();
+    if (frameStatus) {
+      await capturePlan(frameStatus);
+      if (frameStatus.researchStarted) {
+        logger("[browser] Deep Research execution started; plan countdown is complete.");
+        return capturedPlan;
+      }
+      if (capturedPlan) {
+        planDetected = true;
+        break;
+      }
+    }
+
+    // Legacy/inline fallback. Do not treat an arbitrary large iframe as a plan:
+    // ChatGPT projects, attachments, and other tools also render large iframes.
     const { result } = await Runtime.evaluate({
       expression: `(() => {
-        const iframes = document.querySelectorAll('iframe');
-        const hasResearchIframe = Array.from(iframes).some(f => {
-          const rect = f.getBoundingClientRect();
-          return rect.width > 200 && rect.height > 200;
-        });
-        const assistantText = (document.querySelector('[data-message-author-role="assistant"]')?.textContent || '').toLowerCase();
+        const turns = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+        const assistantText = String(turns.at(-1)?.textContent || '').toLowerCase();
         const hasResearchText = assistantText.includes('researching') ||
           assistantText.includes('research plan') ||
-          assistantText.includes('survey') ||
-          assistantText.includes('analyze');
-        return { hasResearchIframe, hasResearchText };
+          assistantText.includes('正在研究') ||
+          assistantText.includes('研究计划');
+        return { hasResearchText };
       })()`,
       returnByValue: true,
     });
 
-    const val = result?.value as
-      | { hasResearchIframe?: boolean; hasResearchText?: boolean }
-      | undefined;
-    if (val?.hasResearchIframe || val?.hasResearchText) {
+    const val = result?.value as { hasResearchText?: boolean } | undefined;
+    if (val?.hasResearchText) {
       planDetected = true;
-      logger("Research plan detected, waiting for auto-confirm countdown...");
+      logger("[browser] Deep Research activity detected; waiting for plan auto-confirm...");
       break;
     }
     await delay(2_000);
@@ -164,38 +247,45 @@ export async function waitForResearchPlanAutoConfirm(
     logger(
       "Warning: Research plan not detected within 60s; continuing (may have auto-confirmed already)",
     );
-    return;
+    return capturedPlan;
   }
 
-  // Phase B: Wait for auto-confirm countdown
+  // Phase B: Wait for the OOPIF's real execution state instead of sleeping for
+  // the full countdown. The main page cannot see this sandboxed iframe's text.
   const confirmStart = Date.now();
   while (Date.now() - confirmStart < autoConfirmWaitMs) {
+    const frameStatus = await readPlanStatus();
+    if (frameStatus) {
+      await capturePlan(frameStatus);
+      if (frameStatus.researchStarted) {
+        logger("[browser] Deep Research execution started; plan countdown is complete.");
+        return capturedPlan;
+      }
+    }
+
     const { result } = await Runtime.evaluate({
       expression: `(() => {
-        const iframes = document.querySelectorAll('iframe');
-        const hasLargeIframe = Array.from(iframes).some(f => {
-          const rect = f.getBoundingClientRect();
-          return rect.width > 200 && rect.height > 200;
-        });
         const text = (document.body?.innerText || '').toLowerCase();
         const isResearching = text.includes('researching...') ||
           text.includes('reading sources') ||
-          text.includes('considering');
-        return { hasLargeIframe, isResearching };
+          text.includes('正在研究') ||
+          text.includes('正在阅读来源');
+        return { isResearching };
       })()`,
       returnByValue: true,
     });
-    const val = result?.value as { hasLargeIframe?: boolean; isResearching?: boolean } | undefined;
+    const val = result?.value as { isResearching?: boolean } | undefined;
 
     if (val?.isResearching) {
-      logger("Research plan confirmed, execution started");
-      return;
+      logger("[browser] Deep Research execution started; plan countdown is complete.");
+      return capturedPlan;
     }
 
-    await delay(5_000);
+    await delay(2_000);
   }
 
-  logger("Auto-confirm wait complete, proceeding to monitor research progress");
+  logger("[browser] Deep Research plan wait elapsed; proceeding to monitor research progress.");
+  return capturedPlan;
 }
 
 /**
@@ -414,6 +504,10 @@ interface DeepResearchFrameTree {
 interface DeepResearchFrameStatus {
   completed: boolean;
   inProgress: boolean;
+  researchStarted?: boolean;
+  planTitle?: string;
+  planSteps?: string[];
+  planActionText?: string;
   textLength: number;
   text?: string;
   html?: string;
@@ -915,6 +1009,44 @@ function buildDeepResearchFrameStatusExpression(): string {
   return `(() => {
     const rawText = document.body?.innerText || '';
     const html = document.body?.innerHTML || '';
+    const cleanText = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+    const sections = typeof document.querySelectorAll === 'function'
+      ? Array.from(document.querySelectorAll('section'))
+      : [];
+    const planSection = sections.find((section) => {
+      if (typeof section.querySelector !== 'function' ||
+          typeof section.querySelectorAll !== 'function' ||
+          !cleanText(section.querySelector('h2')?.textContent) ||
+          section.querySelectorAll('ul li').length === 0) {
+        return false;
+      }
+      const buttons = Array.from(section.querySelectorAll('button'));
+      const hasPlanAction = buttons.some((button) =>
+        /^(edit|update|编辑|更新)$/i.test(cleanText(button.textContent))
+      );
+      const hasResearchStatus = Boolean(section.querySelector('p.loading-shimmer')) ||
+        buttons.some((button) =>
+          /stop research|停止研究/i.test(cleanText(button.getAttribute?.('aria-label')))
+        );
+      return hasPlanAction || hasResearchStatus;
+    });
+    const planTitle = cleanText(planSection?.querySelector?.('h2')?.textContent);
+    const planSteps = planSection && typeof planSection.querySelectorAll === 'function'
+      ? Array.from(planSection.querySelectorAll('ul li'))
+          .map((item) => cleanText(item.textContent))
+          .filter(Boolean)
+      : [];
+    const planActionText = planSection && typeof planSection.querySelectorAll === 'function'
+      ? Array.from(planSection.querySelectorAll('button'))
+          .map((button) => cleanText(button.textContent))
+          .find((text) => /^(edit|update|编辑|更新)$/i.test(text)) || ''
+      : '';
+    const hasResearchShimmer = Boolean(planSection?.querySelector?.('p.loading-shimmer'));
+    const hasStopResearchControl = typeof planSection?.querySelectorAll === 'function' &&
+      Array.from(planSection.querySelectorAll('button')).some((button) =>
+        /stop research|停止研究/i.test(cleanText(button.getAttribute?.('aria-label')))
+      );
+    const researchStarted = planSteps.length > 0 && (hasResearchShimmer || hasStopResearchControl);
     const isPlaceholder = (line) => /^(called tool|used tool|użyto narzędzia|narzędzie wywołane)$/i.test(line);
     const isCompletionLine = (line) =>
       /^(research completed|badanie ukończone)\\b/i.test(line);
@@ -956,6 +1088,10 @@ function buildDeepResearchFrameStatusExpression(): string {
     return {
       completed,
       inProgress,
+      researchStarted,
+      planTitle: planTitle || undefined,
+      planSteps: planSteps.length > 0 ? planSteps : undefined,
+      planActionText: planActionText || undefined,
       textLength: reportText.length || rawText.trim().length,
       text: completed ? reportText : undefined,
       html: completed ? html : undefined,

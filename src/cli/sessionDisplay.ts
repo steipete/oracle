@@ -281,7 +281,8 @@ export async function attachSession(
   const hasIncompleteCapture = metadata.response?.incompleteReason === "incomplete-capture";
   const statusAllowsReattach =
     metadata.status === "running" ||
-    (metadata.status === "error" && (hasChromeDisconnect || hasIncompleteCapture));
+    ((metadata.status === "error" || metadata.status === "partial") &&
+      (hasChromeDisconnect || hasIncompleteCapture));
   const hasFallbackSessionInfo = Boolean(
     runtime?.chromePort ||
     runtime?.chromeBrowserWSEndpoint ||
@@ -357,6 +358,9 @@ export async function attachSession(
             totalTokens: outputTokens,
           },
           completedAt: new Date().toISOString(),
+          response: undefined,
+          error: undefined,
+          transport: undefined,
         });
       }
       await sessionStore.updateSession(sessionId, {

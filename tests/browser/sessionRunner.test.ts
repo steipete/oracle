@@ -105,6 +105,12 @@ describe("runBrowserSessionExecution", () => {
         answerTokens: 12,
         answerChars: 20,
         conversationId: "foo",
+        researchPlan: {
+          title: "Release status",
+          steps: ["Read official sources"],
+          phase: "researching" as const,
+          capturedAt: "2026-09-02T00:00:00.000Z",
+        },
       };
     });
     const result = await runBrowserSessionExecution(
@@ -136,7 +142,11 @@ describe("runBrowserSessionExecution", () => {
       reasoningTokens: 0,
       totalTokens: 54,
     });
-    expect(result.runtime).toMatchObject({ chromePid: undefined, conversationId: "foo" });
+    expect(result.runtime).toMatchObject({
+      chromePid: undefined,
+      conversationId: "foo",
+      researchPlan: { title: "Release status", phase: "researching" },
+    });
     expect(result.artifacts).toEqual([{ kind: "transcript", path: "/tmp/transcript.md" }]);
     expect(persistRuntimeHint).toHaveBeenCalledWith(
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),

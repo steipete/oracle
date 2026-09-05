@@ -41,11 +41,13 @@ describe("browser reattach end-to-end (simulated)", () => {
         "/repo",
       );
       await sessionStore.updateModelRun(sessionMeta.id, "gpt-5.2-pro", {
-        status: "running",
+        status: "partial",
         startedAt: new Date().toISOString(),
+        response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
+        error: { category: "browser-automation", message: "Chrome disconnected" },
       });
       await sessionStore.updateSession(sessionMeta.id, {
-        status: "running",
+        status: "partial",
         startedAt: new Date().toISOString(),
         mode: "browser",
         browser: {
@@ -57,7 +59,7 @@ describe("browser reattach end-to-end (simulated)", () => {
             tabUrl: "https://chatgpt.com/c/demo",
           },
         },
-        response: { status: "running", incompleteReason: "chrome-disconnected" },
+        response: { status: "incomplete", incompleteReason: "chrome-disconnected" },
       });
 
       const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -72,6 +74,8 @@ describe("browser reattach end-to-end (simulated)", () => {
       expect(resumeMock).toHaveBeenCalledTimes(1);
       const runs = updated?.models ?? [];
       expect(runs.some((r) => r.status === "completed")).toBe(true);
+      expect(runs[0]?.response).toBeUndefined();
+      expect(runs[0]?.error).toBeUndefined();
     } finally {
       await fs.rm(tmpHome, { recursive: true, force: true });
       setOracleHomeDirOverrideForTest(null);
