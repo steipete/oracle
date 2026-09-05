@@ -91,13 +91,40 @@ long-running API defaults: they detach unless `--wait` is supplied, default to a
 supports it.
 
 `--reasoning-mode` accepts `standard` or `pro`; `--reasoning-effort` accepts all
-six GPT-5.6 effort levels. Both are API-only and restricted to the GPT-5.6
-family. Oracle rejects reasoning mode for OpenRouter and custom `--base-url`
+six GPT-5.6 effort levels. Both are API-only and supported for GPT-5.6
+and GPT-6 Astra, with Astra's restrictions below. Oracle rejects reasoning mode for OpenRouter and custom `--base-url`
 routes because those routes currently use Oracle's Chat Completions adapter,
 which cannot represent Responses API reasoning mode.
 
 Do not pass `--model gpt-5.6-pro` or `--model gpt-5.6-sol-pro`; Oracle rejects
 those fake slugs and points to `--reasoning-mode pro`.
+
+## GPT-6 Astra API
+
+Use the exact API model ID and choose reasoning mode separately:
+
+```bash
+oracle --engine api --model gpt-6-astra --reasoning-mode pro --reasoning-effort max -p "Review this architecture"
+```
+
+Oracle supports Astra's `low`, `medium`, `high`, `xhigh`, and `max` efforts and
+rejects `none` before inference. The default effort is `xhigh`; Pro is enabled
+only with `--reasoning-mode pro` and retains the long-running behavior above.
+This API support does not add ChatGPT browser aliases or change the default model.
+Selecting `gpt-6-astra` with browser strategy `select` fails explicitly in this build.
+The existing `current` and `ignore` strategies remain available: they retain the
+active ChatGPT model without verifying that it is Astra. CLI and MCP both honor
+these strategies, including saved MCP browser configuration.
+
+The default input budget is a conservative 272,000 tokens at the base-rate
+boundary, not the model's maximum capacity. Standard text estimates use $10 per
+million input tokens and $50 per million output tokens. Cache writes, tool fees,
+Pro execution, and inputs above the base-rate boundary can change actual billing;
+Oracle's basic estimate does not model those adjustments.
+
+References: [Astra model](https://developers.openai.com/api/docs/models/gpt-6-astra),
+[migration guidance](https://developers.openai.com/api/docs/guides/latest-model),
+and [API pricing](https://developers.openai.com/api/docs/pricing).
 
 ## Custom Base URLs (LiteLLM, Localhost)
 

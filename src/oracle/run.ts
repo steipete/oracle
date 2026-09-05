@@ -6,6 +6,7 @@ import process from "node:process";
 import { performance } from "node:perf_hooks";
 import type {
   ClientLike,
+  ModelConfig,
   OracleResponse,
   ResponseStreamLike,
   RunOracleDeps,
@@ -63,6 +64,20 @@ const DEFAULT_TIMEOUT_PRO_MS = 60 * 60 * 1000;
 const GPT_5_6_API_MODELS = new Set(["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]);
 const REASONING_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 const REASONING_MODES = new Set(["standard", "pro"]);
+type ReasoningCapabilities = {
+  efforts: ReadonlySet<string>;
+  modes: ReadonlySet<string>;
+};
+
+// Astra has a narrower effort range than the GPT-5.6 API family. Keep this
+// capability separate from GPT_5_6_API_MODELS so adding a model cannot
+// accidentally inherit a family's exact option set.
+const MODEL_REASONING_CAPABILITIES: ReadonlyMap<string, ReasoningCapabilities> = new Map([
+  [
+    "gpt-6-astra",
+    { efforts: new Set(["low", "medium", "high", "xhigh", "max"]), modes: REASONING_MODES },
+  ],
+]);
 
 const defaultWait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -111,9 +126,17 @@ function runtimeKeySource({
   return optionsApiKey ? "apiKey option" : route.keySource;
 }
 
-function validateReasoningOptions(options: RunOracleOptions, route: ResolvedProviderRoute): void {
+function validateReasoningOptions(
+  options: RunOracleOptions,
+  route: ResolvedProviderRoute,
+  modelConfig?: Pick<ModelConfig, "reasoning">,
+): void {
   const { reasoningEffort, reasoningMode } = options;
-  if (!reasoningEffort && !reasoningMode) return;
+  const capabilities = GPT_5_6_API_MODELS.has(options.model)
+    ? { efforts: REASONING_EFFORTS, modes: REASONING_MODES }
+    : MODEL_REASONING_CAPABILITIES.get(options.model);
+  const effectiveEffort = reasoningEffort ?? modelConfig?.reasoning?.effort;
+  if (!reasoningEffort && !reasoningMode && !effectiveEffort) return;
   if (reasoningEffort && !REASONING_EFFORTS.has(reasoningEffort)) {
     throw new PromptValidationError(
       `Invalid reasoning effort "${reasoningEffort}". Expected none, low, medium, high, xhigh, or max.`,
@@ -126,7 +149,7 @@ function validateReasoningOptions(options: RunOracleOptions, route: ResolvedProv
       { model: options.model, reasoningMode },
     );
   }
-  if (!GPT_5_6_API_MODELS.has(options.model)) {
+  if ((reasoningEffort || reasoningMode) && !capabilities) {
     const option = reasoningMode
       ? `Reasoning mode "${reasoningMode}"`
       : `Reasoning effort "${reasoningEffort}"`;
@@ -134,7 +157,19 @@ function validateReasoningOptions(options: RunOracleOptions, route: ResolvedProv
       ? `Use --model gpt-5.6-sol --reasoning-mode ${reasoningMode}.`
       : `Use --model gpt-5.6-sol --reasoning-effort ${reasoningEffort}.`;
     throw new PromptValidationError(
-      `${option} is available only for GPT-5.6 API models. ${guidance}`,
+      `${option} is available only for GPT-5.6 or GPT-6 Astra API models. ${guidance}`,
+      { model: options.model, reasoningEffort, reasoningMode },
+    );
+  }
+  if (effectiveEffort && capabilities && !capabilities.efforts.has(effectiveEffort)) {
+    throw new PromptValidationError(
+      `Reasoning effort "${effectiveEffort}" is not supported for ${options.model}. Expected low, medium, high, xhigh, or max.`,
+      { model: options.model, reasoningEffort: effectiveEffort, reasoningMode },
+    );
+  }
+  if (reasoningMode && capabilities && !capabilities.modes.has(reasoningMode)) {
+    throw new PromptValidationError(
+      `Reasoning mode "${reasoningMode}" is not supported for ${options.model}. Expected standard or pro.`,
       { model: options.model, reasoningEffort, reasoningMode },
     );
   }
@@ -256,6 +291,10 @@ export async function runOracle(
     openRouterApiKey: resolverOpenRouterApiKey,
     modelOverrides: options.modelOverrides,
   });
+  // Validate the resolved default as well as explicit flags. This catches a
+  // model override such as Astra + reasoning.effort=none, while allowing an
+  // explicit supported effort to replace an invalid bundled/overridden default.
+  validateReasoningOptions(options, route, modelConfig);
   const isLongRunningModel = isProTierModel;
   const supportsBackground = modelConfig.supportsBackground !== false;
   const useBackground = supportsBackground ? (options.background ?? isLongRunningModel) : false;

@@ -331,7 +331,21 @@ export async function buildBrowserConfig(
   };
 }
 
+export function assertAstraBrowserSelectionAvailable(
+  model: ModelName,
+  modelStrategy: BrowserModelStrategy,
+): void {
+  if (modelStrategy !== "select") return;
+  const normalized = normalizeChatGptModelForBrowser(model);
+  if (normalized === "gpt-6-astra") {
+    throw new Error(
+      "gpt-6-astra selection is supported only with --engine api in this build; use browser strategy current or ignore to retain the active ChatGPT model without verifying Astra.",
+    );
+  }
+}
+
 function assertBrowserModelAvailable(model: ModelName, modelStrategy: BrowserModelStrategy): void {
+  assertAstraBrowserSelectionAvailable(model, modelStrategy);
   if (modelStrategy !== "select") return;
   const normalized = normalizeChatGptModelForBrowser(model);
   if (

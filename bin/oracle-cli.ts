@@ -452,19 +452,15 @@ program
       .default([]),
   )
   .addOption(
-    new Option("--reasoning-effort <effort>", "Reasoning effort for GPT-5.6 API models.").choices([
-      "none",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]),
+    new Option(
+      "--reasoning-effort <effort>",
+      "Reasoning effort for GPT-6 Astra and GPT-5.6 API models (Astra requires low or higher).",
+    ).choices(["none", "low", "medium", "high", "xhigh", "max"]),
   )
   .addOption(
     new Option(
       "--reasoning-mode <mode>",
-      'Responses API reasoning execution mode for GPT-5.6 models ("standard" or "pro").',
+      'Responses API reasoning execution mode for GPT-6 Astra and GPT-5.6 models ("standard" or "pro").',
     ).choices(["standard", "pro"]),
   )
   .addOption(

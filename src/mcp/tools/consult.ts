@@ -33,6 +33,7 @@ import { applyConsultPreset } from "../consultPresets.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveNotificationSettings } from "../../cli/notifier.js";
 import {
+  assertAstraBrowserSelectionAvailable,
   mapModelToBrowserLabel,
   resolveBrowserModelLabel,
   resolveDefaultBrowserThinkingTime,
@@ -353,6 +354,7 @@ export function buildConsultBrowserConfig({
     : (configuredBrowser.manualLogin ?? process.platform === "win32");
   const configuredThinkingTime = normalizeThinkingTimeLevel(configuredBrowser.thinkingTime);
   const modelStrategy = browserModelStrategy ?? configuredBrowser.modelStrategy;
+  assertAstraBrowserSelectionAvailable(runModel, modelStrategy ?? "select");
 
   return {
     ...configuredBrowser,

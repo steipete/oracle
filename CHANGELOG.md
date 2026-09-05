@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- API: support the exact `gpt-6-astra` model with model-specific reasoning validation, rejecting unsupported `none` effort before inference and retaining explicit Responses Pro mode. Unsupported browser `select` requests fail clearly while CLI and MCP retain the existing `current`/`ignore` strategies.
 - Azure: ignore generic base URLs during model metadata resolution as well as request dispatch, preventing OpenRouter catalog lookups with Azure credentials.
 - Browser: retain per-file attachment evidence through local/remote upload and send checks, including filename-less images; activate and stabilize the send target without replaying a dispatched prompt. Fixes #418. Thanks @hubofvalley!
 - Remote: allocate unique upload basenames for primary and fallback attachments that collide after sanitization, preserving original display paths and every payload. Fixes #387. Thanks @postoso!

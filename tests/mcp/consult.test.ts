@@ -165,6 +165,36 @@ describe("summarizeModelRunsForConsult", () => {
     expect(summarizedImages?.[0]).not.toHaveProperty("finalUrl");
   });
 
+  test.each(["current", "ignore"] as const)(
+    "preserves Astra browser strategy %s from saved config or input",
+    (modelStrategy) => {
+      for (const explicit of [false, true]) {
+        const config = buildConsultBrowserConfig({
+          userConfig: { browser: { modelStrategy: explicit ? "select" : modelStrategy } },
+          env: {},
+          runModel: "gpt-6-astra",
+          browserModelStrategy: explicit ? modelStrategy : undefined,
+        });
+        expect(config.modelStrategy).toBe(modelStrategy);
+        expect(config.thinkingTime).toBeUndefined();
+      }
+    },
+  );
+
+  test("rejects unsupported Astra select through MCP", () => {
+    expect(() =>
+      buildConsultBrowserConfig({ userConfig: {}, env: {}, runModel: "gpt-6-astra" }),
+    ).toThrow("only with --engine api");
+    expect(() =>
+      buildConsultBrowserConfig({
+        userConfig: { browser: { modelStrategy: "current" } },
+        env: {},
+        runModel: "gpt-6-astra",
+        browserModelStrategy: "select",
+      }),
+    ).toThrow("only with --engine api");
+  });
+
   test("merges browser defaults from config for consult runs", () => {
     const config = buildConsultBrowserConfig({
       userConfig: {
