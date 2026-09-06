@@ -125,4 +125,4 @@ oracle --engine browser --model gpt-5.5-pro \
 | Deep Research              | —                 | ✅                   | —                |
 | `--render --copy` fallback | ✅                | ✅                   | ✅               |
 
-See provider-specific docs for the gory details: [OpenAI / Azure / OpenRouter](openai-endpoints.md), [Gemini](gemini.md), [Anthropic](anthropic.md), [Grok](grok.md).
+See provider-specific docs for the gory details: [OpenAI / Azure / OpenRouter](openai-endpoints.md), [Gemini](gemini.md), [Anthropic](anthropic.md), [Grok](grok.md), [Perplexity](perplexity.md).
