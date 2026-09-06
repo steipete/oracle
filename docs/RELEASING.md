@@ -1,6 +1,6 @@
 # Release Checklist (npm + Homebrew)
 
-> For a guarded, phased flow, run `./scripts/release.sh <phase>` (gates | artifacts | publish | smoke | tag | all); it stops on the first error so you can resume after fixing issues.
+> For a guarded, phased flow, run `./scripts/release.sh <phase>` (gates | artifacts | publish | smoke | tag | github-release | all); it stops on the first error so you can resume after fixing issues.
 
 1. **Version & metadata**
    - [ ] Update `package.json` version (e.g., `1.0.0`).
@@ -9,13 +9,12 @@
    - [ ] If dependencies changed, run `pnpm install` so `pnpm-lock.yaml` is current.
    - [ ] Source `~/.profile` so codesign/notary env vars are available before building the notifier.
 2. **Artifacts**
-   - [ ] Run `pnpm run build` (ensure `dist/` is current).
+   - [ ] Run `./scripts/release.sh artifacts` (builds `dist/`, packs npm, and generates checksums).
    - [ ] Verify `bin` mapping in `package.json` points to `dist/bin/oracle-cli.js`.
 
-- [ ] Produce npm tarball and checksums:
-  - `npm pack --pack-destination /tmp` (after build)
-  - Move the tarball into repo root (e.g., `oracle-<version>.tgz`) and generate `*.sha1` / `*.sha256`.
-  - Keep these files handy for the GitHub release; do **not** commit them.
+- [ ] Keep the generated `.release-artifacts/oracle-<version>.tgz{,.sha1,.sha256}` for the GitHub release.
+  - `.release-artifacts/` is gitignored; do **not** commit these files.
+  - Set `ARTIFACT_DIR` to override the artifact directory; use the same directory for `github-release`.
 - [ ] Rebuild macOS notifier helper with signing + notarization:
   - `cd vendor/oracle-notifier && ./build-notifier.sh` (requires `CODESIGN_ID` and `APP_STORE_CONNECT_*`).
   - Signing inputs (same as Trimmy): `CODESIGN_ID="Developer ID Application: Peter Steinberger (Y5PE65HELJ)"` plus notary env vars `APP_STORE_CONNECT_API_KEY_P8`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID`.
@@ -49,8 +48,8 @@
    - [ ] `npm view @steipete/oracle version` (and optionally `npm view @steipete/oracle time`) to confirm the registry shows the new version.
    - [ ] Verify positional prompt still works: `npx -y @steipete/oracle "Test prompt" --dry-run`.
 6. **Homebrew (tap)**
-   - [ ] The `Update Homebrew Tap` workflow dispatches `steipete/homebrew-tap` after the GitHub release is published.
-   - [ ] If needed, run `.github/workflows/update-homebrew-tap.yml` manually with the release tag after assets are live.
+   - [ ] The `Update Homebrew Tap` workflow preflights the tarball and both checksum assets after the GitHub release is published: it verifies their hashes and the public tarball URL before dispatching `steipete/homebrew-tap`.
+   - [ ] Missing assets or failed verification stop the job before dispatch. Run `./scripts/release.sh github-release`, then re-run `.github/workflows/update-homebrew-tap.yml` via `workflow_dispatch` with the release tag (`tag=vX.Y.Z`). For an older release, do not rebuild: download the published npm tarball (`npm view @steipete/oracle@X.Y.Z dist.tarball`), verify it against `dist.integrity`, place it in `ARTIFACT_DIR` as `oracle-X.Y.Z.tgz` with `.sha1`/`.sha256` files, and run the phase with `VERSION=X.Y.Z`.
    - [ ] Confirm the tap workflow updated `Formula/oracle.rb` to the GitHub release asset and committed the SHA256.
    - [ ] Verify install:
      - `brew uninstall oracle || true`
@@ -60,18 +59,12 @@
      - `brew uninstall oracle`
 7. **Post-publish**
 
-- [ ] Verify GitHub release exists for `vX.Y.Z` and has the intended assets (tarball + checksums if produced). Add missing assets before announcing.
+- [ ] Run `./scripts/release.sh tag` so `vX.Y.Z` exists on origin (always tag each release).
+- [ ] Run `./scripts/release.sh github-release`: create a draft with title `X.Y.Z` and the full version's changelog section (without its heading), upload the tarball and both checksums, verify the downloads, publish, and re-verify the public tarball URL. Publishing triggers the Homebrew tap workflow, which also waits for that URL to become available.
+  - Existing releases keep their notes; identical assets are skipped, and conflicting assets fail without overwriting.
 - [ ] Confirm the GitHub release body exactly matches the `CHANGELOG.md` section for `X.Y.Z` (full bullet list). If not, update with `gh release edit vX.Y.Z --notes-file <file>`.
 - [ ] Confirm npm shows the new version: `npm view @steipete/oracle version` and `npx -y @steipete/oracle@X.Y.Z --version`.
 - [ ] Promote desired dist-tag (e.g., `npm dist-tag add @steipete/oracle@X.Y.Z latest`).
-- [ ] `git tag vX.Y.Z && git push origin vX.Y.Z` (always tag each release).
-- [ ] `git tag vX.Y.Z && git push --tags`
-- [ ] Create GitHub release for tag `vX.Y.Z`:
-  - Title = `X.Y.Z` (just the version, no “Oracle”, no date).
-- Body = product-facing bullet list for that version (copy from changelog bullets only; omit the heading and the word “changelog”). Always paste the full Added/Changed/Fixed bullets (no trimming) to keep npm/GitHub notes in sync.
-  - Upload assets: `oracle-<version>.tgz`, `oracle-<version>.tgz.sha1`, `oracle-<version>.tgz.sha256`.
-  - Confirm the auto `Source code (zip|tar.gz)` assets are present.
 - [ ] From a clean temp directory (no package.json/node_modules), run `npx @steipete/oracle@X.Y.Z "Smoke from empty dir" --dry-run` to confirm the package installs/executes via npx.
-- [ ] After uploading assets, verify they are reachable (e.g., `curl -I <GitHub-asset-URL>` or download and re-check SHA).
-- [ ] After verification, remove the untracked tarball/checksum assets from the repo root (`trash oracle-<version>.tgz*`).
+- [ ] After verification, remove the generated tarball/checksum assets (`trash .release-artifacts`, or the overridden `ARTIFACT_DIR`).
 - [ ] Announce / share release notes.
