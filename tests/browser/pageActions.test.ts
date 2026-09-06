@@ -1402,6 +1402,33 @@ describe("ensureLoggedIn", () => {
 });
 
 describe("waitForAssistantResponse", () => {
+  test("fails promptly when the submitted assistant turn offers Retry", async () => {
+    const payload = {
+      text: "Something went wrong while generating the response.",
+      messageId: "mid",
+      turnId: "tid",
+      turnIndex: 2,
+      uiError: "temporary_unavailable",
+    };
+    const evaluate = vi.fn().mockResolvedValue({ result: { type: "object", value: payload } });
+
+    await expect(
+      waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+        2,
+      ),
+    ).rejects.toMatchObject({
+      category: "browser-automation",
+      details: {
+        stage: "assistant-ui-error",
+        code: "chatgpt-ui-warning",
+        uiWarning: { type: "temporary_unavailable" },
+      },
+    });
+  });
+
   test("returns captured assistant payload", async () => {
     vi.useFakeTimers();
     try {

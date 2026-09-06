@@ -16,6 +16,7 @@ import {
   buildConversationDebugExpression,
 } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
+import { BrowserAutomationError } from "../../oracle/errors.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
 const STOP_CONTROL_SELECTOR = STOP_BUTTON_SELECTORS.join(", ");
@@ -193,6 +194,16 @@ export function isAnswerNowPlaceholderText(value: unknown): boolean {
     rest = rest.slice(matched.length).replace(/^[\s:.,;|\u00b7\u2022-]+/, "");
   }
   return sawGate && sawOwner;
+}
+
+export function isRetryAssistantUiErrorText(value: unknown, retryVisible: boolean): boolean {
+  if (!retryVisible || typeof value !== "string") return false;
+  const text = value.toLowerCase().replace(/\s+/g, " ").trim();
+  return (
+    text.includes("something went wrong") ||
+    text.includes("failed to generate") ||
+    text.includes("try again later")
+  );
 }
 
 // Exported: the two page expressions below and the tests all consume this one builder,
@@ -563,6 +574,7 @@ async function parseAssistantEvaluationResult(
     typeof result.value === "object" &&
     "text" in result.value
   ) {
+    throwIfAssistantUiError(result.value as AssistantSnapshot);
     const html =
       typeof (result.value as { html?: unknown }).html === "string"
         ? ((result.value as { html?: string }).html ?? undefined)
@@ -863,6 +875,7 @@ function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
     completionVisible?: boolean;
   };
 } | null {
+  throwIfAssistantUiError(snapshot);
   const text = snapshot?.text ? cleanAssistantText(snapshot.text) : "";
   if (!text.trim()) {
     return null;
@@ -886,6 +899,22 @@ function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
       ...(snapshot?.completionVisible === true ? { completionVisible: true } : {}),
     },
   };
+}
+
+function throwIfAssistantUiError(snapshot: AssistantSnapshot | null): void {
+  if (snapshot?.uiError !== "temporary_unavailable") return;
+  throw new BrowserAutomationError(
+    "ChatGPT could not generate the submitted assistant turn and offered Retry.",
+    {
+      stage: "assistant-ui-error",
+      code: "chatgpt-ui-warning",
+      uiWarning: {
+        type: "temporary_unavailable",
+        message: "ChatGPT offered Retry for the submitted assistant turn.",
+        source: "assistant-turn",
+      },
+    },
+  );
 }
 
 function isGeneratedImageAssistantAnswer(answer: { html?: string } | null): boolean {
@@ -1201,6 +1230,7 @@ function buildAssistantExtractor(functionName: string): string {
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   return `const ${functionName} = () => {
     ${buildClickDispatcher()}
+    const isRetryAssistantUiError = ${isRetryAssistantUiErrorText.toString()};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -1266,6 +1296,19 @@ function buildAssistantExtractor(functionName: string): string {
         String(img?.src || '').includes('/backend-api/estuary/content?id=file_')
       );
       const normalizedText = String(text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
+      const retryVisible = Array.from(turn.querySelectorAll('button, [role="button"]')).some((button) => {
+        const label = String(button.innerText || button.textContent || button.getAttribute?.('aria-label') || '')
+          .toLowerCase()
+          .replace(/\\s+/g, ' ')
+          .trim();
+        if (label !== 'retry' || !(button instanceof HTMLElement)) return false;
+        const rect = button.getBoundingClientRect();
+        const style = window.getComputedStyle(button);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      });
+      if (isRetryAssistantUiError(text, retryVisible)) {
+        return { text, html, messageId, turnId, turnIndex: index, uiError: 'temporary_unavailable' };
+      }
       const imageOnlyChrome =
         !normalizedText ||
         normalizedText === 'edit' ||
@@ -1611,6 +1654,7 @@ interface AssistantSnapshot {
   turnId?: string | null;
   turnIndex?: number | null;
   completionVisible?: boolean;
+  uiError?: "temporary_unavailable";
 }
 
 const LANGUAGE_TAGS = new Set(
