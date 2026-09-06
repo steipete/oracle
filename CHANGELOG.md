@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
+- Browser: fail promptly when the submitted ChatGPT turn offers Retry instead of waiting for the full browser timeout. Fixes #457.
 
 ## 0.18.1 - 2026-09-05
 

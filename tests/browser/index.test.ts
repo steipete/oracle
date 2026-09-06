@@ -40,11 +40,16 @@ describe("shouldPreserveBrowserOnErrorForTest", () => {
     const recheck = new BrowserAutomationError("assistant recheck failed", {
       stage: "assistant-recheck",
     });
+    const uiError = new BrowserAutomationError("assistant failed", {
+      stage: "assistant-ui-error",
+    });
 
     expect(shouldPreserveBrowserOnErrorForTest(timeout, false)).toBe(true);
     expect(shouldPreserveBrowserOnErrorForTest(recheck, false)).toBe(true);
+    expect(shouldPreserveBrowserOnErrorForTest(uiError, false)).toBe(true);
     expect(classifyPreservedBrowserErrorForTest(timeout, false)).toBe("reattachable-capture");
     expect(classifyPreservedBrowserErrorForTest(recheck, false)).toBe("reattachable-capture");
+    expect(classifyPreservedBrowserErrorForTest(uiError, false)).toBe("reattachable-capture");
   });
 
   test("does not preserve assistant capture errors in headless mode", () => {
