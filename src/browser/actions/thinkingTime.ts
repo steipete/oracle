@@ -1100,6 +1100,12 @@ function buildThinkingTimeExpression(
       };
       let current = resolve();
       const finish = (result) => { closeOpenMenus(); return result; };
+      // The picker animation can expose the simple view before its keyboard owner has height.
+      const readyDeadline = performance.now() + MAX_WAIT_MS;
+      while (!current && performance.now() < readyDeadline) {
+        await sleep(100);
+        current = resolve();
+      }
       if (!current) return finish(failure('selection-unverified'));
       // Preserve the legacy Pro-model + extended contract on unified pickers.
       const target = TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'extended' ? 'pro' : TARGET_LEVEL;
