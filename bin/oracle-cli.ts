@@ -3,12 +3,6 @@ import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
 import type { OptionValues } from "commander";
-// Allow `npx @steipete/oracle oracle-mcp` to resolve the MCP server even though npx runs the default binary.
-if (process.argv[2] === "oracle-mcp") {
-  const { startMcpServer } = await import("../src/mcp/server.js");
-  await startMcpServer();
-  process.exit(0);
-}
 import { resolveEngine, type EngineMode, defaultWaitPreference } from "../src/cli/engine.js";
 import { shouldRequirePrompt } from "../src/cli/promptRequirement.js";
 import { resolveDashPrompt } from "../src/cli/stdin.js";
@@ -2967,6 +2961,12 @@ program.action(async function (this: Command) {
 });
 
 async function main(): Promise<void> {
+  // npx runs the default binary; let the MCP transport own the alias lifetime.
+  if (process.argv[2] === "oracle-mcp") {
+    const { startMcpServer } = await import("../src/mcp/server.js");
+    await startMcpServer();
+    return;
+  }
   if (perfTraceArgs.error) {
     console.error(`error: ${perfTraceArgs.error}`);
     console.error("(use --help for usage)");
