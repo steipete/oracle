@@ -17,6 +17,7 @@ import { buildAttachmentNamePattern } from "./attachments.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 import { buildAttachmentEvidenceExpression } from "./attachmentEvidence.js";
+import { buildAttachmentProgressExpression } from "./attachmentProgress.js";
 
 const ENTER_KEY_EVENT = {
   key: "Enter",
@@ -536,7 +537,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
         ),
       ),
     );
-    return chipsReady || inputsReady;
+    return (chipsReady || inputsReady) && !${buildAttachmentProgressExpression("composer")};
   })()`;
 }
 

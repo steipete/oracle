@@ -71,6 +71,7 @@ const ARTIFACT_PROTOCOL_VERSION = 1;
 const REMOTE_ARTIFACT_TTL_MS = 30 * 60 * 1000;
 
 const ARTIFACT_CAPABILITIES: RemoteArtifactCapabilities = {
+  deferredFallbackBundling: true,
   artifactTransfer: true,
   artifactProtocolVersion: ARTIFACT_PROTOCOL_VERSION,
   maxArtifactBytes: MAX_REMOTE_ARTIFACT_BYTES,
@@ -251,17 +252,26 @@ export async function createRemoteServer(
         };
         const pendingBundle = payload.fallbackSubmission.bundle;
         if (pendingBundle) {
-          fallbackSubmission.prepare = async () => {
+          if (
+            !["text", "zip"].includes(pendingBundle.format) ||
+            !["all", "text-only"].includes(pendingBundle.scope)
+          ) {
+            throw new Error("Invalid fallback bundle format or scope.");
+          }
+          let preparation: Promise<void> | undefined;
+          const prepare = async () => {
             if (!fallbackSubmission) return;
             const prepared = await materializeStagedFallbackBundle({
               composerText: fallbackSubmission.prompt,
               attachments: fallbackSubmission.attachments,
               format: pendingBundle.format,
               scope: pendingBundle.scope,
+              bundleParentDir: runDir,
             });
             fallbackSubmission.prompt = prepared.composerText;
             fallbackSubmission.attachments = prepared.attachments;
           };
+          fallbackSubmission.prepare = () => (preparation ??= prepare());
         }
       }
 

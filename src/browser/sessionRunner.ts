@@ -143,13 +143,18 @@ export async function runBrowserSessionExecution(
   const executeBrowser = deps.executeBrowser ?? runBrowserMode;
   const persistRuntimeHint = deps.persistRuntimeHint ?? (() => {});
   const inputTimeoutMs = browserConfig.inputTimeoutMs ?? DEFAULT_BROWSER_CONFIG.inputTimeoutMs;
+  let preparationTimedOut = false;
   let preparationTimeout: ReturnType<typeof setTimeout> | undefined;
   let promptArtifacts: Awaited<ReturnType<typeof assembleBrowserPrompt>>;
   try {
     promptArtifacts = await Promise.race([
-      assemblePrompt(runOptions, { cwd }),
+      assemblePrompt(runOptions, { cwd }).then(async (artifacts) => {
+        if (preparationTimedOut) await cleanupGeneratedBrowserBundles(artifacts);
+        return artifacts;
+      }),
       new Promise<never>((_, reject) => {
         preparationTimeout = setTimeout(() => {
+          preparationTimedOut = true;
           reject(
             new BrowserAutomationError(
               `Browser prompt preparation timed out after ${inputTimeoutMs}ms; increase --browser-input-timeout if local files need more time.`,

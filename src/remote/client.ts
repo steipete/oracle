@@ -23,6 +23,8 @@ import {
   type RemoteRunEvent,
   type RemoteAttachmentPayload,
 } from "./types.js";
+import { materializeStagedFallbackBundle } from "../browser/prompt.js";
+import { checkRemoteHealth } from "./health.js";
 import { parseHostPort } from "../bridge/connection.js";
 
 interface RemoteExecutorOptions {
@@ -38,13 +40,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
     const payload: RemoteRunPayload = {
       prompt: options.prompt,
       attachments: await serializeAttachments(options.attachments ?? []),
-      fallbackSubmission: options.fallbackSubmission
-        ? {
-            prompt: options.fallbackSubmission.prompt,
-            attachments: await serializeAttachments(options.fallbackSubmission.attachments ?? []),
-            bundle: options.fallbackSubmission.pendingBundle,
-          }
-        : undefined,
+      fallbackSubmission: await serializeFallback(options.fallbackSubmission, { host, token }),
       browserConfig: options.config ?? {},
       options: {
         heartbeatIntervalMs: options.heartbeatIntervalMs,
@@ -147,6 +143,37 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
       req.write(body);
       req.end();
     });
+  };
+}
+
+async function serializeFallback(
+  fallback: BrowserRunOptions["fallbackSubmission"],
+  remote: RemoteExecutorOptions,
+): Promise<RemoteRunPayload["fallbackSubmission"]> {
+  if (!fallback) return undefined;
+  if (fallback.pendingBundle) {
+    const health = await checkRemoteHealth(remote);
+    if (!health.ok || health.capabilities?.deferredFallbackBundling !== true) {
+      // Older hosts ignore bundle metadata, so send a ready-to-upload fallback.
+      const prepared = await materializeStagedFallbackBundle({
+        composerText: fallback.prompt,
+        attachments: fallback.attachments,
+        ...fallback.pendingBundle,
+      });
+      try {
+        return {
+          prompt: prepared.composerText,
+          attachments: await serializeAttachments(prepared.attachments),
+        };
+      } finally {
+        await rm(path.dirname(prepared.bundled.bundlePath), { recursive: true, force: true });
+      }
+    }
+  }
+  return {
+    prompt: fallback.prompt,
+    attachments: await serializeAttachments(fallback.attachments),
+    bundle: fallback.pendingBundle,
   };
 }
 

@@ -111,13 +111,17 @@ function matchesSingleSelector(element: FakeElement, selector: string): boolean 
   const id = normalized.match(/#([a-z0-9_-]+)/i)?.[1];
   if (id && element.getAttribute("id") !== id) return false;
 
-  const attrPattern = /\[([^\]\s~|^$*!=]+)([*^$]?=)?(?:"([^"]*)"|'([^']*)')?\s*i?\]/g;
+  const attrPattern = /\[([^\]\s~|^$*!=]+)([*^$~]?=)?(?:"([^"]*)"|'([^']*)')?\s*(i)?\]/g;
   for (const match of normalized.matchAll(attrPattern)) {
-    const [, name, operator, doubleQuotedValue, singleQuotedValue] = match;
+    const [, name, operator, doubleQuotedValue, singleQuotedValue, insensitive] = match;
     const expected = doubleQuotedValue ?? singleQuotedValue ?? "";
     const actual = element.getAttribute(name);
     if (actual === null) return false;
-    if (operator === "=" && actual !== expected) return false;
+    const equal = insensitive
+      ? actual.toLowerCase() === expected.toLowerCase()
+      : actual === expected;
+    if (operator === "=" && !equal) return false;
+    if (operator === "~=" && !actual.split(/\s+/).includes(expected)) return false;
     if (operator === "*=" && !actual.toLowerCase().includes(expected.toLowerCase())) return false;
     if (operator === "^=" && !actual.toLowerCase().startsWith(expected.toLowerCase())) return false;
     if (operator === "$=" && !actual.toLowerCase().endsWith(expected.toLowerCase())) return false;

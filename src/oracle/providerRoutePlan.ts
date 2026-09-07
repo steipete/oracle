@@ -126,7 +126,8 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
   });
   const provider = state.provider;
   const isAzureOpenAI = state.isAzureOpenAI;
-  let baseUrl = input.baseUrl?.trim();
+  // Azure owns the endpoint, including metadata lookups before request dispatch.
+  let baseUrl = isAzureOpenAI ? undefined : input.baseUrl?.trim();
   const providerQualifiedOpenRouterCandidate =
     !isAzureOpenAI && providerMode !== "openai" && input.model.includes("/");
   if (
@@ -137,7 +138,7 @@ function buildResolvedProviderRoute(input: ProviderRoutePlanInput): ResolvedProv
   ) {
     baseUrl = undefined;
   }
-  if (!baseUrl) {
+  if (!baseUrl && !isAzureOpenAI) {
     let envBaseUrl: string | undefined;
     if (input.model.startsWith("grok")) {
       envBaseUrl = env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1";

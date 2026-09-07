@@ -224,22 +224,23 @@ function resolveBrowserBundleScope(
   return attachmentCount > MAX_BROWSER_ATTACHMENTS ? "all" : "none";
 }
 
-function appendZipBundleInstruction(composerText: string, originalCount: number): string {
+function appendZipBundleInstruction(
+  composerText: string,
+  originalCount: number,
+  bundlePath: string,
+): string {
   const fileLabel = originalCount === 1 ? "file" : "files";
   const instruction = [
-    `The attached \`attachments-bundle.zip\` contains ${originalCount} selected ${fileLabel} with relative paths preserved.`,
+    `The attached \`${path.basename(bundlePath)}\` contains ${originalCount} selected ${fileLabel} with relative paths preserved.`,
     "Extract it into a temporary directory, then inspect the resulting file tree with filesystem and search tools before answering.",
   ].join(" ");
   return [composerText, instruction].filter(Boolean).join("\n\n").trim();
 }
 
-function assertAttachmentCount(
-  attachments: BrowserAttachment[],
-  format: BrowserBundleFormat,
-): void {
-  if (attachments.length <= MAX_BROWSER_ATTACHMENTS) return;
+function assertAttachmentCount(attachmentCount: number, format: BrowserBundleFormat): void {
+  if (attachmentCount <= MAX_BROWSER_ATTACHMENTS) return;
   throw new Error(
-    `Browser upload has ${attachments.length} attachments after applying bundle format "${format}". Use --browser-bundle-format auto or zip to stay within the ${MAX_BROWSER_ATTACHMENTS}-attachment limit.`,
+    `Browser upload has ${attachmentCount} attachments after applying bundle format "${format}". Use --browser-bundle-format auto or zip to stay within the ${MAX_BROWSER_ATTACHMENTS}-attachment limit.`,
   );
 }
 
@@ -263,6 +264,7 @@ async function applyWrittenBundle({
   scope,
   rawUploadAttachments,
   composerText,
+  bundleParentDir,
 }: {
   sections: FileSection[];
   sources: BrowserBundleSource[];
@@ -270,24 +272,43 @@ async function applyWrittenBundle({
   scope: Exclude<BrowserBundleScope, "none">;
   rawUploadAttachments: BrowserAttachment[];
   composerText: string;
+  bundleParentDir?: string;
 }): Promise<{
   attachments: BrowserAttachment[];
   bundled: BrowserBundleMetadata;
   composerText: string;
   tokenEstimateText: string;
 }> {
-  const writtenBundle = await writeBrowserBundle(sections, sources, format);
+  const nativeAttachments = scope === "text-only" ? rawUploadAttachments : [];
+  assertAttachmentCount(1 + nativeAttachments.length, format);
+  assertUniqueAttachmentBasenames(nativeAttachments, process.cwd());
+  const reservedNames = new Set(nativeAttachments.map((a) => path.basename(a.path).toLowerCase()));
+  let bundleName = `attachments-bundle.${format === "zip" ? "zip" : "txt"}`;
+  for (let suffix = 2; reservedNames.has(bundleName.toLowerCase()); suffix += 1) {
+    bundleName = `attachments-bundle-${suffix}.${format === "zip" ? "zip" : "txt"}`;
+  }
+  const writtenBundle = await writeBrowserBundle(
+    sections,
+    sources,
+    format,
+    bundleName,
+    bundleParentDir,
+  );
   const attachments = [writtenBundle.attachment];
   if (scope === "text-only") {
     attachments.push(...rawUploadAttachments);
   }
-  assertAttachmentCount(attachments, format);
+  assertAttachmentCount(attachments.length, format);
   return {
     attachments,
     bundled: writtenBundle.metadata,
     composerText:
       format === "zip"
-        ? appendZipBundleInstruction(composerText, writtenBundle.metadata.originalCount)
+        ? appendZipBundleInstruction(
+            composerText,
+            writtenBundle.metadata.originalCount,
+            writtenBundle.metadata.bundlePath,
+          )
         : composerText,
     tokenEstimateText: writtenBundle.tokenEstimateText,
   };
@@ -346,11 +367,13 @@ export async function materializeStagedFallbackBundle({
   attachments,
   format,
   scope,
+  bundleParentDir,
 }: {
   composerText: string;
   attachments: BrowserAttachment[];
   format: BrowserPendingFallbackBundle["format"];
   scope: BrowserPendingFallbackBundle["scope"];
+  bundleParentDir?: string;
 }): Promise<{
   composerText: string;
   attachments: BrowserAttachment[];
@@ -390,6 +413,7 @@ export async function materializeStagedFallbackBundle({
     scope,
     rawUploadAttachments: rawAttachments,
     composerText,
+    bundleParentDir,
   });
 }
 
@@ -397,11 +421,11 @@ async function writeBrowserBundle(
   sections: FileSection[],
   sources: BrowserBundleSource[],
   format: ResolvedBrowserBundleFormat,
+  bundleName: string,
+  bundleParentDir = os.tmpdir(),
 ): Promise<WrittenBrowserBundle> {
-  const bundleDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-browser-bundle-"));
-  const tokenEstimateText = formatSectionsForBundle(sections, {
-    lineNumbers: format === "text",
-  });
+  const tokenEstimateText = formatSectionsForBundle(sections, { lineNumbers: format === "text" });
+  let content: string | Buffer = tokenEstimateText;
   if (format === "zip") {
     const totalSourceBytes = sources.reduce((total, source) => total + source.sizeBytes, 0);
     if (totalSourceBytes > MAX_BROWSER_ZIP_BUNDLE_BYTES) {
@@ -409,8 +433,7 @@ async function writeBrowserBundle(
         `Browser ZIP bundle inputs exceed the ${MAX_BROWSER_ZIP_BUNDLE_BYTES}-byte in-memory limit.`,
       );
     }
-    const bundlePath = path.join(bundleDir, "attachments-bundle.zip");
-    const buffer = createStoredZip(
+    content = createStoredZip(
       await Promise.all(
         sources.map(async (source) => ({
           path: source.displayPath,
@@ -418,30 +441,29 @@ async function writeBrowserBundle(
         })),
       ),
     );
-    await fs.writeFile(bundlePath, buffer);
+  }
+  const bundleDir = await fs.mkdtemp(path.join(bundleParentDir, GENERATED_BUNDLE_DIR_PREFIX));
+  const bundlePath = path.join(bundleDir, bundleName);
+  try {
+    await fs.writeFile(bundlePath, content);
     return {
       attachment: {
         path: bundlePath,
         displayPath: bundlePath,
-        sizeBytes: buffer.length,
+        sizeBytes: Buffer.byteLength(content),
         generatedBundle: true,
       },
-      metadata: { originalCount: sources.length, bundlePath, format },
+      metadata: {
+        originalCount: format === "zip" ? sources.length : sections.length,
+        bundlePath,
+        format,
+      },
       tokenEstimateText,
     };
+  } catch (error) {
+    await fs.rm(bundleDir, { recursive: true, force: true });
+    throw error;
   }
-  const bundlePath = path.join(bundleDir, "attachments-bundle.txt");
-  await fs.writeFile(bundlePath, tokenEstimateText, "utf8");
-  return {
-    attachment: {
-      path: bundlePath,
-      displayPath: bundlePath,
-      sizeBytes: Buffer.byteLength(tokenEstimateText, "utf8"),
-      generatedBundle: true,
-    },
-    metadata: { originalCount: sections.length, bundlePath, format },
-    tokenEstimateText,
-  };
 }
 
 export async function assembleBrowserPrompt(
@@ -579,100 +601,113 @@ export async function assembleBrowserPrompt(
     bundled = writtenBundle.bundled;
     composerText = writtenBundle.composerText;
   } else {
-    assertAttachmentCount(attachments, resolvedBundleFormat);
+    assertAttachmentCount(attachments.length, resolvedBundleFormat);
   }
-  assertUniqueAttachmentBasenames(attachments, cwd);
+  try {
+    assertUniqueAttachmentBasenames(attachments, cwd);
 
-  const inlineFileCount = shouldBundle ? 0 : selectedPlan.inlineFileCount;
-  const modelConfig = isKnownModel(runOptions.model)
-    ? MODEL_CONFIGS[runOptions.model]
-    : MODEL_CONFIGS["gpt-5.1"];
-  const tokenizer = deps.tokenizeImpl ?? modelConfig.tokenizer;
-  const tokenizerUserSections = [userPrompt];
-  if (inlineFileCount > 0 && selectedPlan.inlineBlock) {
-    tokenizerUserSections.push(selectedPlan.inlineBlock);
-  }
-  if (shouldBundle && resolvedBundleFormat === "zip" && bundled) {
-    tokenizerUserSections.push(appendZipBundleInstruction("", bundled.originalCount));
-  }
-  const tokenizerUserContent = tokenizerUserSections
-    .filter((value) => Boolean(value?.trim()))
-    .join("\n\n")
-    .trim();
-  const tokenizerMessages = [
-    systemPrompt ? { role: "system", content: systemPrompt } : null,
-    tokenizerUserContent ? { role: "user", content: tokenizerUserContent } : null,
-  ].filter(Boolean) as Array<{ role: "system" | "user"; content: string }>;
-  let estimatedInputTokens = tokenizer(
-    tokenizerMessages.length > 0 ? tokenizerMessages : [{ role: "user", content: "" }],
-    TOKENIZER_OPTIONS,
-  );
-  const tokenEstimateIncludesInlineFiles = inlineFileCount > 0 && Boolean(selectedPlan.inlineBlock);
-  if (!tokenEstimateIncludesInlineFiles && sections.length > 0) {
-    const attachmentText = bundleText ?? formatFileSections(sections, { lineNumbers: false });
-    const attachmentTokens = tokenizer(
-      [{ role: "user", content: attachmentText }],
+    const inlineFileCount = shouldBundle ? 0 : selectedPlan.inlineFileCount;
+    const modelConfig = isKnownModel(runOptions.model)
+      ? MODEL_CONFIGS[runOptions.model]
+      : MODEL_CONFIGS["gpt-5.1"];
+    const tokenizer = deps.tokenizeImpl ?? modelConfig.tokenizer;
+    const tokenizerUserSections = [userPrompt];
+    if (inlineFileCount > 0 && selectedPlan.inlineBlock) {
+      tokenizerUserSections.push(selectedPlan.inlineBlock);
+    }
+    if (shouldBundle && resolvedBundleFormat === "zip" && bundled) {
+      tokenizerUserSections.push(
+        appendZipBundleInstruction("", bundled.originalCount, bundled.bundlePath),
+      );
+    }
+    const tokenizerUserContent = tokenizerUserSections
+      .filter((value) => Boolean(value?.trim()))
+      .join("\n\n")
+      .trim();
+    const tokenizerMessages = [
+      systemPrompt ? { role: "system", content: systemPrompt } : null,
+      tokenizerUserContent ? { role: "user", content: tokenizerUserContent } : null,
+    ].filter(Boolean) as Array<{ role: "system" | "user"; content: string }>;
+    let estimatedInputTokens = tokenizer(
+      tokenizerMessages.length > 0 ? tokenizerMessages : [{ role: "user", content: "" }],
       TOKENIZER_OPTIONS,
     );
-    estimatedInputTokens += attachmentTokens;
-  }
-
-  let fallback: BrowserPromptArtifacts["fallback"] = null;
-  let pendingFallback: PendingFallbackBundle | undefined;
-  if (attachmentsPolicy === "auto" && selectedPlan.mode === "inline" && sections.length > 0) {
-    const fallbackComposerText = baseComposerSections.join("\n\n").trim();
-    const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
-    const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
-      hasRawUploadFiles: rawUploadAttachments.length > 0,
-    });
-    const fallbackBundleScope = resolveBrowserBundleScope(fallbackBundleFormat, {
-      bundleRequested,
-      rawAttachmentCount: rawUploadAttachments.length,
-      textAttachmentCount: uploadPlan.attachments.length,
-    });
-    fallback = {
-      composerText: fallbackComposerText,
-      attachments: fallbackAttachments,
-      bundled: null,
-      pendingBundle:
-        fallbackBundleScope === "none"
-          ? null
-          : { format: fallbackBundleFormat, scope: fallbackBundleScope },
-    };
-    if (fallbackBundleScope !== "none") {
-      pendingFallback = {
-        format: fallbackBundleFormat,
-        scope: fallbackBundleScope,
-        sections,
-        textSources: textBundleSources,
-        allSources: allBundleSources,
-        rawUploadAttachments,
-      };
-    } else {
-      assertAttachmentCount(fallbackAttachments, fallbackBundleFormat);
+    const tokenEstimateIncludesInlineFiles =
+      inlineFileCount > 0 && Boolean(selectedPlan.inlineBlock);
+    if (!tokenEstimateIncludesInlineFiles && sections.length > 0) {
+      const attachmentText = bundleText ?? formatFileSections(sections, { lineNumbers: false });
+      const attachmentTokens = tokenizer(
+        [{ role: "user", content: attachmentText }],
+        TOKENIZER_OPTIONS,
+      );
+      estimatedInputTokens += attachmentTokens;
     }
-  }
 
-  const artifacts: BrowserPromptArtifacts = {
-    markdown,
-    composerText,
-    estimatedInputTokens,
-    attachments,
-    inlineFileCount,
-    tokenEstimateIncludesInlineFiles,
-    attachmentsPolicy,
-    attachmentMode: shouldBundle
-      ? "bundle"
-      : attachments.length > 0
-        ? "upload"
-        : selectedPlan.mode === "bundle"
-          ? "inline"
-          : selectedPlan.mode,
-    fallback,
-    bundled,
-  };
-  if (pendingFallback) {
-    pendingFallbackBundles.set(artifacts, pendingFallback);
+    let fallback: BrowserPromptArtifacts["fallback"] = null;
+    let pendingFallback: PendingFallbackBundle | undefined;
+    if (attachmentsPolicy === "auto" && selectedPlan.mode === "inline" && sections.length > 0) {
+      const fallbackComposerText = baseComposerSections.join("\n\n").trim();
+      const fallbackAttachments = [...uploadPlan.attachments, ...rawUploadAttachments];
+      const fallbackBundleFormat = resolveBrowserBundleFormat(bundleFormat, {
+        hasRawUploadFiles: rawUploadAttachments.length > 0,
+      });
+      const fallbackBundleScope = resolveBrowserBundleScope(fallbackBundleFormat, {
+        bundleRequested,
+        rawAttachmentCount: rawUploadAttachments.length,
+        textAttachmentCount: uploadPlan.attachments.length,
+      });
+      fallback = {
+        composerText: fallbackComposerText,
+        attachments: fallbackAttachments,
+        bundled: null,
+        pendingBundle:
+          fallbackBundleScope === "none"
+            ? null
+            : { format: fallbackBundleFormat, scope: fallbackBundleScope },
+      };
+      if (fallbackBundleScope !== "none") {
+        pendingFallback = {
+          format: fallbackBundleFormat,
+          scope: fallbackBundleScope,
+          sections,
+          textSources: textBundleSources,
+          allSources: allBundleSources,
+          rawUploadAttachments,
+        };
+      } else {
+        assertAttachmentCount(fallbackAttachments.length, fallbackBundleFormat);
+      }
+    }
+
+    const artifacts: BrowserPromptArtifacts = {
+      markdown,
+      composerText,
+      estimatedInputTokens,
+      attachments,
+      inlineFileCount,
+      tokenEstimateIncludesInlineFiles,
+      attachmentsPolicy,
+      attachmentMode: shouldBundle
+        ? "bundle"
+        : attachments.length > 0
+          ? "upload"
+          : selectedPlan.mode === "bundle"
+            ? "inline"
+            : selectedPlan.mode,
+      fallback,
+      bundled,
+    };
+    if (pendingFallback) {
+      pendingFallbackBundles.set(artifacts, pendingFallback);
+    }
+    return artifacts;
+  } catch (error) {
+    await Promise.all(
+      attachments
+        .map(generatedBundleDirectory)
+        .filter((dir): dir is string => dir !== null)
+        .map((dir) => fs.rm(dir, { recursive: true, force: true })),
+    );
+    throw error;
   }
-  return artifacts;
 }

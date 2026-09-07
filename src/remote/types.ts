@@ -36,6 +36,7 @@ export interface RemoteArtifactCapabilities {
   artifactTransfer: boolean;
   artifactProtocolVersion: number;
   maxArtifactBytes: number;
+  deferredFallbackBundling?: boolean;
 }
 
 export interface RemoteArtifactDescriptor {

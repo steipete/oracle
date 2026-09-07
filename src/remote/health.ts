@@ -101,6 +101,7 @@ function parseCapabilities(value: unknown): RemoteArtifactCapabilities | undefin
     return undefined;
   }
   const raw = value as {
+    deferredFallbackBundling?: unknown;
     artifactTransfer?: unknown;
     artifactProtocolVersion?: unknown;
     maxArtifactBytes?: unknown;
@@ -121,6 +122,7 @@ function parseCapabilities(value: unknown): RemoteArtifactCapabilities | undefin
     return undefined;
   }
   return {
+    ...(raw.deferredFallbackBundling === true ? { deferredFallbackBundling: true } : {}),
     artifactTransfer: true,
     artifactProtocolVersion,
     maxArtifactBytes: Math.min(maxArtifactBytes, MAX_REMOTE_ARTIFACT_BYTES),

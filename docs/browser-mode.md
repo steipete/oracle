@@ -162,6 +162,8 @@ Notes:
 
 All options are persisted with the session so restarts (`oracle restart <id>`) reuse the same automation settings.
 
+For the direct five-tier effort slider, Oracle verifies the leading effort label and the numeric slider position independently. Localized punctuation and ordinal wording, including Japanese `Pro、5件中5件目。`, do not affect selection. The label must end or be followed by whitespace or punctuation; word continuations such as `Professional` or `Proé`, missing labels, and contradictory positions cannot verify Pro.
+
 ### Deep Research mode
 
 Use `--browser-research deep` when the task needs broad web discovery, source comparison, or a cited report:
@@ -386,7 +388,7 @@ This mode is ideal when you have a macOS VM (or spare Mac mini) logged into Chat
 
 ## Limitations / Follow-Up Plan
 
-- **Attachment lifecycle** – in `auto` mode we prefer inlining small text inputs into the composer. When uploads are selected, one text/source file stays native and multiple text/source files become one bundle. Text-only `auto` bundles stay flattened text so existing workflows keep direct text ingestion; `--browser-bundle-format zip` (or mixed raw inputs) creates a ZIP plus an extract instruction. Images, PDFs, archives, and other native attachments stay separate unless `--browser-bundle-files` is set or the upload cap requires a single archive. `--browser-bundle-files` selects the upload plan even for small auto inputs. Fallback bundles are created only if ChatGPT rejects the inline paste, including on remote hosts. Generated bundle directories are removed after the run. The automation waits for uploads to finish (send button enabled, upload chips visible) before submitting.
+- **Attachment lifecycle** – in `auto` mode we prefer inlining small text inputs into the composer. When uploads are selected, one text/source file stays native and multiple text/source files become one bundle. Text-only `auto` bundles stay flattened text so existing workflows keep direct text ingestion; `--browser-bundle-format zip` (or mixed raw inputs) creates a ZIP plus an extract instruction. Images, PDFs, archives, and other native attachments stay separate unless `--browser-bundle-files` is set or the upload cap requires a single archive. `--browser-bundle-files` selects the upload plan even for small auto inputs. Fallback bundles are created only if ChatGPT rejects the inline paste on compatible remote hosts. Clients probe the host capability before deferring; older hosts receive a prebuilt fallback so their attachment limits remain intact. Generated bundle directories are removed after the run. The automation waits for uploads to finish (send button enabled, upload chips visible) before submitting.
 - **Model picker drift** – we rely on heuristics to pick GPT-5.6 / GPT-5.5 / GPT-5.4 / GPT-5.2 variants. If OpenAI changes the DOM we need to refresh the selectors quickly. Consider snapshot tests or a small “self check” command.
 - **Non-mac platforms** – window hiding uses AppleScript today; Linux/Windows just ignore the flag. We should detect platforms explicitly and document the behavior.
 - **Streaming UX** – browser runs cannot stream tokens, so we emit heartbeat/status logs while waiting. Investigate whether we can stream clipboard deltas via mutation observers for a closer UX.

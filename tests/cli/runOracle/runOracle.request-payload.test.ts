@@ -1,9 +1,24 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { runOracle } from "@src/oracle.ts";
+import { resetOpenRouterCatalogCacheForTest } from "@src/oracle/modelResolver.ts";
 import { MockClient, MockStream, buildResponse } from "./helpers.ts";
 
 describe("runOracle request payload", () => {
+  beforeEach(() => {
+    resetOpenRouterCatalogCacheForTest();
+    // Routing tests must not depend on the live OpenRouter catalog.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ data: [] })),
+    );
+  });
+
+  afterEach(() => {
+    resetOpenRouterCatalogCacheForTest();
+    vi.unstubAllGlobals();
+  });
+
   test("maps gpt-5.1-pro alias to gpt-5.5-pro API model", async () => {
     const stream = new MockStream([], buildResponse());
     const client = new MockClient(stream);
@@ -1087,6 +1102,7 @@ describe("runOracle request payload", () => {
       { apiKey: "az-test", azure: azureOptions, baseUrl: undefined, resolvedModelId: "my-o3" },
     ]);
     expect(client.lastRequest?.model).toBe("my-o3");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   test("treats auto-mode Azure deployments for custom non-GPT model ids as Azure OpenAI", async () => {
