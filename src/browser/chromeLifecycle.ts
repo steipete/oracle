@@ -582,12 +582,20 @@ export async function listRemoteChromeTargets(options: {
   host: string;
   port: number;
   browserWSEndpoint?: string;
+  approvalWaitMs?: number;
+  logger?: BrowserLogger;
 }): Promise<RemoteTargetInfo[]> {
   if (!options.browserWSEndpoint) {
     const targets = await CDP.List({ host: options.host, port: options.port });
     return targets as unknown as RemoteTargetInfo[];
   }
-  const browser = await CDP({ target: options.browserWSEndpoint, local: true });
+  const browser = await connectToBrowserWebSocket(
+    options.host,
+    options.port,
+    options.browserWSEndpoint,
+    options.logger ?? (() => {}),
+    options.approvalWaitMs,
+  );
   try {
     const result = await browser.Target.getTargets();
     return (result.targetInfos ?? []).map((target) => ({
@@ -672,34 +680,56 @@ async function connectToBrowserWebSocket(
     return (await CDP({ target: browserWSEndpoint, local: true })) as ChromeClient;
   }
 
-  logger(`Waiting for Chrome remote debugging approval for ${host}:${port}...`);
+  logger(`[browser] Waiting for Chrome remote debugging approval for ${host}:${port}...`);
 
-  const deadline = Date.now() + approvalWaitMs;
+  const startedAt = Date.now();
+  const deadline = startedAt + approvalWaitMs;
+  const progress = setInterval(() => {
+    logger(
+      `[browser] Still waiting for Chrome remote debugging approval for ${host}:${port} (${formatApprovalWait(Date.now() - startedAt)} elapsed). Click Allow in an open Chrome window.`,
+    );
+  }, 15_000);
   let lastApprovalError: unknown;
-  while (Date.now() < deadline) {
-    const remainingMs = Math.max(1, deadline - Date.now());
-    try {
-      return await Promise.race([
-        CDP({ target: browserWSEndpoint, local: true }) as Promise<ChromeClient>,
-        new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error("__oracle_remote_debugging_approval_timeout__"));
-          }, remainingMs);
-        }),
-      ]);
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === "__oracle_remote_debugging_approval_timeout__"
-      ) {
-        break;
+  try {
+    while (Date.now() < deadline) {
+      const remainingMs = Math.max(1, deadline - Date.now());
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let expired = false;
+      try {
+        const connecting = (
+          CDP({ target: browserWSEndpoint, local: true }) as Promise<ChromeClient>
+        ).then(async (client) => {
+          // An approval arriving after our deadline must not leak a connection.
+          if (expired) await client.close().catch(() => undefined);
+          return client;
+        });
+        return await Promise.race([
+          connecting,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => {
+              expired = true;
+              reject(new Error("__oracle_remote_debugging_approval_timeout__"));
+            }, remainingMs);
+          }),
+        ]);
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "__oracle_remote_debugging_approval_timeout__"
+        ) {
+          break;
+        }
+        if (!isRemoteDebuggingApprovalError(error)) {
+          throw error;
+        }
+        lastApprovalError = error;
+      } finally {
+        clearTimeout(timeout);
       }
-      if (!isRemoteDebuggingApprovalError(error)) {
-        throw error;
-      }
-      lastApprovalError = error;
       await delay(Math.min(500, Math.max(0, deadline - Date.now())));
     }
+  } finally {
+    clearInterval(progress);
   }
   const suffix =
     lastApprovalError instanceof Error && lastApprovalError.message

@@ -3250,7 +3250,7 @@ async function runRemoteBrowserMode(
       connection = await cancellation.acquire(
         () =>
           connectToRemoteChrome(host, port, logger, "about:blank", browserWSEndpoint, {
-            approvalWaitMs: config.attachRunning && browserWSEndpoint ? 20_000 : undefined,
+            approvalWaitMs: browserWSEndpoint ? config.approvalWaitMs : undefined,
             fallbackToDefault: false,
           }),
         (connection) => connection.close(),

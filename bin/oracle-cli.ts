@@ -128,6 +128,7 @@ interface CliOptions extends OptionValues {
   browserUrl?: string;
   browserTimeout?: string;
   browserInputTimeout?: string;
+  browserApprovalWait?: string;
   browserAttachmentTimeout?: string;
   browserProfileLockTimeout?: string;
   browserMaxConcurrentTabs?: string;
@@ -675,6 +676,12 @@ program
       "--browser-input-timeout <ms|s|m>",
       "Maximum time to wait for the prompt textarea (default 60s).",
     ).hideHelp(),
+  )
+  .addOption(
+    new Option(
+      "--browser-approval-wait <duration>",
+      "Wait for each Chrome remote-debugging approval prompt (default 20s; e.g. 5m).",
+    ).env("ORACLE_BROWSER_APPROVAL_WAIT"),
   )
   .addOption(
     new Option(

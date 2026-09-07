@@ -21,7 +21,7 @@ import {
   connectToRemoteChromeTarget,
   listRemoteChromeTargets,
 } from "./chromeLifecycle.js";
-import { resolveBrowserConfig } from "./config.js";
+import { resolveBrowserApprovalWait, resolveBrowserConfig } from "./config.js";
 import { clearStaleChatGptConversationCookies, syncCookies } from "./cookies.js";
 import { CHATGPT_URL } from "./constants.js";
 import { buildConversationTurnListExpression } from "./conversationTurns.js";
@@ -94,6 +94,7 @@ export async function resumeBrowserSession(
     const port =
       liveRuntime.chromePort ?? inferPortFromBrowserWSEndpoint(liveRuntime.chromeBrowserWSEndpoint);
     const browserWSEndpoint = liveRuntime.chromeBrowserWSEndpoint ?? undefined;
+    const approvalWaitMs = resolveBrowserApprovalWait(config?.approvalWaitMs);
     const listTargets =
       deps.listTargets ??
       (async () =>
@@ -101,6 +102,8 @@ export async function resumeBrowserSession(
           host,
           port: port ?? 9222,
           browserWSEndpoint,
+          approvalWaitMs,
+          logger,
         })) as TargetInfoLite[]);
     const targetList = (await listTargets()) as TargetInfoLite[];
     const target = pickTarget(targetList, liveRuntime);
@@ -110,6 +113,7 @@ export async function resumeBrowserSession(
             browserWSEndpoint,
             targetId: target?.targetId ?? target?.id,
             closeTargetOnDispose: false,
+            approvalWaitMs,
           })
         : await (async () => {
             const client = (await (

@@ -20,6 +20,7 @@ export interface BrowserDefaultsOptions {
   browserAttachRunning?: boolean;
   browserTimeout?: string | number;
   browserInputTimeout?: string | number;
+  browserApprovalWait?: string | number;
   browserAttachmentTimeout?: string | number;
   browserRecheckDelay?: string | number;
   browserRecheckTimeout?: string | number;
@@ -111,6 +112,9 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (isUnset("browserInputTimeout") && typeof browser.inputTimeoutMs === "number") {
     options.browserInputTimeout = String(browser.inputTimeoutMs);
+  }
+  if (isUnset("browserApprovalWait") && typeof browser.approvalWaitMs === "number") {
+    options.browserApprovalWait = String(browser.approvalWaitMs);
   }
   if (isUnset("browserAttachmentTimeout") && typeof browser.attachmentTimeoutMs === "number") {
     options.browserAttachmentTimeout = String(browser.attachmentTimeoutMs);

@@ -3,6 +3,7 @@ import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
+import * as chromeLifecycle from "../../src/browser/chromeLifecycle.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
 
 type FakeTarget = { id?: string; targetId?: string; type?: string; url?: string };
@@ -23,6 +24,51 @@ type FakeClient = {
 };
 
 describe("resumeBrowserSession", () => {
+  test("uses the saved approval wait for both browser-level reattach connections", async () => {
+    const list = vi
+      .spyOn(chromeLifecycle, "listRemoteChromeTargets")
+      .mockResolvedValue([
+        { targetId: "saved-tab", type: "page", url: "https://chatgpt.com/c/saved" },
+      ]);
+    const connect = vi
+      .spyOn(chromeLifecycle, "connectToRemoteChromeTarget")
+      .mockRejectedValue(new Error("synthetic stop after attach"));
+    const logger = vi.fn<(message: string) => void>();
+    const recoverSession = vi.fn(async () => ({
+      answerText: "recovered",
+      answerMarkdown: "recovered",
+    }));
+    try {
+      await resumeBrowserSession(
+        {
+          chromePort: 9222,
+          chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/approval-fixture",
+          chromeTargetId: "saved-tab",
+          tabUrl: "https://chatgpt.com/c/saved",
+        },
+        { approvalWaitMs: 300_000 },
+        logger,
+        { recoverSession },
+      );
+      expect(list).toHaveBeenCalledWith(
+        expect.objectContaining({ approvalWaitMs: 300_000, logger }),
+      );
+      expect(connect).toHaveBeenCalledWith(
+        "127.0.0.1",
+        9222,
+        logger,
+        expect.objectContaining({
+          approvalWaitMs: 300_000,
+          targetId: "saved-tab",
+          closeTargetOnDispose: false,
+        }),
+      );
+    } finally {
+      list.mockRestore();
+      connect.mockRestore();
+    }
+  });
+
   test("selects target and captures markdown via stubs", async () => {
     const runtime = {
       chromePort: 51559,

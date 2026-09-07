@@ -796,9 +796,10 @@ describe("closeBlankChromeTabs", () => {
 
     expect(cdpMock).toHaveBeenCalledTimes(1);
     expect(logger).toHaveBeenCalledWith(
-      "Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
+      "[browser] Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
     );
     expect(connection.targetId).toBe("target-10");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   test("fails after the approval wait without opening a second websocket request", async () => {
@@ -824,8 +825,94 @@ describe("closeBlankChromeTabs", () => {
 
     expect(cdpMock).toHaveBeenCalledTimes(1);
     expect(logger).toHaveBeenCalledWith(
-      "Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
+      "[browser] Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
     );
+  });
+
+  test("keeps one approval request pending beyond 20 seconds and logs every 15 seconds", async () => {
+    vi.useFakeTimers();
+    const browser = {
+      Target: { getTargets: vi.fn(async () => ({ targetInfos: [] })) },
+      close: vi.fn(async () => {}),
+    };
+    cdpMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(browser), 55_000);
+        }),
+    );
+    const { listRemoteChromeTargets } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+    const waiting = listRemoteChromeTargets({
+      host: "127.0.0.1",
+      port: 9222,
+      browserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+      approvalWaitMs: 300_000,
+      logger,
+    });
+    await vi.advanceTimersByTimeAsync(54_999);
+    expect(cdpMock).toHaveBeenCalledTimes(1);
+    expect(browser.Target.getTargets).not.toHaveBeenCalled();
+    expect(logger.mock.calls.map(([line]) => line)).toEqual([
+      "[browser] Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
+      "[browser] Still waiting for Chrome remote debugging approval for 127.0.0.1:9222 (15s elapsed). Click Allow in an open Chrome window.",
+      "[browser] Still waiting for Chrome remote debugging approval for 127.0.0.1:9222 (30s elapsed). Click Allow in an open Chrome window.",
+      "[browser] Still waiting for Chrome remote debugging approval for 127.0.0.1:9222 (45s elapsed). Click Allow in an open Chrome window.",
+    ]);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(waiting).resolves.toEqual([]);
+    expect(browser.close).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("cleans up a connection approved after its deadline without creating a tab", async () => {
+    vi.useFakeTimers();
+    const browser = {
+      Target: { createTarget: vi.fn() },
+      close: vi.fn(async () => {}),
+    };
+    cdpMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(browser), 21_000);
+        }),
+    );
+    const { connectToRemoteChrome } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+    const waiting = connectToRemoteChrome(
+      "127.0.0.1",
+      9222,
+      logger,
+      "about:blank",
+      "ws://127.0.0.1:9222/devtools/browser/abc",
+      { approvalWaitMs: 20_000 },
+    );
+    const failure = expect(waiting).rejects.toThrow(/waited 20s/);
+    await vi.advanceTimersByTimeAsync(20_000);
+    await failure;
+    const messages = logger.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(browser.close).toHaveBeenCalledOnce();
+    expect(browser.Target.createTarget).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledTimes(messages);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("stops approval progress timers on non-approval connection failures", async () => {
+    vi.useFakeTimers();
+    cdpMock.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const { connectToRemoteChrome } = await import("../../src/browser/chromeLifecycle.js");
+    await expect(
+      connectToRemoteChrome(
+        "127.0.0.1",
+        9222,
+        vi.fn<(message: string) => void>(),
+        "about:blank",
+        "ws://127.0.0.1:9222/devtools/browser/abc",
+        { approvalWaitMs: 300_000 },
+      ),
+    ).rejects.toThrow("ECONNREFUSED");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   test("retries immediate 403 responses while waiting for remote debugging approval", async () => {

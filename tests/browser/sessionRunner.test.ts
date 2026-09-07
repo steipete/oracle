@@ -604,6 +604,49 @@ describe("runBrowserSessionExecution", () => {
     expect(log.mock.calls.some((call) => String(call[0]).includes("ChatGPT thinking"))).toBe(true);
   });
 
+  test("prints each approval wait and heartbeat without verbose mode", async () => {
+    const log = vi.fn();
+    await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async ({ log: automationLog }) => {
+          automationLog?.(
+            "[browser] Waiting for Chrome remote debugging approval for 127.0.0.1:9222...",
+          );
+          automationLog?.(
+            "[browser] Still waiting for Chrome remote debugging approval for 127.0.0.1:9222 (15s elapsed). Click Allow in an open Chrome window.",
+          );
+          return {
+            answerText: "text",
+            answerMarkdown: "markdown",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 4,
+          };
+        },
+      },
+    );
+    expect(
+      log.mock.calls.filter((call) => String(call[0]).includes("remote debugging approval")),
+    ).toHaveLength(2);
+  });
+
   test("prints browser follow-up progress logs even when not verbose", async () => {
     const log = vi.fn();
     await runBrowserSessionExecution(

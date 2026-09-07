@@ -86,6 +86,7 @@ describe("loadUserConfig", () => {
           chatgptUrl: "https://chatgpt.com/g/g-p-root/project",
           modelStrategy: "current",
           attachmentTimeoutMs: 120000,
+          approvalWaitMs: 300000,
         },
       }`,
       "utf8",
@@ -111,6 +112,7 @@ describe("loadUserConfig", () => {
         chatgptUrl: "https://chatgpt.com/g/g-p-root/project",
         modelStrategy: "current",
         attachmentTimeoutMs: 120000,
+        approvalWaitMs: 300000,
         archiveConversations: "never",
       },
     });
