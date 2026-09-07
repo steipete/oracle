@@ -99,11 +99,16 @@ describe("gemini-web uploads", () => {
         "56fdd199312815e2",
         null,
         null,
-        0,
-        [4],
+        1,
+        [4, 5, 6, 8],
         null,
         null,
         2,
+        null,
+        null,
+        1,
+        1,
+        expect.stringMatching(/^[0-9A-F-]{36}$/),
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(4);
     } finally {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { BrowserLogger } from "../browser/types.js";
 
 export type GeminiWebModelId =
@@ -43,7 +44,9 @@ const MODEL_SPECS: Record<GeminiWebModelId, GeminiWebModelSpec> = {
   },
 };
 
-export function buildGeminiWebModelHeader(model: GeminiWebModelId): string {
+const clientId = randomUUID().toUpperCase();
+
+export function buildGeminiWebModelHeader(model: GeminiWebModelId, webClientId = clientId): string {
   const spec = MODEL_SPECS[model];
   return JSON.stringify([
     1,
@@ -53,11 +56,16 @@ export function buildGeminiWebModelHeader(model: GeminiWebModelId): string {
     spec.hash,
     null,
     null,
-    0,
-    [4],
+    1,
+    [4, 5, 6, 8],
     null,
     null,
     spec.capacity,
+    null,
+    null,
+    spec.modelCode,
+    spec.thinkingCode,
+    webClientId,
   ]);
 }
 

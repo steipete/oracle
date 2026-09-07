@@ -3117,6 +3117,79 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
   });
 
   it.each([
+    ["Portuguese", "Pro, 5 de 5."],
+    ["Japanese", "Pro、5件中5件目。"],
+    ["Unicode punctuation", "Pro—position 5 of 5"],
+    ["fullwidth comma", "Pro，5/5"],
+    ["whitespace", "Pro 5/5"],
+    ["exact label", "Pro"],
+  ])(
+    "verifies Pro through a %s direct-slider announcement",
+    async (_locale: string, announcement: string) => {
+      const dom = buildDirectSlider(4);
+      dom.announcement.textContent = announcement;
+
+      await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+        status: "already-selected",
+        label: "Pro",
+      });
+      expect(dom.keys).toEqual([]);
+    },
+  );
+
+  it("verifies a localized non-Pro label without a comma delimiter", async () => {
+    const dom = buildDirectSlider(3, ["Sofort", "Mittel", "Hoch", "Sehr hoch", "Pro"]);
+    dom.announcement.textContent = "Sehr hoch – 4 von 5";
+
+    await expect(run(dom.documentStub, "extra-high")).resolves.toEqual({
+      status: "already-selected",
+      label: "Sehr hoch",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  it("selects Pro while Japanese announcements update after each arrow key", async () => {
+    const labels = ["最速", "中程度", "高い", "非常に高い", "Pro"];
+    const dom = buildDirectSlider(2, labels);
+    let index = 2;
+    dom.announcement.textContent = "高い、5件中3件目。";
+    dom.control.dispatchEvent = (event: unknown) => {
+      const key = (event as { key?: string }).key;
+      if (key !== "ArrowLeft" && key !== "ArrowRight") return true;
+      dom.keys.push(key);
+      index += key === "ArrowRight" ? 1 : -1;
+      dom.thumb.setAttribute("aria-valuenow", String(index));
+      dom.announcement.textContent = `${labels[index]}、5件中${index + 1}件目。`;
+      return true;
+    };
+
+    await expect(run(dom.documentStub, "pro")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual(["ArrowRight", "ArrowRight"]);
+  });
+
+  it.each([
+    "Professional, 5 of 5",
+    "Selected Pro, 5 of 5",
+    "Pro5/5",
+    "5 of 5",
+    "Proé, 5 of 5",
+    "ProЖ, 5 of 5",
+    "Pro𝟙, 5 of 5",
+    "Pro\u0338, 5 of 5",
+    "Pro🙂, 5 of 5",
+    "Pro\u200d, 5 of 5",
+  ])("does not infer Pro from the direct-slider announcement %j", async (announcement: string) => {
+    const dom = buildDirectSlider(4);
+    dom.announcement.textContent = announcement;
+
+    expect((await run(dom.documentStub, "pro")).status).toBe("selection-unverified");
+    expect(dom.keys).toEqual([]);
+  });
+
+  it.each([
     ["light", "Instant", 4],
     ["standard", "Medium", 3],
     ["extended", "High", 2],

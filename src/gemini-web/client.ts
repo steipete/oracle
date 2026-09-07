@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fetchGeminiWebResource } from "./http.js";
 import {
   buildGeminiWebModelHeader,
   FALLBACK_GEMINI_WEB_MODEL,
@@ -106,7 +107,7 @@ export async function fetchGeminiAccessToken(
   signal?: AbortSignal,
 ): Promise<string> {
   const cookieHeader = buildCookieHeader(cookieMap);
-  const res = await fetch(GEMINI_APP_URL, {
+  const res = await fetchGeminiWebResource(GEMINI_APP_URL, {
     redirect: "follow",
     signal,
     headers: {
@@ -166,7 +167,7 @@ async function fetchWithCookiePreservingRedirects(
 ): Promise<Response> {
   let current = url;
   for (let i = 0; i <= maxRedirects; i += 1) {
-    const res = await fetch(current, { ...init, redirect: "manual", signal });
+    const res = await fetchGeminiWebResource(current, { ...init, redirect: "manual", signal });
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
       if (!location) return res;
@@ -216,7 +217,7 @@ async function uploadGeminiFile(
   const form = new FormData();
   form.append("file", new Blob([data], { type: mimeType }), fileName);
 
-  const res = await fetch(GEMINI_UPLOAD_URL, {
+  const res = await fetchGeminiWebResource(GEMINI_UPLOAD_URL, {
     method: "POST",
     redirect: "follow",
     signal,
@@ -395,7 +396,7 @@ export async function runGeminiWebOnce(input: GeminiWebRunInput): Promise<Gemini
   params.set("at", at);
   params.set("f.req", fReq);
 
-  const res = await fetch(GEMINI_STREAM_GENERATE_URL, {
+  const res = await fetchGeminiWebResource(GEMINI_STREAM_GENERATE_URL, {
     method: "POST",
     redirect: "follow",
     signal: input.signal,
@@ -483,7 +484,11 @@ function assertGeminiWebRunSucceeded(output: GeminiWebRunOutput): GeminiWebRunOu
   if (output.errorMessage) {
     throw new Error(`Gemini web request failed: ${output.errorMessage}`);
   }
-  if (!output.text && output.images.length === 0) {
+  if (
+    !output.text.trim() &&
+    output.images.length === 0 &&
+    extractGgdlUrls(output.rawResponseText).length === 0
+  ) {
     throw new Error("Gemini web request ended without a response.");
   }
   return output;

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runGeminiWebWithFallback } from "../../src/gemini-web/client.js";
+import {
+  runGeminiWebWithFallback,
+  saveFirstGeminiImageFromOutput,
+} from "../../src/gemini-web/client.js";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 function unavailableResponse(code = 1052): string {
   const response: unknown[] = [];
@@ -111,5 +117,42 @@ describe("Gemini web model fallback", () => {
         allowModelFallback: false,
       }),
     ).rejects.toThrow("Gemini web request failed with error code 1061.");
+  });
+
+  it("keeps raw image downloads reachable through the success guard", async () => {
+    const imageUrl = "https://lh3.googleusercontent.com/gg-dl/synthetic-proof";
+    const bytes = new Uint8Array([9, 8, 7, 6]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "https://gemini.google.com/app")
+        return new Response('"SNlM0e":"test-access-token"');
+      if (url.includes("/StreamGenerate")) {
+        const body: unknown[] = [];
+        body[1] = ["cid", "rid", "rcid"];
+        body[4] = [["rcid", [""]]];
+        body[7] = { unparsedImage: imageUrl };
+        return new Response(`)]}'\n\n${JSON.stringify([[null, null, JSON.stringify(body)]])}`);
+      }
+      if (url.startsWith(imageUrl))
+        return new Response(bytes, { headers: { "content-type": "image/jpeg" } });
+      throw new Error("Unexpected fixture request");
+    });
+    const output = await runGeminiWebWithFallback({
+      prompt: "image",
+      model: "gemini-3.1-pro",
+      cookieMap: {},
+    });
+    expect(output.text).toBe("");
+    expect(output.images).toEqual([]);
+    const directory = await mkdtemp(path.join(os.tmpdir(), "oracle-raw-image-"));
+    try {
+      const filename = path.join(directory, "image.jpg");
+      await expect(saveFirstGeminiImageFromOutput(output, {}, filename)).resolves.toMatchObject({
+        saved: true,
+      });
+      expect(new Uint8Array(await readFile(filename))).toEqual(bytes);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
