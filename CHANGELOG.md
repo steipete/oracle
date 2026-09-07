@@ -9,6 +9,7 @@
 - Browser: detect when a later harvest conflicts with saved conversation identities, preserve the original transcript and answer, and record explicit manual target overrides. Fixes #442; thanks @postoso.
 - Browser: fail promptly on known English Retry failures, preserve manual recovery, and keep waiting while generation remains active; apply the same guard to image output and response recovery. Fixes #457; thanks @developerisnow.
 - Gemini: update the web request protocol and model headers, preserve raw image-download fallbacks, report upstream and oversized-header failures clearly, and add an opt-in refusal of model fallback; thanks @mpeter.
+- Browser: bundle multiple source uploads while preserving native attachments and the existing auto format, negotiate deferred fallback bundling with remote hosts, and remove generated files after success, failure, or preparation timeout; thanks @tristanmanchester.
 - Agents: add the optional oracle-advisor skill with explicit API, browser, or render routing and per-run model/effort provenance, while retaining the existing Oracle skill. Fixes #355; thanks @genforAI.
 - Browser: wait for explicit upload state to clear before completing attachments or sending; ignore unrelated activity, hidden indicators, and filenames that resemble status text. Fixes #446; thanks @HJC704.
 - Browser: retain per-file attachment evidence, including filename-less images, and stabilize the send target without replaying a dispatched prompt. Fixes #418; thanks @hubofvalley.
