@@ -18,6 +18,12 @@ Drop this into the project's `AGENTS.md` or `CLAUDE.md`:
 
 That's enough for most agents to discover and use Oracle correctly. The patterns below cover the deeper integrations.
 
+For explicit API/browser/render selection and per-run model/effort provenance,
+use the optional `skills/oracle-advisor` companion skill instead. It reuses the
+existing backends and does not implement native desktop delegation. See
+[Advisory consultations](advisor.md) for its capability boundary and result
+contract. The existing `skills/oracle` workflow remains available unchanged.
+
 ## Claude Code
 
 ### As an MCP server (recommended)
