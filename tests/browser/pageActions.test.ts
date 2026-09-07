@@ -1429,6 +1429,28 @@ describe("waitForAssistantResponse", () => {
     });
   });
 
+  test("stops the pending renderer observer when the Retry watchdog fails", async () => {
+    const evaluate = vi.fn().mockImplementation(({ awaitPromise }) =>
+      awaitPromise
+        ? new Promise(() => {})
+        : Promise.resolve({
+            result: {
+              value: { text: "Something went wrong.", uiError: "temporary_unavailable" },
+            },
+          }),
+    );
+    const terminateExecution = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      waitForAssistantResponse(
+        { evaluate, terminateExecution } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+        2,
+      ),
+    ).rejects.toMatchObject({ details: { stage: "assistant-ui-error" } });
+    expect(terminateExecution).toHaveBeenCalledOnce();
+  });
+
   test("returns captured assistant payload", async () => {
     vi.useFakeTimers();
     try {

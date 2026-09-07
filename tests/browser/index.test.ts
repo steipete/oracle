@@ -18,6 +18,32 @@ import {
 import { resolveBrowserConfig } from "../../src/browser/config.js";
 import { BrowserAutomationError } from "../../src/oracle/errors.js";
 
+describe("generated image response failures", () => {
+  test("rejects a current Retry failure instead of accepting its text as an image answer", async () => {
+    const evaluate = vi.fn().mockResolvedValue({
+      result: {
+        value: {
+          text: "Something went wrong while generating the response.",
+          turnIndex: 2,
+          uiError: "temporary_unavailable",
+        },
+      },
+    });
+    await expect(
+      __test__.pollGeneratedImageOrTextAssistantResponse(
+        { evaluate } as unknown as Parameters<
+          typeof __test__.pollGeneratedImageOrTextAssistantResponse
+        >[0],
+        30_000,
+        2,
+      ),
+    ).rejects.toMatchObject({
+      details: { stage: "assistant-ui-error", code: "chatgpt-ui-warning" },
+    });
+    expect(evaluate).toHaveBeenCalledOnce();
+  });
+});
+
 describe("shouldPreserveBrowserOnErrorForTest", () => {
   test("preserves the browser for headful cloudflare challenge errors", () => {
     const error = new BrowserAutomationError("Cloudflare challenge detected.", {

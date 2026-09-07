@@ -13,7 +13,11 @@ import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { isDeepResearchIncompleteText } from "../deepResearchResult.js";
 import { buildClickDispatcher } from "./domEvents.js";
-import { captureAssistantMarkdown, readAssistantSnapshot } from "./assistantResponse.js";
+import {
+  captureAssistantMarkdown,
+  readAssistantSnapshot,
+  throwIfAssistantUiError,
+} from "./assistantResponse.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 
 type ActivateOutcome =
@@ -380,6 +384,7 @@ export async function extractDeepResearchResult(
   meta: { turnId?: string | null; messageId?: string | null };
 }> {
   const snapshot = await readAssistantSnapshot(Runtime, minTurnIndex);
+  throwIfAssistantUiError(snapshot);
   const meta = {
     turnId: snapshot?.turnId ?? null,
     messageId: snapshot?.messageId ?? null,

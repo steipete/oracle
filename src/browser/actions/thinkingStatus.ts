@@ -5,6 +5,7 @@ import {
   CONVERSATION_TURN_SELECTOR,
   STOP_BUTTON_SELECTORS,
 } from "../constants.js";
+import { buildConversationTurnListExpression } from "../conversationTurns.js";
 
 const THINKING_STALE_HINT_MS = 10 * 60_000;
 
@@ -481,7 +482,6 @@ const ACTIVE_THINKING_LABELS = [
 function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): string {
   const stopLiteral = JSON.stringify(STOP_BUTTON_SELECTORS.join(", "));
   const activeLabelsLiteral = JSON.stringify(ACTIVE_THINKING_LABELS);
-  const conversationLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   const strong = detailed ? "{ active: true, strong: true }" : "true";
   const weak = detailed ? "{ active: true, strong: false }" : "true";
@@ -489,7 +489,6 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
   return `const ${fnName} = () => {
     const STOP_SELECTOR = ${stopLiteral};
     const ACTIVE_LABELS = ${activeLabelsLiteral};
-    const CONVERSATION_SELECTOR = ${conversationLiteral};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isVisible = (node) => {
       if (!(node instanceof HTMLElement)) return false;
@@ -592,9 +591,7 @@ function buildThinkingActivityPredicateJs(fnName: string, detailed: boolean): st
     // a visible progress bar mounted indefinitely (review P1), and a document-wide veto would
     // then hold thinkingActive true until the watchdog timeout on a completed response. The
     // sidecar check below covers verified reasoning panels; here only the latest turn counts.
-    const turns = (() => {
-      try { return document.querySelectorAll(CONVERSATION_SELECTOR); } catch { return []; }
-    })();
+    const turns = ${buildConversationTurnListExpression()};
     const lastTurn = turns.length ? turns[turns.length - 1] : null;
     if (
       lastTurn instanceof HTMLElement &&

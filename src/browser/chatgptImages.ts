@@ -11,6 +11,7 @@ import { ASSISTANT_ROLE_SELECTOR } from "./constants.js";
 import { buildConversationTurnListExpression } from "./conversationTurns.js";
 import { delay } from "./utils.js";
 import { readAssistantSnapshot } from "./pageActions.js";
+import { throwIfAssistantUiError } from "./actions/assistantResponse.js";
 import { getOracleHomeDir } from "../oracleHome.js";
 import { resolveSessionArtifactsDir } from "./artifacts.js";
 import { saveAssistantDownloadButtonArtifacts } from "./chatgptFiles.js";
@@ -580,6 +581,7 @@ export async function collectGeneratedImageArtifacts(params: {
         params.Runtime,
         params.minTurnIndex ?? undefined,
       ).catch(() => null);
+      throwIfAssistantUiError(latestSnapshot);
       const snapshotText =
         typeof latestSnapshot?.text === "string" ? latestSnapshot.text.trim() : "";
       if (snapshotText) {

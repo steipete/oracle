@@ -8,7 +8,11 @@ import {
   STOP_BUTTON_SELECTORS,
 } from "../constants.js";
 import { buildConversationTurnListExpression } from "../conversationTurns.js";
-import { buildThinkingActivePredicateJs, readThinkingActivity } from "./thinkingStatus.js";
+import {
+  buildThinkingActivePredicateJs,
+  buildThinkingActivityDetailsPredicateJs,
+  readThinkingActivity,
+} from "./thinkingStatus.js";
 import { delay } from "../utils.js";
 import {
   logDomFailure,
@@ -318,6 +322,8 @@ export async function waitForAssistantResponse(
         await terminateRuntimeExecution(Runtime);
         throw error;
       } else if (source === "poll") {
+        evaluationPromise.catch(() => undefined);
+        await terminateRuntimeExecution(Runtime);
         throw error;
       } else if (source === "evaluation") {
         const recovered = await recoverAssistantResponse(
@@ -901,7 +907,7 @@ function normalizeAssistantSnapshot(snapshot: AssistantSnapshot | null): {
   };
 }
 
-function throwIfAssistantUiError(snapshot: AssistantSnapshot | null): void {
+export function throwIfAssistantUiError(snapshot: AssistantSnapshot | null): void {
   if (snapshot?.uiError !== "temporary_unavailable") return;
   throw new BrowserAutomationError(
     "ChatGPT could not generate the submitted assistant turn and offered Retry.",
@@ -1230,6 +1236,7 @@ function buildAssistantExtractor(functionName: string): string {
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   return `const ${functionName} = () => {
     ${buildClickDispatcher()}
+    ${buildThinkingActivityDetailsPredicateJs("readRetryThinkingActivity")}
     const isRetryAssistantUiError = ${isRetryAssistantUiErrorText.toString()};
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isAssistantTurn = (node) => {
@@ -1304,9 +1311,10 @@ function buildAssistantExtractor(functionName: string): string {
         if (label !== 'retry' || !(button instanceof HTMLElement)) return false;
         const rect = button.getBoundingClientRect();
         const style = window.getComputedStyle(button);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' &&
+          !(style.opacity !== '' && Number(style.opacity) === 0);
       });
-      if (isRetryAssistantUiError(text, retryVisible)) {
+      if (isRetryAssistantUiError(text, retryVisible) && !readRetryThinkingActivity().strong) {
         return { text, html, messageId, turnId, turnIndex: index, uiError: 'temporary_unavailable' };
       }
       const imageOnlyChrome =
