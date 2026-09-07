@@ -9,7 +9,7 @@ import { BrowserAutomationError } from "../oracle/errors.js";
 
 const INTEGRITY_WARNING = "browser-harvest-integrity";
 const INTEGRITY_MESSAGE =
-  "Harvested conversation differs from the saved capture. Original artifacts were preserved; inspect browser.harvest.integrity before using the answer.";
+  "Harvest or saved conversation identities conflict. Original artifacts were preserved; inspect browser.harvest.integrity before using the answer.";
 
 async function readTranscriptConversation(filename: string): Promise<string | undefined> {
   let file;
@@ -89,10 +89,13 @@ export async function persistBrowserHarvest(
 
   const observedConversationId =
     harvested.conversationId ?? extractConversationIdFromUrl(harvested.url);
-  const mismatch = Boolean(
-    observedConversationId &&
-    captured.some((entry) => entry.conversationId !== observedConversationId),
-  );
+  const capturedIds = new Set(captured.map((entry) => entry.conversationId));
+  const previousIntegrity = meta.browser?.harvest?.integrity;
+  const mismatch =
+    capturedIds.size > 1 ||
+    (observedConversationId
+      ? captured.some((entry) => entry.conversationId !== observedConversationId)
+      : previousIntegrity?.status === "mismatch");
   const integrity: BrowserHarvestIntegrity = {
     status: mismatch
       ? "mismatch"
@@ -103,7 +106,8 @@ export async function persistBrowserHarvest(
     captured,
     unverifiedSources,
     explicitTarget,
-    previousHarvestConversationId: meta.browser?.harvest?.conversationId,
+    previousHarvestConversationId:
+      meta.browser?.harvest?.conversationId ?? previousIntegrity?.previousHarvestConversationId,
   };
   const warnings = (meta.browser?.warnings ?? []).filter(
     (warning) => warning.code !== INTEGRITY_WARNING,

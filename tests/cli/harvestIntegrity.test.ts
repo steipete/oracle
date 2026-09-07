@@ -102,6 +102,51 @@ describe("harvest capture identity", () => {
     });
   });
 
+  test("detects contradictory saved identities even on the first unidentified harvest", async () => {
+    const saved = await seed("harvest-b", "capture-a");
+    const unidentified = {
+      ...observed("harvest-b"),
+      conversationId: undefined,
+      url: "https://chatgpt.com/",
+    };
+    await expect(persistBrowserHarvest(saved.id, unidentified)).rejects.toMatchObject({
+      details: { code: "conversation-identity-mismatch" },
+    });
+  });
+
+  test.each(["capture-a", "harvest-b"])(
+    "retains known conflicts after unidentified harvests (runtime %s)",
+    async (runtimeId) => {
+      const saved = await seed(runtimeId, "capture-a");
+      await expect(persistBrowserHarvest(saved.id, observed("harvest-b"))).rejects.toMatchObject({
+        details: { code: "conversation-identity-mismatch" },
+      });
+      const unidentified = {
+        ...observed("harvest-b"),
+        conversationId: undefined,
+        url: "https://chatgpt.com/",
+      };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await expect(persistBrowserHarvest(saved.id, unidentified, true)).resolves.toMatchObject({
+          status: "mismatch",
+          previousHarvestConversationId: "harvest-b",
+        });
+        const meta = await sessionStore.readSession(saved.id);
+        expect(
+          meta?.browser?.warnings?.filter(
+            (warning) => warning.code === "browser-harvest-integrity",
+          ),
+        ).toHaveLength(1);
+        expect(meta?.status).toBe("completed");
+      }
+      await expect(persistBrowserHarvest(saved.id, unidentified)).rejects.toMatchObject({
+        details: { code: "conversation-identity-mismatch" },
+      });
+      expect(await fs.readFile(saved.transcript, "utf8")).toBe(saved.body);
+      expect(await fs.readFile(saved.paths.log, "utf8")).toBe("Original answer\n");
+    },
+  );
+
   test("allows an explicit target while retaining the conflict and original capture", async () => {
     const saved = await seed("capture-a");
     await expect(
