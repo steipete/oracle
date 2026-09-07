@@ -348,6 +348,14 @@ Key behavior:
 
 ### Remote Service Mode (`oracle serve`)
 
+To host requests through an already-running signed-in Chrome, start the service with:
+
+```bash
+oracle serve --host 127.0.0.1 --browser-attach-running --remote-chrome 127.0.0.1:9222 --browser-approval-wait 5m
+```
+
+These are **host settings**: `browser.attachRunning`, `browser.remoteChrome`, and `browser.approvalWaitMs` in the service host configuration also apply. Explicit flags override configuration; `ORACLE_BROWSER_APPROVAL_WAIT` overrides the configured wait unless the flag is supplied. Attach-running mode (or a standalone `--remote-chrome` endpoint for classic DevTools HTTP) skips cookie extraction and manual-login Chrome startup. Each run uses the selected browser; service shutdown leaves that browser running. With no attachment settings, the existing dedicated manual-login default remains. Clients cannot override the host endpoint, attach mode, or approval wait. Add `--max-concurrent-runs 2 --max-queued-runs 8` to opt into bounded admission.
+
 Prefer to keep Chrome entirely on the remote Mac (no DevTools tunneling, no manual cookie shuffling)? Use the built-in service:
 
 1. **Start the host**

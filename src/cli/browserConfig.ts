@@ -438,7 +438,7 @@ export function resolveBrowserModelLabel(input: string | undefined, model: Model
   return trimmed;
 }
 
-function parseRemoteChromeTarget(raw: string): { host: string; port: number } {
+export function parseRemoteChromeTarget(raw: string): { host: string; port: number } {
   const target = raw.trim();
   if (!target) {
     throw new Error(

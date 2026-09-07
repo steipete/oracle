@@ -996,7 +996,10 @@ program
   )
   .action(async (commandOptions) => {
     const { serveRemote } = await import("../src/remote/server.js");
+    const { buildServeBrowserConfig } = await import("../src/cli/serveBrowserConfig.js");
+    const { config } = await loadUserConfig();
     await serveRemote({
+      browserConfig: buildServeBrowserConfig(program.opts<CliOptions>(), config),
       host: commandOptions.host,
       port: commandOptions.port,
       token: commandOptions.token,

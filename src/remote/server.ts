@@ -45,7 +45,14 @@ import {
 } from "../browser/artifacts.js";
 import type { BrowserRunWarning, SessionArtifact } from "../sessionManager.js";
 
+export type RemoteHostBrowserConfig = Pick<
+  BrowserSessionConfig,
+  "attachRunning" | "remoteChrome" | "approvalWaitMs"
+>;
+
 export interface RemoteServerOptions {
+  /** Host-owned routing; never accepted from a remote caller. */
+  browserConfig?: RemoteHostBrowserConfig;
   host?: string;
   port?: number;
   token?: string;
@@ -122,6 +129,17 @@ export async function createRemoteServer(
   deps: RemoteServerDeps = {},
 ): Promise<RemoteServerInstance> {
   const runBrowser = deps.runBrowser ?? runBrowserMode;
+  const attachedBrowser = usesHostBrowserAttachment(options.browserConfig);
+  const manualLoginDefault = !attachedBrowser && options.manualLoginDefault;
+  const hostBrowserConfig: RemoteHostBrowserConfig = options.browserConfig
+    ? {
+        attachRunning: options.browserConfig?.attachRunning,
+        remoteChrome: options.browserConfig?.remoteChrome
+          ? { ...options.browserConfig.remoteChrome }
+          : undefined,
+        approvalWaitMs: options.browserConfig?.approvalWaitMs,
+      }
+    : {};
   const server = http.createServer();
   const logger = options.logger ?? console.log;
   const authToken = options.token ?? randomBytes(16).toString("hex");
@@ -410,11 +428,14 @@ export async function createRemoteServer(
       // `browserTabRef`/`attachRunning` select a tab that may belong to somebody
       // else's run. With those reachable, a bridge token is not a permission to
       // ask ChatGPT a question — it is a permission to run code here.
-      payload.browserConfig = pickClientBrowserConfig(payload.browserConfig);
+      payload.browserConfig = {
+        ...pickClientBrowserConfig(payload.browserConfig),
+        ...hostBrowserConfig,
+      };
       // Remote runs rely on the host's authentication policy; never accept cookie payloads from clients.
       payload.browserConfig.inlineCookies = null;
       payload.browserConfig.inlineCookiesSource = null;
-      payload.browserConfig.cookieSync = options.cookieSyncDefault === true;
+      payload.browserConfig.cookieSync = !attachedBrowser && options.cookieSyncDefault === true;
 
       const clientSession =
         typeof payload.options.sessionId === "string"
@@ -425,7 +446,7 @@ export async function createRemoteServer(
       signal?.throwIfAborted();
 
       // Enforce manual-login profile when cookie sync is unavailable (e.g., Windows/WSL).
-      if (options.manualLoginDefault) {
+      if (manualLoginDefault) {
         payload.browserConfig.manualLogin = true;
         payload.browserConfig.manualLoginProfileDir = options.manualLoginProfileDir;
         payload.browserConfig.keepBrowser = true;
@@ -446,7 +467,7 @@ export async function createRemoteServer(
         // process. This separate service policy closes only a successfully
         // captured tab owned by this run, preventing one renderer leak per
         // request while incomplete/reattachable tabs remain untouched.
-        closeOwnedTabOnComplete: Boolean(options.manualLoginDefault && !clientRequestedKeepBrowser),
+        closeOwnedTabOnComplete: Boolean(manualLoginDefault && !clientRequestedKeepBrowser),
         closeOwnedTabOnCancel: !clientRequestedKeepBrowser,
         log: automationLogger,
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
@@ -562,6 +583,12 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
     return;
   }
 
+  if (usesHostBrowserAttachment(options.browserConfig)) {
+    console.log("Using the host browser attachment; skipping local Chrome login/bootstrap.");
+    await runRemoteServer(options);
+    return;
+  }
+
   if (!preferManualLogin) {
     console.log(
       "Warning: Chrome cookie copying can invalidate an active ChatGPT session when tokens rotate. Prefer the default dedicated manual-login profile when possible.",
@@ -618,11 +645,19 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
     );
   }
 
-  const server = await createRemoteServer({
+  await runRemoteServer({
     ...options,
     manualLoginDefault: preferManualLogin,
     manualLoginProfileDir: manualProfileDir,
   });
+}
+
+function usesHostBrowserAttachment(config?: RemoteHostBrowserConfig): boolean {
+  return config?.attachRunning === true || Boolean(config?.remoteChrome);
+}
+
+async function runRemoteServer(options: RemoteServerOptions): Promise<void> {
+  const server = await createRemoteServer(options);
   await new Promise<void>((resolve) => {
     const shutdown = () => {
       console.log("Shutting down remote service...");

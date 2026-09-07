@@ -29,6 +29,71 @@ const CAN_LISTEN_LOCALHOST =
   ).status === 0;
 
 describe("remote browser service", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST).each([true, false])(
+    "enforces the host endpoint and wait over client injection (attachRunning=%s)",
+    async (attachRunning) => {
+      const hostRoute = {
+        attachRunning,
+        remoteChrome: { host: "127.0.0.1", port: 9333 },
+        approvalWaitMs: 300_000,
+      };
+      let observed = false;
+      const server = await createRemoteServer(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          token: "test-host-routing",
+          logger: () => {},
+          browserConfig: hostRoute,
+          manualLoginDefault: true,
+          cookieSyncDefault: true,
+        },
+        {
+          runBrowser: async (options) => {
+            observed = true;
+            expect(options.config).toMatchObject({
+              ...hostRoute,
+              cookieSync: false,
+              thinkingTime: "pro",
+            });
+            expect(options.config?.manualLogin).not.toBe(true);
+            expect(options.config?.chromePath).toBeUndefined();
+            expect(options.closeOwnedTabOnComplete).toBe(false);
+            return {
+              answerText: "host-route",
+              answerMarkdown: "host-route",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 10,
+            };
+          },
+        },
+      );
+      try {
+        const execute = createRemoteBrowserExecutor({
+          host: `127.0.0.1:${server.port}`,
+          token: "test-host-routing",
+        });
+        const result = await execute({
+          prompt: "host route",
+          config: {
+            attachRunning: !attachRunning,
+            remoteChrome: { host: "untrusted.invalid", port: 1 },
+            approvalWaitMs: 1,
+            manualLogin: true,
+            chromePath: "/untrusted",
+            cookieSync: true,
+            thinkingTime: "pro",
+          },
+        });
+        expect(result.answerText).toBe("host-route");
+        expect(observed).toBe(true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   test.skipIf(!CAN_LISTEN_LOCALHOST)(
     "streams logs and returns results via client executor",
     async () => {
