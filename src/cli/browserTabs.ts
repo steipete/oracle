@@ -7,7 +7,6 @@ import {
   collectChatGptTabs,
   DEFAULT_REMOTE_CHROME_HOST,
   DEFAULT_REMOTE_CHROME_PORT,
-  extractConversationIdFromUrl,
   formatBrowserTabState,
   harvestChatGptTab,
   sessionMatchesTab,
@@ -18,6 +17,8 @@ import {
   recoverConversationTab,
 } from "../browser/recoverConversation.js";
 import { resolveOutputPath } from "./writeOutputPath.js";
+import { persistBrowserHarvest } from "./harvestIntegrity.js";
+import type { BrowserHarvestIntegrity } from "../sessionManager.js";
 
 const LIVE_POLL_MS = 2000;
 const DEFAULT_STALL_THRESHOLD_MS = 60_000;
@@ -156,40 +157,27 @@ export function resolveSessionTabRefForTest(meta: SessionMetadata): string {
   return resolveSessionTabRef(meta);
 }
 
-async function persistHarvest(
+function printHarvestSummary(
   sessionId: string,
-  meta: SessionMetadata,
   harvested: ChatGptTabSummary,
-): Promise<void> {
-  const hash = createHash("sha1")
-    .update(harvested.lastAssistantMarkdown ?? harvested.lastAssistantText ?? "")
-    .digest("hex");
-  const browser = {
-    ...(meta.browser ?? {}),
-    harvest: {
-      targetId: harvested.targetId,
-      url: harvested.url,
-      conversationId: harvested.conversationId ?? extractConversationIdFromUrl(harvested.url),
-      harvestedAt: new Date().toISOString(),
-      assistantHash: hash,
-      state: harvested.state,
-      stopExists: harvested.stopExists,
-      sendExists: harvested.sendExists,
-      assistantCount: harvested.assistantCount,
-      currentModelLabel: harvested.currentModelLabel,
-      lastAssistantSnippet: harvested.lastAssistantSnippet,
-    },
-  };
-  await sessionStore.updateSession(sessionId, { browser });
-}
-
-function printHarvestSummary(sessionId: string, harvested: ChatGptTabSummary): void {
+  integrity: BrowserHarvestIntegrity,
+): void {
   console.log(chalk.bold(`Session: ${sessionId}`));
   console.log(`Target: ${harvested.targetId}`);
   console.log(`State: ${formatBrowserTabState(harvested)}`);
   console.log(`Model: ${harvested.currentModelLabel || "(unknown)"}`);
   console.log(`URL: ${harvested.url}`);
   console.log(`Assistant turns: ${harvested.assistantCount}`);
+  console.log(
+    `Capture identity: ${integrity.status}${integrity.explicitTarget ? " (explicit target)" : ""}`,
+  );
+  if (integrity.status === "mismatch") {
+    console.log(
+      chalk.yellow(
+        "Explicit harvest target differs from the saved capture; original artifacts are unchanged.",
+      ),
+    );
+  }
   console.log(
     `Signals: stop=${harvested.stopExists ? "yes" : "no"} send=${harvested.sendExists ? "yes" : "no"}`,
   );
@@ -304,8 +292,12 @@ export async function harvestSessionBrowserOutput(
       });
     }
 
-    await persistHarvest(sessionId, meta, harvested);
-    printHarvestSummary(sessionId, harvested);
+    const integrity = await persistBrowserHarvest(
+      sessionId,
+      harvested,
+      Boolean(options.browserTabRef),
+    );
+    printHarvestSummary(sessionId, harvested, integrity);
     const output = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText ?? "";
     if (options.writeOutputPath) {
       await maybeWriteHarvestOutput(options.writeOutputPath, meta.cwd ?? process.cwd(), output);
@@ -393,8 +385,8 @@ export async function liveTailSessionBrowserOutput(
           `[${new Date().toISOString()}] state=${harvested.state} stop=${harvested.stopExists ? "yes" : "no"} ` +
           `send=${harvested.sendExists ? "yes" : "no"} model=${harvested.currentModelLabel || "(unknown)"} ` +
           `snippet=${snippet(harvested.lastAssistantSnippet || fullText, 160)}`;
+        await persistBrowserHarvest(sessionId, harvested, Boolean(options.browserTabRef));
         console.log(statusLine);
-        await persistHarvest(sessionId, meta, harvested);
       }
 
       const derivedState = harvested.stopExists
@@ -414,8 +406,12 @@ export async function liveTailSessionBrowserOutput(
           ...harvested,
           state: derivedState,
         };
-        await persistHarvest(sessionId, meta, finalHarvest);
-        printHarvestSummary(sessionId, finalHarvest);
+        const integrity = await persistBrowserHarvest(
+          sessionId,
+          finalHarvest,
+          Boolean(options.browserTabRef),
+        );
+        printHarvestSummary(sessionId, finalHarvest, integrity);
         const output = finalHarvest.lastAssistantMarkdown ?? finalHarvest.lastAssistantText ?? "";
         if (options.writeOutputPath) {
           await maybeWriteHarvestOutput(options.writeOutputPath, meta.cwd ?? process.cwd(), output);

@@ -106,6 +106,15 @@ export interface BrowserRuntimeMetadata {
 
 export type BrowserHarvestState = "running" | "completed" | "stalled" | "detached";
 
+export interface BrowserHarvestIntegrity {
+  status: "matched" | "mismatch" | "unverified";
+  observedConversationId?: string;
+  captured: Array<{ source: string; conversationId: string }>;
+  unverifiedSources: string[];
+  explicitTarget: boolean;
+  previousHarvestConversationId?: string;
+}
+
 export interface BrowserHarvestMetadata {
   targetId?: string;
   url?: string;
@@ -118,6 +127,7 @@ export interface BrowserHarvestMetadata {
   assistantCount?: number;
   currentModelLabel?: string;
   lastAssistantSnippet?: string;
+  integrity?: BrowserHarvestIntegrity;
 }
 
 export type BrowserModelSelectionEvidenceStatus =

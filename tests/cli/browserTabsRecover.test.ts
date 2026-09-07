@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import type { SessionMetadata } from "../../src/sessionStore.js";
+
+const getPaths = async () => ({
+  dir: path.join(os.tmpdir(), `oracle-recovery-mock-${randomUUID()}`),
+});
 
 const baseMeta = {
   id: "sess-recover",
@@ -80,7 +87,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       recoverConversationTab,
     }));
     vi.doMock("../../src/sessionStore.js", () => ({
-      sessionStore: { readSession, updateSession },
+      sessionStore: { readSession, updateSession, getPaths },
     }));
 
     const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
@@ -125,7 +132,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       recoverConversationTab,
     }));
     vi.doMock("../../src/sessionStore.js", () => ({
-      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {} },
+      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {}, getPaths },
     }));
 
     const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
@@ -164,7 +171,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       recoverConversationTab,
     }));
     vi.doMock("../../src/sessionStore.js", () => ({
-      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {} },
+      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {}, getPaths },
     }));
 
     const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
@@ -199,7 +206,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       })),
     }));
     vi.doMock("../../src/sessionStore.js", () => ({
-      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {} },
+      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {}, getPaths },
     }));
 
     const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
@@ -230,7 +237,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       recoverConversationTab,
     }));
     vi.doMock("../../src/sessionStore.js", () => ({
-      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {} },
+      sessionStore: { readSession: async () => baseMeta, updateSession: async () => {}, getPaths },
     }));
 
     const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");

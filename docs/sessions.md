@@ -136,6 +136,20 @@ oracle status --clear --hours 168   # delete sessions older than a week
 
 Every run gets a default slug derived from the prompt. Override with `--slug "my-thing"` for stable names you can reference later (`oracle session my-thing`).
 
+## Browser harvest identity
+
+Browser harvest and live-tail compare the observed conversation with saved
+runtime, archive, artifact-source, and transcript-header identities. A mismatch
+is retained under `browser.harvest.integrity` and shown as a browser warning;
+an implicit harvest fails with `conversation-identity-mismatch` before exporting
+the newly harvested answer. Existing transcripts and answer logs are preserved.
+
+An explicit `--browser-tab` override still permits inspecting another target,
+but records the mismatch and does not reassign the original capture. Unavailable
+recorded transcript headers or unreadable recorded conversation URLs are marked
+`unverified`. Matching known conversation IDs
+does not by itself prove that an answer belongs to the original prompt.
+
 ## Naming conventions
 
 Pair `--slug` with conventional prefixes for browseability:
