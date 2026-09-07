@@ -2,6 +2,8 @@
 
 `oracle-mcp` is a minimal MCP stdio server that mirrors the Oracle CLI. It shares session storage with the CLI (`~/.oracle/sessions` or `ORACLE_HOME_DIR`) so you can mix and match: run with the CLI, inspect or re-run via MCP, or vice versa.
 
+The server uses MCP SDK v2 and serves both modern and legacy protocol clients over stdio. Existing tool inputs, defaults, structured outputs, and `oracle-session://` resources are preserved. The SDK owns protocol negotiation and transport shutdown; the server definition is shared between protocol generations. HTTP transport, authentication, subscriptions, and protocol task APIs remain separate from this migration.
+
 ## Let Them Fight
 
 Claude Code can call `oracle-mcp` and ask a subscription-backed ChatGPT browser session for a second opinion. Use the `chatgpt-pro-heavy` preset when you want a compact MCP request that targets ChatGPT browser mode, the current Pro picker alias, and Pro Extended thinking time. The preset is intentionally boring at the API layer: it is a shortcut for existing browser-mode fields, not a new model id.

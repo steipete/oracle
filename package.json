@@ -60,7 +60,7 @@
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@google/genai": "^2.21.0",
     "@google/generative-ai": "^0.24.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@steipete/sweet-cookie": "^0.4.2",
     "chalk": "^6.0.0",
     "chrome-launcher": "^1.2.1",
@@ -84,6 +84,8 @@
   },
   "devDependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/inquirer": "^9.0.10",
     "@types/node": "^26.4.1",

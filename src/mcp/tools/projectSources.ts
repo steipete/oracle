@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { loadUserConfig } from "../../config.js";
 import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js";
@@ -73,8 +73,8 @@ export function registerProjectSourcesTool(server: McpServer): void {
       title: "Manage ChatGPT Project Sources",
       description:
         "List or append files to a ChatGPT Project's persistent Sources tab. This is useful for Developer Mode workflows where chats do not share memory, but explicit project sources provide shared context. Destructive delete/replace/sync operations are intentionally not included in v1.",
-      inputSchema: projectSourcesInputShape,
-      outputSchema: projectSourcesOutputShape,
+      inputSchema: z.object(projectSourcesInputShape),
+      outputSchema: z.object(projectSourcesOutputShape),
     },
     async (input: unknown) => {
       const textContent = (text: string) => [{ type: "text" as const, text }];

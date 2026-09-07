@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { sessionStore } from "../../sessionStore.js";
 import { sessionsInputSchema } from "../types.js";
@@ -57,8 +57,8 @@ export function registerSessionsTool(server: McpServer): void {
       title: "List or fetch oracle sessions",
       description:
         "Inspect Oracle session history stored under `ORACLE_HOME_DIR` (shared with the CLI). List recent sessions or fetch one by id/slug (optionally including metadata + request + log).",
-      inputSchema: sessionsInputShape,
-      outputSchema: sessionsOutputShape,
+      inputSchema: z.object(sessionsInputShape),
+      outputSchema: z.object(sessionsOutputShape),
     },
     async (input: unknown) => {
       const textContent = (text: string) => [{ type: "text" as const, text }];

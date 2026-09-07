@@ -2,8 +2,8 @@
 import "dotenv/config";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { getCliVersion } from "../version.js";
 import { registerChatGptImageTool } from "./tools/chatgptImage.js";
 import { registerConsultTool } from "./tools/consult.js";
@@ -12,7 +12,7 @@ import { registerSessionsTool } from "./tools/sessions.js";
 import { registerWaitTool } from "./tools/wait.js";
 import { registerSessionResources } from "./tools/sessionResources.js";
 
-export async function startMcpServer(): Promise<void> {
+export function createMcpServer(): McpServer {
   const server = new McpServer(
     {
       name: "oracle-mcp",
@@ -31,20 +31,14 @@ export async function startMcpServer(): Promise<void> {
   registerSessionsTool(server);
   registerWaitTool(server);
   registerSessionResources(server);
+  return server;
+}
 
-  const transport = new StdioServerTransport();
-  transport.onerror = (error) => {
-    console.error("MCP transport error:", error);
-  };
-  const closed = new Promise<void>((resolve) => {
-    transport.onclose = () => {
-      resolve();
-    };
+export async function startMcpServer(): Promise<void> {
+  serveStdio(createMcpServer, {
+    legacy: "serve",
+    onerror: (error) => console.error("MCP transport error:", error),
   });
-
-  // Keep the process alive until the client closes the transport.
-  await server.connect(transport);
-  await closed;
 }
 
 export function shouldStartMcpServerFromModule(

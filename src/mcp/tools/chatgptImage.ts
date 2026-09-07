@@ -1,5 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer, CallToolResult } from "@modelcontextprotocol/server";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -124,8 +123,8 @@ export function registerChatGptImageTool(server: McpServer): void {
       title: "Generate an image with ChatGPT",
       description:
         "Agent-friendly wrapper for ChatGPT browser image generation. It selects browser mode, enables the image-aware wait/download path, uploads reference files when provided, and returns saved image paths in structuredContent.images.",
-      inputSchema: chatGptImageInputShape,
-      outputSchema: chatGptImageOutputShape,
+      inputSchema: z.object(chatGptImageInputShape),
+      outputSchema: z.object(chatGptImageOutputShape),
     },
     async (input: unknown): Promise<CallToolResult> => {
       const textContent = (text: string) => [{ type: "text" as const, text }];

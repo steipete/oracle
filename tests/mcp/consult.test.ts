@@ -155,10 +155,10 @@ describe("summarizeModelRunsForConsult", () => {
   });
 
   test("keeps the registered MCP input schema JSON-schema compatible", () => {
-    let inputSchema: z.ZodRawShape | undefined;
+    let inputSchema: z.ZodType | undefined;
     registerConsultTool({
       registerTool: (_name: string, def: unknown) => {
-        inputSchema = (def as { inputSchema: z.ZodRawShape }).inputSchema;
+        inputSchema = (def as { inputSchema: z.ZodType }).inputSchema;
       },
       server: {
         sendLoggingMessage: async () => undefined,
@@ -166,7 +166,7 @@ describe("summarizeModelRunsForConsult", () => {
     } as unknown as Parameters<typeof registerConsultTool>[0]);
 
     expect(inputSchema).toBeDefined();
-    expect(() => z.toJSONSchema(z.object(inputSchema!))).not.toThrow();
+    expect(() => z.toJSONSchema(inputSchema!)).not.toThrow();
   });
 
   test("maps per-model metadata into consult summaries", () => {

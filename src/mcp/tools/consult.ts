@@ -1,10 +1,6 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { getCliVersion } from "../../version.js";
-import {
-  LoggingMessageNotificationParamsSchema,
-  type CallToolResult,
-} from "@modelcontextprotocol/sdk/types.js";
 import { ensureBrowserAvailable, mapConsultToRunOptions } from "../utils.js";
 import type { RunOracleOptions } from "../../oracle.js";
 import type { EngineMode } from "../../cli/engine.js";
@@ -46,7 +42,7 @@ import type { ThinkingTimeLevel } from "../../oracle/types.js";
 import { launchDetachedSession } from "../../cli/detachedSession.js";
 import { buildSessionLifecycle } from "../../cli/sessionLifecycle.js";
 
-// Use raw shapes so the MCP SDK (with its bundled Zod) wraps them and emits valid JSON Schema.
+// Shared fields are composed into explicit schemas when registering tools.
 const consultInputShape = {
   preset: z
     .enum(CONSULT_PRESETS)
@@ -592,12 +588,10 @@ export async function runConsultTool(
   const cwd = process.cwd();
   const sendLog = (text: string, level: "info" | "debug" = "info") =>
     server
-      .sendLoggingMessage(
-        LoggingMessageNotificationParamsSchema.parse({
-          level,
-          data: { text, bytes: Buffer.byteLength(text, "utf8") },
-        }),
-      )
+      .sendLoggingMessage({
+        level,
+        data: { text, bytes: Buffer.byteLength(text, "utf8") },
+      })
       .catch(() => {});
 
   const resolvedRemote = resolveRemoteServiceConfig({ userConfig, env: process.env });
@@ -851,9 +845,8 @@ export function registerConsultTool(server: McpServer): void {
       title: "Run an oracle session",
       description:
         'Run an Oracle session (API or ChatGPT browser automation). Use `files` to attach project context. If `engine` is omitted, Oracle follows CLI defaults: config/ORACLE_ENGINE first, then API when OPENAI_API_KEY is set, otherwise browser. Browser GPT-5.5 Pro consults can take many minutes; set `waitForCompletion:false` to return a durable sessionId immediately, then use `wait` to block without agent-side polling. Use `dryRun:true` first when configuring an agent and inspect `sessions`/`oracle status` before retrying. Browser manual-login uses a private Oracle Chrome profile separate from the user\'s normal Chrome; dry-run output includes first-time setup guidance when that path is active. For browser-based image/file uploads, set `browserAttachments:"always"`. For ChatGPT image generation, set `generateImage` to enable the same image wait/download path as CLI --generate-image and read returned paths from `images`. Browser consults can include `browserFollowUps` for a multi-turn ChatGPT review in one conversation. Sessions are stored under `ORACLE_HOME_DIR` (shared with the CLI).',
-      // Cast to any to satisfy SDK typings across differing Zod versions.
-      inputSchema: consultInputShape,
-      outputSchema: consultOutputShape,
+      inputSchema: z.object(consultInputShape),
+      outputSchema: z.object(consultOutputShape),
     },
     async (input: unknown) => runConsultTool(input, { server: server.server }),
   );
