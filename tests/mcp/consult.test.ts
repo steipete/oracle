@@ -479,8 +479,12 @@ describe("summarizeModelRunsForConsult", () => {
     try {
       const handlers: Array<(input: unknown) => Promise<unknown>> = [];
       registerConsultTool({
-        registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-          handlers.push(fn);
+        registerTool: (
+          _name: string,
+          _def: unknown,
+          fn: (input: unknown, context: unknown) => Promise<unknown>,
+        ) => {
+          handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
         server: {
           sendLoggingMessage: async () => undefined,
@@ -534,8 +538,12 @@ describe("summarizeModelRunsForConsult", () => {
     try {
       const handlers: Array<(input: unknown) => Promise<unknown>> = [];
       registerConsultTool({
-        registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-          handlers.push(fn);
+        registerTool: (
+          _name: string,
+          _def: unknown,
+          fn: (input: unknown, context: unknown) => Promise<unknown>,
+        ) => {
+          handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
         server: {
           sendLoggingMessage: async () => undefined,
@@ -571,8 +579,12 @@ describe("summarizeModelRunsForConsult", () => {
     try {
       const handlers: Array<(input: unknown) => Promise<unknown>> = [];
       registerConsultTool({
-        registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-          handlers.push(fn);
+        registerTool: (
+          _name: string,
+          _def: unknown,
+          fn: (input: unknown, context: unknown) => Promise<unknown>,
+        ) => {
+          handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
         server: { sendLoggingMessage: async () => undefined },
       } as unknown as Parameters<typeof registerConsultTool>[0]);
@@ -610,8 +622,12 @@ describe("summarizeModelRunsForConsult", () => {
     try {
       const handlers: Array<(input: unknown) => Promise<unknown>> = [];
       registerConsultTool({
-        registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-          handlers.push(fn);
+        registerTool: (
+          _name: string,
+          _def: unknown,
+          fn: (input: unknown, context: unknown) => Promise<unknown>,
+        ) => {
+          handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
         server: { sendLoggingMessage: async () => undefined },
       } as unknown as Parameters<typeof registerConsultTool>[0]);
@@ -638,8 +654,12 @@ describe("summarizeModelRunsForConsult", () => {
   test("rejects unsupported consult fields instead of silently ignoring them", async () => {
     const handlers: Array<(input: unknown) => Promise<unknown>> = [];
     registerConsultTool({
-      registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-        handlers.push(fn);
+      registerTool: (
+        _name: string,
+        _def: unknown,
+        fn: (input: unknown, context: unknown) => Promise<unknown>,
+      ) => {
+        handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
       },
       server: {
         sendLoggingMessage: async () => undefined,

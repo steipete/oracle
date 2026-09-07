@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Client as LegacyClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport as LegacyTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { Client as ModernClient } from "@modelcontextprotocol/client";
+import { Client as ModernClient, LOG_LEVEL_META_KEY } from "@modelcontextprotocol/client";
 import { StdioClientTransport as ModernTransport } from "@modelcontextprotocol/client/stdio";
 
 describe.each([
@@ -65,6 +65,24 @@ describe.each([
       });
       expect(preview.isError).not.toBe(true);
       expect(preview.structuredContent).toMatchObject({ status: "dry-run", dryRun: true });
+      if (modern) {
+        const messages: unknown[] = [];
+        (client as ModernClient).setNotificationHandler("notifications/message", (notification) => {
+          messages.push(notification.params);
+        });
+        await client.callTool({
+          name: "consult",
+          arguments: { engine: "api", model: "gpt-5.4", prompt: "Quiet preview", dryRun: true },
+          _meta: { [LOG_LEVEL_META_KEY]: "error" },
+        });
+        expect(messages).toEqual([]);
+        await client.callTool({
+          name: "consult",
+          arguments: { engine: "api", model: "gpt-5.4", prompt: "Verbose preview", dryRun: true },
+          _meta: { [LOG_LEVEL_META_KEY]: "info" },
+        });
+        expect(messages.length).toBeGreaterThan(0);
+      }
       expect(await readdir(path.join(home, "sessions"))).toEqual(["compat-session"]);
       const templates = await client.listResourceTemplates();
       expect(templates.resourceTemplates.map((template) => template.uriTemplate)).toContain(

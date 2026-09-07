@@ -12,8 +12,12 @@ import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 function registerHandler(): (input: unknown) => Promise<unknown> {
   const handlers: Array<(input: unknown) => Promise<unknown>> = [];
   registerChatGptImageTool({
-    registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-      handlers.push(fn);
+    registerTool: (
+      _name: string,
+      _def: unknown,
+      fn: (input: unknown, context: unknown) => Promise<unknown>,
+    ) => {
+      handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
     },
     server: {
       sendLoggingMessage: async () => undefined,
@@ -55,10 +59,10 @@ describe("chatgpt_image MCP tool", () => {
       registerTool: (
         _name: string,
         def: unknown,
-        registeredHandler: (input: unknown) => Promise<unknown>,
+        registeredHandler: (input: unknown, context: unknown) => Promise<unknown>,
       ) => {
         inputSchema = (def as { inputSchema: z.ZodType }).inputSchema;
-        handler = registeredHandler;
+        handler = (input) => registeredHandler(input, { mcpReq: { log: async () => undefined } });
       },
       server: {
         sendLoggingMessage: async () => undefined,

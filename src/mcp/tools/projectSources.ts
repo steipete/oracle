@@ -76,7 +76,7 @@ export function registerProjectSourcesTool(server: McpServer): void {
       inputSchema: z.object(projectSourcesInputShape),
       outputSchema: z.object(projectSourcesOutputShape),
     },
-    async (input: unknown) => {
+    async (input: unknown, context) => {
       const textContent = (text: string) => [{ type: "text" as const, text }];
       let parsed;
       try {
@@ -131,9 +131,7 @@ export function registerProjectSourcesTool(server: McpServer): void {
         dryRun: parsed.dryRun,
         config: browserConfig,
         log: (message) => {
-          server.server
-            .sendLoggingMessage({ level: "info", data: { text: message } })
-            .catch(() => undefined);
+          context.mcpReq.log("info", { text: message }).catch(() => undefined);
         },
       });
       const output =

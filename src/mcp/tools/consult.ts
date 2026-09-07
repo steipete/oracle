@@ -1,4 +1,4 @@
-import type { McpServer, CallToolResult } from "@modelcontextprotocol/server";
+import type { McpServer, CallToolResult, ServerContext } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { getCliVersion } from "../../version.js";
 import { ensureBrowserAvailable, mapConsultToRunOptions } from "../utils.js";
@@ -514,15 +514,10 @@ export function formatConsultDryRunResolved(details: ConsultDryRunResolved): str
   return lines;
 }
 
-type McpLoggingServer = Pick<McpServer["server"], "sendLoggingMessage">;
-
 export async function runConsultTool(
   input: unknown,
-  {
-    server,
-    launchDetached = launchDetachedSession,
-  }: {
-    server: McpLoggingServer;
+  { log: requestLog, launchDetached = launchDetachedSession }: {
+    log: ServerContext["mcpReq"]["log"];
     launchDetached?: typeof launchDetachedSession;
   },
 ): Promise<CallToolResult> {
@@ -587,12 +582,7 @@ export async function runConsultTool(
   }
   const cwd = process.cwd();
   const sendLog = (text: string, level: "info" | "debug" = "info") =>
-    server
-      .sendLoggingMessage({
-        level,
-        data: { text, bytes: Buffer.byteLength(text, "utf8") },
-      })
-      .catch(() => {});
+    requestLog(level, { text, bytes: Buffer.byteLength(text, "utf8") }).catch(() => {});
 
   const resolvedRemote = resolveRemoteServiceConfig({ userConfig, env: process.env });
   const imageOutputPath = runOptions.generateImage ?? runOptions.outputPath;
@@ -848,6 +838,6 @@ export function registerConsultTool(server: McpServer): void {
       inputSchema: z.object(consultInputShape),
       outputSchema: z.object(consultOutputShape),
     },
-    async (input: unknown) => runConsultTool(input, { server: server.server }),
+    async (input: unknown, context) => runConsultTool(input, { log: context.mcpReq.log }),
   );
 }

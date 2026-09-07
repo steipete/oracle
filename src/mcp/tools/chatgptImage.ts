@@ -126,7 +126,7 @@ export function registerChatGptImageTool(server: McpServer): void {
       inputSchema: z.object(chatGptImageInputShape),
       outputSchema: z.object(chatGptImageOutputShape),
     },
-    async (input: unknown): Promise<CallToolResult> => {
+    async (input: unknown, context): Promise<CallToolResult> => {
       const textContent = (text: string) => [{ type: "text" as const, text }];
       let parsed;
       try {
@@ -138,7 +138,7 @@ export function registerChatGptImageTool(server: McpServer): void {
         };
       }
       const consultInput = buildChatGptImageConsultInput(parsed);
-      const result = await runConsultTool(consultInput, { server: server.server });
+      const result = await runConsultTool(consultInput, { log: context.mcpReq.log });
       if (result.isError || !result.structuredContent) {
         return result;
       }
