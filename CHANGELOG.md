@@ -2,12 +2,14 @@
 
 ## Unreleased
 
-- Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
+**Highlights:** Durable detached MCP consultations, modern and legacy MCP client support, and clearer browser capture failures with preserved recovery evidence.
 
-## 0.18.1 - 2026-09-05
-
-**Highlights:** More reliable browser uploads, strict remote-tab isolation, and broader support for ChatGPT's current thinking controls.
-
+- MCP: start local consultations with opt-in detached workers and wait for durable completion without cancelling the run when a client times out, cancels a wait, or reconnects. Fixes #429; thanks @oraclexing.
+- MCP: support the modern 2026-07-28 protocol through SDK v2 while preserving legacy stdio clients, tool contracts, session resources, and request-scoped progress logging. Fixes #360; thanks @fredluz.
+- Browser: detect when a later harvest conflicts with saved conversation identities, preserve the original transcript and answer, and record explicit manual target overrides. Fixes #442; thanks @postoso.
+- Browser: fail promptly on known English Retry failures, preserve manual recovery, and keep waiting while generation remains active; apply the same guard to image output and response recovery. Fixes #457; thanks @developerisnow.
+- Gemini: update the web request protocol and model headers, preserve raw image-download fallbacks, report upstream and oversized-header failures clearly, and add an opt-in refusal of model fallback; thanks @mpeter.
+- Agents: add the optional oracle-advisor skill with explicit API, browser, or render routing and per-run model/effort provenance, while retaining the existing Oracle skill. Fixes #355; thanks @genforAI.
 - Browser: wait for explicit upload state to clear before completing attachments or sending; ignore unrelated activity, hidden indicators, and filenames that resemble status text. Fixes #446; thanks @HJC704.
 - Browser: retain per-file attachment evidence, including filename-less images, and stabilize the send target without replaying a dispatched prompt. Fixes #418; thanks @hubofvalley.
 - Browser: refuse default-tab fallback when an ordinary remote run cannot create or attach its dedicated tab; thanks @ShunmeiCho.
@@ -27,7 +29,8 @@
 - Browser: restore visible macOS Chrome windows to their prior placement only when Oracle recorded that placement before hiding them.
 - CLI: keep dry-run previews free of session side effects.
 - Remote: advertise only addresses on which the service is listening.
-- Dependencies: refresh provider SDKs, browser and terminal utilities, schema/query tooling, development dependencies, pnpm, and Pages actions; update OpenAI to 7.10, Google GenAI to 2.21, Inquirer to 14.2.1, Puppeteer to 25.10, Fast URI to 4.1.4, and Vitest to 5 while retaining Node >=24 and the two-day release-age policy.
+- Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
+- Dependencies: refresh provider SDKs, browser and terminal utilities, schema/query tooling, development dependencies, pnpm, and Pages actions; update OpenAI to 7.10, Google GenAI to 2.21, Inquirer to 14.2.1, Puppeteer to 25.10, Fast URI to 4.1.4, Vitest to 5, and Chrome DevTools protocol to 0.0.1692173 while retaining Node >=24 and the two-day release-age policy.
 
 ## 0.18.0 — 2026-08-14
 

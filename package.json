@@ -90,7 +90,7 @@
     "@types/inquirer": "^9.0.10",
     "@types/node": "^26.4.1",
     "@vitest/coverage-v8": "5.0.0",
-    "devtools-protocol": "0.0.1691330",
+    "devtools-protocol": "0.0.1692173",
     "es-toolkit": "^1.52.0",
     "esbuild": "^0.28.2",
     "oxfmt": "0.66.0",
