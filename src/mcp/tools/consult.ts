@@ -516,7 +516,10 @@ export function formatConsultDryRunResolved(details: ConsultDryRunResolved): str
 
 export async function runConsultTool(
   input: unknown,
-  { log: requestLog, launchDetached = launchDetachedSession }: {
+  {
+    log: requestLog,
+    launchDetached = launchDetachedSession,
+  }: {
     log: ServerContext["mcpReq"]["log"];
     launchDetached?: typeof launchDetachedSession;
   },

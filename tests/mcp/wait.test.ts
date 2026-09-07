@@ -6,6 +6,7 @@ import type { SessionMetadata } from "../../src/sessionStore.js";
 import { sessionStore } from "../../src/sessionStore.js";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 import {
+  registerWaitTool,
   runWaitTool,
   waitForSessionTerminal,
   type SessionChangeSource,
@@ -141,6 +142,21 @@ describe("waitForSessionTerminal", () => {
     );
     expect(source.create).not.toHaveBeenCalled();
   });
+});
+
+test("the registered waiter observes the SDK v2 request cancellation signal", async () => {
+  let handler: ((input: unknown, context: unknown) => Promise<unknown>) | undefined;
+  registerWaitTool({
+    registerTool: (_name: string, _schema: unknown, callback: typeof handler) => {
+      handler = callback;
+    },
+  } as never);
+  const controller = new AbortController();
+  const reason = new Error("request was cancelled");
+  controller.abort(reason);
+  await expect(handler!({ id: "unused" }, { mcpReq: { signal: controller.signal } })).rejects.toBe(
+    reason,
+  );
 });
 
 describe("wait MCP result", () => {

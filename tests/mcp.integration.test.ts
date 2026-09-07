@@ -60,7 +60,13 @@ describe.each(
         }
         const tools = await client.listTools();
         expect(tools.tools.map((tool) => tool.name)).toEqual(
-          expect.arrayContaining(["consult", "chatgpt_image", "project_sources", "sessions"]),
+          expect.arrayContaining([
+            "consult",
+            "chatgpt_image",
+            "project_sources",
+            "sessions",
+            "wait",
+          ]),
         );
         for (const tool of tools.tools) {
           expect(tool.inputSchema.type).toBe("object");

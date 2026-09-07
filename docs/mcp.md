@@ -132,3 +132,14 @@ The MCP response includes `structuredContent.images[]` with the saved file path,
   - Claude Code with local macOS Chrome: `oracle bridge claude-config --local-browser > .mcp.json`
 - Tools and resources operate on the same session store as `oracle status|session`.
 - Defaults (model/engine/etc.) come from the effective Oracle CLI config; see `docs/configuration.md`, `~/.oracle/config.json`, and project `.oracle/config.json` files.
+
+### Lifecycle compatibility check
+
+After building, run `node scripts/mcp-lifecycle-proof.mjs` to exercise SDK v1,
+SDK v2 legacy, and SDK v2 modern clients through both executable entrypoints.
+It starts real detached CLI workers against a local API fixture and checks caller
+timeouts, request cancellation, transport reconnects, durable completion, and a
+single provider submission. The standard test suite also runs this matrix.
+For a real OpenAI run, add `--live-key-file <private-key-file>`; the harness uses
+an authenticated upstream request and delays its reply until the lifecycle
+assertions finish. This does not exercise signed-in browser execution.

@@ -1,8 +1,6 @@
 import { realpathSync, watch } from "node:fs";
 import type { FSWatcher } from "node:fs";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { SessionMetadata } from "../../sessionStore.js";
 import { sessionStore } from "../../sessionStore.js";
@@ -205,9 +203,7 @@ export async function waitForSessionTerminal(
   }
 }
 
-type McpToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
-
-export async function runWaitTool(input: unknown, extra?: Pick<McpToolExtra, "signal">) {
+export async function runWaitTool(input: unknown, extra?: { signal?: AbortSignal }) {
   const { id, timeoutMs } = waitInputSchema.parse(input);
   const result = await waitForSessionTerminal({ id, timeoutMs, signal: extra?.signal });
   const { metadata } = result;
@@ -236,9 +232,9 @@ export function registerWaitTool(server: McpServer): void {
       title: "Wait for an oracle session",
       description:
         "Wait for an existing Oracle session to reach a terminal state without agent-side polling. Omit timeoutMs to wait indefinitely, or set a bounded caller wait. Wait timeout or request cancellation never cancels the Oracle session; call wait again with the same id to continue waiting.",
-      inputSchema: waitInputShape,
-      outputSchema: waitOutputShape,
+      inputSchema: z.object(waitInputShape),
+      outputSchema: z.object(waitOutputShape),
     },
-    async (input: unknown, extra: McpToolExtra) => runWaitTool(input, extra),
+    async (input: unknown, context) => runWaitTool(input, { signal: context.mcpReq.signal }),
   );
 }

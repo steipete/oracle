@@ -40,7 +40,7 @@ describe("summarizeModelRunsForConsult", () => {
           waitForCompletion: false,
         },
         {
-          server: { sendLoggingMessage: vi.fn(async () => undefined) },
+          log: vi.fn(async () => undefined),
           launchDetached: launchDetached as never,
         },
       );
@@ -89,7 +89,7 @@ describe("summarizeModelRunsForConsult", () => {
           dryRun: true,
         },
         {
-          server: { sendLoggingMessage: vi.fn(async () => undefined) },
+          log: vi.fn(async () => undefined),
           launchDetached: launchDetached as never,
         },
       );
@@ -159,9 +159,6 @@ describe("summarizeModelRunsForConsult", () => {
     registerConsultTool({
       registerTool: (_name: string, def: unknown) => {
         inputSchema = (def as { inputSchema: z.ZodType }).inputSchema;
-      },
-      server: {
-        sendLoggingMessage: async () => undefined,
       },
     } as unknown as Parameters<typeof registerConsultTool>[0]);
 
@@ -486,9 +483,6 @@ describe("summarizeModelRunsForConsult", () => {
         ) => {
           handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
-        server: {
-          sendLoggingMessage: async () => undefined,
-        },
       } as unknown as Parameters<typeof registerConsultTool>[0]);
       const handler = handlers[0];
       if (!handler) throw new Error("handler not registered");
@@ -545,9 +539,6 @@ describe("summarizeModelRunsForConsult", () => {
         ) => {
           handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
-        server: {
-          sendLoggingMessage: async () => undefined,
-        },
       } as unknown as Parameters<typeof registerConsultTool>[0]);
       const handler = handlers[0];
       if (!handler) throw new Error("handler not registered");
@@ -586,7 +577,6 @@ describe("summarizeModelRunsForConsult", () => {
         ) => {
           handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
-        server: { sendLoggingMessage: async () => undefined },
       } as unknown as Parameters<typeof registerConsultTool>[0]);
       const handler = handlers[0];
       if (!handler) throw new Error("handler not registered");
@@ -629,7 +619,6 @@ describe("summarizeModelRunsForConsult", () => {
         ) => {
           handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
         },
-        server: { sendLoggingMessage: async () => undefined },
       } as unknown as Parameters<typeof registerConsultTool>[0]);
       const handler = handlers[0];
       if (!handler) throw new Error("handler not registered");
@@ -660,9 +649,6 @@ describe("summarizeModelRunsForConsult", () => {
         fn: (input: unknown, context: unknown) => Promise<unknown>,
       ) => {
         handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
-      },
-      server: {
-        sendLoggingMessage: async () => undefined,
       },
     } as unknown as Parameters<typeof registerConsultTool>[0]);
     const handler = handlers[0];
