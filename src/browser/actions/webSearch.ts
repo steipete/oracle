@@ -10,6 +10,15 @@ import {
 import { buildComposerNavigationValidationExpression } from "./attachmentContext.js";
 import { buildClickDispatcher } from "./domEvents.js";
 
+export function matchesWebSearchMenuLabel(value: string): boolean {
+  return [
+    "search",
+    "searchfindontheweb",
+    "websearch",
+    "websearchfindreal-timenewsandinfo",
+  ].includes(value.replace(/\s+/g, "").toLowerCase());
+}
+
 export function buildWebSearchVerificationExpression(prompt: string): string {
   return `(() => {
     const visible = node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
@@ -31,6 +40,7 @@ export function buildWebSearchVerificationExpression(prompt: string): string {
 export function buildWebSearchSelectionExpression(navigationUrl: string): string {
   return `(() => {
     ${buildClickDispatcher()}
+    const matchesLabel = ${matchesWebSearchMenuLabel.toString()};
     const navigation = ${buildComposerNavigationValidationExpression(navigationUrl)};
     if (!navigation.contextMatches || navigation.workSelected || navigation.modeUnverified) return 'context-changed';
     const visible = node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
@@ -38,8 +48,7 @@ export function buildWebSearchSelectionExpression(navigationUrl: string): string
     const candidates = roots.flatMap(root => Array.from(root.querySelectorAll('[data-radix-collection-item], [role="menuitem"], [role="option"], .__menu-item, [class*="menu-item"]')));
     const match = candidates.find(node => {
       if (!visible(node) || node.hasAttribute('disabled') || node.getAttribute('aria-disabled') === 'true') return false;
-      const text = (node.textContent ?? '').replace(/\\s+/g, '').toLowerCase();
-      return text === 'websearch' || text === 'websearchfindreal-timenewsandinfo';
+      return matchesLabel(node.textContent ?? '');
     });
     if (!match) return 'missing';
     dispatchClickSequence(match);

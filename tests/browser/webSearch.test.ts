@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { buildWebSearchVerificationExpression } from "../../src/browser/actions/webSearch.js";
+import {
+  buildWebSearchVerificationExpression,
+  matchesWebSearchMenuLabel,
+} from "../../src/browser/actions/webSearch.js";
 import { FakeDocument, FakeElement } from "./domFixture.js";
 import { buildBrowserConfig } from "../../src/cli/browserConfig.js";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
@@ -36,6 +39,16 @@ class Element extends FakeElement {
 }
 
 describe("Web Search inline selection", () => {
+  test.each([
+    "Search",
+    "SearchFind on the web",
+    "Web search",
+    "Web searchFind real-time news and info",
+  ])("recognizes the exact documented or observed menu label %s", (label) => {
+    expect(matchesWebSearchMenuLabel(label)).toBe(true);
+    expect(matchesWebSearchMenuLabel(`GitHub ${label}`)).toBe(false);
+    expect(matchesWebSearchMenuLabel(`${label} settings`)).toBe(false);
+  });
   test.each(["search", "github"])("requires the exact search hint, not %s", (id) => {
     const chip = new Element(
       "span",
