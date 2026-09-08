@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Highlights:** GPT-6 Astra consultations through the API and ChatGPT's Latest picker, explicit Web Search, and safe cleanup after browser recovery.
+
+- API/browser: support GPT-6 Astra with model-specific reasoning validation, ChatGPT Latest selection, localized effort controls, and verified Pro requests; preserve browser aliases during CLI engine discovery. Thanks @oraclexing, @malvarezcastillo, @FNDEVVE, and @kiyo-e.
+- Browser: add the opt-in --browser-research search mode and MCP equivalent, verifying the English Web Search hint and staged prompt before sending, including bundled attachments; thanks @DragonFSKY.
+- Browser: let incomplete controllers exit without losing recoverable tabs, then retire explicitly owned tabs only after recovered answers and completed sessions are saved; preserve borrowed, kept, generating, reclaimed, and actively controlled targets. Fixes #435; thanks @lhysin.
+- Browser: capture visible Deep Research plan titles, steps, and planning/researching state, skip an already-finished countdown, and preserve existing session-status and submission behavior; thanks @oraclexing.
+- Browser: recognize Chinese Deep Research menu, selected-tool, and add-files controls while preserving compact English labels; thanks @oraclexing.
+- Dependencies: update Sweet Cookie to 0.4.3 and TokenTally to 0.1.5 while retaining Node >=24 and the two-day release-age policy.
+
 ## 0.19.0 - 2026-09-07
 
 **Highlights:** Durable detached MCP consultations, modern and legacy MCP client support, and clearer browser capture failures with preserved recovery evidence.

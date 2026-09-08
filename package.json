@@ -61,7 +61,7 @@
     "@google/genai": "^2.21.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/server": "^2.0.0",
-    "@steipete/sweet-cookie": "^0.4.2",
+    "@steipete/sweet-cookie": "^0.4.3",
     "chalk": "^6.0.0",
     "chrome-launcher": "^1.2.1",
     "chrome-remote-interface": "^0.34.0",
@@ -79,7 +79,7 @@
     "qs": "^6.16.0",
     "shiki": "^4.4.3",
     "toasted-notifier": "^10.1.0",
-    "tokentally": "^0.1.4",
+    "tokentally": "^0.1.5",
     "zod": "^4.5.4"
   },
   "devDependencies": {
