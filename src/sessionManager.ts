@@ -89,6 +89,14 @@ export interface BrowserSessionConfig {
   resumeConversationUrl?: string | null;
 }
 
+export interface BrowserRecoveryTarget {
+  host: string;
+  port: number;
+  targetId: string;
+  browserWSEndpoint?: string;
+  claimId?: string;
+}
+
 export interface BrowserRuntimeMetadata {
   browserTransport?: "cdp";
   chromePid?: number;
@@ -98,6 +106,8 @@ export interface BrowserRuntimeMetadata {
   chromeProfileRoot?: string;
   userDataDir?: string;
   chromeTargetId?: string;
+  /** Explicitly created by Oracle and eligible for retirement after persisted recovery. */
+  ownedRecoveryTarget?: BrowserRecoveryTarget;
   tabUrl?: string;
   conversationId?: string;
   /** True after Oracle has submitted the prompt to ChatGPT. */

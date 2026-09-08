@@ -7,7 +7,7 @@ import {
   INPUT_SELECTORS,
   MODEL_BUTTON_SELECTOR,
   SEND_BUTTON_SELECTORS,
-  STOP_BUTTON_SELECTOR,
+  STOP_BUTTON_SELECTORS,
 } from "./constants.js";
 import { captureAssistantMarkdown, readAssistantSnapshot } from "./actions/assistantResponse.js";
 import { buildConversationTurnListExpression } from "./conversationTurns.js";
@@ -148,7 +148,7 @@ function buildTabInspectionExpression(): string {
   const answerSelectorsLiteral = JSON.stringify(ANSWER_SELECTORS);
   const assistantRoleLiteral = escapeLiteral(ASSISTANT_ROLE_SELECTOR);
   const modelButtonSelectorLiteral = escapeLiteral(MODEL_BUTTON_SELECTOR);
-  const stopSelectorLiteral = escapeLiteral(STOP_BUTTON_SELECTOR);
+  const stopSelectorLiteral = escapeLiteral(STOP_BUTTON_SELECTORS.join(","));
   return `(() => {
       const INPUT_SELECTORS = ${inputSelectorsLiteral};
       const SEND_SELECTORS = ${sendSelectorsLiteral};
@@ -177,8 +177,7 @@ function buildTabInspectionExpression(): string {
         const label = normalize(node.textContent || node.getAttribute('aria-label') || node.getAttribute('title'));
         return LOGIN_CTA.test(label);
       });
-      const stopButton = document.querySelector(STOP_BUTTON_SELECTOR);
-      const stopExists = Boolean(stopButton && isVisible(stopButton));
+      const stopExists = Array.from(document.querySelectorAll(STOP_BUTTON_SELECTOR)).some(isVisible);
       const sendButton = firstVisible(SEND_SELECTORS);
       const sendExists = Boolean(sendButton);
       const promptNode = firstVisible(INPUT_SELECTORS);

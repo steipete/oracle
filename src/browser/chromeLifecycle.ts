@@ -511,9 +511,10 @@ export async function connectToRemoteChrome(
       return {
         client: targetConnection.client,
         targetId: targetConnection.targetId,
-        close: async () => {
+        close: async (closeOptions) => {
           await targetConnection.client.close().catch(() => undefined);
-          await closeRemoteChromeTarget(host, port, targetConnection.targetId, logger);
+          if (!closeOptions?.preserveTarget)
+            await closeRemoteChromeTarget(host, port, targetConnection.targetId, logger);
         },
       };
     }
@@ -557,7 +558,7 @@ export interface RemoteChromeConnection {
   client: ChromeClient;
   targetId?: string;
   browserWSEndpoint?: string;
-  close: () => Promise<void>;
+  close: (options?: { preserveTarget?: boolean }) => Promise<void>;
 }
 
 export interface IsolatedTabConnection {
@@ -653,11 +654,11 @@ export async function connectToRemoteChromeTarget(
       client,
       targetId,
       browserWSEndpoint: options.browserWSEndpoint,
-      close: async () => {
+      close: async (closeOptions) => {
         await browser.Target.detachFromTarget({ sessionId: attached.sessionId }).catch(
           () => undefined,
         );
-        if (options.closeTargetOnDispose && targetId) {
+        if (options.closeTargetOnDispose && targetId && !closeOptions?.preserveTarget) {
           await browser.Target.closeTarget({ targetId }).catch(() => undefined);
         }
         await browser.close().catch(() => undefined);

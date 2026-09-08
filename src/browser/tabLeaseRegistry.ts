@@ -15,6 +15,7 @@ import {
 import type { BrowserLogger } from "./types.js";
 import { isProcessAlive, readProcessStartTimeMs } from "./profileState.js";
 import { delay } from "./utils.js";
+import { normalizeChromeHost } from "./targetClaim.js";
 
 export const DEFAULT_MAX_CONCURRENT_CHATGPT_TABS = 3;
 const REGISTRY_FILENAME = "oracle-tab-leases.json";
@@ -320,6 +321,30 @@ export async function hasOtherActiveBrowserTabLeases(
     }
     return active.some((lease) => lease.id !== leaseId);
   });
+}
+
+export async function hasActiveBrowserTargetLease(
+  profileDir: string,
+  target: { host: string; port: number; targetId: string },
+): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await readFile(path.join(profileDir, REGISTRY_FILENAME), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  const registry = JSON.parse(raw) as BrowserTabLeaseRegistryFile;
+  if (registry.version !== 1 || !Array.isArray(registry.leases))
+    throw new Error("Unknown browser lease registry");
+  return registry.leases.some(
+    (lease) =>
+      lease.chromeTargetId === target.targetId &&
+      (!lease.chromeHost ||
+        normalizeChromeHost(lease.chromeHost) === normalizeChromeHost(target.host)) &&
+      (!lease.chromePort || lease.chromePort === target.port) &&
+      isProcessAlive(lease.pid),
+  );
 }
 
 async function withRegistryLock<T>(

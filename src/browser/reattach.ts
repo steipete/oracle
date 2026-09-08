@@ -43,6 +43,7 @@ import {
 } from "./reattachHelpers.js";
 import { waitForDeepResearchCompletion } from "./actions/deepResearch.js";
 import { CHROME_COOKIE_SYNC_WARNING, shouldSyncBrowserCookies } from "./policies.js";
+import type { BrowserRecoveryCapture } from "./recoveryTarget.js";
 
 export interface ReattachDeps {
   listTargets?: () => Promise<TargetInfoLite[]>;
@@ -64,6 +65,7 @@ export interface ReattachDeps {
 export interface ReattachResult {
   answerText: string;
   answerMarkdown: string;
+  captureTarget?: BrowserRecoveryCapture;
 }
 
 export async function resumeBrowserSession(
@@ -137,6 +139,24 @@ export async function resumeBrowserSession(
 
     const client: ChromeClient = connection.client;
     const { Runtime, DOM, Page } = client;
+    const captureIdentity = async (): Promise<BrowserRecoveryCapture | undefined> => {
+      const targetId = target?.targetId ?? target?.id;
+      if (!targetId || !port) return undefined;
+      const { result } = await withTimeout(
+        Runtime.evaluate({ expression: "location.href", returnByValue: true }),
+        2_000,
+        "Recovery target identity unavailable",
+      );
+      return {
+        host,
+        port,
+        targetId,
+        browserWSEndpoint,
+        conversationId: extractConversationIdFromUrl(
+          typeof result?.value === "string" ? result.value : "",
+        ),
+      };
+    };
     if (Runtime?.enable) {
       await Runtime.enable();
     }
@@ -209,10 +229,12 @@ export async function resumeBrowserSession(
         timeoutMs + 5_000,
         "Reattach Deep Research response timed out",
       );
+      const captureTarget = await captureIdentity().catch(() => undefined);
       await closeAttached();
       return {
         answerText: researchResult.text,
         answerMarkdown: researchResult.text,
+        captureTarget,
       };
     }
     const promptEcho = buildPromptEchoMatcher(deps.promptPreview);
@@ -237,8 +259,13 @@ export async function resumeBrowserSession(
       )) ?? recovered.text;
     const aligned = alignPromptEchoMarkdown(recovered.text, markdown, promptEcho, logger);
 
+    const captureTarget = await captureIdentity().catch(() => undefined);
     await closeAttached();
-    return { answerText: aligned.answerText, answerMarkdown: aligned.answerMarkdown };
+    return {
+      answerText: aligned.answerText,
+      answerMarkdown: aligned.answerMarkdown,
+      captureTarget,
+    };
   } catch (error) {
     await closeAttached();
     const message = error instanceof Error ? error.message : String(error);

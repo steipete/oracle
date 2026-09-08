@@ -13,6 +13,7 @@ import { sessionStore, wait } from "../sessionStore.js";
 import { formatTokenCount, formatTokenValue } from "../oracle/runUtils.js";
 import type { BrowserLogger } from "../browser/types.js";
 import { resumeBrowserSession } from "../browser/reattach.js";
+import { retireRecoveredBrowserTarget } from "../browser/recoveryTarget.js";
 import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
 import {
   appendArtifacts,
@@ -127,11 +128,12 @@ async function writeReattachAnswer(
     );
     return;
   }
-  const logWriter = sessionStore.createLogWriter(sessionId);
-  logWriter.logLine("[reattach] captured assistant response from existing Chrome tab");
-  logWriter.logLine("Answer:");
-  logWriter.logLine(body);
-  logWriter.stream.end();
+  const paths = await sessionStore.getPaths(sessionId);
+  await fs.appendFile(
+    paths.log,
+    `[reattach] captured assistant response from existing Chrome tab\nAnswer:\n${body}\n`,
+    "utf8",
+  );
 }
 
 async function saveReattachBrowserArtifacts(
@@ -383,6 +385,9 @@ export async function attachSession(
         transport: undefined,
       });
       console.log(chalk.green("Reattach succeeded; session marked completed."));
+      await retireRecoveredBrowserTarget(sessionId, result.captureTarget, (line) =>
+        console.log(dim(line)),
+      );
       metadata = (await sessionStore.readSession(sessionId)) ?? metadata;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

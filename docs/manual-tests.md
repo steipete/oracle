@@ -16,6 +16,12 @@ and run the live API suite before shipping major transport changes.
 
 ## Test Cases
 
+### Recovered tab retirement
+
+Run `pnpm build && node scripts/recovery-retirement-proof.mjs` for built-CLI harvests against isolated Chrome. The synthetic matrix checks full-answer persistence before owned-tab retirement and preservation of a peer, borrowed/kept targets, active controllers, and the current generation stop control.
+
+For signed-in proof, run a Pro consultation with a short response timeout and automatic reattach disabled, then let the controller exit. Confirm the tab remains available, reattach after completion, and verify the complete answer is saved before only that owned target closes. Use `ORACLE_NO_DETACH=1` when exercising the foreground controller. Never click **Answer now**.
+
 ### Attachment evidence and single-send regression (no login)
 
 Run `pnpm build && node scripts/attachment-send-proof.mjs` with Chrome installed (`CHROME_PATH` can select Chromium on Linux). This uses a disposable profile and a controlled local page, not a signed-in consultation. It exercises local and remote three-file uploads, a filename-less JPEG with a consumed FileList, sidebar-count rejection, byte integrity, delayed commitment, exact-button keyboard activation for attachment sends, and offscreen button recovery. Each send must produce exactly one trusted button activation, zero editor-Enter submissions, and one committed turn. The Linux Chrome CI job runs it too.

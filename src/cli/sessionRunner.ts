@@ -49,6 +49,7 @@ import { sanitizeOscProgress } from "./oscUtils.js";
 import { readFiles } from "../oracle/files.js";
 import { cwd as getCwd } from "node:process";
 import { resumeBrowserSession } from "../browser/reattach.js";
+import { retireRecoveredBrowserTarget } from "../browser/recoveryTarget.js";
 import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
 import { estimateTokenCount } from "../browser/utils.js";
 import type { BrowserLogger, SavedBrowserFile } from "../browser/types.js";
@@ -1338,11 +1339,12 @@ async function autoReattachUntilComplete({
         existingArtifacts: sessionMeta.artifacts,
         logger,
       });
-      const logWriter = sessionStore.createLogWriter(sessionMeta.id);
-      logWriter.logLine(`[auto-reattach] captured assistant response on attempt ${attempt}`);
-      logWriter.logLine("Answer:");
-      logWriter.logLine(answerText);
-      logWriter.stream.end();
+      const paths = await sessionStore.getPaths(sessionMeta.id);
+      await fs.appendFile(
+        paths.log,
+        `[auto-reattach] captured assistant response on attempt ${attempt}\nAnswer:\n${answerText}\n`,
+        "utf8",
+      );
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "completed",
@@ -1393,6 +1395,7 @@ async function autoReattachUntilComplete({
         transport: undefined,
       });
       log(kleur.green("Auto-reattach succeeded; session marked completed."));
+      await retireRecoveredBrowserTarget(sessionMeta.id, result.captureTarget, logger);
       return true;
     } catch (error) {
       if (captureSucceeded) {

@@ -753,6 +753,37 @@ describe("closeBlankChromeTabs", () => {
     expect(send).toHaveBeenCalledWith("Target.setAutoAttach", { autoAttach: true }, "session-9");
   });
 
+  test.each([true, false])(
+    "closes the browser transport with preserveTarget=%s",
+    async (preserveTarget) => {
+      const browser = {
+        Target: {
+          createTarget: vi.fn(async () => ({ targetId: "owned" })),
+          attachToTarget: vi.fn(async () => ({ sessionId: "session" })),
+          detachFromTarget: vi.fn(async () => ({})),
+          closeTarget: vi.fn(async () => ({ success: true })),
+        },
+        on: vi.fn(),
+        once: vi.fn(),
+        removeListener: vi.fn(),
+        close: vi.fn(async () => {}),
+      };
+      cdpMock.mockResolvedValueOnce(browser);
+      const { connectToRemoteChrome } = await import("../../src/browser/chromeLifecycle.js");
+      const connection = await connectToRemoteChrome(
+        "127.0.0.1",
+        9222,
+        () => {},
+        "about:blank",
+        "ws://127.0.0.1:9222/devtools/browser/test",
+      );
+      await connection.close({ preserveTarget });
+      expect(browser.Target.detachFromTarget).toHaveBeenCalledOnce();
+      expect(browser.close).toHaveBeenCalledOnce();
+      expect(browser.Target.closeTarget).toHaveBeenCalledTimes(preserveTarget ? 0 : 1);
+    },
+  );
+
   test("waits on a single websocket connection attempt for Chrome approval", async () => {
     vi.useFakeTimers();
     const browserClient = {

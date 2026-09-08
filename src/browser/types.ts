@@ -209,6 +209,7 @@ export interface BrowserRunResult {
   chromeProfileRoot?: string;
   userDataDir?: string;
   chromeTargetId?: string;
+  ownedRecoveryTarget?: BrowserRuntimeMetadata["ownedRecoveryTarget"];
   tabUrl?: string;
   conversationId?: string;
   promptSubmitted?: boolean;

@@ -398,6 +398,7 @@ async function executeAssembledBrowserSession({
       chromeProfileRoot: browserResult.chromeProfileRoot,
       userDataDir: browserResult.userDataDir,
       chromeTargetId: browserResult.chromeTargetId,
+      ownedRecoveryTarget: browserResult.ownedRecoveryTarget,
       tabUrl: browserResult.tabUrl,
       conversationId: browserResult.conversationId,
       promptSubmitted: browserResult.promptSubmitted,

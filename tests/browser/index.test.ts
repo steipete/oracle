@@ -866,14 +866,14 @@ describe("remote Chrome cleanup", () => {
       connectionClosedUnexpectedly: false,
       connection: { close: closeConnection },
       client: { close: closeClient },
-      runStatus: "complete",
+      preserveTarget: false,
     });
 
     expect(closeConnection).toHaveBeenCalledTimes(1);
     expect(closeClient).not.toHaveBeenCalled();
   });
 
-  test("only detaches from the target after an incomplete run", async () => {
+  test("disconnects the browser transport while retaining an incomplete target", async () => {
     const closeConnection = vi.fn().mockResolvedValue(undefined);
     const closeClient = vi.fn().mockResolvedValue(undefined);
 
@@ -881,11 +881,11 @@ describe("remote Chrome cleanup", () => {
       connectionClosedUnexpectedly: false,
       connection: { close: closeConnection },
       client: { close: closeClient },
-      runStatus: "attempted",
+      preserveTarget: true,
     });
 
-    expect(closeConnection).not.toHaveBeenCalled();
-    expect(closeClient).toHaveBeenCalledTimes(1);
+    expect(closeConnection).toHaveBeenCalledExactlyOnceWith({ preserveTarget: true });
+    expect(closeClient).not.toHaveBeenCalled();
   });
 
   test("detaches raw target clients when a run attaches to an existing remote tab", async () => {
@@ -895,13 +895,13 @@ describe("remote Chrome cleanup", () => {
       connectionClosedUnexpectedly: false,
       connection: null,
       client: { close: closeClient },
-      runStatus: "complete",
+      preserveTarget: false,
     });
 
     expect(closeClient).toHaveBeenCalledTimes(1);
   });
 
-  test("does not close an already-lost connection", async () => {
+  test("releases an already-lost connection without closing its target", async () => {
     const closeConnection = vi.fn().mockResolvedValue(undefined);
     const closeClient = vi.fn().mockResolvedValue(undefined);
 
@@ -909,10 +909,10 @@ describe("remote Chrome cleanup", () => {
       connectionClosedUnexpectedly: true,
       connection: { close: closeConnection },
       client: { close: closeClient },
-      runStatus: "attempted",
+      preserveTarget: true,
     });
 
-    expect(closeConnection).not.toHaveBeenCalled();
+    expect(closeConnection).toHaveBeenCalledExactlyOnceWith({ preserveTarget: true });
     expect(closeClient).not.toHaveBeenCalled();
   });
 });

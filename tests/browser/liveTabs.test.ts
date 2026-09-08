@@ -8,6 +8,7 @@ import {
   type ChatGptTabSummary,
 } from "../../src/browser/liveTabs.js";
 import type { SessionMetadata } from "../../src/sessionStore.js";
+import { FakeDocument, FakeElement } from "./domFixture.js";
 
 function makeTab(overrides: Partial<ChatGptTabSummary> = {}): ChatGptTabSummary {
   return {
@@ -39,6 +40,26 @@ function makeTab(overrides: Partial<ChatGptTabSummary> = {}): ChatGptTabSummary 
 }
 
 describe("liveTabs helpers", () => {
+  test("keeps a visible composer stop control running even behind a hidden legacy control", () => {
+    const hidden = new FakeElement("button", { "data-testid": "stop-button" });
+    hidden.getBoundingClientRect = () => ({ width: 0, height: 0, x: 0, y: 0 });
+    const visible = new FakeElement("button", { "data-testid": "composer-stop-button" });
+    const document = new FakeDocument([hidden, visible]);
+    const observed = new Function(
+      "document",
+      "Element",
+      "window",
+      "location",
+      `return ${buildTabInspectionExpressionForTest()}`,
+    )(
+      document,
+      FakeElement,
+      { getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) },
+      { href: "https://chatgpt.com/c/test" },
+    );
+    expect(observed.stopExists).toBe(true);
+    expect(classifyTabState(observed)).toBe("running");
+  });
   test("excludes fallback answer nodes contained by the latest user turn", () => {
     const expression = buildTabInspectionExpressionForTest();
     expect(expression).toContain("!lastUserTurn.contains?.(node)");

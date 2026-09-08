@@ -156,8 +156,10 @@ beforeEach(() => {
   });
   sessionStoreMock.readModelLog.mockResolvedValue("model log body");
   sessionStoreMock.sessionsDir.mockReturnValue("/tmp/.oracle/sessions");
+  sessionStoreMock.getPaths.mockResolvedValue({ log: "/tmp/.oracle/sessions/sess-1/output.log" });
   vi.spyOn(fsPromises, "mkdir").mockResolvedValue(undefined);
   vi.spyOn(fsPromises, "writeFile").mockResolvedValue(undefined);
+  vi.spyOn(fsPromises, "appendFile").mockResolvedValue(undefined);
   vi.spyOn(fsPromises, "copyFile").mockResolvedValue(undefined);
 });
 
@@ -2114,7 +2116,7 @@ describe("performSessionRun", () => {
 
     expect(vi.mocked(resumeBrowserSession)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sendSessionNotification)).toHaveBeenCalledTimes(1);
-    expect(sessionStoreMock.createLogWriter).toHaveBeenCalledTimes(1);
+    expect(fsPromises.appendFile).toHaveBeenCalledTimes(1);
     expect(sessionStoreMock.updateSession.mock.calls.at(-1)?.[1]).toMatchObject({
       status: "error",
       errorMessage: "metadata write failed",

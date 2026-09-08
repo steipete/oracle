@@ -2,6 +2,8 @@ import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import net from "node:net";
+import { randomUUID } from "node:crypto";
+import { claimBrowserTarget } from "./targetClaim.js";
 import { resolveBrowserConfig } from "./config.js";
 import { copyChromeProfile } from "./profileCopy.js";
 import { BrowserCancellation, withoutBrowserCancellation } from "./cancellation.js";
@@ -906,22 +908,17 @@ export function isLocalChromeHostForTest(host: string): boolean {
 
 async function closeRemoteConnectionAfterRun(options: {
   connectionClosedUnexpectedly: boolean;
-  connection: { close: () => Promise<void> } | null;
+  connection: { close: (options?: { preserveTarget?: boolean }) => Promise<void> } | null;
   client: Pick<ChromeClient, "close"> | null;
-  runStatus: "attempted" | "complete" | "cancelled";
+  preserveTarget: boolean;
 }): Promise<void> {
-  if (options.connectionClosedUnexpectedly) {
-    return;
-  }
   if (!options.connection) {
     await options.client?.close();
     return;
   }
-  if (options.runStatus === "complete") {
-    await options.connection.close();
-  } else {
-    await options.client?.close();
-  }
+  await options.connection.close({
+    preserveTarget: options.connectionClosedUnexpectedly || options.preserveTarget,
+  });
 }
 
 function shouldCloseOwnedRunTargetAfterRun(options: {
@@ -1135,6 +1132,8 @@ async function runBrowserModeInternal(
   let lastTargetId: string | undefined;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let ownedRecoveryTarget: BrowserRunResult["ownedRecoveryTarget"];
+  const targetClaimId = randomUUID();
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let thinkingSelectionEvidence: BrowserThinkingSelectionEvidence | undefined;
   let tabLease: BrowserTabLease | null = null;
@@ -1152,6 +1151,7 @@ async function runBrowserModeInternal(
       tabUrl: lastUrl,
       conversationId,
       promptSubmitted,
+      ownedRecoveryTarget,
       userDataDir,
       controllerPid: process.pid,
     };
@@ -1402,7 +1402,15 @@ async function runBrowserModeInternal(
         );
         client = cancellation.client(connection.client);
         isolatedTargetId = connection.targetId ?? null;
-        ownsTarget = true;
+        ownsTarget = Boolean(connection.targetId);
+        if (connection.targetId && (!config.keepBrowser || options.closeOwnedTabOnComplete)) {
+          ownedRecoveryTarget = {
+            host: chromeHost,
+            port: chrome.port,
+            targetId: connection.targetId,
+            claimId: targetClaimId,
+          };
+        }
       }
       if (tabLease && isolatedTargetId) {
         await tabLease.update({
@@ -1452,6 +1460,7 @@ async function runBrowserModeInternal(
                     ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
                     : undefined,
                 promptSubmitted,
+                ownedRecoveryTarget,
                 controllerPid: process.pid,
               },
             }),
@@ -1468,6 +1477,7 @@ async function runBrowserModeInternal(
       domainEnablers.push(DOM.enable());
     }
     await Promise.all(domainEnablers);
+    if (config.browserTabRef) await claimBrowserTarget(Runtime, targetClaimId);
     if (!config.headless && config.hideWindow) {
       await positionChromeWindowOffscreen(client, userDataDir, logger);
     } else if (!config.headless) {
@@ -1776,6 +1786,7 @@ async function runBrowserModeInternal(
       await withoutBrowserCancellation(() => handle.release()).catch(() => undefined);
     };
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
+      await claimBrowserTarget(Runtime, targetClaimId);
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
       const baselineAssistantText =
         typeof baselineSnapshot?.text === "string" ? baselineSnapshot.text.trim() : "";
@@ -2010,6 +2021,7 @@ async function runBrowserModeInternal(
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        ownedRecoveryTarget,
         controllerPid: process.pid,
       };
     }
@@ -2112,6 +2124,7 @@ async function runBrowserModeInternal(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ownedRecoveryTarget,
               controllerPid: process.pid,
             },
           },
@@ -2201,6 +2214,7 @@ async function runBrowserModeInternal(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ownedRecoveryTarget,
               controllerPid: process.pid,
             };
             throw await createAssistantTimeoutError({
@@ -2458,6 +2472,7 @@ async function runBrowserModeInternal(
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
             promptSubmitted,
+            ownedRecoveryTarget,
             controllerPid: process.pid,
           },
         }),
@@ -2530,6 +2545,7 @@ async function runBrowserModeInternal(
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       promptSubmitted,
+      ownedRecoveryTarget,
       controllerPid: process.pid,
     };
   } catch (error) {
@@ -2561,6 +2577,7 @@ async function runBrowserModeInternal(
         chromeTargetId: lastTargetId,
         tabUrl: lastUrl,
         promptSubmitted,
+        ownedRecoveryTarget,
         controllerPid: process.pid,
       };
       const reuseProfileHint =
@@ -2637,6 +2654,7 @@ async function runBrowserModeInternal(
               ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
               : undefined,
           promptSubmitted,
+          ownedRecoveryTarget,
           controllerPid: process.pid,
         },
       },
@@ -3153,6 +3171,8 @@ async function runRemoteBrowserMode(
   let tabLease: BrowserTabLease | null = null;
   let lastUrl: string | undefined;
   let promptSubmitted = false;
+  let ownedRecoveryTarget: BrowserRunResult["ownedRecoveryTarget"];
+  const targetClaimId = randomUUID();
   let modelSelectionEvidence: BrowserModelSelectionEvidence | undefined;
   let thinkingSelectionEvidence: BrowserThinkingSelectionEvidence | undefined;
   let attachedExistingTab = false;
@@ -3172,6 +3192,7 @@ async function runRemoteBrowserMode(
           tabUrl: lastUrl,
           conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
           promptSubmitted,
+          ownedRecoveryTarget,
           controllerPid: process.pid,
         },
         modelSelectionEvidence,
@@ -3257,7 +3278,16 @@ async function runRemoteBrowserMode(
       );
       client = cancellation.client(connection.client);
       remoteTargetId = connection.targetId ?? null;
-      ownsTarget = true;
+      ownsTarget = Boolean(connection.targetId);
+      if (connection.targetId && (!config.keepBrowser || options.closeOwnedTabOnComplete)) {
+        ownedRecoveryTarget = {
+          host,
+          port,
+          targetId: connection.targetId,
+          browserWSEndpoint,
+          claimId: targetClaimId,
+        };
+      }
     }
     if (tabLease && remoteTargetId) {
       await tabLease.update({
@@ -3278,6 +3308,7 @@ async function runRemoteBrowserMode(
       domainEnablers.push(DOM.enable());
     }
     await Promise.all(domainEnablers);
+    if (config.browserTabRef) await claimBrowserTarget(Runtime, targetClaimId);
     removeDialogHandler = installJavaScriptDialogAutoDismissal(Page, logger);
     await enableFocusEmulation(client, logger, "remote target");
 
@@ -3399,6 +3430,7 @@ async function runRemoteBrowserMode(
       );
     }
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
+      await claimBrowserTarget(Runtime, targetClaimId);
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
       const baselineAssistantText =
         typeof baselineSnapshot?.text === "string" ? baselineSnapshot.text.trim() : "";
@@ -3583,6 +3615,7 @@ async function runRemoteBrowserMode(
         tabUrl: lastUrl,
         conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
         promptSubmitted,
+        ownedRecoveryTarget,
         controllerPid: process.pid,
       };
     }
@@ -3682,6 +3715,7 @@ async function runRemoteBrowserMode(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ownedRecoveryTarget,
               controllerPid: process.pid,
             },
           },
@@ -3769,6 +3803,7 @@ async function runRemoteBrowserMode(
               tabUrl: lastUrl,
               conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
               promptSubmitted,
+              ownedRecoveryTarget,
               controllerPid: process.pid,
             };
             throw await createAssistantTimeoutError({
@@ -3981,6 +4016,7 @@ async function runRemoteBrowserMode(
             tabUrl: lastUrl,
             conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
             promptSubmitted,
+            ownedRecoveryTarget,
             controllerPid: process.pid,
           },
         }),
@@ -4049,6 +4085,7 @@ async function runRemoteBrowserMode(
       tabUrl: lastUrl,
       conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
       promptSubmitted,
+      ownedRecoveryTarget,
       artifacts: savedArtifacts,
       generatedImages: imageArtifacts.generatedImages,
       savedImages: imageArtifacts.savedImages,
@@ -4099,6 +4136,7 @@ async function runRemoteBrowserMode(
             ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
             : undefined,
         promptSubmitted,
+        ownedRecoveryTarget,
         controllerPid: process.pid,
       },
     });
@@ -4106,16 +4144,6 @@ async function runRemoteBrowserMode(
     await withoutBrowserCancellation(async () => {
       stopThinkingMonitor?.();
       await conversationUrlMonitor?.stop();
-      try {
-        await closeRemoteConnectionAfterRun({
-          connectionClosedUnexpectedly,
-          connection,
-          client,
-          runStatus,
-        });
-      } catch {
-        // ignore
-      }
       removeDialogHandler?.();
       const keepRemoteBrowser = Boolean(config.keepBrowser);
       const shouldCloseOwnedRemoteTarget = shouldCloseOwnedRunTargetAfterRun({
@@ -4125,37 +4153,43 @@ async function runRemoteBrowserMode(
         closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
         closeOwnedTabOnCancel: options.closeOwnedTabOnCancel,
       });
-      const closeOwnedRemoteTarget = async () => {
-        if (!shouldCloseOwnedRemoteTarget || !remoteTargetId) {
-          return;
-        }
-        const safeToClose =
-          !keepRemoteBrowser ||
-          Boolean(await ensureChromePageTargetAfterClose(port, remoteTargetId, logger, host));
-        if (!safeToClose) {
-          logger(
-            `[browser] Leaving completed remote browser tab open because Chrome has no replacement page target.`,
-          );
-          return;
-        }
-        const closeConfirmed = await closeTab(port, remoteTargetId, logger, host);
-        if (!closeConfirmed && keepRemoteBrowser) {
-          const replacementTargetId = await createChromePageTarget(port, logger, host);
-          if (!replacementTargetId) {
-            logger(
-              `[browser] Remote Chrome page retention could not be verified after closing ${remoteTargetId}.`,
-            );
+      const closeConnection = async () => {
+        let preserveTarget = !shouldCloseOwnedRemoteTarget;
+        if (!preserveTarget && keepRemoteBrowser && client && remoteTargetId) {
+          try {
+            const { targetInfos } = await client.Target.getTargets();
+            if (
+              !targetInfos.some(
+                (target) => target.type === "page" && target.targetId !== remoteTargetId,
+              )
+            ) {
+              const replacement = await client.Target.createTarget({ url: "about:blank" });
+              if (!replacement.targetId) preserveTarget = true;
+            }
+          } catch {
+            preserveTarget = true;
           }
         }
+        await closeRemoteConnectionAfterRun({
+          connectionClosedUnexpectedly,
+          connection,
+          client,
+          preserveTarget,
+        });
       };
       if (tabLease) {
         const handle = tabLease;
         tabLease = null;
-        await handle
-          .release({ onRelease: async () => closeOwnedRemoteTarget() })
-          .catch(() => undefined);
+        await handle.release({ onRelease: closeConnection }).catch(async () => {
+          await closeRemoteConnectionAfterRun({
+            connectionClosedUnexpectedly,
+            connection,
+            client,
+            preserveTarget: true,
+          }).catch(() => undefined);
+        });
       } else {
-        await closeOwnedRemoteTarget();
+        await closeConnection().catch(() => undefined);
       }
       // Don't kill remote Chrome - it's not ours to manage
       const totalSeconds = (Date.now() - startedAt) / 1000;
