@@ -164,8 +164,8 @@ export function resolveBrowserConfig(
   };
 }
 
-function normalizeResearchMode(value: unknown): "off" | "deep" {
-  return value === "deep" ? "deep" : "off";
+function normalizeResearchMode(value: unknown): "off" | "search" | "deep" {
+  return value === "deep" || value === "search" ? value : "off";
 }
 
 function normalizeArchiveMode(value: unknown): "auto" | "always" | "never" {

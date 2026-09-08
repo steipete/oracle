@@ -38,6 +38,11 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
   return async function remoteBrowserExecutor(
     options: BrowserRunOptions,
   ): Promise<BrowserRunResult> {
+    if (options.config?.researchMode === "search") {
+      throw new Error(
+        "Web Search is a local browser pilot; --remote-host does not negotiate this capability yet. Use local Chrome or --browser-attach-running.",
+      );
+    }
     const callerSignal = options.signal;
     if (callerSignal?.aborted)
       throw new BrowserRunCancelledError("Browser run cancelled before the request was sent.");

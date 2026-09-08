@@ -112,6 +112,7 @@ Notes:
 - When a thinking tier is requested, `browser.thinkingSelection` records the requested level, observed selected label, verification status, strict-failure policy, and capture time. `oracle status <id>` displays this separately from model-selection evidence, and remote runs retain it in the structured result. An unverified result does not claim a selected tier; strict Pro requests still stop before submission when selection cannot be confirmed. This is UI evidence at `capturedAt`, not proof of backend effort or of later UI state.
 - GPT-5.5 Pro Extended is verified from the selected item in ChatGPT's standalone Pro/Thinking effort pill or compatible Intelligence/model-picker menu. A run **fails closed** if Extended cannot be confirmed rather than silently submitting at a weaker effort. Detection failures write a bounded, redacted model-picker diagnostic to the normal session log.
 - In the direct-slider picker without an Advanced → Effort submenu, Oracle adjusts the five-tier slider with arrow keys and verifies its associated tier announcement and numeric value together. A rightmost thumb without a confirmed `Pro` label never satisfies a Pro request; unknown ranges or inconsistent feedback fail verification.
+- `--browser-research search`: explicitly select Web Search for a normal ChatGPT answer. The pilot supports English ChatGPT with local Chrome, attach-running, or direct remote Chrome; `--remote-host` is not supported yet.
 - `--browser-research deep`: activate ChatGPT Deep Research before submitting the prompt. Use this for broad public-web research and final cited reports, not as a replacement for GPT-5.x Pro Heavy code review or pure reasoning.
 - `--browser-follow-up <prompt>`: submit another prompt in the same ChatGPT conversation after the initial answer. Repeat the flag for multi-turn reviews such as “challenge your recommendation”, “compare against this constraint”, then “give the final decision”. Deep Research has its own report lifecycle, so browser follow-ups are rejected when `--browser-research deep` is enabled.
 - `--followup <session-id>`: reopen the exact saved ChatGPT conversation from a completed browser session. Oracle inherits the parent browser profile, configuration, and model, then verifies the thread and prior turns before submitting.
@@ -168,6 +169,10 @@ Notes:
 All options are persisted with the session so restarts (`oracle restart <id>`) reuse the same automation settings.
 
 For the direct five-tier effort slider, Oracle verifies the leading effort label and the numeric slider position independently. Localized punctuation and ordinal wording, including Japanese `Pro、5件中5件目。`, do not affect selection. The label must end or be followed by whitespace or punctuation; word continuations such as `Professional` or `Proé`, missing labels, and contradictory positions cannot verify Pro.
+
+### Web Search
+
+Use `oracle --engine browser --browser-research search -p "Find the current Node.js LTS releases and cite official sources"` to explicitly select ChatGPT's Web Search tool. Oracle verifies the selected search hint and the complete staged prompt before sending. Missing or changed controls stop the run before submission. Answers and citations use the normal browser transcript and output paths; search activation is UI evidence, not independent attestation of a provider's internal tool execution. The API `--search on/off` setting retains its existing meaning.
 
 ### Deep Research mode
 

@@ -107,9 +107,9 @@ const consultInputShape = {
       "Browser-only: model picker strategy. Mirrors the CLI --browser-model-strategy flag.",
     ),
   browserResearchMode: z
-    .enum(["deep"])
+    .enum(["search", "deep"])
     .optional()
-    .describe("Browser-only: activate ChatGPT Deep Research mode for broad web research."),
+    .describe("Browser-only: explicitly select ChatGPT Web Search or Deep Research."),
   browserArchive: z
     .enum(["auto", "always", "never"])
     .optional()
@@ -345,7 +345,7 @@ export function buildConsultBrowserConfig({
   browserModelLabel?: string;
   browserThinkingTime?: ThinkingTimeLevel;
   browserModelStrategy?: BrowserModelStrategy;
-  browserResearchMode?: "deep";
+  browserResearchMode?: "search" | "deep";
   browserArchive?: "auto" | "always" | "never";
   browserKeepBrowser?: boolean;
 }): BrowserSessionConfig {

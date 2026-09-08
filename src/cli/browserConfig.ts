@@ -329,7 +329,10 @@ export async function buildBrowserConfig(
     remoteChrome,
     browserTabRef: options.browserTab ?? undefined,
     thinkingTime,
-    researchMode: options.browserResearch === "deep" ? "deep" : "off",
+    researchMode:
+      options.browserResearch === "deep" || options.browserResearch === "search"
+        ? options.browserResearch
+        : "off",
     archiveConversations: options.browserArchive,
   };
 }

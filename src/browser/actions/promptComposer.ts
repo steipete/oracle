@@ -27,6 +27,7 @@ import { stageAttachmentPrompt } from "./attachmentPrompt.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 import { buildAttachmentEvidenceExpression } from "./attachmentEvidence.js";
 import { buildAttachmentProgressExpression } from "./attachmentProgress.js";
+import { activateWebSearch } from "./webSearch.js";
 
 const ENTER_KEY_EVENT = {
   key: "Enter",
@@ -60,6 +61,7 @@ export async function submitPrompt(
     inputTimeoutMs?: number | null;
     attachmentTimeoutMs?: number | null;
     onPromptSubmitted?: () => Promise<void> | void;
+    webSearch?: boolean;
   },
   prompt: string,
   logger: BrowserLogger,
@@ -250,6 +252,8 @@ export async function submitPrompt(
       },
     );
   }
+
+  if (deps.webSearch) await activateWebSearch(runtime, input, prompt, logger);
 
   const clicked = await attemptSendButton(
     runtime,

@@ -1857,6 +1857,7 @@ async function runBrowserModeInternal(
         attachmentNames: attachmentExpectations,
         attachmentNavigationUrl,
         onPromptSubmitted: markPromptSubmitted,
+        webSearch: config.researchMode === "search",
       };
       const deepResearchTargetBaseline =
         deepResearch && client
@@ -3466,6 +3467,7 @@ async function runRemoteBrowserMode(
         attachmentNames: attachmentExpectations,
         attachmentNavigationUrl,
         onPromptSubmitted: markPromptSubmitted,
+        webSearch: config.researchMode === "search",
       };
       const deepResearchTargetBaseline =
         deepResearch && client

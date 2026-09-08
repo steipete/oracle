@@ -12,7 +12,7 @@ import type { ThinkingTimeLevel } from "../oracle/types.js";
 export type ChromeClient = Awaited<ReturnType<typeof CDP>>;
 export type CookieParam = Protocol.Network.CookieParam;
 export type BrowserModelStrategy = "select" | "current" | "ignore";
-export type BrowserResearchMode = "off" | "deep";
+export type BrowserResearchMode = "off" | "search" | "deep";
 export type BrowserArchiveMode = "auto" | "always" | "never";
 
 export type BrowserLogger = ((message: string) => void) & {
