@@ -168,13 +168,14 @@ try {
           input: Input,
           page: Page,
           attachmentNames: names,
+          attachmentNavigationUrl: await evaluate("location.href"),
           attachmentTimeoutMs: 1000,
           baselineTurns: 0,
         },
         "Do not send while a file is still uploading.",
         logger,
       ),
-      /Attachments never reached a clickable send button/,
+      /Attachments never reached the exact ready send button/,
     );
     assert.equal(await evaluate("window.proof.clicks + window.proof.enters"), 0);
     await evaluate('document.querySelector("#upload-progress").style.opacity = "0"');
@@ -247,9 +248,17 @@ try {
     };
     const prompt =
       "Read the three attached public synthetic fixtures. Return each test-token-not-real marker.";
+    const attachmentNavigationUrl = await evaluate("location.href");
     const started = Date.now();
     const turns = await submitPrompt(
-      { runtime, input, page, attachmentNames: names, baselineTurns: 0 },
+      {
+        runtime,
+        input,
+        page,
+        attachmentNames: names,
+        attachmentNavigationUrl,
+        baselineTurns: 0,
+      },
       prompt,
       logger,
     );
@@ -270,14 +279,7 @@ try {
     assert.equal(state.commits, 1);
     assert.equal(state.scrolls, 0);
     assert.deepEqual(state.trusted, [true]);
-    assert.deepEqual(events, [
-      "activate",
-      "measure",
-      "measure",
-      "mouseMoved",
-      "mousePressed",
-      "mouseReleased",
-    ]);
+    assert.deepEqual(events, ["activate", "key:keyDown", "key:keyUp"]);
     assert.deepEqual(await evaluate(buildAttachmentEvidenceExpression(names)), [
       false,
       false,

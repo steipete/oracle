@@ -1,8 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fetchGeminiWebResource } from "./http.js";
 import {
   buildGeminiWebModelHeader,
   FALLBACK_GEMINI_WEB_MODEL,
+  getGeminiWebModelSelection,
   type GeminiWebModelId,
 } from "./models.js";
 
@@ -12,6 +15,7 @@ export interface GeminiWebRunInput {
   prompt: string;
   files?: string[];
   model: GeminiWebModelId;
+  allowModelFallback?: boolean;
   cookieMap: Record<string, string>;
   chatMetadata?: unknown;
   signal?: AbortSignal;
@@ -35,7 +39,7 @@ export interface GeminiWebRunOutput {
 }
 
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
 
 const MODEL_HEADER_NAME = "x-goog-ext-525001261-jspb";
 
@@ -103,7 +107,7 @@ export async function fetchGeminiAccessToken(
   signal?: AbortSignal,
 ): Promise<string> {
   const cookieHeader = buildCookieHeader(cookieMap);
-  const res = await fetch(GEMINI_APP_URL, {
+  const res = await fetchGeminiWebResource(GEMINI_APP_URL, {
     redirect: "follow",
     signal,
     headers: {
@@ -163,7 +167,7 @@ async function fetchWithCookiePreservingRedirects(
 ): Promise<Response> {
   let current = url;
   for (let i = 0; i <= maxRedirects; i += 1) {
-    const res = await fetch(current, { ...init, redirect: "manual", signal });
+    const res = await fetchGeminiWebResource(current, { ...init, redirect: "manual", signal });
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
       if (!location) return res;
@@ -213,7 +217,7 @@ async function uploadGeminiFile(
   const form = new FormData();
   form.append("file", new Blob([data], { type: mimeType }), fileName);
 
-  const res = await fetch(GEMINI_UPLOAD_URL, {
+  const res = await fetchGeminiWebResource(GEMINI_UPLOAD_URL, {
     method: "POST",
     redirect: "follow",
     signal,
@@ -234,20 +238,40 @@ function buildGeminiFReqPayload(
   prompt: string,
   uploaded: Array<{ id: string; name: string; mimeType: string }>,
   chatMetadata: unknown,
+  model: GeminiWebModelId,
+  requestId: string,
 ): string {
-  const promptPayload =
-    uploaded.length > 0
-      ? [
-          prompt,
-          0,
-          null,
-          // Format: [[[fileId, 1, null, "mimeType"], "filename", ...]]
-          uploaded.map((file) => [[file.id, 1, null, file.mimeType], file.name]),
-        ]
-      : [prompt];
-
-  const innerList: unknown[] = [promptPayload, null, chatMetadata ?? null];
-  return JSON.stringify([null, JSON.stringify(innerList)]);
+  const request: unknown[] = Array(97).fill(null);
+  request[0] = [
+    prompt,
+    0,
+    null,
+    uploaded.map((file) => [[file.id, 1, null, file.mimeType], file.name]),
+    null,
+    null,
+    0,
+  ];
+  request[1] = ["en"];
+  request[2] = chatMetadata ?? ["", "", "", null, null, null, null, null, null, ""];
+  request[6] = [1];
+  request[7] = 1;
+  request[10] = 1;
+  request[11] = 0;
+  request[17] = [[0]];
+  request[18] = 0;
+  request[27] = 1;
+  request[30] = [4];
+  request[41] = [1];
+  request[53] = 0;
+  request[59] = requestId;
+  request[61] = [];
+  request[68] = 2;
+  const selection = getGeminiWebModelSelection(model);
+  request[79] = selection.modelCode;
+  request[80] = selection.thinkingCode;
+  request[91] = 0;
+  request[96] = chatMetadata == null ? 1 : 0;
+  return JSON.stringify([null, JSON.stringify(request)]);
 }
 
 export function parseGeminiStreamGenerateResponse(rawText: string): {
@@ -360,12 +384,19 @@ export async function runGeminiWebOnce(input: GeminiWebRunInput): Promise<Gemini
     uploaded.push(await uploadGeminiFile(file, input.signal));
   }
 
-  const fReq = buildGeminiFReqPayload(input.prompt, uploaded, input.chatMetadata ?? null);
+  const requestId = randomUUID().toUpperCase();
+  const fReq = buildGeminiFReqPayload(
+    input.prompt,
+    uploaded,
+    input.chatMetadata ?? null,
+    input.model,
+    requestId,
+  );
   const params = new URLSearchParams();
   params.set("at", at);
   params.set("f.req", fReq);
 
-  const res = await fetch(GEMINI_STREAM_GENERATE_URL, {
+  const res = await fetchGeminiWebResource(GEMINI_STREAM_GENERATE_URL, {
     method: "POST",
     redirect: "follow",
     signal: input.signal,
@@ -377,6 +408,9 @@ export async function runGeminiWebOnce(input: GeminiWebRunInput): Promise<Gemini
       "user-agent": USER_AGENT,
       cookie: cookieHeader,
       [MODEL_HEADER_NAME]: buildGeminiWebModelHeader(input.model),
+      "x-goog-ext-73010989-jspb": "[0]",
+      "x-goog-ext-73010990-jspb": "[0]",
+      "x-goog-ext-525005358-jspb": JSON.stringify([requestId, 1]),
     },
     body: params.toString(),
   });
@@ -429,10 +463,35 @@ export async function runGeminiWebWithFallback(
 ): Promise<GeminiWebRunOutput & { effectiveModel: GeminiWebModelId }> {
   const attempt = await runGeminiWebOnce(input);
   if (isGeminiModelUnavailable(attempt.errorCode) && input.model !== FALLBACK_GEMINI_WEB_MODEL) {
+    if (input.allowModelFallback === false) {
+      throw new Error(
+        `Requested Gemini web model ${input.model} is unavailable and model fallback is disabled.`,
+      );
+    }
     const fallback = await runGeminiWebOnce({ ...input, model: FALLBACK_GEMINI_WEB_MODEL });
-    return { ...fallback, effectiveModel: FALLBACK_GEMINI_WEB_MODEL };
+    return {
+      ...assertGeminiWebRunSucceeded(fallback),
+      effectiveModel: FALLBACK_GEMINI_WEB_MODEL,
+    };
   }
-  return { ...attempt, effectiveModel: input.model };
+  return { ...assertGeminiWebRunSucceeded(attempt), effectiveModel: input.model };
+}
+
+function assertGeminiWebRunSucceeded(output: GeminiWebRunOutput): GeminiWebRunOutput {
+  if (output.errorCode !== undefined) {
+    throw new Error(`Gemini web request failed with error code ${output.errorCode}.`);
+  }
+  if (output.errorMessage) {
+    throw new Error(`Gemini web request failed: ${output.errorMessage}`);
+  }
+  if (
+    !output.text.trim() &&
+    output.images.length === 0 &&
+    extractGgdlUrls(output.rawResponseText).length === 0
+  ) {
+    throw new Error("Gemini web request ended without a response.");
+  }
+  return output;
 }
 
 export async function saveFirstGeminiImageFromOutput(

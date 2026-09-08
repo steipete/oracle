@@ -1,3 +1,4 @@
+import { isGpt6Alias, isGpt6ProAlias } from "./browserConfig.js";
 import { InvalidArgumentError, type Command } from "commander";
 import { perplexityAliasToModelId } from "../perplexity-web/models.js";
 import { parseDuration } from "../duration.js";
@@ -239,6 +240,14 @@ export function resolveApiModel(modelValue: string): ModelName {
   if (normalized.includes("/")) {
     return normalized as ModelName;
   }
+  if (isGpt6ProAlias(normalized)) {
+    throw new InvalidArgumentError(
+      "GPT-6 Pro is an API reasoning mode, not a model slug. Use --model gpt-6-astra --reasoning-mode pro (or --engine browser --model gpt-6-pro).",
+    );
+  }
+  if (isGpt6Alias(normalized)) {
+    return "gpt-6-astra";
+  }
   const gpt56Label = parseBrowserGpt56Label(normalized);
   if (gpt56Label?.variant.split(" ").includes("pro")) {
     throw new InvalidArgumentError(
@@ -352,6 +361,14 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   }
   if (normalized.includes("/")) {
     return normalized as ModelName;
+  }
+  // gpt-6 / gpt-6-pro / latest: ChatGPT's "Latest" model (GPT-6 Astra). The browser-only -pro alias
+  // is passed through so its Pro tier default survives (resolveDefaultBrowserThinkingTime).
+  if (isGpt6ProAlias(normalized)) {
+    return "gpt-6-pro" as ModelName;
+  }
+  if (isGpt6Alias(normalized)) {
+    return "gpt-6-astra";
   }
   if (normalized.includes("grok")) {
     return "grok-4.1";

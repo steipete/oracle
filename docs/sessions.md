@@ -74,6 +74,8 @@ oracle --wait --model gpt-5.5-pro -p "Long architecture review" --file "src/**"
 
 For API runs, `--wait` executes the request in the foreground. Local Pro browser runs use a detached worker even with `--wait`, while the original CLI stays attached to the session log. This lets the browser worker capture and save the answer if the foreground CLI exits unexpectedly. Pressing Ctrl-C still cancels the worker and exits with code 130.
 
+MCP callers can make the same ownership split explicit for any local run: call `consult` with `waitForCompletion:false`, then call `wait` with the returned session id. `wait.timeoutMs` bounds only the caller's wait; timeout, request cancellation, or MCP transport closure does not cancel the detached worker. Omit the timeout to wait until a terminal status, or use `0` for an immediate snapshot.
+
 For browser runs, ChatGPT sometimes redirects mid-page-load. The auto-reattach flags poll the existing tab without manual intervention:
 
 ```bash
@@ -135,6 +137,20 @@ oracle status --clear --hours 168   # delete sessions older than a week
 ## Slugs
 
 Every run gets a default slug derived from the prompt. Override with `--slug "my-thing"` for stable names you can reference later (`oracle session my-thing`).
+
+## Browser harvest identity
+
+Browser harvest and live-tail compare the observed conversation with saved
+runtime, archive, artifact-source, and transcript-header identities. A mismatch
+is retained under `browser.harvest.integrity` and shown as a browser warning;
+an implicit harvest fails with `conversation-identity-mismatch` before exporting
+the newly harvested answer. Existing transcripts and answer logs are preserved.
+
+An explicit `--browser-tab` override still permits inspecting another target,
+but records the mismatch and does not reassign the original capture. Unavailable
+recorded transcript headers or unreadable recorded conversation URLs are marked
+`unverified`. Matching known conversation IDs
+does not by itself prove that an answer belongs to the original prompt.
 
 ## Naming conventions
 

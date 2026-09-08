@@ -30,12 +30,13 @@ export const consultInputSchema = z
     browserBundleFormat: z.enum(["auto", "text", "zip"]).optional(),
     browserThinkingTime: browserThinkingTimeInputSchema.optional(),
     browserModelStrategy: z.enum(["select", "current", "ignore"]).optional(),
-    browserResearchMode: z.enum(["deep"]).optional(),
+    browserResearchMode: z.enum(["search", "deep"]).optional(),
     browserArchive: z.enum(["auto", "always", "never"]).optional(),
     browserFollowUps: z.array(z.string()).optional(),
     browserKeepBrowser: z.boolean().optional(),
     generateImage: z.string().optional(),
     outputPath: z.string().optional(),
+    waitForCompletion: z.boolean().optional(),
     dryRun: z.boolean().optional(),
     search: z.boolean().optional(),
     slug: z.string().optional(),
@@ -53,3 +54,12 @@ export const sessionsInputSchema = z.object({
 });
 
 export type SessionsInput = z.infer<typeof sessionsInputSchema>;
+
+export const waitInputSchema = z
+  .object({
+    id: z.string().min(1, "Session id is required."),
+    timeoutMs: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
+export type WaitInput = z.infer<typeof waitInputSchema>;

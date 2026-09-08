@@ -23,6 +23,7 @@ function fixture() {
       "HTMLInputElement",
       "window",
       "globalThis",
+      "location",
       `return ${expression};`,
     )(
       document,
@@ -30,6 +31,7 @@ function fixture() {
       FakeInputElement,
       { getComputedStyle: () => ({ pointerEvents: "auto" }) },
       renderer,
+      new URL("https://chatgpt.com/"),
     );
   const runtime = {
     evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
@@ -67,9 +69,7 @@ describe("per-file attachment evidence", () => {
       const runtime = {
         evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
           result: {
-            value: expression.includes("'#composer-plus-btn'")
-              ? f.evaluate(expression)
-              : { input: true },
+            value: expression.includes("location.href") ? f.evaluate(expression) : { input: true },
           },
         })),
       };
@@ -106,6 +106,26 @@ describe("per-file attachment evidence", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("recognizes the signed-in image tile by its exact removal label", async () => {
+    const f = fixture();
+    f.form.append(
+      new FakeElement("div", {}, [
+        new FakeElement("button", {
+          "aria-label": "Remove file 1: signed-in-image.png",
+        }),
+      ]),
+    );
+
+    await expect(
+      waitForAttachmentVisible(f.runtime as never, "signed-in-image.png", 500),
+    ).resolves.toBeUndefined();
+
+    const expressions = f.runtime.evaluate.mock.calls.map(([call]) => call.expression);
+    expect(expressions.some((expression) => expression.includes('[aria-label*="Remove" i]'))).toBe(
+      true,
+    );
   });
 
   test("never credits a pre-existing or sidebar control to an assignment", () => {

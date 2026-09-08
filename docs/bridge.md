@@ -9,6 +9,10 @@ Oracle’s bridge workflow lets you keep an authenticated ChatGPT session on a W
 
 The host sanitizes incoming attachment filenames for staging. If names collide after sanitization (or differ only by case), later uploads receive a unique numeric suffix before the extension, while their original display paths and payload order are retained. This applies to both primary uploads and prompt-size fallback uploads. Non-colliding filenames are unchanged; supplied names such as `a_b-2.txt` are reserved before suffix allocation.
 
+## Run admission and cancellation
+
+`oracle serve` also offers opt-in bounded admission via `--max-concurrent-runs` and `--max-queued-runs`; see [concurrent admission](browser-mode.md#optional-concurrent-admission). The default remains single-flight HTTP 409. Explicit programmatic cancellation requires the host's `runCancellation` capability; generated-file transfers honor the caller's AbortSignal and remove incomplete transfer files.
+
 ## Generated artifact transfer
 
 Bridge runs now keep the Windows browser host and Linux client separated while still returning ChatGPT-generated files, such as ZIP, CSV, PDF, wheels, and source distributions, to a cloud-readable path. The host advertises artifact-transfer support from the token-protected `GET /health` response. The Linux client uses that capability signal in `oracle bridge client --test` and `oracle bridge doctor`; older hosts remain usable for text responses, but generated files require manual copy from the Windows browser until both sides are upgraded.
@@ -162,3 +166,7 @@ It checks:
 - Tokens are not printed by default.
 - The connection artifact and config file contain secrets; keep them private (Oracle writes them with restrictive permissions on Unix).
 - Bridge does **not** extract/decrypt cookies from arbitrary profiles; the Windows machine keeps the authenticated session locally.
+
+Cancellation also removes Oracle’s attachment input, prompt, and send guards from retained tabs. Guard cleanup runs outside the aborted request scope; it does not cancel provider processing that already received a file or prompt.
+
+With opt-in queue admission, capacity is reserved when authenticated request headers arrive, before buffering the JSON body. Active/queued health counts include body reception; invalid or disconnected uploads release their reservation. This bounds concurrent body buffers by the configured active-plus-queued capacity and preserves admission order across slow uploads. The existing individual payload-size policy is unchanged.

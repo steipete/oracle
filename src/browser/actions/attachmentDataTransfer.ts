@@ -1,6 +1,10 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { ChromeClient, BrowserAttachment } from "../types.js";
+import {
+  assertComposerNavigationSnapshot,
+  buildFileInputGuardExpression,
+} from "./attachmentContext.js";
 
 const MAX_DATA_TRANSFER_BYTES = 20 * 1024 * 1024;
 
@@ -8,6 +12,7 @@ export async function transferAttachmentViaDataTransfer(
   runtime: ChromeClient["Runtime"],
   attachment: BrowserAttachment,
   selector: string,
+  navigationUrl?: string,
 ): Promise<{ fileName: string; size: number }> {
   const fileContent = await readFile(attachment.path);
   if (fileContent.length > MAX_DATA_TRANSFER_BYTES) {
@@ -32,6 +37,16 @@ export async function transferAttachmentViaDataTransfer(
     if (!(fileInput instanceof HTMLInputElement) || fileInput.type !== 'file') {
       return { success: false, error: 'Found element is not a file input' };
     }
+
+    const guard = ${navigationUrl ? buildFileInputGuardExpression("fileInput", navigationUrl) : "null"};
+    if (guard?.blocked) { guard.cleanup(); return { success: false, navigationBlocked: guard.blocked }; }
+    let syntheticFiles = false;
+    const navigationFailure = () => {
+      if (syntheticFiles) delete fileInput.files;
+      fileInput.value = '';
+      return { success: false, navigationBlocked: guard.blocked };
+    };
+    try {
 
     const base64Data = ${JSON.stringify(base64Content)};
     const binaryString = atob(base64Data);
@@ -66,6 +81,7 @@ export async function transferAttachmentViaDataTransfer(
           configurable: true,
           get: () => dataTransfer.files,
         });
+        syntheticFiles = true;
         assigned = true;
       } catch {
         assigned = false;
@@ -83,8 +99,11 @@ export async function transferAttachmentViaDataTransfer(
       return { success: false, error: 'Unable to assign FileList to input' };
     }
 
+    if (guard && !guard.validate(true)) return navigationFailure();
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+    if (guard && !guard.validate(true)) return navigationFailure();
     return { success: true, fileName: file.name, size: file.size };
+    } finally { guard?.cleanup(); }
   })()`;
 
   const evalResult = await runtime.evaluate({ expression, returnByValue: true });
@@ -106,7 +125,11 @@ export async function transferAttachmentViaDataTransfer(
     error?: string;
     fileName?: string;
     size?: number;
+    navigationBlocked?: unknown;
   };
+  if (uploadResult.navigationBlocked && navigationUrl) {
+    assertComposerNavigationSnapshot(navigationUrl, uploadResult.navigationBlocked);
+  }
   if (!uploadResult.success) {
     throw new Error(`Failed to transfer file to browser: ${uploadResult.error || "Unknown error"}`);
   }

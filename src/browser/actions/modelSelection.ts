@@ -117,6 +117,19 @@ function assertResolvedModelSelection(desiredModel: string, resolvedLabel: strin
   const resolved = resolvedLabel.toLowerCase();
   const normalizedDesired = normalizeResolvedModelLabel(desired);
   const normalizedResolved = normalizeResolvedModelLabel(resolved);
+  if (desired === "latest") {
+    // The advanced radio is localized, but only the documented exact labels are
+    // evidence of GPT-6 Astra. Do not let a generic picker result verify Latest.
+    if (
+      resolvedLabel.normalize("NFC").trim() === "Latest" ||
+      resolvedLabel.normalize("NFC").trim() === "最新"
+    ) {
+      return;
+    }
+    throw new Error(
+      `Model picker selected "${resolvedLabel}" while "${desiredModel}" requires GPT-6 Astra (Latest).`,
+    );
+  }
   const wantsGpt56Sol =
     /(?:^| )5 6(?: |$)/.test(normalizedDesired) && normalizedDesired.split(" ").includes("sol");
   if (wantsGpt56Sol) {
@@ -232,6 +245,17 @@ function buildModelSelectionExpression(
     const hasToken = (value, token) => normalizeText(value).split(' ').includes(token);
     // Normalize every candidate token to keep fuzzy matching deterministic.
     const normalizedTarget = normalizeText(PRIMARY_LABEL);
+    // "Latest" (GPT-6 since 2026-09) is a radio in the advanced view whose composer pill reads
+    // "6 Pro" / "6 High"…, while GPT-5.6 Sol's reads "5.6 Pro". Declared up front: getResolvedLabel
+    // runs on the picker-less path before the selection helpers below are initialized.
+    const targetIsLatest = normalizedTarget === 'latest';
+    // ChatGPT localizes the Latest radio itself (for example, Japanese "最新") but
+    // keeps the GPT-6 composer pill numeric. Keep this allow-list exact so GPT-5.6
+    // Sol or an arbitrary localized menu row can never satisfy a Latest request.
+    const isLatestModelLabel = (value) => {
+      const label = String(value ?? '').normalize('NFC').trim();
+      return label === 'Latest' || label === '最新';
+    };
     const normalizedTokens = Array.from(new Set([normalizedTarget, ...LABEL_TOKENS]))
       .map((token) => normalizeText(token))
       .filter(Boolean);
@@ -373,6 +397,14 @@ function buildModelSelectionExpression(
     };
 
     const getButtonLabel = () => (findModelButton()?.textContent ?? '').trim();
+    // With the picker closed the only evidence for "Latest" is the composer pill, so a version-less
+    // "latest" target must be decided on it: the blank composer signal would otherwise pass as
+    // "already selected" while GPT-5.6 Sol is active. Defined here, before getResolvedLabel, because
+    // the "current" strategy resolves the label before the selection helpers further down exist.
+    const latestButtonSelected = () => {
+      const label = normalizeText(getButtonLabel());
+      return /^(chatgpt |gpt )?6(?![0-9 .]*[0-9])/.test(label) && !/(^| )5 6/.test(label);
+    };
     const getComposerModelLabel = () =>
       (document.querySelector(COMPOSER_MODEL_SIGNAL_SELECTOR)?.textContent ?? '').trim();
     const readComposerModelSignal = () => normalizeText(getComposerModelLabel());
@@ -544,7 +576,25 @@ function buildModelSelectionExpression(
       if (wantsInstant) return label.includes('instant');
       if (wantsThinking) return Boolean(desiredVersion) && !labelHasProWord(label);
       if (desiredVersion) return true;
+      // A version-less target ("Latest") must match the radio that is actually checked in the
+      // advanced view: the opener's text lists every radio label, so a substring test would
+      // report "Latest" as selected while GPT-5.6 Sol is the checked model.
+      const checkedAdvancedRadio = findCheckedAdvancedModelRadio(parentMenu);
+      if (checkedAdvancedRadio) {
+        const checkedLabel = checkedAdvancedRadio.textContent ?? '';
+        return targetIsLatest
+          ? isLatestModelLabel(checkedLabel)
+          : normalizedTokens.some((token) => token && normalizeText(checkedLabel) === token);
+      }
       return normalizedTokens.some((token) => token && label.includes(token));
+    };
+    const findCheckedAdvancedModelRadio = (menu = null) => {
+      const scope = menu || findUnifiedPickerMenu() || document;
+      return (
+        scope?.querySelector?.(
+          '[data-testid="composer-model-picker-slider-advanced-view"] [role="menuitemradio"][aria-checked="true"]',
+        ) ?? null
+      );
     };
     const getAdvancedModelLabel = () => {
       const opener = findModelSubmenuOpener(findUnifiedPickerMenu());
@@ -552,7 +602,11 @@ function buildModelSelectionExpression(
       const raw = (opener.textContent ?? '').trim();
       const normalized = normalizeText(pickerNodeLabel(opener));
       const version = versionFromLabel(normalized);
-      if (!version) return raw;
+      if (!version) {
+        const checkedAdvancedRadio = findCheckedAdvancedModelRadio(findUnifiedPickerMenu());
+        const checkedLabel = (checkedAdvancedRadio?.textContent ?? '').trim();
+        return checkedLabel || raw;
+      }
       const [major, minor] = version.split('-');
       const suffix = normalized.split(' ').includes('sol') ? ' Sol' : '';
       return 'GPT-' + major + '.' + minor + suffix;
@@ -566,6 +620,17 @@ function buildModelSelectionExpression(
       );
     };
     const getResolvedLabel = (observedOptionLabel = '') => {
+      if (targetIsLatest) {
+        const checkedAdvancedRadio = findCheckedAdvancedModelRadio();
+        if (checkedAdvancedRadio) return (checkedAdvancedRadio.textContent ?? '').trim();
+        // Picker closed: the pill ("6 Pro") is the evidence; report the radio's name so callers
+        // can compare against the requested target instead of the tier-suffixed pill text.
+        if (latestButtonSelected()) return 'Latest';
+        const currentButtonLabel = getButtonLabel();
+        if (currentButtonLabel) return currentButtonLabel;
+        // No picker button at all (e.g. the "current" strategy on a page that hides it): fall back
+        // to the generic composer/observed label resolution below.
+      }
       if (configuredSelectionMatchesTarget()) {
         const variant = getConfiguredVariantLabel();
         const version = formatModelOptionLabel(getConfiguredVersionLabel());
@@ -707,6 +772,13 @@ function buildModelSelectionExpression(
       return COMPOSER_SIGNAL_INCLUDES.some((token) => token && signal.includes(token));
     };
     const activeSelectionMatchesTarget = () => {
+      if (targetIsLatest) {
+        const checkedAdvancedRadio = findCheckedAdvancedModelRadio();
+        if (checkedAdvancedRadio) {
+          return isLatestModelLabel(checkedAdvancedRadio.textContent ?? '');
+        }
+        return latestButtonSelected();
+      }
       if (advancedModelSignalMatchesTarget()) {
         return true;
       }
@@ -781,6 +853,11 @@ function buildModelSelectionExpression(
 
     const scoreOption = (normalizedText, testid, node) => {
       // Assign a score to every node so we can pick the most likely match without brittle equality checks.
+      // Latest is localized in the advanced radio list. Match the documented labels
+      // exactly instead of falling through to generic scoring, which could select Sol.
+      if (targetIsLatest) {
+        return isLatestModelLabel(node?.textContent ?? '') ? 2000 : 0;
+      }
       if (!normalizedText && !testid) {
         return 0;
       }
@@ -1446,6 +1523,10 @@ function buildModelMatchersLiteral(targetModel: string): {
     testIdTokens.add("gpt-5-6");
     testIdTokens.add("gpt5-6");
     testIdTokens.add("gpt56");
+  }
+  if (base === "latest") {
+    // ChatGPT's Japanese advanced-model radio is named exactly "最新".
+    push("最新", labelTokens);
   }
   // Numeric variations (5.5 <-> 55 <-> gpt-5-5)
   if (base.includes("5.5") || base.includes("5-5") || base.includes("55")) {

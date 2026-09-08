@@ -1,4 +1,8 @@
-import type { BrowserModelSelectionEvidence, SessionMetadata } from "../sessionStore.js";
+import type {
+  BrowserModelSelectionEvidence,
+  BrowserThinkingSelectionEvidence,
+  SessionMetadata,
+} from "../sessionStore.js";
 import type { BrowserModelStrategy } from "./types.js";
 
 interface BrowserModelDisplayInput {
@@ -99,4 +103,16 @@ export function formatBrowserModelSelectionEvidence(
   const strategy = evidence.strategy ?? "(default)";
   const verified = evidence.verified ? "yes" : "no";
   return `requestedKey=${requestedKey}; target=${target}; resolvedLabel=${resolvedLabel}; status=${evidence.status}; strategy=${strategy}; verified=${verified}; source=${evidence.source}; capturedAt=${evidence.capturedAt}`;
+}
+
+/** Renders the observed effort selection independently of the model picker. */
+export function formatBrowserThinkingSelectionEvidence(
+  evidence: BrowserThinkingSelectionEvidence,
+): string {
+  const resolvedLabel = cleanLabel(evidence.resolvedLabel) ?? "(none)";
+  const verified = evidence.verified ? "yes" : "no";
+  const failClosed = evidence.strictFailClosed ? "yes" : "no";
+  const targetKind = evidence.targetModelKind ?? "(none)";
+  const observedKind = evidence.observedModelKind ?? "(none)";
+  return `requestedLevel=${evidence.requestedLevel}; status=${evidence.status}; resolvedLabel=${resolvedLabel}; verified=${verified}; failClosed=${failClosed}; targetModelKind=${targetKind}; observedModelKind=${observedKind}; source=${evidence.source}; capturedAt=${evidence.capturedAt}`;
 }

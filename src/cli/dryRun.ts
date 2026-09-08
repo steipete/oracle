@@ -11,7 +11,11 @@ import {
   type PreviewMode,
 } from "../oracle.js";
 import { isKnownModel } from "../oracle/modelResolver.js";
-import { assembleBrowserPrompt, type BrowserPromptArtifacts } from "../browser/prompt.js";
+import {
+  assembleBrowserPrompt,
+  cleanupGeneratedBrowserBundles,
+  type BrowserPromptArtifacts,
+} from "../browser/prompt.js";
 import type { BrowserAttachment } from "../browser/types.js";
 import type { BrowserSessionConfig } from "../sessionStore.js";
 import { buildTokenEstimateSuffix, formatAttachmentLabel } from "../browser/promptSummary.js";
@@ -113,19 +117,23 @@ async function runBrowserDryRun(
   validateBrowserFollowUps(runOptions, browserConfig);
   const assemblePromptImpl = deps.assembleBrowserPromptImpl ?? assembleBrowserPrompt;
   const artifacts = await assemblePromptImpl(runOptions, { cwd });
-  const suffix = buildTokenEstimateSuffix(artifacts);
-  const displayModel = formatBrowserModelTarget({
-    model: runOptions.model,
-    desiredModel: browserConfig?.desiredModel,
-    modelStrategy: browserConfig?.modelStrategy,
-  });
-  const headerLine = `[dry-run] Oracle (${version}) would launch browser mode (${displayModel}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
-  log(chalk.cyan(headerLine));
-  logBrowserControlPlan(browserConfig, log, "dry-run");
-  logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "dry-run");
-  logBrowserCookieStrategy(browserConfig, log, "dry-run");
-  logBrowserArchivePolicy(browserConfig, log, "dry-run");
-  logBrowserFileSummary(artifacts, log, "dry-run");
+  try {
+    const suffix = buildTokenEstimateSuffix(artifacts);
+    const displayModel = formatBrowserModelTarget({
+      model: runOptions.model,
+      desiredModel: browserConfig?.desiredModel,
+      modelStrategy: browserConfig?.modelStrategy,
+    });
+    const headerLine = `[dry-run] Oracle (${version}) would launch browser mode (${displayModel}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
+    log(chalk.cyan(headerLine));
+    logBrowserControlPlan(browserConfig, log, "dry-run");
+    logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "dry-run");
+    logBrowserCookieStrategy(browserConfig, log, "dry-run");
+    logBrowserArchivePolicy(browserConfig, log, "dry-run");
+    logBrowserFileSummary(artifacts, log, "dry-run");
+  } finally {
+    await cleanupGeneratedBrowserBundles(artifacts);
+  }
 }
 
 function logBrowserControlPlan(
@@ -211,42 +219,46 @@ export async function runBrowserPreview(
   validateBrowserFollowUps(runOptions, browserConfig);
   const assemblePromptImpl = deps.assembleBrowserPromptImpl ?? assembleBrowserPrompt;
   const artifacts = await assemblePromptImpl(runOptions, { cwd });
-  const suffix = buildTokenEstimateSuffix(artifacts);
-  const displayModel = formatBrowserModelTarget({
-    model: runOptions.model,
-    desiredModel: browserConfig?.desiredModel,
-    modelStrategy: browserConfig?.modelStrategy,
-  });
-  const headerLine = `[preview] Oracle (${version}) browser mode (${displayModel}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
-  log(chalk.cyan(headerLine));
-  logBrowserControlPlan(browserConfig, log, "preview");
-  logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "preview");
-  logBrowserCookieStrategy(browserConfig, log, "preview");
-  logBrowserFileSummary(artifacts, log, "preview");
-  if (previewMode === "json" || previewMode === "full") {
-    const attachmentSummary = artifacts.attachments.map((attachment) => ({
-      path: attachment.path,
-      displayPath: attachment.displayPath,
-      sizeBytes: attachment.sizeBytes,
-    }));
-    const previewPayload = {
+  try {
+    const suffix = buildTokenEstimateSuffix(artifacts);
+    const displayModel = formatBrowserModelTarget({
       model: runOptions.model,
-      engine: "browser" as const,
-      composerText: artifacts.composerText,
-      attachments: attachmentSummary,
-      inlineFileCount: artifacts.inlineFileCount,
-      bundled: artifacts.bundled,
-      tokenEstimate: artifacts.estimatedInputTokens,
-      browserFollowUps: runOptions.browserFollowUps ?? [],
-    };
-    log("");
-    log(chalk.bold("Preview JSON"));
-    log(JSON.stringify(previewPayload, null, 2));
-  }
-  if (previewMode === "full") {
-    log("");
-    log(chalk.bold("Composer Text"));
-    log(artifacts.composerText || chalk.dim("(empty prompt)"));
+      desiredModel: browserConfig?.desiredModel,
+      modelStrategy: browserConfig?.modelStrategy,
+    });
+    const headerLine = `[preview] Oracle (${version}) browser mode (${displayModel}) with ~${artifacts.estimatedInputTokens.toLocaleString()} tokens${suffix}.`;
+    log(chalk.cyan(headerLine));
+    logBrowserControlPlan(browserConfig, log, "preview");
+    logBrowserFollowUpSummary(runOptions.browserFollowUps, log, "preview");
+    logBrowserCookieStrategy(browserConfig, log, "preview");
+    logBrowserFileSummary(artifacts, log, "preview");
+    if (previewMode === "json" || previewMode === "full") {
+      const attachmentSummary = artifacts.attachments.map((attachment) => ({
+        path: attachment.path,
+        displayPath: attachment.displayPath,
+        sizeBytes: attachment.sizeBytes,
+      }));
+      const previewPayload = {
+        model: runOptions.model,
+        engine: "browser" as const,
+        composerText: artifacts.composerText,
+        attachments: attachmentSummary,
+        inlineFileCount: artifacts.inlineFileCount,
+        bundled: artifacts.bundled,
+        tokenEstimate: artifacts.estimatedInputTokens,
+        browserFollowUps: runOptions.browserFollowUps ?? [],
+      };
+      log("");
+      log(chalk.bold("Preview JSON"));
+      log(JSON.stringify(previewPayload, null, 2));
+    }
+    if (previewMode === "full") {
+      log("");
+      log(chalk.bold("Composer Text"));
+      log(artifacts.composerText || chalk.dim("(empty prompt)"));
+    }
+  } finally {
+    await cleanupGeneratedBrowserBundles(artifacts);
   }
 }
 

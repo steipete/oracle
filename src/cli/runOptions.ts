@@ -12,7 +12,7 @@ import {
 import { resolveGeminiModelId } from "../oracle/gemini.js";
 import { resolveOverriddenApiModel } from "../oracle/modelResolver.js";
 import { PromptValidationError } from "../oracle/errors.js";
-import { normalizeChatGptModelForBrowser } from "./browserConfig.js";
+import { normalizeChatGptModelForBrowser, isGpt6ProAlias } from "./browserConfig.js";
 import { resolveConfiguredMaxFileSizeBytes } from "./fileSize.js";
 import { isAzureOpenAICandidateModel } from "../oracle/providerRouting.js";
 import { isPerplexityModel } from "../perplexity-web/models.js";
@@ -59,7 +59,11 @@ export function resolveRunOptionsFromConfig({
     .filter(Boolean);
 
   const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || DEFAULT_MODEL;
-  const apiModel = resolveApiModel(cliModelArg);
+  const isGpt6Pro = isGpt6ProAlias(cliModelArg);
+  const apiModel =
+    isGpt6Pro && (resolvedEngine === "browser" || browserEngineRequested)
+      ? ("gpt-6-pro" as ModelName)
+      : resolveApiModel(cliModelArg);
   // Browser label inference is intentionally engine-scoped: API model ids such as
   // gpt-5.6-luna must remain provider values even though browser mode rejects
   // unrecognized GPT-5.6 picker variants.
@@ -74,10 +78,18 @@ export function resolveRunOptionsFromConfig({
   const engineWasBrowser = resolvedEngine === "browser";
   const allModels: ModelName[] =
     normalizedRequestedModels.length > 0
-      ? Array.from(new Set(normalizedRequestedModels.map((entry) => resolveApiModel(entry))))
+      ? Array.from(
+          new Set(
+            normalizedRequestedModels.map((entry) =>
+              isGpt6ProAlias(entry) && (resolvedEngine === "browser" || browserEngineRequested)
+                ? ("gpt-6-pro" as ModelName)
+                : resolveApiModel(entry),
+            ),
+          ),
+        )
       : [apiModel];
   const browserCompatibilityModels: ModelName[] =
-    normalizedRequestedModels.length > 0 ? allModels : [browserModel];
+    normalizedRequestedModels.length > 0 ? allModels : [browserModel ?? apiModel];
   const isBrowserCompatible = (m: string) =>
     m.startsWith("gpt-") || m.startsWith("gemini") || isPerplexityModel(m);
   const hasNonBrowserCompatibleTarget =
@@ -99,6 +111,16 @@ export function resolveRunOptionsFromConfig({
     isCodex || isClaude || isGrok || azureAutoApi || normalizedRequestedModels.length > 0
       ? "api"
       : resolvedEngine;
+  if (fixedEngine === "api") {
+    if (isGpt6ProAlias(cliModelArg)) {
+      resolveApiModel(cliModelArg);
+    }
+    for (const entry of normalizedRequestedModels) {
+      if (isGpt6ProAlias(entry)) {
+        resolveApiModel(entry);
+      }
+    }
+  }
   // Browser runs use ChatGPT picker labels/aliases; API runs must keep API model ids intact.
   const resolvedModel = fixedEngine === "browser" ? browserModel : apiModel;
 

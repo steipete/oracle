@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
-import { createRemoteServer, pickClientBrowserConfig } from "../../src/remote/server.js";
+import { createRemoteServer, RunSlots, pickClientBrowserConfig } from "../../src/remote/server.js";
 import { createRemoteBrowserExecutor } from "../../src/remote/client.js";
 import type { BrowserRunResult } from "../../src/browserMode.js";
 import type { RemoteArtifactDescriptor } from "../../src/remote/types.js";
@@ -29,6 +29,71 @@ const CAN_LISTEN_LOCALHOST =
   ).status === 0;
 
 describe("remote browser service", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST).each([true, false])(
+    "enforces the host endpoint and wait over client injection (attachRunning=%s)",
+    async (attachRunning) => {
+      const hostRoute = {
+        attachRunning,
+        remoteChrome: { host: "127.0.0.1", port: 9333 },
+        approvalWaitMs: 300_000,
+      };
+      let observed = false;
+      const server = await createRemoteServer(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          token: "test-host-routing",
+          logger: () => {},
+          browserConfig: hostRoute,
+          manualLoginDefault: true,
+          cookieSyncDefault: true,
+        },
+        {
+          runBrowser: async (options) => {
+            observed = true;
+            expect(options.config).toMatchObject({
+              ...hostRoute,
+              cookieSync: false,
+              thinkingTime: "pro",
+            });
+            expect(options.config?.manualLogin).not.toBe(true);
+            expect(options.config?.chromePath).toBeUndefined();
+            expect(options.closeOwnedTabOnComplete).toBe(false);
+            return {
+              answerText: "host-route",
+              answerMarkdown: "host-route",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 10,
+            };
+          },
+        },
+      );
+      try {
+        const execute = createRemoteBrowserExecutor({
+          host: `127.0.0.1:${server.port}`,
+          token: "test-host-routing",
+        });
+        const result = await execute({
+          prompt: "host route",
+          config: {
+            attachRunning: !attachRunning,
+            remoteChrome: { host: "untrusted.invalid", port: 1 },
+            approvalWaitMs: 1,
+            manualLogin: true,
+            chromePath: "/untrusted",
+            cookieSync: true,
+            thinkingTime: "pro",
+          },
+        });
+        expect(result.answerText).toBe("host-route");
+        expect(observed).toBe(true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   test.skipIf(!CAN_LISTEN_LOCALHOST)(
     "streams logs and returns results via client executor",
     async () => {
@@ -45,7 +110,10 @@ describe("remote browser service", () => {
           runBrowser: async (options) => {
             runLog.push(options.prompt);
             expect(options.config?.cookieSync).toBe(false);
-            expect(options.sessionId).toBe("remote-session-id");
+            // The server namespaces the client's slug per run so two callers
+            // cannot share an artifact directory; the caller's slug stays as the
+            // prefix, and the client re-saves what it pulls under its own session.
+            expect(options.sessionId).toMatch(/^remote-session-id-[0-9a-f-]{36}$/);
             expect(options.followUpPrompts).toEqual(["follow up"]);
             expect(options.attachments).toHaveLength(1);
             const attachment = options.attachments?.[0];
@@ -147,6 +215,59 @@ describe("remote browser service", () => {
 
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "does not materialize a pending fallback bundle before the primary remote submit",
+    async () => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-lazy-fallback-"));
+      const fallbackPath = path.join(tmpDir, "fallback.txt");
+      await writeFile(fallbackPath, "lazy fallback", "utf8");
+      const prepare = async () => {
+        throw new Error("client prepare must not run for remote fallback");
+      };
+
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async (options) => {
+            expect(options.fallbackSubmission?.prompt).toBe("fallback prompt");
+            expect(options.fallbackSubmission?.attachments).toHaveLength(1);
+            const stored = await readFile(options.fallbackSubmission!.attachments[0]!.path, "utf8");
+            expect(stored).toBe("lazy fallback");
+            expect(options.fallbackSubmission?.prepare).toEqual(expect.any(Function));
+            return {
+              answerText: "ok",
+              answerMarkdown: "ok",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+            };
+          },
+        },
+      );
+
+      try {
+        const executor = createRemoteBrowserExecutor({
+          host: `127.0.0.1:${server.port}`,
+          token: "secret",
+        });
+        const result = await executor({
+          prompt: "remote",
+          fallbackSubmission: {
+            prompt: "fallback prompt",
+            attachments: [{ path: fallbackPath, displayPath: "fallback.txt", sizeBytes: 13 }],
+            prepare,
+            pendingBundle: { format: "text", scope: "text-only" },
+          },
+          config: {},
+        });
+        expect(result.answerText).toBe("ok");
+      } finally {
+        await server.close();
+        await rm(tmpDir, { recursive: true, force: true });
+      }
     },
   );
 
@@ -749,6 +870,459 @@ async function httpGetJson({
     req.end();
   });
 }
+
+describe("run admission", () => {
+  // The required semantics, stated as tests: four conversations may be active at
+  // once, the fifth caller WAITS rather than being refused, refusal is reserved
+  // for a full queue, and giving up frees whatever the caller was holding.
+  const noSignal = undefined;
+
+  test("admits up to the limit immediately", async () => {
+    const slots = new RunSlots(4, 8);
+    const releases = await Promise.all([
+      slots.acquire(noSignal),
+      slots.acquire(noSignal),
+      slots.acquire(noSignal),
+      slots.acquire(noSignal),
+    ]);
+    expect(slots.activeCount).toBe(4);
+    expect(slots.queuedCount).toBe(0);
+    for (const release of releases) release();
+    expect(slots.activeCount).toBe(0);
+  });
+
+  test("the caller past the limit waits instead of failing", async () => {
+    const slots = new RunSlots(4, 8);
+    const held = await Promise.all([
+      slots.acquire(noSignal),
+      slots.acquire(noSignal),
+      slots.acquire(noSignal),
+      slots.acquire(noSignal),
+    ]);
+
+    let fifthAdmitted = false;
+    const fifth = slots.acquire(noSignal).then((release) => {
+      fifthAdmitted = true;
+      return release;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fifthAdmitted).toBe(false);
+    expect(slots.queuedCount).toBe(1);
+    expect(slots.positionFor()).toBe(2);
+
+    held[0]();
+    const fifthRelease = await fifth;
+    expect(fifthAdmitted).toBe(true);
+    expect(slots.activeCount).toBe(4);
+
+    fifthRelease();
+    for (const release of held.slice(1)) release();
+    expect(slots.activeCount).toBe(0);
+  });
+
+  test("the queue is FIFO", async () => {
+    const slots = new RunSlots(1, 8);
+    const first = await slots.acquire(noSignal);
+    const order: number[] = [];
+    const second = slots.acquire(noSignal).then((release) => {
+      order.push(2);
+      return release;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const third = slots.acquire(noSignal).then((release) => {
+      order.push(3);
+      return release;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    first();
+    (await second)();
+    (await third)();
+    expect(order).toEqual([2, 3]);
+  });
+
+  test("saturation is only reached when the queue is full too", async () => {
+    const slots = new RunSlots(2, 1);
+    const held = [await slots.acquire(noSignal), await slots.acquire(noSignal)];
+    expect(slots.isSaturated).toBe(false);
+    const queued = slots.acquire(noSignal);
+    expect(slots.isSaturated).toBe(true);
+    held[0]();
+    (await queued)();
+    held[1]();
+  });
+
+  test("a caller that gives up while queued frees its place", async () => {
+    // Without this a long-lived service leaks capacity to clients that walked
+    // away, until it stops accepting work at all.
+    const slots = new RunSlots(1, 8);
+    const held = await slots.acquire(noSignal);
+    const controller = new AbortController();
+    const abandoned = slots.acquire(controller.signal);
+    expect(slots.queuedCount).toBe(1);
+
+    controller.abort();
+    await expect(abandoned).rejects.toThrow(/cancelled while waiting/);
+    expect(slots.queuedCount).toBe(0);
+
+    held();
+    const next = await slots.acquire(noSignal);
+    expect(slots.activeCount).toBe(1);
+    next();
+  });
+
+  test("an already-cancelled caller never takes a slot", async () => {
+    const slots = new RunSlots(4, 8);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(slots.acquire(controller.signal)).rejects.toThrow(/cancelled before/);
+    expect(slots.activeCount).toBe(0);
+  });
+
+  test("releasing twice does not hand out capacity that does not exist", async () => {
+    const slots = new RunSlots(2, 8);
+    const release = await slots.acquire(noSignal);
+    release();
+    release();
+    expect(slots.activeCount).toBe(0);
+  });
+});
+
+describe("bridge concurrency end to end", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "two callers run concurrently and a third waits for a slot",
+    async () => {
+      let active = 0;
+      let peakActive = 0;
+      const finish: (() => void)[] = [];
+      const server = await createRemoteServer(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          token: "secret",
+          logger: () => {},
+          maxConcurrentRuns: 2,
+          maxQueuedRuns: 4,
+        },
+        {
+          runBrowser: async () => {
+            active += 1;
+            peakActive = Math.max(peakActive, active);
+            await new Promise<void>((resolve) => finish.push(resolve));
+            active -= 1;
+            return {
+              answerText: "ok",
+              answerMarkdown: "ok",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+            };
+          },
+        },
+      );
+
+      const call = async () => {
+        const executor = createRemoteBrowserExecutor({
+          host: `127.0.0.1:${server.port}`,
+          token: "secret",
+        });
+        return executor({ prompt: "x", config: {} });
+      };
+
+      const runs = [call(), call(), call()];
+      // Give all three time to arrive; only two may be inside runBrowser.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(active).toBe(2);
+      expect(peakActive).toBe(2);
+
+      while (finish.length > 0) {
+        finish.shift()?.();
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      const results = await Promise.all(runs);
+      expect(results.map((r) => r.answerText)).toEqual(["ok", "ok", "ok"]);
+      expect(peakActive).toBe(2);
+
+      await server.close();
+    },
+  );
+});
+
+describe("per-run isolation on the shared host", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "two callers sending the same session slug get distinct server-side sessions",
+    async () => {
+      // Session slugs are prompt-derived, so collisions are ordinary rather than
+      // adversarial — and a shared slug means a shared artifact directory.
+      const seen: string[] = [];
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {}, maxConcurrentRuns: 2 },
+        {
+          runBrowser: async (options) => {
+            seen.push(String(options.sessionId));
+            return {
+              answerText: "ok",
+              answerMarkdown: "ok",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+            };
+          },
+        },
+      );
+      const call = async () =>
+        createRemoteBrowserExecutor({ host: `127.0.0.1:${server.port}`, token: "secret" })({
+          prompt: "x",
+          config: {},
+          sessionId: "review-the-ts-data",
+        });
+      await Promise.all([call(), call()]);
+
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).not.toEqual(seen[1]);
+      for (const sessionId of seen) {
+        expect(sessionId.startsWith("review-the-ts-data-")).toBe(true);
+      }
+      await server.close();
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)("does not overwrite the shared-profile tab cap", async () => {
+    // The tab cap is the physical constraint on a shared profile and belongs to
+    // the host. An operator who lowered it — to stay under an account's
+    // throttling, say — must not have that silently replaced by whatever the
+    // service happens to admit.
+    let observedCap: number | undefined = 7;
+    const server = await createRemoteServer(
+      { host: "127.0.0.1", port: 0, token: "secret", logger: () => {}, maxConcurrentRuns: 4 },
+      {
+        runBrowser: async (options) => {
+          observedCap = options.config?.maxConcurrentTabs;
+          return {
+            answerText: "ok",
+            answerMarkdown: "ok",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 2,
+          };
+        },
+      },
+    );
+    await createRemoteBrowserExecutor({ host: `127.0.0.1:${server.port}`, token: "secret" })({
+      prompt: "x",
+      config: {},
+    });
+    // Preserve the host cap, rather than pinning it to the requested service concurrency.
+    expect(observedCap).toBe(3);
+    await server.close();
+  });
+});
+
+describe("cancellation reaches the run", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "a client that disconnects mid-run aborts it instead of letting it finish",
+    async () => {
+      // Releasing the slot when the run happens to end is not cancellation. The
+      // browser keeps a tab and a shared-profile slot for the whole run, so a
+      // caller that walked away must be able to give both back immediately.
+      let sawSignal: AbortSignal | undefined;
+      let observedAbort = false;
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {}, maxConcurrentRuns: 1 },
+        {
+          runBrowser: async (options) => {
+            sawSignal = options.signal;
+            await new Promise<void>((resolve) => {
+              options.signal?.addEventListener("abort", () => {
+                observedAbort = true;
+                resolve();
+              });
+              // Long enough that natural completion cannot be mistaken for
+              // cancellation.
+              setTimeout(resolve, 10_000);
+            });
+            return {
+              answerText: "",
+              answerMarkdown: "",
+              tookMs: 0,
+              answerTokens: 0,
+              answerChars: 0,
+            };
+          },
+        },
+      );
+
+      const request = http.request(
+        {
+          host: "127.0.0.1",
+          port: server.port,
+          path: "/runs",
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer secret" },
+        },
+        () => {},
+      );
+      request.write(JSON.stringify({ prompt: "x", options: {}, browserConfig: {} }));
+      request.on("error", (error: NodeJS.ErrnoException) => {
+        expect(error.code).toBe("ECONNRESET");
+      });
+      request.end();
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(sawSignal).toBeDefined();
+      expect(observedAbort).toBe(false);
+
+      request.destroy();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(observedAbort).toBe(true);
+
+      await server.close();
+    },
+  );
+});
+
+describe("cancellation across the bridge", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "a caller aborting a remote run cancels it on the far side",
+    async () => {
+      // `signal` has to mean the same thing on both sides. Observed only locally
+      // it would look like cancellation while the remote run kept its slot and
+      // its browser tab until it finished on its own.
+      let observedAbort = false;
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async (options) => {
+            await new Promise<void>((resolve) => {
+              options.signal?.addEventListener("abort", () => {
+                observedAbort = true;
+                resolve();
+              });
+              setTimeout(resolve, 10_000);
+            });
+            return {
+              answerText: "",
+              answerMarkdown: "",
+              tookMs: 0,
+              answerTokens: 0,
+              answerChars: 0,
+            };
+          },
+        },
+      );
+      const controller = new AbortController();
+      const executor = createRemoteBrowserExecutor({
+        host: `127.0.0.1:${server.port}`,
+        token: "secret",
+      });
+      const run = executor({ prompt: "x", config: {}, signal: controller.signal });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(observedAbort).toBe(false);
+
+      controller.abort();
+      await expect(run).rejects.toThrow(/cancelled/i);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(observedAbort).toBe(true);
+
+      await server.close();
+    },
+  );
+
+  test("an already-aborted caller never sends the request", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const executor = createRemoteBrowserExecutor({ host: "127.0.0.1:1", token: "secret" });
+    await expect(executor({ prompt: "x", config: {}, signal: controller.signal })).rejects.toThrow(
+      /cancelled before the request was sent/,
+    );
+  });
+});
+
+describe("bridged result sanitization", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "carries selection evidence and conversation identity, never host detail",
+    async () => {
+      // Two properties in one test because they are the same decision seen from
+      // both sides: the whitelist must pass what makes a remote answer
+      // attributable, and must still refuse anything describing this machine.
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        {
+          runBrowser: async () => {
+            const result: BrowserRunResult = {
+              answerText: "hi",
+              answerMarkdown: "hi",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+              modelSelection: {
+                requestedModel: "gpt-5.6-sol",
+                resolvedLabel: "GPT-5.6 Sol",
+                strategy: "select",
+                status: "switched",
+                verified: true,
+                source: "chatgpt-model-picker",
+                capturedAt: "2026-08-18T00:00:00.000Z",
+              },
+              thinkingSelection: {
+                requestedLevel: "pro",
+                status: "switched",
+                resolvedLabel: "Pro",
+                verified: true,
+                strictFailClosed: true,
+                source: "chatgpt-thinking-picker",
+                capturedAt: "2026-08-18T00:00:00.000Z",
+              },
+              tabUrl: "https://chatgpt.com/c/abc-123",
+              researchPlan: {
+                title: "Compare public release schedules",
+                steps: ["Read official sources", "Compare support dates"],
+                phase: "researching",
+                capturedAt: "2026-09-08T00:00:00.000Z",
+              },
+              conversationId: "abc-123",
+              promptSubmitted: true,
+              chromePid: 4242,
+              chromePort: 9222,
+              userDataDir: "/Users/someone/.oracle/browser-profile",
+            };
+            return result;
+          },
+        },
+      );
+
+      const executor = createRemoteBrowserExecutor({
+        host: `127.0.0.1:${server.port}`,
+        token: "secret",
+      });
+      const result = await executor({ prompt: "remote", config: {} });
+
+      // Without these a bridged run cannot be proven to have answered at the
+      // requested model and effort, and its answer cannot be bound to a URL.
+      expect(result.thinkingSelection).toMatchObject({
+        requestedLevel: "pro",
+        verified: true,
+        strictFailClosed: true,
+      });
+      expect(result.modelSelection?.resolvedLabel).toBe("GPT-5.6 Sol");
+      expect(result.researchPlan).toMatchObject({
+        title: "Compare public release schedules",
+        steps: ["Read official sources", "Compare support dates"],
+        phase: "researching",
+      });
+      expect(result.conversationId).toBe("abc-123");
+      expect(result.tabUrl).toBe("https://chatgpt.com/c/abc-123");
+
+      // Host detail stays on the host.
+      expect(result.chromePid).toBeUndefined();
+      expect(result.chromePort).toBeUndefined();
+      expect(result.userDataDir).toBeUndefined();
+
+      await server.close();
+    },
+  );
+});
 
 describe("client browser-config allowlist", () => {
   test("passes through the fields that describe the conversation", () => {

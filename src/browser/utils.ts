@@ -1,7 +1,23 @@
 export { parseDuration } from "../duration.js";
+import { currentBrowserAbortSignal } from "./cancellation.js";
 
-export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+export function delay(ms: number, signal = currentBrowserAbortSignal()): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export function estimateTokenCount(text: string): number {
@@ -29,6 +45,8 @@ export async function withRetries<T>(
     try {
       return await task();
     } catch (error) {
+      if (error instanceof Error && ["AbortError", "BrowserRunCancelledError"].includes(error.name))
+        throw error;
       if (attempt === retries) {
         throw error;
       }

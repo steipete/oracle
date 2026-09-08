@@ -76,19 +76,21 @@ describe("gemini-web uploads", () => {
         { name: "input.png", type: "image/png" },
         { name: "notes.txt", type: "application/octet-stream" },
       ]);
-      expect(requestPayload).toEqual([
+      expect(requestPayload).toHaveLength(97);
+      expect(requestPayload?.[0]).toEqual([
+        "Describe the attachments.",
+        0,
+        null,
         [
-          "Describe the attachments.",
-          0,
-          null,
-          [
-            [["upload-1", 1, null, "image/png"], "input.png"],
-            [["upload-2", 1, null, "application/octet-stream"], "notes.txt"],
-          ],
+          [["upload-1", 1, null, "image/png"], "input.png"],
+          [["upload-2", 1, null, "application/octet-stream"], "notes.txt"],
         ],
         null,
         null,
+        0,
       ]);
+      expect(requestPayload?.[79]).toBe(1);
+      expect(requestPayload?.[80]).toBe(1);
       expect(JSON.parse(modelHeader ?? "null")).toEqual([
         1,
         null,
@@ -101,7 +103,7 @@ describe("gemini-web uploads", () => {
         [4, 5, 6, 8],
         null,
         null,
-        3,
+        2,
         null,
         null,
         1,

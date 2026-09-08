@@ -215,6 +215,26 @@ describe("runOracle request payload", () => {
     ).rejects.toThrow("Use --model gpt-5.6-sol --reasoning-effort max");
     expect(client.lastRequest).toBeNull();
   });
+  test("rejects reasoning effort none for GPT-6 Astra", async () => {
+    const stream = new MockStream([], buildResponse());
+    const client = new MockClient(stream);
+    await expect(
+      runOracle(
+        {
+          prompt: "Invalid none effort target",
+          model: "gpt-6-astra",
+          reasoningEffort: "none",
+          background: false,
+        },
+        {
+          apiKey: "sk-test",
+          client,
+          log: () => {},
+        },
+      ),
+    ).rejects.toThrow('Reasoning effort "none" is not supported for gpt-6-astra');
+    expect(client.lastRequest).toBeNull();
+  });
 
   test("rejects reasoning mode on Chat Completions proxy routes", async () => {
     const stream = new MockStream([], buildResponse());

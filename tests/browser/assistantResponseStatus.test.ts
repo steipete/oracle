@@ -467,6 +467,7 @@ describe("thinking-active completion veto", () => {
     stop?: boolean;
     shimmer?: boolean;
     ariaBusy?: boolean;
+    nestedRole?: boolean;
     statusText?: string;
     statusTestId?: string;
     progress?: boolean;
@@ -526,6 +527,9 @@ describe("thinking-active completion veto", () => {
             return opts.unrelatedProgress ? [new FakeEl("", progressAttrs)] : [];
           }
           if (selector.includes("conversation-turn") || selector.includes("data-turn")) {
+            if (opts.nestedRole && selector.includes("data-message-author-role")) {
+              return [...turnNodes, new FakeEl("nested message")];
+            }
             return turnNodes;
           }
           // The panel selector carries "aside"/"complementary"/"sidecar"; the status selector
@@ -584,6 +588,13 @@ describe("thinking-active completion veto", () => {
 
   test("fires on aria-busy", () => {
     expect(evalThinkingActive({ ariaBusy: true })).toBe(true);
+  });
+
+  test("keeps activity beside a nested assistant message inside its turn", () => {
+    expect(evalThinkingActivityDetails({ ariaBusy: true, nestedRole: true })).toEqual({
+      active: true,
+      strong: true,
+    });
   });
 
   test.each(["Thinking", "Pro thinking", "Searching the web", "Reading", "Finalizing answer"])(

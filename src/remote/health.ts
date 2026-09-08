@@ -48,10 +48,12 @@ export async function checkRemoteHealth({
   host,
   token,
   timeoutMs = 5000,
+  signal,
 }: {
   host: string;
   token?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<RemoteHealthResult> {
   const { hostname, port } = parseHostPort(host);
   const headers: Record<string, string> = { accept: "application/json" };
@@ -65,6 +67,7 @@ export async function checkRemoteHealth({
       path: "/health",
       headers,
       timeoutMs,
+      signal,
     });
     if (response.statusCode === 200 && typeof response.json === "object" && response.json) {
       const ok = (response.json as { ok?: unknown }).ok === true;
@@ -101,6 +104,8 @@ function parseCapabilities(value: unknown): RemoteArtifactCapabilities | undefin
     return undefined;
   }
   const raw = value as {
+    deferredFallbackBundling?: unknown;
+    runCancellation?: unknown;
     artifactTransfer?: unknown;
     artifactProtocolVersion?: unknown;
     maxArtifactBytes?: unknown;
@@ -121,6 +126,8 @@ function parseCapabilities(value: unknown): RemoteArtifactCapabilities | undefin
     return undefined;
   }
   return {
+    ...(raw.deferredFallbackBundling === true ? { deferredFallbackBundling: true } : {}),
+    ...(raw.runCancellation === true ? { runCancellation: true } : {}),
     artifactTransfer: true,
     artifactProtocolVersion,
     maxArtifactBytes: Math.min(maxArtifactBytes, MAX_REMOTE_ARTIFACT_BYTES),
@@ -144,12 +151,14 @@ async function requestJson({
   path,
   headers,
   timeoutMs,
+  signal,
 }: {
   hostname: string;
   port: number;
   path: string;
   headers: Record<string, string>;
   timeoutMs: number;
+  signal?: AbortSignal;
 }): Promise<{ statusCode: number; json: unknown; bodyText: string }> {
   return await new Promise((resolve, reject) => {
     const req = http.request(
@@ -159,6 +168,7 @@ async function requestJson({
         path,
         method: "GET",
         headers,
+        signal,
       },
       (res) => {
         res.setEncoding("utf8");

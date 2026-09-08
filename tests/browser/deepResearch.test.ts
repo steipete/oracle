@@ -177,11 +177,115 @@ describe("Deep Research activation expression", () => {
     expect(expression).toContain(".__menu-item");
     expect(expression).toContain("popover");
     expect(expression).toContain("detailed report");
-    expect(expression).toContain("text === 'get a detailed report'");
-    expect(expression).toContain("text.startsWith('get a detailed report ')");
+    expect(expression).toContain("descriptionLabels");
+    expect(expression).toContain("深度研究");
+    expect(expression).toContain("获取详细报告");
+    expect(expression).toContain("添加文件");
     expect(expression).toContain('[class*="composer-pill"]');
     expect(expression).toContain("deep research");
     expect(expression).toContain("already-active");
+  });
+
+  it.each([
+    ["深度研究 获取详细报告", "深度研究", "添加文件等"],
+    ["DeepResearch", "Deep research", "Add files and more"],
+    ["Deep Research Get a detailed report", "Deep research", "Add files and more"],
+  ])("activates %s without clicking the GitHub connector", async (row, pill, plusLabel) => {
+    const expression = buildActivateDeepResearchExpressionForTest();
+    let menuOpen = false;
+    let activated = false;
+
+    class FakeEventTarget {
+      dispatchEvent(event: { type?: string }) {
+        if (event.type === "click") this.onClick();
+        return true;
+      }
+
+      onClick() {}
+    }
+
+    class FakeElement extends FakeEventTarget {
+      className = "__menu-item";
+      clickCount = 0;
+
+      constructor(
+        readonly textContent: string,
+        private readonly ariaLabel = "",
+        private readonly inPopover = false,
+        private readonly clickAction?: () => void,
+      ) {
+        super();
+      }
+
+      getAttribute(name: string) {
+        return name === "aria-label" ? this.ariaLabel : null;
+      }
+
+      getBoundingClientRect() {
+        return { left: 10, top: 20, width: 200, height: 40 };
+      }
+
+      closest(selector: string) {
+        if (selector.includes("popover")) return this.inPopover ? popover : null;
+        return this;
+      }
+
+      querySelector() {
+        return null;
+      }
+
+      querySelectorAll() {
+        return [];
+      }
+
+      scrollIntoView() {}
+
+      override onClick() {
+        this.clickCount += 1;
+        this.clickAction?.();
+      }
+    }
+
+    const popover = {};
+    const plusButton = new FakeElement("", plusLabel, false, () => {
+      menuOpen = true;
+    });
+    const githubRow = new FakeElement("GitHub 搜索和引用代码", "", true);
+    const deepResearchRow = new FakeElement(row, "", true, () => {
+      activated = true;
+    });
+    const deepResearchPill = new FakeElement(pill);
+    const menuRows = [githubRow, deepResearchRow];
+    const document = {
+      querySelector: () => null,
+      querySelectorAll: (selector: string) => {
+        if (selector.includes("composer-pill")) return activated ? [deepResearchPill] : [];
+        if (selector === '[data-testid="composer"], form, [class*="composer"]') return [];
+        if (selector === 'input, textarea, [contenteditable="true"]') return [];
+        if (selector === "button") return [plusButton];
+        if (selector.includes('[role="menuitemradio"]')) return menuOpen ? menuRows : [];
+        return [];
+      },
+    };
+    class FakeMouseEvent {
+      constructor(readonly type: string) {}
+    }
+
+    const result = (await new vm.Script(expression).runInNewContext({
+      document,
+      Element: FakeElement,
+      EventTarget: FakeEventTarget,
+      MouseEvent: FakeMouseEvent,
+      window: { getComputedStyle: () => ({ visibility: "visible", display: "block" }) },
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 0;
+      },
+    })) as { status?: string };
+
+    expect(result.status).toBe("activated");
+    expect(deepResearchRow.clickCount).toBeGreaterThan(0);
+    expect(githubRow.clickCount).toBe(0);
   });
 });
 
@@ -292,6 +396,73 @@ describe("Deep Research iframe helpers", () => {
     expect(expression).toContain("reportText");
   });
 
+  it("captures the plan and execution state from the Deep Research iframe", () => {
+    const expression = buildDeepResearchFrameStatusExpressionForTest();
+    const stepNodes = [
+      { textContent: "Read official release notes" },
+      { textContent: "Check the support schedule" },
+    ];
+    const updateButton = { textContent: "Update", getAttribute: () => null };
+    const section = {
+      querySelector: (selector: string) => {
+        if (selector === "h2") return { textContent: "Node.js 24 release smoke" };
+        if (selector === "p.loading-shimmer") return { textContent: "Researching..." };
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector === "ul li") return stepNodes;
+        if (selector === "button") return [updateButton];
+        return [];
+      },
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: "Researching...", innerHTML: "<section />" },
+        querySelectorAll: (selector: string) => (selector === "section" ? [section] : []),
+      },
+    }) as {
+      planTitle?: string;
+      planSteps?: string[];
+      planActionText?: string;
+      researchStarted?: boolean;
+    };
+
+    expect(result).toMatchObject({
+      planTitle: "Node.js 24 release smoke",
+      planSteps: ["Read official release notes", "Check the support schedule"],
+      planActionText: "Update",
+      researchStarted: true,
+    });
+  });
+
+  it("does not treat the editable countdown plan as research already running", () => {
+    const expression = buildDeepResearchFrameStatusExpressionForTest();
+    const editButton = { textContent: "Edit", getAttribute: () => null };
+    const section = {
+      querySelector: (selector: string) => {
+        if (selector === "h2") return { textContent: "Research plan" };
+        return null;
+      },
+      querySelectorAll: (selector: string) => {
+        if (selector === "ul li") return [{ textContent: "Inspect official sources" }];
+        if (selector === "button") return [editButton];
+        return [];
+      },
+    };
+    const result = new vm.Script(expression).runInNewContext({
+      document: {
+        body: { innerText: "Research plan", innerHTML: "<section />" },
+        querySelectorAll: (selector: string) => (selector === "section" ? [section] : []),
+      },
+    }) as { planTitle?: string; planActionText?: string; researchStarted?: boolean };
+
+    expect(result).toMatchObject({
+      planTitle: "Research plan",
+      planActionText: "Edit",
+      researchStarted: false,
+    });
+  });
+
   it("captures completed localized reports without the English report heading", () => {
     const expression = buildDeepResearchFrameStatusExpressionForTest();
     const result = new vm.Script(expression).runInNewContext({
@@ -374,20 +545,188 @@ describe("waitForResearchPlanAutoConfirm", () => {
     mockLogger = createMockLogger();
   });
 
-  it("detects research plan via iframe and waits for auto-confirm", async () => {
-    // Phase A: plan detected via iframe
-    mockRuntime.evaluate.mockResolvedValueOnce({
-      result: { value: { hasResearchIframe: true, hasResearchText: false } },
-    });
-    // Phase B: research started
-    mockRuntime.evaluate.mockResolvedValue({
-      result: { value: { hasLargeIframe: false, isResearching: true } },
-    });
+  it("captures the iframe plan and returns as soon as execution starts", async () => {
+    mockRuntime.evaluate
+      .mockResolvedValueOnce({
+        result: {
+          value: {
+            completed: false,
+            inProgress: true,
+            researchStarted: false,
+            planTitle: "Node.js 24 release smoke",
+            planSteps: ["Read official release notes", "Check the support schedule"],
+            planActionText: "Edit",
+            textLength: 80,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        result: {
+          value: {
+            completed: false,
+            inProgress: true,
+            researchStarted: true,
+            planTitle: "Node.js 24 release smoke",
+            planSteps: ["Read official release notes", "Check the support schedule"],
+            planActionText: "Update",
+            textLength: 90,
+          },
+        },
+      });
+    const Page = {
+      getFrameTree: vi.fn(async () => ({
+        frameTree: {
+          frame: { id: "main", url: "https://chatgpt.com/c/demo" },
+          childFrames: [
+            {
+              frame: {
+                id: "deep",
+                url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+              },
+            },
+          ],
+        },
+      })),
+      createIsolatedWorld: vi.fn(async () => ({ executionContextId: 7 })),
+    };
+    const onPlan = vi.fn();
 
     await expect(
-      waitForResearchPlanAutoConfirm(mockRuntime as never, mockLogger, 1_000),
-    ).resolves.toBeUndefined();
-    expect(mockLogger).toHaveBeenCalledWith(expect.stringContaining("Research plan detected"));
+      waitForResearchPlanAutoConfirm(mockRuntime as never, mockLogger, 1_000, {
+        Page: Page as never,
+        onPlan,
+      }),
+    ).resolves.toMatchObject({
+      title: "Node.js 24 release smoke",
+      phase: "researching",
+      actionText: "Update",
+    });
+    expect(onPlan).toHaveBeenCalledTimes(2);
+    expect(mockLogger).toHaveBeenCalledWith(expect.stringContaining("Deep Research plan detected"));
+    expect(mockLogger).toHaveBeenCalledWith(expect.stringContaining("execution started"));
+  });
+
+  it.each(["frame", "parent fallback"])(
+    "promotes a captured plan when research starts through %s without plan text",
+    async (source) => {
+      mockRuntime.evaluate
+        .mockResolvedValueOnce({
+          result: {
+            value: {
+              completed: false,
+              inProgress: true,
+              researchStarted: false,
+              planTitle: "Support schedule",
+              planSteps: ["Read official sources"],
+              textLength: 40,
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          result: { value: source === "frame" ? { researchStarted: true } : null },
+        })
+        .mockResolvedValueOnce({ result: { value: { isResearching: true } } });
+      const Page = {
+        getFrameTree: vi.fn(async () => ({
+          frameTree: {
+            frame: { id: "main", url: "https://chatgpt.com/c/demo" },
+            childFrames: [
+              {
+                frame: {
+                  id: "deep",
+                  url: "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/",
+                },
+              },
+            ],
+          },
+        })),
+        createIsolatedWorld: vi.fn(async () => ({ executionContextId: 7 })),
+      };
+      const onPlan = vi.fn();
+      const plan = await waitForResearchPlanAutoConfirm(mockRuntime as never, mockLogger, 1_000, {
+        Page: Page as never,
+        onPlan,
+      });
+      expect(plan).toMatchObject({ title: "Support schedule", phase: "researching" });
+      expect(onPlan).toHaveBeenCalledTimes(2);
+      expect(onPlan.mock.calls[0]?.[0].phase).toBe("planning");
+      expect(onPlan.mock.calls[1]?.[0]).toEqual(plan);
+    },
+  );
+
+  it("uses a captured target baseline when the fresh OOPIF owner is unavailable", async () => {
+    const listeners = new Map<string, (params: unknown, sessionId?: string) => void>();
+    const deepResearchUrl =
+      "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/";
+    const mockClient = {
+      oraclePageSessionId: "page-session",
+      on: vi.fn((event: string, listener: (params: unknown, sessionId?: string) => void) => {
+        listeners.set(event, listener);
+      }),
+      removeListener: vi.fn(),
+      send: vi.fn(async (method: string, params?: unknown, sessionId?: string) => {
+        if (method === "Target.setAutoAttach" && (params as { autoAttach?: boolean })?.autoAttach) {
+          listeners.get("Target.attachedToTarget")?.(
+            {
+              sessionId: "old-session",
+              targetInfo: { targetId: "old-target", type: "iframe", url: deepResearchUrl },
+            },
+            "page-session",
+          );
+          listeners.get("Target.attachedToTarget")?.(
+            {
+              sessionId: "fresh-session",
+              targetInfo: { targetId: "fresh-target", type: "iframe", url: deepResearchUrl },
+            },
+            "page-session",
+          );
+          return {};
+        }
+        if (method === "Page.getFrameTree") {
+          return {
+            frameTree: {
+              frame: { id: `${sessionId}-frame`, name: "root", url: deepResearchUrl },
+            },
+          };
+        }
+        if (method === "Page.createIsolatedWorld") {
+          return { executionContextId: sessionId === "old-session" ? 10 : 20 };
+        }
+        if (method === "DOM.getFrameOwner") {
+          return {};
+        }
+        if (method === "Runtime.evaluate" && sessionId) {
+          return {
+            result: {
+              value: {
+                completed: false,
+                inProgress: true,
+                researchStarted: sessionId === "fresh-session",
+                planTitle: sessionId === "fresh-session" ? "Fresh plan" : "Old plan",
+                planSteps: ["Read official sources"],
+                planActionText: sessionId === "fresh-session" ? "Update" : "Edit",
+                textLength: 50,
+              },
+            },
+          };
+        }
+        return {};
+      }),
+    };
+
+    await expect(
+      waitForResearchPlanAutoConfirm(mockRuntime as never, mockLogger, 1_000, {
+        client: mockClient as never,
+        ignoredTargetKeys: ["old-target"],
+        targetBaselineCaptured: true,
+        minTurnIndex: 1,
+      }),
+    ).resolves.toMatchObject({ title: "Fresh plan", phase: "researching" });
+    expect(mockClient.send).not.toHaveBeenCalledWith(
+      "DOM.getFrameOwner",
+      expect.anything(),
+      "page-session",
+    );
   });
 
   it("detects research plan via text content", async () => {
@@ -402,7 +741,7 @@ describe("waitForResearchPlanAutoConfirm", () => {
 
     await expect(
       waitForResearchPlanAutoConfirm(mockRuntime as never, mockLogger, 1_000),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 
   it("handles plan not detected gracefully", async () => {
@@ -427,7 +766,7 @@ describe("waitForResearchPlanAutoConfirm", () => {
 
     await expect(
       waitForResearchPlanAutoConfirm(mockRuntime as never, mockLogger, 100),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
     expect(mockLogger).toHaveBeenCalledWith(expect.stringContaining("not detected"));
 
     vi.spyOn(Date, "now").mockRestore();

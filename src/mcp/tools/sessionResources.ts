@@ -1,5 +1,4 @@
-import { ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/server";
 import fs from "node:fs/promises";
 import { sessionStore } from "../../sessionStore.js";
 

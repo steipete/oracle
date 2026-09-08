@@ -1,4 +1,6 @@
+import { withoutBrowserCancellation } from "../cancellation.js";
 import type { ChromeClient, BrowserLogger } from "../types.js";
+import { randomUUID } from "node:crypto";
 import {
   INPUT_SELECTORS,
   PROMPT_PRIMARY_SELECTOR,
@@ -13,11 +15,19 @@ import {
 } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
-import { buildAttachmentNamePattern } from "./attachments.js";
+import {
+  assertComposerNavigationSnapshot,
+  assertComposerPlusStayedInPlace,
+  buildAttachmentNamePattern,
+  composerNavigationIdentityFromUrl,
+} from "./attachments.js";
+import { buildComposerNavigationValidationExpression } from "./attachmentContext.js";
 import { buildClickDispatcher } from "./domEvents.js";
+import { stageAttachmentPrompt } from "./attachmentPrompt.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 import { buildAttachmentEvidenceExpression } from "./attachmentEvidence.js";
 import { buildAttachmentProgressExpression } from "./attachmentProgress.js";
+import { activateWebSearch } from "./webSearch.js";
 
 const ENTER_KEY_EVENT = {
   key: "Enter",
@@ -26,6 +36,12 @@ const ENTER_KEY_EVENT = {
   nativeVirtualKeyCode: 13,
 } as const;
 const ENTER_KEY_TEXT = "\r";
+const ESCAPE_KEY_EVENT = {
+  key: "Escape",
+  code: "Escape",
+  windowsVirtualKeyCode: 27,
+  nativeVirtualKeyCode: 27,
+} as const;
 
 export interface AttachmentReadyExpectation {
   name: string;
@@ -40,20 +56,39 @@ export async function submitPrompt(
     input: ChromeClient["Input"];
     page?: ChromeClient["Page"];
     attachmentNames?: AttachmentReadyInput[];
+    attachmentNavigationUrl?: string;
     baselineTurns?: number | null;
     inputTimeoutMs?: number | null;
     attachmentTimeoutMs?: number | null;
     onPromptSubmitted?: () => Promise<void> | void;
+    webSearch?: boolean;
   },
   prompt: string,
   logger: BrowserLogger,
 ): Promise<number | null> {
   const { runtime, input } = deps;
+  const hasAttachments = Array.isArray(deps.attachmentNames) && deps.attachmentNames.length > 0;
+  if (hasAttachments && !deps.attachmentNavigationUrl) {
+    throw new BrowserAutomationError(
+      "Oracle cannot safely submit attachments without the pre-upload ChatGPT page identity.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-navigation-identity-unavailable",
+      },
+    );
+  }
+  if (hasAttachments) {
+    await assertComposerPlusStayedInPlace(runtime, deps.attachmentNavigationUrl!);
+  }
 
   await waitForDomReady(runtime, logger, deps.inputTimeoutMs ?? undefined);
-  const encodedPrompt = JSON.stringify(prompt);
-  const focusResult = await runtime.evaluate({
-    expression: `(() => {
+  let observedLength: number;
+  if (hasAttachments) {
+    observedLength = await stageAttachmentPrompt(runtime, prompt, deps.attachmentNavigationUrl!);
+  } else {
+    const encodedPrompt = JSON.stringify(prompt);
+    const focusResult = await runtime.evaluate({
+      expression: `(() => {
       ${buildClickDispatcher()}
       const SELECTORS = ${JSON.stringify(INPUT_SELECTORS)};
       const isVisible = (node) => {
@@ -97,24 +132,24 @@ export async function submitPrompt(
       }
       return { focused: false };
     })()`,
-    returnByValue: true,
-    awaitPromise: true,
-  });
-  if (!focusResult.result?.value?.focused) {
-    await logDomFailure(runtime, logger, "focus-textarea");
-    throw new Error("Failed to focus prompt textarea");
-  }
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    if (!focusResult.result?.value?.focused) {
+      await logDomFailure(runtime, logger, "focus-textarea");
+      throw new Error("Failed to focus prompt textarea");
+    }
 
-  await input.insertText({ text: prompt });
+    await input.insertText({ text: prompt });
 
-  // Some pages (notably ChatGPT when subscriptions/widgets load) need a brief settle
-  // before the send button becomes enabled; give it a short breather to avoid races.
-  await delay(500);
+    // Some pages (notably ChatGPT when subscriptions/widgets load) need a brief settle
+    // before the send button becomes enabled; give it a short breather to avoid races.
+    await delay(500);
 
-  const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
-  const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
-  const verification = await runtime.evaluate({
-    expression: `(() => {
+    const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
+    const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
+    const verification = await runtime.evaluate({
+      expression: `(() => {
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
       const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
@@ -138,19 +173,19 @@ export async function submitPrompt(
         activeValue: active ? readValue(active) : '',
       };
     })()`,
-    returnByValue: true,
-  });
+      returnByValue: true,
+    });
 
-  const editorTextRaw = verification.result?.value?.editorText ?? "";
-  const fallbackValueRaw = verification.result?.value?.fallbackValue ?? "";
-  const activeValueRaw = verification.result?.value?.activeValue ?? "";
-  const editorTextTrimmed = editorTextRaw?.trim?.() ?? "";
-  const fallbackValueTrimmed = fallbackValueRaw?.trim?.() ?? "";
-  const activeValueTrimmed = activeValueRaw?.trim?.() ?? "";
-  if (!editorTextTrimmed && !fallbackValueTrimmed && !activeValueTrimmed) {
-    // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
-    await runtime.evaluate({
-      expression: `(() => {
+    const editorTextRaw = verification.result?.value?.editorText ?? "";
+    const fallbackValueRaw = verification.result?.value?.fallbackValue ?? "";
+    const activeValueRaw = verification.result?.value?.activeValue ?? "";
+    const editorTextTrimmed = editorTextRaw?.trim?.() ?? "";
+    const fallbackValueTrimmed = fallbackValueRaw?.trim?.() ?? "";
+    const activeValueTrimmed = activeValueRaw?.trim?.() ?? "";
+    if (!editorTextTrimmed && !fallbackValueTrimmed && !activeValueTrimmed) {
+      // Learned: occasionally Input.insertText doesn't land in the editor; force textContent/value + input events.
+      await runtime.evaluate({
+        expression: `(() => {
         const fallback = document.querySelector(${fallbackSelectorLiteral});
         if (fallback) {
           fallback.value = ${encodedPrompt};
@@ -164,12 +199,11 @@ export async function submitPrompt(
           editor.dispatchEvent(new InputEvent('input', { bubbles: true, data: ${encodedPrompt}, inputType: 'insertFromPaste' }));
         }
       })()`,
-    });
-  }
+      });
+    }
 
-  const promptLength = prompt.length;
-  const postVerification = await runtime.evaluate({
-    expression: `(() => {
+    const postVerification = await runtime.evaluate({
+      expression: `(() => {
       const editor = document.querySelector(${primarySelectorLiteral});
       const fallback = document.querySelector(${fallbackSelectorLiteral});
       const inputSelectors = ${JSON.stringify(INPUT_SELECTORS)};
@@ -193,16 +227,18 @@ export async function submitPrompt(
         activeValue: active ? readValue(active) : '',
       };
     })()`,
-    returnByValue: true,
-  });
-  const observedEditor = postVerification.result?.value?.editorText ?? "";
-  const observedFallback = postVerification.result?.value?.fallbackValue ?? "";
-  const observedActive = postVerification.result?.value?.activeValue ?? "";
-  const observedLength = Math.max(
-    observedEditor.length,
-    observedFallback.length,
-    observedActive.length,
-  );
+      returnByValue: true,
+    });
+    const observedEditor = postVerification.result?.value?.editorText ?? "";
+    const observedFallback = postVerification.result?.value?.fallbackValue ?? "";
+    const observedActive = postVerification.result?.value?.activeValue ?? "";
+    observedLength = Math.max(
+      observedEditor.length,
+      observedFallback.length,
+      observedActive.length,
+    );
+  }
+  const promptLength = prompt.length;
   if (promptLength >= 50_000 && observedLength > 0 && observedLength < promptLength - 2_000) {
     // Learned: very large prompts can truncate silently; fail fast so we can fall back to file uploads.
     await logDomFailure(runtime, logger, "prompt-too-large");
@@ -217,6 +253,8 @@ export async function submitPrompt(
     );
   }
 
+  if (deps.webSearch) await activateWebSearch(runtime, input, prompt, logger);
+
   const clicked = await attemptSendButton(
     runtime,
     input,
@@ -224,12 +262,13 @@ export async function submitPrompt(
     deps?.attachmentNames,
     deps?.attachmentTimeoutMs,
     deps?.page,
+    deps?.attachmentNavigationUrl,
   );
   if (!clicked) {
     await dispatchEnterKey(input);
     logger("Submitted prompt via Enter key");
   } else {
-    logger("Clicked send button");
+    logger("Activated send button");
   }
   await deps.onPromptSubmitted?.();
 
@@ -552,8 +591,18 @@ async function attemptSendButton(
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
   Page?: ChromeClient["Page"],
+  attachmentNavigationUrl?: string,
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
+  if (needAttachment && !attachmentNavigationUrl) {
+    throw new BrowserAutomationError(
+      "Oracle cannot safely submit attachments without the pre-upload ChatGPT page identity.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-navigation-identity-unavailable",
+      },
+    );
+  }
   const script = `(() => {
     ${buildClickDispatcher()}
     const selectors = ${JSON.stringify(SEND_BUTTON_SELECTORS)};
@@ -609,6 +658,7 @@ async function attemptSendButton(
   let previousPoint: { x: number; y: number } | undefined;
   let activated = false;
   let foundButton = false;
+  let attachmentMenuChecked = !needAttachment;
   while (Date.now() < deadline) {
     if (needAttachment) {
       const ready = await Runtime.evaluate({
@@ -619,6 +669,31 @@ async function attemptSendButton(
         await delay(150);
         continue;
       }
+    }
+    if (!attachmentMenuChecked) {
+      await activatePageForTrustedInput(Page, logger);
+      activated = true;
+      await dismissOpenComposerPlusMenu(Runtime, Input, logger);
+      attachmentMenuChecked = true;
+      previousPoint = undefined;
+      await delay(150);
+      continue;
+    }
+    if (needAttachment) {
+      if (
+        await activateExactAttachmentSendButton(
+          Runtime,
+          Input,
+          logger,
+          attachmentNavigationUrl,
+          attachmentNames,
+        )
+      ) {
+        return true;
+      }
+      previousPoint = undefined;
+      await delay(100);
+      continue;
     }
     // Activating the target can trigger a final compositor/layout pass. Do it before
     // measuring the button so the trusted click never uses stale coordinates.
@@ -662,7 +737,7 @@ async function attemptSendButton(
   }
   if (Array.isArray(attachmentNames) && attachmentNames.length > 0) {
     throw new BrowserAutomationError(
-      `Attachments never reached a clickable send button after ${Math.ceil(
+      `Attachments never reached the exact ready send button after ${Math.ceil(
         timeoutMs / 1000,
       )}s; tune --browser-attachment-timeout.`,
       {
@@ -680,6 +755,224 @@ async function attemptSendButton(
     });
   }
   return false;
+}
+
+async function activateExactAttachmentSendButton(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  logger?: BrowserLogger,
+  attachmentNavigationUrl?: string,
+  attachmentNames: AttachmentReadyInput[] = [],
+): Promise<boolean> {
+  const probe = await Runtime.evaluate({
+    expression: `(() => {
+      const button = document.querySelector('button[data-testid="send-button"]');
+      if (!(button instanceof HTMLElement)) return { status: 'absent' };
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      const enabled = !button.hasAttribute('disabled') &&
+        button.getAttribute('aria-disabled') !== 'true' &&
+        button.getAttribute('data-disabled') !== 'true' &&
+        style.pointerEvents !== 'none' &&
+        style.display !== 'none' &&
+        style.visibility !== 'hidden';
+      if (rect.width <= 0 || rect.height <= 0 || !enabled) return { status: 'unavailable' };
+      button.focus({ preventScroll: true });
+      return { status: document.activeElement === button ? 'focused' : 'unavailable' };
+    })()`,
+    returnByValue: true,
+  });
+  const status = (probe?.result?.value as { status?: string } | undefined)?.status;
+  if (status !== "focused") {
+    return false;
+  }
+  if (!Input || typeof Input.dispatchKeyEvent !== "function") {
+    throw new BrowserAutomationError(
+      "ChatGPT's attachment send button is ready but Oracle cannot activate it safely.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-send-keyboard-unavailable",
+      },
+    );
+  }
+  const expectedIdentity = composerNavigationIdentityFromUrl(attachmentNavigationUrl ?? "");
+  if (!expectedIdentity || !attachmentNavigationUrl) {
+    throw new BrowserAutomationError("Attachment page identity is unavailable before dispatch.", {
+      stage: "submit-prompt",
+      code: "attachment-navigation-identity-unavailable",
+    });
+  }
+  const guardId = randomUUID();
+  // Recheck at event delivery too: a SPA can navigate after the CDP probe returns.
+  let delivery: { sawKeyDown?: boolean; blocked?: unknown } | undefined;
+  try {
+    const boundary = await Runtime.evaluate({
+      expression: `(() => {
+        const button = document.querySelector('button[data-testid="send-button"]');
+        const check = () => {
+          const navigation = ${buildComposerNavigationValidationExpression(attachmentNavigationUrl)};
+          const rect = button?.getBoundingClientRect();
+          const style = button ? window.getComputedStyle(button) : null;
+          return {
+            ...navigation,
+            focused: button instanceof HTMLElement && document.activeElement === button &&
+              document.querySelector('button[data-testid="send-button"]') === button &&
+              !button.hasAttribute('disabled') && button.getAttribute('aria-disabled') !== 'true' &&
+              button.getAttribute('data-disabled') !== 'true' && rect.width > 0 && rect.height > 0 &&
+              style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none',
+            attachmentsReady: ${buildAttachmentReadyExpression(attachmentNames)},
+          };
+        };
+        const safeCheck = () => {
+          try { return check(); } catch { return { currentUrl: location.href, contextMatches: false, focused: false, attachmentsReady: false }; }
+        };
+        const snapshot = safeCheck();
+        if (!snapshot.contextMatches || !snapshot.focused || !snapshot.attachmentsReady) return snapshot;
+        const existing = window.__oracleAttachmentDispatchGuard;
+        if (existing && !existing.finished) return { ...snapshot, focused: false };
+        existing?.cleanup?.();
+        const guard = { id: ${JSON.stringify(guardId)}, sawKeyDown: false, blocked: null, finished: false };
+        const detach = () => {
+          window.removeEventListener('keydown', onKeyDown, true);
+          window.removeEventListener('keyup', onKeyUp, true);
+          window.removeEventListener('click', onClick, true);
+          guard.finished = true;
+        };
+        const cancel = (event, state) => {
+          event.preventDefault(); event.stopImmediatePropagation(); guard.blocked = state;
+        };
+        const onKeyDown = event => {
+          if (event.key !== 'Enter' || !event.isTrusted) return;
+          guard.sawKeyDown = true;
+          const state = safeCheck();
+          if (!state.contextMatches || !state.focused || !state.attachmentsReady) cancel(event, state);
+        };
+        const onKeyUp = event => {
+          if (event.key === 'Enter' && event.isTrusted && guard.blocked) { cancel(event, guard.blocked); detach(); }
+        };
+        const onClick = event => {
+          if (!guard.sawKeyDown || !(event.target instanceof Node) ||
+              !(button.contains(event.target) || event.target instanceof Element && event.target.closest('button[data-testid="send-button"]'))) return;
+          const state = safeCheck();
+          if (guard.blocked || !state.contextMatches || !state.focused || !state.attachmentsReady) cancel(event, guard.blocked ?? state);
+          detach();
+        };
+        guard.cleanup = () => { detach(); if (window.__oracleAttachmentDispatchGuard === guard) delete window.__oracleAttachmentDispatchGuard; };
+        window.__oracleAttachmentDispatchGuard = guard;
+        window.addEventListener('keydown', onKeyDown, true);
+        window.addEventListener('keyup', onKeyUp, true);
+        window.addEventListener('click', onClick, true);
+        return snapshot;
+      })()`,
+      returnByValue: true,
+    });
+    const snapshot = boundary?.result?.value as
+      | { focused?: boolean; attachmentsReady?: boolean }
+      | undefined;
+    assertComposerNavigationSnapshot(attachmentNavigationUrl, snapshot);
+    if (snapshot?.focused !== true || snapshot.attachmentsReady !== true) return false;
+    await Input.dispatchKeyEvent({
+      type: "keyDown",
+      ...ENTER_KEY_EVENT,
+      text: ENTER_KEY_TEXT,
+      unmodifiedText: ENTER_KEY_TEXT,
+    });
+    await Input.dispatchKeyEvent({ type: "keyUp", ...ENTER_KEY_EVENT });
+  } finally {
+    const result = await withoutBrowserCancellation(() =>
+      Runtime.evaluate({
+        expression: `(() => {
+        const guard = window.__oracleAttachmentDispatchGuard;
+        if (guard?.id !== ${JSON.stringify(guardId)}) return null;
+        const summary = { sawKeyDown: guard.sawKeyDown, blocked: guard.blocked };
+        guard.cleanup(); return summary;
+      })()`,
+        returnByValue: true,
+      }).catch(() => undefined),
+    );
+    delivery = result?.result?.value as typeof delivery;
+  }
+  if (delivery?.blocked) {
+    assertComposerNavigationSnapshot(attachmentNavigationUrl, delivery.blocked);
+    throw new BrowserAutomationError(
+      "Attachment focus or upload readiness changed at dispatch; the send was stopped.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-send-not-ready",
+      },
+    );
+  }
+  if (delivery?.sawKeyDown !== true) {
+    throw new BrowserAutomationError(
+      "Attachment input delivery could not be verified; do not retry automatically.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-send-ambiguous",
+      },
+    );
+  }
+  logger?.("Activated exact attachment send button via keyboard");
+  return true;
+}
+
+async function dismissOpenComposerPlusMenu(
+  Runtime: ChromeClient["Runtime"],
+  Input: ChromeClient["Input"],
+  logger?: BrowserLogger,
+): Promise<boolean> {
+  const probe = await Runtime.evaluate({
+    expression: `(() => {
+      const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+      const button = selectors
+        .map(selector => document.querySelector(selector))
+        .find(node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
+      if (!(button instanceof HTMLElement)) return { status: 'absent' };
+      if (button.getAttribute('aria-expanded') !== 'true') return { status: 'closed' };
+      button.focus({ preventScroll: true });
+      return { status: 'open', focused: document.activeElement === button };
+    })()`,
+    returnByValue: true,
+  });
+  const status = (probe?.result?.value as { status?: string } | undefined)?.status;
+  if (status !== "open") {
+    return false;
+  }
+  if (!Input || typeof Input.dispatchKeyEvent !== "function") {
+    throw new BrowserAutomationError(
+      "ChatGPT's attachment menu is still open and Oracle cannot dismiss it safely before sending.",
+      {
+        stage: "submit-prompt",
+        code: "attachment-menu-dismiss-unavailable",
+      },
+    );
+  }
+  await Input.dispatchKeyEvent({ type: "keyDown", ...ESCAPE_KEY_EVENT });
+  await Input.dispatchKeyEvent({ type: "keyUp", ...ESCAPE_KEY_EVENT });
+
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const state = await Runtime.evaluate({
+      expression: `(() => {
+        const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+        return !selectors.some(selector =>
+          document.querySelector(selector)?.getAttribute?.('aria-expanded') === 'true'
+        );
+      })()`,
+      returnByValue: true,
+    });
+    if (state?.result?.value === true) {
+      logger?.("Closed attachment menu before send");
+      return true;
+    }
+    await delay(50);
+  }
+  throw new BrowserAutomationError(
+    "ChatGPT's attachment menu did not close before send; prompt was left staged.",
+    {
+      stage: "submit-prompt",
+      code: "attachment-menu-stuck-open",
+    },
+  );
 }
 
 async function activatePageForTrustedInput(
@@ -923,7 +1216,9 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
 
 // biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
+  activateExactAttachmentSendButton,
   attemptSendButton,
+  dismissOpenComposerPlusMenu,
   sendButtonTimeoutMs,
   verifyPromptCommitted,
 };

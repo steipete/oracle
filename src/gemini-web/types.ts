@@ -1,4 +1,5 @@
 export interface GeminiWebOptions {
+  allowModelFallback?: boolean;
   youtube?: string;
   generateImage?: string;
   editImage?: string;

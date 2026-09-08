@@ -2,13 +2,38 @@
 
 ## Unreleased
 
-- Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
 - Perplexity: drive perplexity.ai from browser mode. `--model perplexity` runs Search and `--model perplexity-research` runs Deep research against your signed-in session in the persistent Oracle Chrome profile, returning the answer with its cited sources under a `## Sources` heading. `--file` behaves as it does elsewhere (text pasted inline, media and PDFs uploaded), image prompts save through `--generate-image`/`--output`, and `--browser-follow-up` continues the same conversation as a multi-turn transcript. Only the documented aliases select the web provider, so OpenRouter ids such as `perplexity/sonar-pro` keep working on the API path. Available from both the CLI and the MCP `consult` tool; see `docs/perplexity.md`.
 
-## 0.18.1 - 2026-09-05
+## 0.20.0 - 2026-09-07
 
-**Highlights:** More reliable browser uploads, strict remote-tab isolation, and broader support for ChatGPT's current thinking controls.
+**Highlights:** GPT-6 Astra API and ChatGPT Latest support, explicit Web Search, and safe cleanup after browser recovery.
 
+- API/browser: support GPT-6 Astra with model-specific reasoning validation, ChatGPT Latest selection, localized effort controls, and verified Pro requests; preserve browser aliases during CLI engine discovery. Thanks @oraclexing, @malvarezcastillo, @FNDEVVE, and @kiyo-e.
+- Browser: add the opt-in --browser-research search mode and MCP equivalent, verifying the English Web Search hint and staged prompt before sending, including bundled attachments; thanks @DragonFSKY.
+- Browser: let incomplete controllers exit without losing recoverable tabs, then retire explicitly owned tabs only after recovered answers and completed sessions are saved; preserve borrowed, kept, generating, reclaimed, and actively controlled targets. Fixes #435; thanks @lhysin.
+- Browser: capture visible Deep Research plan titles, steps, and planning/researching state, skip an already-finished countdown, and preserve existing session-status and submission behavior; thanks @oraclexing.
+- Browser: recognize Chinese Deep Research menu, selected-tool, and add-files controls while preserving compact English labels; thanks @oraclexing.
+- Dependencies: update Sweet Cookie to 0.4.3 and TokenTally to 0.1.5 while retaining Node >=24 and the two-day release-age policy.
+
+## 0.19.0 - 2026-09-07
+
+**Highlights:** Durable detached MCP consultations, modern and legacy MCP client support, and clearer browser capture failures with preserved recovery evidence.
+
+- MCP: start local consultations with opt-in detached workers and wait for durable completion without cancelling the run when a client times out, cancels a wait, or reconnects. Fixes #429; thanks @oraclexing.
+- MCP: support the modern 2026-07-28 protocol through SDK v2 while preserving legacy stdio clients, tool contracts, session resources, and request-scoped progress logging. Fixes #360; thanks @fredluz.
+- Browser: keep attachment uploads and sends in the original chat, validate exact controls at delivery, and stop context/focus races without replaying a dispatched action; thanks @oraclexing.
+- Browser: optionally export captured downloadable files beside --write-output with --write-artifacts, preserving canonical artifacts, validating hashes, and avoiding filename collisions; thanks @gwelinder.
+- Browser: persist and display thinking-effort selection evidence, including remote results, without treating unverified or disabled options as confirmed selections; thanks @frontierkodiak.
+- Remote: add opt-in bounded concurrent run admission with FIFO queuing, host-cap enforcement, cancellation, and isolated artifacts while preserving default single-flight HTTP 409 behavior; thanks @frontierkodiak.
+- Remote: honor the service host’s attach-running, remote-Chrome, and approval-wait settings, reusing its signed-in browser without launching a separate manual-login Chrome while keeping routing under host control.
+- Browser: preserve shared Chrome across concurrent manual-login controllers, verify final lease ownership before shutdown, and harden lock recovery against transient process probes; thanks @oraclexing.
+- Browser: make each Chrome remote-debugging approval wait configurable with --browser-approval-wait, preserve the 20-second default, and show progress while waiting for per-connection approval.
+- Browser: wait for effort slider controls to mount and become visible before selecting the requested tier; thanks @ShunmeiCho.
+- Browser: detect when a later harvest conflicts with saved conversation identities, preserve the original transcript and answer, and record explicit manual target overrides. Fixes #442; thanks @postoso.
+- Browser: fail promptly on known English Retry failures, preserve manual recovery, and keep waiting while generation remains active; apply the same guard to image output and response recovery. Fixes #457; thanks @developerisnow.
+- Gemini: update the web request protocol and model headers, preserve raw image-download fallbacks, report upstream and oversized-header failures clearly, and add an opt-in refusal of model fallback; thanks @mpeter.
+- Browser: bundle multiple source uploads while preserving native attachments and the existing auto format, negotiate deferred fallback bundling with remote hosts, and remove generated files after success, failure, or preparation timeout; thanks @tristanmanchester.
+- Agents: add the optional oracle-advisor skill with explicit API, browser, or render routing and per-run model/effort provenance, while retaining the existing Oracle skill. Fixes #355; thanks @genforAI.
 - Browser: wait for explicit upload state to clear before completing attachments or sending; ignore unrelated activity, hidden indicators, and filenames that resemble status text. Fixes #446; thanks @HJC704.
 - Browser: retain per-file attachment evidence, including filename-less images, and stabilize the send target without replaying a dispatched prompt. Fixes #418; thanks @hubofvalley.
 - Browser: refuse default-tab fallback when an ordinary remote run cannot create or attach its dedicated tab; thanks @ShunmeiCho.
@@ -28,7 +53,8 @@
 - Browser: restore visible macOS Chrome windows to their prior placement only when Oracle recorded that placement before hiding them.
 - CLI: keep dry-run previews free of session side effects.
 - Remote: advertise only addresses on which the service is listening.
-- Dependencies: refresh provider SDKs, browser and terminal utilities, schema/query tooling, development dependencies, pnpm, and Pages actions; update OpenAI to 7.10, Google GenAI to 2.21, Inquirer to 14.2.1, Puppeteer to 25.10, Fast URI to 4.1.4, and Vitest to 5 while retaining Node >=24 and the two-day release-age policy.
+- Release: attach the npm tarball and its checksums to the GitHub Release and verify them before the Homebrew tap updates, so the formula no longer points at a missing asset. Fixes #443.
+- Dependencies: refresh provider SDKs, browser and terminal utilities, schema/query tooling, development dependencies, pnpm, and Pages actions; update OpenAI to 7.10, Google GenAI to 2.21, Inquirer to 14.2.1, Puppeteer to 25.10, Fast URI to 4.1.4, Vitest to 5, and Chrome DevTools protocol to 0.0.1692173 while retaining Node >=24 and the two-day release-age policy.
 
 ## 0.18.0 — 2026-08-14
 

@@ -12,8 +12,12 @@ import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 function registerHandler(): (input: unknown) => Promise<unknown> {
   const handlers: Array<(input: unknown) => Promise<unknown>> = [];
   registerChatGptImageTool({
-    registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-      handlers.push(fn);
+    registerTool: (
+      _name: string,
+      _def: unknown,
+      fn: (input: unknown, context: unknown) => Promise<unknown>,
+    ) => {
+      handlers.push((input) => fn(input, { mcpReq: { log: async () => undefined } }));
     },
     server: {
       sendLoggingMessage: async () => undefined,
@@ -49,16 +53,16 @@ describe("chatgpt_image MCP tool", () => {
   });
 
   test("keeps the registered input schema discoverable and normalizes thinking aliases", async () => {
-    let inputSchema: z.ZodRawShape | undefined;
+    let inputSchema: z.ZodType | undefined;
     let handler: ((input: unknown) => Promise<unknown>) | undefined;
     registerChatGptImageTool({
       registerTool: (
         _name: string,
         def: unknown,
-        registeredHandler: (input: unknown) => Promise<unknown>,
+        registeredHandler: (input: unknown, context: unknown) => Promise<unknown>,
       ) => {
-        inputSchema = (def as { inputSchema: z.ZodRawShape }).inputSchema;
-        handler = registeredHandler;
+        inputSchema = (def as { inputSchema: z.ZodType }).inputSchema;
+        handler = (input) => registeredHandler(input, { mcpReq: { log: async () => undefined } });
       },
       server: {
         sendLoggingMessage: async () => undefined,
@@ -66,7 +70,7 @@ describe("chatgpt_image MCP tool", () => {
     } as unknown as Parameters<typeof registerChatGptImageTool>[0]);
 
     expect(inputSchema).toBeDefined();
-    expect(() => z.toJSONSchema(z.object(inputSchema!))).not.toThrow();
+    expect(() => z.toJSONSchema(inputSchema!)).not.toThrow();
     const result = (await handler?.({
       dryRun: true,
       prompt: "Create a small product mockup.",

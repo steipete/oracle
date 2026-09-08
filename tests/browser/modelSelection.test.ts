@@ -77,7 +77,9 @@ const evaluateImmediateModelSelectionExpression = (
 
 const evaluateMenuModelSelectionExpression = async (
   targetModel: string,
-  option: { label: string; testId?: string } | Array<{ label: string; testId?: string }>,
+  option:
+    | { label: string; testId?: string; selectedButtonLabel?: string }
+    | Array<{ label: string; testId?: string; selectedButtonLabel?: string }>,
   extraMenus: unknown[] = [],
 ): Promise<unknown> => {
   class FakeEventTarget {
@@ -89,7 +91,7 @@ const evaluateMenuModelSelectionExpression = async (
   class FakeElement extends FakeEventTarget {
     constructor(
       public textContent: string,
-      private readonly attributes: Readonly<Record<string, string>> = {},
+      private readonly attributes: Record<string, string> = {},
       private readonly children: readonly FakeElement[] = [],
       private readonly onDispatch?: () => void,
     ) {
@@ -98,6 +100,9 @@ const evaluateMenuModelSelectionExpression = async (
 
     getAttribute(name: string): string | null {
       return this.attributes[name] ?? null;
+    }
+    setAttribute(name: string, value: string): void {
+      this.attributes[name] = value;
     }
 
     querySelector(selector: string): FakeElement | null {
@@ -142,9 +147,26 @@ const evaluateMenuModelSelectionExpression = async (
   const options = Array.isArray(option) ? option : [option];
   const modelOptions = options.map(
     (item) =>
-      new FakeElement(item.label, item.testId ? { "data-testid": item.testId } : {}, [], () => {
-        modelButton.textContent = item.label;
-      }),
+      new FakeElement(
+        item.label,
+        item.selectedButtonLabel
+          ? { role: "menuitemradio", "aria-checked": "false" }
+          : item.testId
+            ? { "data-testid": item.testId }
+            : {},
+        [],
+        () => {
+          modelButton.textContent = item.selectedButtonLabel ?? item.label;
+          if (item.selectedButtonLabel) {
+            for (const candidate of modelOptions) {
+              candidate.setAttribute(
+                "aria-checked",
+                candidate.textContent === item.label ? "true" : "false",
+              );
+            }
+          }
+        },
+      ),
   );
   const menu = new FakeElement(
     options.map((item) => item.label).join(" "),
@@ -156,6 +178,9 @@ const evaluateMenuModelSelectionExpression = async (
     querySelector: (selector: string) => {
       if (selector.includes("model-switcher-dropdown-button")) {
         return modelButton;
+      }
+      if (selector.includes("composer-model-picker-slider-advanced-view")) {
+        return modelOptions.find((item) => item.getAttribute("aria-checked") === "true") ?? null;
       }
       if (selector.includes('role="menu"') || selector.includes("data-radix")) {
         return menu;
@@ -172,9 +197,11 @@ const evaluateMenuModelSelectionExpression = async (
     body: { innerText: "" },
     dispatchEvent: () => true,
   };
-  const performanceStub = { now: () => 0 };
+  let fakeNow = 0;
+  const performanceStub = { now: () => fakeNow };
   const windowStub = { location: { href: "https://chatgpt.com/" } };
-  const immediateSetTimeout = (handler: TimerHandler): number => {
+  const immediateSetTimeout = (handler: TimerHandler, delay = 0): number => {
+    fakeNow += typeof delay === "number" ? delay : 0;
     if (typeof handler === "function") {
       handler();
     }
@@ -1304,6 +1331,42 @@ describe("browser model selection matchers", () => {
     ).toEqual({ status: "already-selected", label: "GPT-5.6 Sol" });
   });
 
+  it("accepts a GPT-6 composer pill as the selected Latest model", () => {
+    expect(evaluateImmediateModelSelectionExpression("Latest", "6 Pro")).toEqual({
+      status: "already-selected",
+      label: "Latest",
+    });
+  });
+
+  it("does not report Latest as selected while GPT-5.6 Sol is the active model", () => {
+    expect(evaluateImmediateModelSelectionExpression("Latest", "5.6 Pro")).toBeInstanceOf(Promise);
+    expect(evaluateImmediateModelSelectionExpression("Latest", "GPT-5.6 Sol")).toBeInstanceOf(
+      Promise,
+    );
+  });
+
+  it("matches the exact Japanese Latest radio label without accepting GPT-5.6 Sol", async () => {
+    const { labelTokens } = buildModelMatchersLiteralForTest("Latest");
+    expect(labelTokens).toContain("最新");
+    await expect(
+      evaluateMenuModelSelectionExpression("Latest", {
+        label: "最新",
+        selectedButtonLabel: "6 Pro",
+      }),
+    ).resolves.toMatchObject({ status: "switched", label: "最新" });
+    await expect(
+      evaluateMenuModelSelectionExpression("Latest", { label: "GPT-5.6 Sol" }),
+    ).resolves.toMatchObject({ status: "option-not-found" });
+  });
+
+  it("accepts only exact localized Latest evidence after selection", () => {
+    expect(() => assertResolvedModelSelectionForTest("Latest", "最新")).not.toThrow();
+    expect(() => assertResolvedModelSelectionForTest("Latest", "Latest")).not.toThrow();
+    expect(() => assertResolvedModelSelectionForTest("Latest", "GPT-5.6 Sol")).toThrow(
+      /requires GPT-6 Astra/,
+    );
+  });
+
   it("includes real pointer coordinates when opening version submenus", () => {
     const expression = buildModelSelectionExpressionForTest("GPT-5.6 Sol");
     expect(expression).toContain("rect.x + rect.width / 2");
@@ -1549,6 +1612,18 @@ describe("browser model selection matchers", () => {
   it("records a visible composer model label without requiring the picker", () => {
     const result = evaluateNoModelButtonExpression("Pro", "current", "Thinking");
     expect(result).toEqual({ status: "already-selected", label: "Thinking" });
+  });
+
+  it("reports the composer pill for a Latest target under the current strategy", () => {
+    // No checked advanced radio and no picker button: must resolve on the pill without throwing.
+    expect(evaluateNoModelButtonExpression("Latest", "current", "6Pro")).toEqual({
+      status: "already-selected",
+      label: "6Pro",
+    });
+    expect(evaluateNoModelButtonExpression("Latest", "current")).toEqual({
+      status: "already-selected",
+      label: null,
+    });
   });
 
   it("keeps strict selection failed when ChatGPT hides the model picker", () => {

@@ -1,6 +1,7 @@
 import type { ModelName } from "./types.js";
 
 const MODEL_ID_MAP: Record<ModelName, string> = {
+  "gpt-6-astra": "gpt-6-astra",
   "gemini-3.1-flash-lite": "gemini-3.1-flash-lite",
   "gemini-3.1-pro": "gemini-3.1-pro-preview",
   "gemini-3.5-flash": "gemini-3.5-flash",

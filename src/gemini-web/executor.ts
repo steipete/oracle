@@ -424,6 +424,7 @@ export function createGeminiWebExecutor(
               cookieMap: cookieResult.cookieMap,
               chatMetadata: null,
               signal: controller.signal,
+              allowModelFallback: geminiOptions.allowModelFallback,
             });
             const editPrompt = `Use image generation tool to ${prompt}`;
             const out = await runGeminiWebWithFallback({
@@ -433,6 +434,7 @@ export function createGeminiWebExecutor(
               cookieMap: cookieResult.cookieMap,
               chatMetadata: intro.metadata,
               signal: controller.signal,
+              allowModelFallback: geminiOptions.allowModelFallback,
             });
             response = {
               text: out.text ?? null,
@@ -463,6 +465,7 @@ export function createGeminiWebExecutor(
               cookieMap: cookieResult.cookieMap,
               chatMetadata: null,
               signal: controller.signal,
+              allowModelFallback: geminiOptions.allowModelFallback,
             });
             response = {
               text: out.text ?? null,
@@ -491,6 +494,7 @@ export function createGeminiWebExecutor(
               cookieMap: cookieResult.cookieMap,
               chatMetadata: null,
               signal: controller.signal,
+              allowModelFallback: geminiOptions.allowModelFallback,
             });
             response = {
               text: out.text ?? null,

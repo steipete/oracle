@@ -18,6 +18,10 @@ export interface RemoteRunPayload {
   fallbackSubmission?: {
     prompt: string;
     attachments: RemoteAttachmentPayload[];
+    bundle?: {
+      format: "text" | "zip";
+      scope: "text-only" | "all";
+    };
   };
   browserConfig: BrowserSessionConfig;
   options: {
@@ -25,6 +29,7 @@ export interface RemoteRunPayload {
     verbose?: boolean;
     sessionId?: string;
     followUpPrompts?: string[];
+    cancelOnDisconnect?: boolean;
   };
 }
 
@@ -32,6 +37,8 @@ export interface RemoteArtifactCapabilities {
   artifactTransfer: boolean;
   artifactProtocolVersion: number;
   maxArtifactBytes: number;
+  deferredFallbackBundling?: boolean;
+  runCancellation?: boolean;
 }
 
 export interface RemoteArtifactDescriptor {

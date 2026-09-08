@@ -3,6 +3,7 @@ import path from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { describe, expect, test, vi } from "vitest";
 import { resumeBrowserSession, __test__ } from "../../src/browser/reattach.js";
+import * as chromeLifecycle from "../../src/browser/chromeLifecycle.js";
 import type { BrowserLogger, ChromeClient } from "../../src/browser/types.js";
 
 type FakeTarget = { id?: string; targetId?: string; type?: string; url?: string };
@@ -23,74 +24,130 @@ type FakeClient = {
 };
 
 describe("resumeBrowserSession", () => {
-  test("selects target and captures markdown via stubs", async () => {
-    const runtime = {
-      chromePort: 51559,
-      chromeHost: "127.0.0.1",
-      chromeTargetId: "target-1",
-      tabUrl: "https://chatgpt.com/c/abc",
-    };
-    const listTargets = vi.fn(
-      async () =>
-        [
-          { targetId: "target-1", type: "page", url: runtime.tabUrl },
-          { targetId: "target-2", type: "page", url: "about:blank" },
-        ] satisfies FakeTarget[],
-    ) as unknown as () => Promise<FakeTarget[]>;
-    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
-      if (expression === "location.href") {
-        return { result: { value: runtime.tabUrl } };
-      }
-      if (expression === "1+1") {
-        return { result: { value: 2 } };
-      }
-      return { result: { value: null } };
-    });
-    const close = vi.fn(async () => {});
-    const connect = vi.fn(
-      async () =>
-        ({
-          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
-          Runtime: { enable: vi.fn(), evaluate },
-          // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
-          DOM: { enable: vi.fn() },
-          close,
-        }) satisfies FakeClient,
-    ) as unknown as (options?: unknown) => Promise<ChromeClient>;
-    const waitForAssistantResponse = vi.fn(async () => ({
-      text: "Hello PATH plan",
-      html: "",
-      meta: { messageId: "m1", turnId: "conversation-turn-1" },
+  test("uses the saved approval wait for both browser-level reattach connections", async () => {
+    const list = vi
+      .spyOn(chromeLifecycle, "listRemoteChromeTargets")
+      .mockResolvedValue([
+        { targetId: "saved-tab", type: "page", url: "https://chatgpt.com/c/saved" },
+      ]);
+    const connect = vi
+      .spyOn(chromeLifecycle, "connectToRemoteChromeTarget")
+      .mockRejectedValue(new Error("synthetic stop after attach"));
+    const logger = vi.fn<(message: string) => void>();
+    const recoverSession = vi.fn(async () => ({
+      answerText: "recovered",
+      answerMarkdown: "recovered",
     }));
-    const captureAssistantMarkdown = vi.fn(async () => "markdown response");
-    const waitForConversationHydration = vi.fn(async () => 2);
-    const logger = vi.fn() as BrowserLogger;
-    logger.verbose = true;
-
-    const result = await resumeBrowserSession(runtime, { timeoutMs: 2000 }, logger, {
-      listTargets,
-      connect,
-      waitForAssistantResponse,
-      captureAssistantMarkdown,
-      waitForConversationHydration,
-    });
-
-    expect(result.answerMarkdown).toBe("markdown response");
-    expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({ host: "127.0.0.1", port: 51559, target: "target-1" }),
-    );
-    expect(waitForAssistantResponse).toHaveBeenCalled();
-    expect(captureAssistantMarkdown).toHaveBeenCalled();
-    expect(waitForConversationHydration).toHaveBeenCalledWith(expect.anything(), 2000, logger, {
-      requirePriorTurns: true,
-      requirePromptReady: false,
-      expectedConversationUrl: runtime.tabUrl,
-    });
-    expect(waitForConversationHydration.mock.invocationCallOrder[0]).toBeLessThan(
-      waitForAssistantResponse.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(close).toHaveBeenCalledOnce();
+    try {
+      await resumeBrowserSession(
+        {
+          chromePort: 9222,
+          chromeBrowserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/approval-fixture",
+          chromeTargetId: "saved-tab",
+          tabUrl: "https://chatgpt.com/c/saved",
+        },
+        { approvalWaitMs: 300_000 },
+        logger,
+        { recoverSession },
+      );
+      expect(list).toHaveBeenCalledWith(
+        expect.objectContaining({ approvalWaitMs: 300_000, logger }),
+      );
+      expect(connect).toHaveBeenCalledWith(
+        "127.0.0.1",
+        9222,
+        logger,
+        expect.objectContaining({
+          approvalWaitMs: 300_000,
+          targetId: "saved-tab",
+          closeTargetOnDispose: false,
+        }),
+      );
+    } finally {
+      list.mockRestore();
+      connect.mockRestore();
+    }
   });
+
+  test.each([false, true])(
+    "captures the answer when final identity lookup fails=%s",
+    async (identityFails) => {
+      const runtime = {
+        chromePort: 51559,
+        chromeHost: "127.0.0.1",
+        chromeTargetId: "target-1",
+        tabUrl: "https://chatgpt.com/c/abc",
+      };
+      const listTargets = vi.fn(
+        async () =>
+          [
+            { targetId: "target-1", type: "page", url: runtime.tabUrl },
+            { targetId: "target-2", type: "page", url: "about:blank" },
+          ] satisfies FakeTarget[],
+      ) as unknown as () => Promise<FakeTarget[]>;
+      let identityReads = 0;
+      const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+        if (expression === "location.href") {
+          if (++identityReads > 1 && identityFails) throw new Error("late CDP disconnect");
+          return { result: { value: runtime.tabUrl } };
+        }
+        if (expression === "1+1") {
+          return { result: { value: 2 } };
+        }
+        return { result: { value: null } };
+      });
+      const close = vi.fn(async () => {});
+      const connect = vi.fn(
+        async () =>
+          ({
+            // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+            Runtime: { enable: vi.fn(), evaluate },
+            // biome-ignore lint/style/useNamingConvention: mirrors DevTools protocol domain names
+            DOM: { enable: vi.fn() },
+            close,
+          }) satisfies FakeClient,
+      ) as unknown as (options?: unknown) => Promise<ChromeClient>;
+      const waitForAssistantResponse = vi.fn(async () => ({
+        text: "Hello PATH plan",
+        html: "",
+        meta: { messageId: "m1", turnId: "conversation-turn-1" },
+      }));
+      const captureAssistantMarkdown = vi.fn(async () => "markdown response");
+      const waitForConversationHydration = vi.fn(async () => 2);
+      const logger = vi.fn() as BrowserLogger;
+      logger.verbose = true;
+      const recoverSession = vi.fn(async () => {
+        throw new Error("must not discard a captured answer");
+      });
+
+      const result = await resumeBrowserSession(runtime, { timeoutMs: 2000 }, logger, {
+        listTargets,
+        connect,
+        waitForAssistantResponse,
+        captureAssistantMarkdown,
+        waitForConversationHydration,
+        recoverSession,
+      });
+
+      expect(result.answerMarkdown).toBe("markdown response");
+      expect(recoverSession).not.toHaveBeenCalled();
+      expect(result.captureTarget?.targetId).toBe(identityFails ? undefined : "target-1");
+      expect(connect).toHaveBeenCalledWith(
+        expect.objectContaining({ host: "127.0.0.1", port: 51559, target: "target-1" }),
+      );
+      expect(waitForAssistantResponse).toHaveBeenCalled();
+      expect(captureAssistantMarkdown).toHaveBeenCalled();
+      expect(waitForConversationHydration).toHaveBeenCalledWith(expect.anything(), 2000, logger, {
+        requirePriorTurns: true,
+        requirePromptReady: false,
+        expectedConversationUrl: runtime.tabUrl,
+      });
+      expect(waitForConversationHydration.mock.invocationCallOrder[0]).toBeLessThan(
+        waitForAssistantResponse.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
 
   test("uses prompt preview turn index when reattaching to an already-open answer", async () => {
     const runtime = {

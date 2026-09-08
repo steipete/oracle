@@ -138,17 +138,21 @@ export type {
   SessionMode,
   BrowserSessionConfig,
   BrowserRuntimeMetadata,
+  BrowserRecoveryTarget,
   SessionArtifact,
   BrowserHarvestState,
   BrowserHarvestMetadata,
   BrowserModelSelectionEvidence,
   BrowserModelSelectionEvidenceStatus,
+  BrowserThinkingSelectionEvidence,
+  BrowserThinkingSelectionStatus,
   BrowserRunWarning,
   SessionTransportMetadata,
   SessionUserErrorMetadata,
   SessionStatus,
   SessionModelRun,
 } from "./sessionManager.js";
+export type { BrowserResearchPlanMetadata } from "./browser/types.js";
 
 export async function pruneOldSessions(
   hours?: number,

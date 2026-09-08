@@ -1402,6 +1402,55 @@ describe("ensureLoggedIn", () => {
 });
 
 describe("waitForAssistantResponse", () => {
+  test("fails promptly when the submitted assistant turn offers Retry", async () => {
+    const payload = {
+      text: "Something went wrong while generating the response.",
+      messageId: "mid",
+      turnId: "tid",
+      turnIndex: 2,
+      uiError: "temporary_unavailable",
+    };
+    const evaluate = vi.fn().mockResolvedValue({ result: { type: "object", value: payload } });
+
+    await expect(
+      waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+        2,
+      ),
+    ).rejects.toMatchObject({
+      category: "browser-automation",
+      details: {
+        stage: "assistant-ui-error",
+        code: "chatgpt-ui-warning",
+        uiWarning: { type: "temporary_unavailable" },
+      },
+    });
+  });
+
+  test("stops the pending renderer observer when the Retry watchdog fails", async () => {
+    const evaluate = vi.fn().mockImplementation(({ awaitPromise }) =>
+      awaitPromise
+        ? new Promise(() => {})
+        : Promise.resolve({
+            result: {
+              value: { text: "Something went wrong.", uiError: "temporary_unavailable" },
+            },
+          }),
+    );
+    const terminateExecution = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      waitForAssistantResponse(
+        { evaluate, terminateExecution } as unknown as ChromeClient["Runtime"],
+        30_000,
+        logger,
+        2,
+      ),
+    ).rejects.toMatchObject({ details: { stage: "assistant-ui-error" } });
+    expect(terminateExecution).toHaveBeenCalledOnce();
+  });
+
   test("returns captured assistant payload", async () => {
     vi.useFakeTimers();
     try {
@@ -1735,7 +1784,233 @@ describe("waitForAssistantResponse", () => {
   });
 });
 
+describe("composer attachment menu safety", () => {
+  test("captures the pre-attachment page identity", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: { value: "https://chatgpt.com/g/project-example" },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    await expect(attachments.captureComposerNavigationUrl(runtime)).resolves.toBe(
+      "https://chatgpt.com/g/project-example",
+    );
+  });
+
+  test("fails closed when the pre-attachment page identity cannot be captured", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: null } }),
+    } as unknown as ChromeClient["Runtime"];
+
+    await expect(attachments.captureComposerNavigationUrl(runtime)).rejects.toMatchObject({
+      name: "BrowserAutomationError",
+      details: expect.objectContaining({
+        code: "attachment-navigation-identity-unavailable",
+        stage: "upload-attachment",
+      }),
+    });
+  });
+
+  test("activates only the exact plus control with a trusted keyboard event", async () => {
+    const evaluate = vi.fn().mockResolvedValue({
+      result: {
+        value: {
+          status: "focused",
+          startUrl: "https://chatgpt.com/",
+          focused: true,
+          currentUrl: "https://chatgpt.com/",
+          sawKeyDown: true,
+        },
+      },
+    });
+    const dispatchKeyEvent = vi.fn().mockResolvedValue(undefined);
+    const dispatchMouseEvent = vi.fn().mockResolvedValue(undefined);
+    const runtime = { evaluate } as unknown as ChromeClient["Runtime"];
+    const input = {
+      dispatchKeyEvent,
+      dispatchMouseEvent,
+    } as unknown as ChromeClient["Input"];
+
+    await expect(attachments.activateComposerPlus(runtime, input)).resolves.toEqual({
+      method: "trusted-keyboard",
+      startUrl: "https://chatgpt.com/",
+    });
+
+    expect(dispatchKeyEvent).toHaveBeenCalledTimes(2);
+    expect(dispatchKeyEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ type: "keyDown", key: "Enter", code: "Enter" }),
+    );
+    expect(dispatchKeyEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ type: "keyUp", key: "Enter", code: "Enter" }),
+    );
+    expect(dispatchMouseEvent).not.toHaveBeenCalled();
+
+    const expression = String(evaluate.mock.calls[0]?.[0]?.expression ?? "");
+    expect(expression).toContain("#composer-plus-btn");
+    expect(expression).toContain('button[data-testid="composer-plus-btn"]');
+    expect(expression).not.toContain('[data-testid*="plus"]');
+    expect(expression).not.toContain('button[aria-label^="add" i]');
+    expect(expression).not.toContain("getBoundingClientRect().left");
+  });
+
+  test("fails closed before activation when Work is selected", async () => {
+    const dispatchKeyEvent = vi.fn();
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            status: "work-selected",
+            startUrl: "https://chatgpt.com/",
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+    const input = { dispatchKeyEvent } as unknown as ChromeClient["Input"];
+
+    const error = await attachments.activateComposerPlus(runtime, input).catch((cause) => cause);
+
+    expect(error).toBeInstanceOf(BrowserAutomationError);
+    expect((error as BrowserAutomationError).details).toMatchObject({
+      code: "attachment-control-work-mode",
+      stage: "upload-attachment",
+    });
+    expect(dispatchKeyEvent).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["root to a new conversation", "https://chatgpt.com/", "https://chatgpt.com/c/WEB:new-work"],
+    [
+      "root to a project landing",
+      "https://chatgpt.com/",
+      "https://chatgpt.com/g/g-project-b/project",
+    ],
+    [
+      "one project landing to another",
+      "https://chatgpt.com/g/g-project-a/project",
+      "https://chatgpt.com/g/g-project-b/project",
+    ],
+    [
+      "project conversation to another conversation",
+      "https://chatgpt.com/g/g-example/project/c/chat-a",
+      "https://chatgpt.com/g/g-example/project/c/chat-b",
+    ],
+  ])("rejects unexpected navigation from %s", async (_caseName, startUrl, currentUrl) => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: { value: { currentUrl, workSelected: false } },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    const error = await attachments
+      .assertComposerPlusStayedInPlace(runtime, startUrl)
+      .catch((cause) => cause);
+
+    expect(error).toBeInstanceOf(BrowserAutomationError);
+    expect((error as BrowserAutomationError).details).toMatchObject({
+      code: "attachment-control-unexpected-navigation",
+      stage: "upload-attachment",
+      startUrl,
+      currentUrl,
+    });
+  });
+
+  test.each([
+    [
+      "root URL query/hash rewrite",
+      "https://chatgpt.com/?model=gpt-5.6-sol",
+      "https://chatgpt.com/#temporary-chat",
+    ],
+    [
+      "same project landing with trailing slash and query rewrite",
+      "https://chatgpt.com/g/g-example/project/?model=gpt-5.6-sol",
+      "https://chatgpt.com/g/g-example/project#composer",
+    ],
+  ])(
+    "accepts a stable non-conversation context after %s",
+    async (_caseName, startUrl, currentUrl) => {
+      const runtime = {
+        evaluate: vi.fn().mockResolvedValue({
+          result: { value: { currentUrl, workSelected: false } },
+        }),
+      } as unknown as ChromeClient["Runtime"];
+
+      await expect(
+        attachments.assertComposerPlusStayedInPlace(runtime, startUrl),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  test("accepts a project-scoped URL rewrite that preserves the conversation id", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            currentUrl: "https://chatgpt.com/g/g-example/project/c/chat-same",
+            workSelected: false,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    await expect(
+      attachments.assertComposerPlusStayedInPlace(runtime, "https://chatgpt.com/c/chat-same"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("rejects Work state even when the conversation URL is unchanged", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            currentUrl: "https://chatgpt.com/c/chat-same",
+            workSelected: true,
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+
+    await expect(
+      attachments.assertComposerPlusStayedInPlace(runtime, "https://chatgpt.com/c/chat-same"),
+    ).rejects.toThrow(/navigated to Work/i);
+  });
+});
+
 describe("uploadAttachmentFile", () => {
+  const withStableNavigation = (runtime: ChromeClient["Runtime"]): ChromeClient["Runtime"] => ({
+    ...runtime,
+    evaluate: (params) => {
+      const expression = String(params.expression ?? "");
+      if (expression.includes("__oracleAttachmentInputGuards"))
+        return Promise.resolve({
+          result: {
+            type: "object",
+            value: expression.includes("const summary =") ? { blocked: null } : { installed: true },
+          },
+        });
+      if (expression.includes("return { blocked: guard.blocked }")) {
+        return Promise.resolve(runtime.evaluate(params)).then(() => ({
+          result: { type: "object" as const, value: { blocked: null } },
+        }));
+      }
+      if (expression.includes("const startUrl = navigation.currentUrl"))
+        return Promise.resolve({
+          result: {
+            type: "object",
+            value: { status: "missing", startUrl: "https://chatgpt.com/" },
+          },
+        });
+      if (expression.includes("currentUrl: location.href"))
+        return Promise.resolve({
+          result: {
+            type: "object",
+            value: { currentUrl: "https://chatgpt.com/", workSelected: false },
+          },
+        });
+      return runtime.evaluate(params);
+    },
+  });
   let transferSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
@@ -1761,7 +2036,7 @@ describe("uploadAttachmentFile", () => {
     } as unknown as ChromeClient["Runtime"];
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/foo.md", displayPath: "foo.md" },
         logger,
       ),
@@ -1781,7 +2056,7 @@ describe("uploadAttachmentFile", () => {
     } as unknown as ChromeClient["Runtime"];
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/foo.md", displayPath: "foo.md" },
         logger,
       ),
@@ -1809,7 +2084,7 @@ describe("uploadAttachmentFile", () => {
 
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/SettingsStore.swift", displayPath: "SettingsStore.swift" },
         logger,
       ),
@@ -1861,7 +2136,7 @@ describe("uploadAttachmentFile", () => {
 
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
         logger,
       ),
@@ -1902,7 +2177,7 @@ describe("uploadAttachmentFile", () => {
 
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
         logger,
         { expectedCount: 1 },
@@ -1944,7 +2219,7 @@ describe("uploadAttachmentFile", () => {
 
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
         logger,
         { expectedCount: 1 },
@@ -2024,7 +2299,7 @@ describe("uploadAttachmentFile", () => {
 
     await expect(
       uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
         logger,
       ),
@@ -2117,7 +2392,7 @@ describe("uploadAttachmentFile", () => {
 
     vi.useFakeTimers();
     const uploadPromise = uploadAttachmentFile(
-      { runtime, dom },
+      { runtime: withStableNavigation(runtime), dom },
       { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
       logger,
     );
@@ -2210,7 +2485,7 @@ describe("uploadAttachmentFile", () => {
     vi.useFakeTimers();
     try {
       const uploadPromise = uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/case412.jpg", displayPath: "case412.jpg" },
         logger,
       );
@@ -2310,7 +2585,7 @@ describe("uploadAttachmentFile", () => {
     vi.useFakeTimers();
     try {
       const uploadPromise = uploadAttachmentFile(
-        { runtime, dom },
+        { runtime: withStableNavigation(runtime), dom },
         { path: "/tmp/case412.jpg", displayPath: "case412.jpg" },
         logger,
       );
@@ -2400,7 +2675,7 @@ describe("uploadAttachmentFile", () => {
 
     vi.useFakeTimers();
     const uploadPromise = uploadAttachmentFile(
-      { runtime, dom },
+      { runtime: withStableNavigation(runtime), dom },
       { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
       logger,
     );
@@ -2412,7 +2687,19 @@ describe("uploadAttachmentFile", () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/Attachment did not register/i);
-    expect(dom.setFileInputFiles).toHaveBeenCalledWith({ nodeId: 2, files: [] });
+    const clearCall = vi
+      .mocked(runtime.evaluate)
+      .mock.calls.findIndex(
+        ([params]) =>
+          params.expression.includes("input.value = ''") &&
+          params.expression.includes(
+            JSON.stringify('input[type="file"][data-oracle-upload-idx="0"]'),
+          ),
+      );
+    expect(clearCall).toBeGreaterThanOrEqual(0);
+    expect(vi.mocked(runtime.evaluate).mock.invocationCallOrder[clearCall]).toBeLessThan(
+      vi.mocked(dom.setFileInputFiles).mock.invocationCallOrder[1],
+    );
   });
 
   test("does not use a file-count-only signal as upload confirmation", async () => {
@@ -2486,7 +2773,7 @@ describe("uploadAttachmentFile", () => {
 
     vi.useFakeTimers();
     const uploadPromise = uploadAttachmentFile(
-      { runtime, dom },
+      { runtime: withStableNavigation(runtime), dom },
       { path: "/tmp/oracle-browser-smoke.txt", displayPath: "oracle-browser-smoke.txt" },
       logger,
     );

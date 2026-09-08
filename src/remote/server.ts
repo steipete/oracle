@@ -9,8 +9,13 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, writeFile, stat, realpath } from "node:fs/promises";
 import chalk from "chalk";
 import type { BrowserAttachment, BrowserLogger, CookieParam } from "../browser/types.js";
+import { materializeStagedFallbackBundle } from "../browser/prompt.js";
 import type { BrowserSessionConfig } from "../sessionManager.js";
 import { runBrowserMode } from "../browserMode.js";
+import { resolveBrowserConfig } from "../browser/config.js";
+import { RunSlots } from "./runSlots.js";
+export { RunSlots } from "./runSlots.js";
+import { loadUserConfig } from "../config.js";
 import type { BrowserRunResult } from "../browserMode.js";
 import type {
   RemoteArtifactCapabilities,
@@ -40,7 +45,14 @@ import {
 } from "../browser/artifacts.js";
 import type { BrowserRunWarning, SessionArtifact } from "../sessionManager.js";
 
+export type RemoteHostBrowserConfig = Pick<
+  BrowserSessionConfig,
+  "attachRunning" | "remoteChrome" | "approvalWaitMs"
+>;
+
 export interface RemoteServerOptions {
+  /** Host-owned routing; never accepted from a remote caller. */
+  browserConfig?: RemoteHostBrowserConfig;
   host?: string;
   port?: number;
   token?: string;
@@ -48,6 +60,10 @@ export interface RemoteServerOptions {
   manualLoginDefault?: boolean;
   manualLoginProfileDir?: string;
   cookieSyncDefault?: boolean;
+  /** Conversations that may be active at once on the shared browser profile. */
+  maxConcurrentRuns?: number;
+  /** Callers that may wait for a slot before the service starts refusing. */
+  maxQueuedRuns?: number;
 }
 
 interface RemoteServerDeps {
@@ -70,6 +86,8 @@ const ARTIFACT_PROTOCOL_VERSION = 1;
 const REMOTE_ARTIFACT_TTL_MS = 30 * 60 * 1000;
 
 const ARTIFACT_CAPABILITIES: RemoteArtifactCapabilities = {
+  runCancellation: true,
+  deferredFallbackBundling: true,
   artifactTransfer: true,
   artifactProtocolVersion: ARTIFACT_PROTOCOL_VERSION,
   maxArtifactBytes: MAX_REMOTE_ARTIFACT_BYTES,
@@ -91,11 +109,37 @@ async function findAvailablePort(): Promise<number> {
   });
 }
 
+function validateAdmissionOptions(options: RemoteServerOptions): void {
+  if (options.maxConcurrentRuns === undefined && options.maxQueuedRuns !== undefined)
+    throw new Error("--max-queued-runs requires --max-concurrent-runs.");
+  if (
+    options.maxConcurrentRuns !== undefined &&
+    (!Number.isSafeInteger(options.maxConcurrentRuns) || options.maxConcurrentRuns < 1)
+  )
+    throw new Error("--max-concurrent-runs must be a positive integer.");
+  if (
+    options.maxQueuedRuns !== undefined &&
+    (!Number.isSafeInteger(options.maxQueuedRuns) || options.maxQueuedRuns < 0)
+  )
+    throw new Error("--max-queued-runs must be a nonnegative integer.");
+}
+
 export async function createRemoteServer(
   options: RemoteServerOptions = {},
   deps: RemoteServerDeps = {},
 ): Promise<RemoteServerInstance> {
   const runBrowser = deps.runBrowser ?? runBrowserMode;
+  const attachedBrowser = usesHostBrowserAttachment(options.browserConfig);
+  const manualLoginDefault = !attachedBrowser && options.manualLoginDefault;
+  const hostBrowserConfig: RemoteHostBrowserConfig = options.browserConfig
+    ? {
+        attachRunning: options.browserConfig?.attachRunning,
+        remoteChrome: options.browserConfig?.remoteChrome
+          ? { ...options.browserConfig.remoteChrome }
+          : undefined,
+        approvalWaitMs: options.browserConfig?.approvalWaitMs,
+      }
+    : {};
   const server = http.createServer();
   const logger = options.logger ?? console.log;
   const authToken = options.token ?? randomBytes(16).toString("hex");
@@ -104,8 +148,25 @@ export async function createRemoteServer(
   const color = process.stdout.isTTY
     ? (formatter: (msg: string) => string, msg: string) => formatter(msg)
     : (_formatter: (msg: string) => string, msg: string) => msg;
-  // Single-flight guard: remote Chrome can only host one run at a time, so we serialize requests.
-  let busy = false;
+  validateAdmissionOptions(options);
+  const admissionEnabled = options.maxConcurrentRuns !== undefined;
+  const hostConfig = admissionEnabled ? (await loadUserConfig()).config.browser : undefined;
+  const browserTabCap = admissionEnabled
+    ? resolveBrowserConfig({ maxConcurrentTabs: hostConfig?.maxConcurrentTabs }).maxConcurrentTabs
+    : undefined;
+  const requestedConcurrency = options.maxConcurrentRuns ?? 1;
+  const effectiveConcurrency = Math.min(requestedConcurrency, browserTabCap ?? 1);
+  if (effectiveConcurrency < requestedConcurrency) {
+    logger(
+      `[serve] Admitting ${effectiveConcurrency} concurrent run(s): the host tab cap is lower than the requested ${requestedConcurrency}.`,
+    );
+  }
+  const slots = new RunSlots(
+    effectiveConcurrency,
+    admissionEnabled ? (options.maxQueuedRuns ?? 8) : 0,
+  );
+  let legacyBusy = false;
+  const controllers = new Set<AbortController>();
   const artifactRegistry = new Map<string, RegisteredRemoteArtifact>();
 
   if (!process.listenerCount("unhandledRejection")) {
@@ -142,6 +203,13 @@ export async function createRemoteServer(
           version: getCliVersion(),
           uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
           capabilities: ARTIFACT_CAPABILITIES,
+          // So a caller can decide whether to send work now or later, instead of
+          // discovering the answer by being queued.
+          activeRuns: slots.activeCount,
+          queuedRuns: slots.queuedCount,
+          maxConcurrentRuns: slots.capacity,
+          maxQueuedRuns: slots.queueCapacity,
+          admissionMode: admissionEnabled ? "queue" : "legacy",
         }),
       );
       return;
@@ -178,54 +246,118 @@ export async function createRemoteServer(
       res.end(JSON.stringify({ error: "unauthorized" }));
       return;
     }
-    if (busy) {
-      if (verbose) {
-        logger(
-          `[serve] Busy: rejecting new run from ${formatSocket(req)} while another run is active`,
-        );
-      }
-      res.writeHead(409, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "busy" }));
+    const refuse = () => {
+      res.writeHead(admissionEnabled ? 503 : 409, {
+        "Content-Type": "application/json",
+        ...(admissionEnabled ? { "Retry-After": "60" } : {}),
+      });
+      res.end(JSON.stringify({ error: admissionEnabled ? "queue_full" : "busy" }));
+    };
+    if (admissionEnabled ? slots.isSaturated : legacyBusy) {
+      refuse();
       return;
     }
-    busy = true;
+    if (!admissionEnabled) legacyBusy = true;
     const runStartedAt = Date.now();
-
-    let payload: RemoteRunPayload | null = null;
+    const controller = new AbortController();
+    let signal = admissionEnabled ? controller.signal : undefined;
+    const onClientGone = () => controller.abort();
+    res.on("close", onClientGone);
+    req.on("aborted", onClientGone);
+    controllers.add(controller);
+    const detachController = () => {
+      res.off("close", onClientGone);
+      req.off("aborted", onClientGone);
+      controllers.delete(controller);
+    };
+    let queuePosition = 0;
+    let slotReady = false;
+    let pendingSlot: Promise<() => void> | undefined;
+    let release: (() => void) | undefined;
+    const reserve = () => {
+      queuePosition = slots.positionFor();
+      pendingSlot = slots.acquire(signal).then((releaseSlot) => {
+        slotReady = true;
+        return releaseSlot;
+      });
+      // A queued request can disconnect before its body finishes parsing.
+      void pendingSlot.catch(() => undefined);
+    };
+    const abandon = async () => {
+      controller.abort();
+      if (pendingSlot)
+        await pendingSlot.then(
+          (releaseSlot) => releaseSlot(),
+          () => {},
+        );
+      detachController();
+      legacyBusy = false;
+    };
+    // Opt-in admission includes body reception, bounding buffered requests and
+    // preserving arrival order even when a later caller uploads faster.
+    if (admissionEnabled) reserve();
+    let payload: RemoteRunPayload;
     try {
-      const body = await readRequestBody(req);
-      payload = JSON.parse(body) as RemoteRunPayload;
-      if (payload?.browserConfig) {
+      payload = JSON.parse(await readRequestBody(req, controller.signal)) as RemoteRunPayload;
+      if (!payload || typeof payload.prompt !== "string") throw new Error("Missing prompt");
+      payload.options ??= {};
+      if (payload.browserConfig)
         payload.browserConfig.url = normalizeChatgptUrl(payload.browserConfig.url, CHATGPT_URL);
-      }
     } catch {
-      busy = false;
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "invalid_request" }));
+      await abandon();
+      if (!res.destroyed) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "invalid_request" }));
+      }
       return;
     }
-
+    if (res.destroyed || req.aborted) {
+      await abandon();
+      return;
+    }
+    if (!admissionEnabled) {
+      signal = payload.options.cancelOnDisconnect === true ? controller.signal : undefined;
+      reserve();
+    }
     res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+    const sendEvent = (event: RemoteRunEvent) => {
+      if (!res.destroyed && !res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
+    };
+    if (queuePosition > 0 && !slotReady)
+      sendEvent({
+        type: "log",
+        message: `[serve] Waiting for a browser slot (position ${queuePosition}; ${slots.activeCount} active).`,
+      });
+    try {
+      release = await pendingSlot!;
+      signal?.throwIfAborted();
+    } catch (error) {
+      release?.();
+      legacyBusy = false;
+      sendEvent({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      detachController();
+      if (!res.destroyed) res.end();
+      return;
+    }
 
     const runId = randomUUID();
-    logger(
-      `[serve] Accepted run ${runId} from ${formatSocket(req)} (prompt ${payload?.prompt?.length ?? 0} chars)`,
-    );
-    // Each run gets an isolated temp dir so attachments/logs don't collide.
-    const runDir = await mkdtemp(path.join(os.tmpdir(), `oracle-serve-${runId}-`));
-    const attachmentDir = path.join(runDir, "attachments");
-
-    const sendEvent = (event: RemoteRunEvent) => {
-      res.write(`${JSON.stringify(event)}\n`);
-    };
+    let runDir = "";
 
     let fallbackSubmission:
       | {
           prompt: string;
           attachments: BrowserAttachment[];
+          prepare?: () => Promise<void>;
         }
       | undefined;
     try {
+      signal?.throwIfAborted();
+      logger(
+        `[serve] Accepted run ${runId} from ${formatSocket(req)} (prompt ${payload.prompt.length} chars)`,
+      );
+      runDir = await mkdtemp(path.join(os.tmpdir(), `oracle-serve-${runId}-`));
+      const attachmentDir = path.join(runDir, "attachments");
+      signal?.throwIfAborted();
       const attachmentsPayload = Array.isArray(payload.attachments) ? payload.attachments : [];
       const attachments = await stageRemoteAttachments(
         attachmentsPayload,
@@ -247,6 +379,29 @@ export async function createRemoteServer(
           prompt: payload.fallbackSubmission.prompt,
           attachments: fallbackAttachments,
         };
+        const pendingBundle = payload.fallbackSubmission.bundle;
+        if (pendingBundle) {
+          if (
+            !["text", "zip"].includes(pendingBundle.format) ||
+            !["all", "text-only"].includes(pendingBundle.scope)
+          ) {
+            throw new Error("Invalid fallback bundle format or scope.");
+          }
+          let preparation: Promise<void> | undefined;
+          const prepare = async () => {
+            if (!fallbackSubmission) return;
+            const prepared = await materializeStagedFallbackBundle({
+              composerText: fallbackSubmission.prompt,
+              attachments: fallbackSubmission.attachments,
+              format: pendingBundle.format,
+              scope: pendingBundle.scope,
+              bundleParentDir: runDir,
+            });
+            fallbackSubmission.prompt = prepared.composerText;
+            fallbackSubmission.attachments = prepared.attachments;
+          };
+          fallbackSubmission.prepare = () => (preparation ??= prepare());
+        }
       }
 
       // Reuse the existing browser logger surface so clients see the same log stream.
@@ -273,14 +428,25 @@ export async function createRemoteServer(
       // `browserTabRef`/`attachRunning` select a tab that may belong to somebody
       // else's run. With those reachable, a bridge token is not a permission to
       // ask ChatGPT a question — it is a permission to run code here.
-      payload.browserConfig = pickClientBrowserConfig(payload.browserConfig);
+      payload.browserConfig = {
+        ...pickClientBrowserConfig(payload.browserConfig),
+        ...hostBrowserConfig,
+      };
       // Remote runs rely on the host's authentication policy; never accept cookie payloads from clients.
       payload.browserConfig.inlineCookies = null;
       payload.browserConfig.inlineCookiesSource = null;
-      payload.browserConfig.cookieSync = options.cookieSyncDefault === true;
+      payload.browserConfig.cookieSync = !attachedBrowser && options.cookieSyncDefault === true;
+
+      const clientSession =
+        typeof payload.options.sessionId === "string"
+          ? payload.options.sessionId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 32)
+          : "remote";
+      payload.options.sessionId = `${clientSession || "remote"}-${runId}`;
+      if (browserTabCap !== undefined) payload.browserConfig.maxConcurrentTabs = browserTabCap;
+      signal?.throwIfAborted();
 
       // Enforce manual-login profile when cookie sync is unavailable (e.g., Windows/WSL).
-      if (options.manualLoginDefault) {
+      if (manualLoginDefault) {
         payload.browserConfig.manualLogin = true;
         payload.browserConfig.manualLoginProfileDir = options.manualLoginProfileDir;
         payload.browserConfig.keepBrowser = true;
@@ -296,11 +462,13 @@ export async function createRemoteServer(
         attachments,
         fallbackSubmission,
         config: payload.browserConfig,
+        signal,
         // `keepBrowser` above preserves the authenticated shared Chrome
         // process. This separate service policy closes only a successfully
         // captured tab owned by this run, preventing one renderer leak per
         // request while incomplete/reattachable tabs remain untouched.
-        closeOwnedTabOnComplete: Boolean(options.manualLoginDefault && !clientRequestedKeepBrowser),
+        closeOwnedTabOnComplete: Boolean(manualLoginDefault && !clientRequestedKeepBrowser),
+        closeOwnedTabOnCancel: !clientRequestedKeepBrowser,
         log: automationLogger,
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
         verbose: payload.options.verbose,
@@ -308,6 +476,7 @@ export async function createRemoteServer(
         followUpPrompts: payload.options.followUpPrompts,
       });
 
+      signal?.throwIfAborted();
       const artifactRegistration = await registerRemoteArtifacts({
         runId,
         result,
@@ -338,14 +507,23 @@ export async function createRemoteServer(
         }`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const cancelled = signal?.aborted === true;
+      const message = cancelled
+        ? "Browser run cancelled."
+        : error instanceof Error
+          ? error.message
+          : String(error);
       sendEvent({ type: "error", message });
-      logger(`[serve] Run ${runId} failed after ${Date.now() - runStartedAt}ms: ${message}`);
+      logger(
+        `[serve] Run ${runId} ${cancelled ? "cancelled" : "failed"} after ${Date.now() - runStartedAt}ms: ${message}`,
+      );
     } finally {
-      busy = false;
-      res.end();
+      detachController();
+      legacyBusy = false;
+      release();
+      if (!res.destroyed) res.end();
       try {
-        await rm(runDir, { recursive: true, force: true });
+        if (runDir) await rm(runDir, { recursive: true, force: true });
       } catch {
         // ignore cleanup errors
       }
@@ -372,6 +550,7 @@ export async function createRemoteServer(
     port: address.port,
     token: authToken,
     async close() {
+      for (const controller of controllers) controller.abort();
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
@@ -380,6 +559,7 @@ export async function createRemoteServer(
 }
 
 export async function serveRemote(options: RemoteServerOptions = {}): Promise<void> {
+  validateAdmissionOptions(options);
   const manualProfileDir =
     options.manualLoginProfileDir ?? path.join(os.homedir(), ".oracle", "browser-profile");
   const preferManualLogin =
@@ -400,6 +580,12 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
     console.log(
       "Alternatively, start Windows Chrome with --remote-debugging-port=9222 and use `--remote-chrome <windows-ip>:9222`.",
     );
+    return;
+  }
+
+  if (usesHostBrowserAttachment(options.browserConfig)) {
+    console.log("Using the host browser attachment; skipping local Chrome login/bootstrap.");
+    await runRemoteServer(options);
     return;
   }
 
@@ -459,11 +645,19 @@ export async function serveRemote(options: RemoteServerOptions = {}): Promise<vo
     );
   }
 
-  const server = await createRemoteServer({
+  await runRemoteServer({
     ...options,
     manualLoginDefault: preferManualLogin,
     manualLoginProfileDir: manualProfileDir,
   });
+}
+
+function usesHostBrowserAttachment(config?: RemoteHostBrowserConfig): boolean {
+  return config?.attachRunning === true || Boolean(config?.remoteChrome);
+}
+
+async function runRemoteServer(options: RemoteServerOptions): Promise<void> {
+  const server = await createRemoteServer(options);
   await new Promise<void>((resolve) => {
     const shutdown = () => {
       console.log("Shutting down remote service...");
@@ -707,12 +901,23 @@ function classifySourceUrlKind(sourceUrl?: string): RemoteArtifactDescriptor["so
   return "chatgpt-file-endpoint";
 }
 
-async function readRequestBody(req: http.IncomingMessage): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+async function readRequestBody(req: http.IncomingMessage, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) {
+    req.destroy();
+    signal.throwIfAborted();
   }
-  return Buffer.concat(chunks).toString("utf8");
+  const onAbort = () => req.destroy();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    }
+    signal?.throwIfAborted();
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
 }
 
 /**
@@ -797,6 +1002,7 @@ async function stageRemoteAttachments(
   return attachments;
 }
 
+// Return conversation identity and observed selection; keep process/profile details on the host.
 function sanitizeResult(
   result: BrowserRunResult,
   warnings: BrowserRunWarning[] = [],
@@ -808,6 +1014,13 @@ function sanitizeResult(
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,
+    modelSelection: result.modelSelection,
+    thinkingSelection: result.thinkingSelection,
+    researchPlan: result.researchPlan,
+    archive: result.archive,
+    tabUrl: result.tabUrl,
+    conversationId: result.conversationId,
+    promptSubmitted: result.promptSubmitted,
     warnings: warnings.length > 0 ? warnings : undefined,
     chromePid: undefined,
     chromePort: undefined,

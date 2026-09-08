@@ -40,8 +40,12 @@ describe("project_sources MCP tool", () => {
     runBrowserProjectSources.mockClear();
     sendLoggingMessage.mockClear();
     registerProjectSourcesTool({
-      registerTool: (_name: string, _def: unknown, fn: (input: unknown) => Promise<unknown>) => {
-        handler = fn;
+      registerTool: (
+        _name: string,
+        _def: unknown,
+        fn: (input: unknown, context: unknown) => Promise<unknown>,
+      ) => {
+        handler = (input) => fn(input, { mcpReq: { log: sendLoggingMessage } });
       },
       server: { sendLoggingMessage },
     } as unknown as Parameters<typeof registerProjectSourcesTool>[0]);

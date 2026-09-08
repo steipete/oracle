@@ -1,6 +1,7 @@
 export type TokenizerFn = (input: unknown, options?: Record<string, unknown>) => number;
 
 export type KnownModelName =
+  | "gpt-6-astra"
   | "gpt-5.6"
   | "gpt-5.6-sol"
   | "gpt-5.5"
@@ -227,6 +228,8 @@ export interface RunOracleOptions {
   background?: boolean;
   /** Optional absolute path to save only the assistant's final text output. */
   writeOutputPath?: string;
+  /** Browser-only: export captured files beside the answer written by writeOutputPath. */
+  writeArtifacts?: boolean;
   /** Multi-model failure policy: fail the command or accept partial success. */
   partialMode?: PartialMode;
   /** Number of seconds to wait before timing out, or 'auto' to use model defaults. */

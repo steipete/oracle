@@ -25,6 +25,29 @@ describe("mapConsultToRunOptions", () => {
     expect(runOptions.models).toEqual(["gpt-5.2-pro", "gemini-3-pro"]);
   });
 
+  test("maps gpt-6-pro through browser consult options without triggering API slug rejection", () => {
+    const { runOptions, resolvedEngine } = mapConsultToRunOptions({
+      prompt: "test astra",
+      files: [],
+      model: "gpt-6-pro",
+      engine: "browser",
+    });
+
+    expect(resolvedEngine).toBe("browser");
+    expect(runOptions.model).toBe("gpt-6-pro");
+  });
+
+  test("rejects gpt-6-pro in multi-model consult coerced to API mode", () => {
+    expect(() =>
+      mapConsultToRunOptions({
+        prompt: "test astra",
+        files: [],
+        engine: "browser",
+        models: ["gpt-6-pro"],
+      }),
+    ).toThrow(/GPT-6 Pro is an API reasoning mode, not a model slug/);
+  });
+
   test("maps browser follow-ups into run options", () => {
     const env: NodeJS.ProcessEnv = {};
     const { runOptions, resolvedEngine } = mapConsultToRunOptions({

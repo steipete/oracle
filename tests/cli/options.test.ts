@@ -270,6 +270,30 @@ describe("resolveApiModel", () => {
     );
   });
 
+  test("maps the documented GPT-6 aliases to the gpt-6-astra API model", () => {
+    expect(resolveApiModel("gpt-6")).toBe("gpt-6-astra");
+    expect(resolveApiModel("gpt-6-astra")).toBe("gpt-6-astra");
+    expect(resolveApiModel("latest")).toBe("gpt-6-astra");
+    expect(resolveApiModel("GPT-6 Astra")).toBe("gpt-6-astra");
+  });
+
+  test("rejects fake GPT-6 Pro model slugs with API-mode guidance", () => {
+    expect(() => resolveApiModel("gpt-6-pro")).toThrow(
+      "Use --model gpt-6-astra --reasoning-mode pro",
+    );
+    expect(() => resolveApiModel("GPT-6 Pro")).toThrow(
+      "Use --model gpt-6-astra --reasoning-mode pro",
+    );
+  });
+
+  test("preserves unknown gpt-6-* ids verbatim (OpenRouter/custom)", () => {
+    expect(resolveApiModel("gpt-6-custom")).toBe("gpt-6-custom");
+    expect(resolveApiModel("gpt-6-astra-mini")).toBe("gpt-6-astra-mini");
+    expect(resolveApiModel("gpt-6.1")).toBe("gpt-6.1");
+    expect(resolveApiModel("openai/gpt-6-astra")).toBe("openai/gpt-6-astra");
+    expect(resolveApiModel("gpt-6-codex")).toBe("gpt-5.1-codex");
+  });
+
   test("passes through unknown names (OpenRouter/custom)", () => {
     expect(resolveApiModel("instant")).toBe("instant");
     expect(resolveApiModel("openai/gpt-5.4")).toBe("openai/gpt-5.4");
@@ -313,6 +337,22 @@ describe("inferModelFromLabel", () => {
     expect(inferModelFromLabel("openai/gpt-5.5")).toBe("openai/gpt-5.5");
     expect(inferModelFromLabel("openai/gpt-5.4")).toBe("openai/gpt-5.4");
     expect(inferModelFromLabel("anthropic/claude-sonnet-4.5")).toBe("anthropic/claude-sonnet-4.5");
+  });
+
+  test("infers the documented GPT-6 aliases and keeps the browser-only Pro alias", () => {
+    expect(inferModelFromLabel("gpt-6")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("gpt-6-astra")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("GPT-6 Astra")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("latest")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("Latest")).toBe("gpt-6-astra");
+    expect(inferModelFromLabel("gpt-6-pro")).toBe("gpt-6-pro");
+    expect(inferModelFromLabel("GPT-6 Pro")).toBe("gpt-6-pro");
+  });
+
+  test("does not treat unknown gpt-6-* ids as the Latest alias", () => {
+    expect(inferModelFromLabel("gpt-6-codex")).toBe("gpt-5.1-codex");
+    expect(inferModelFromLabel("gpt-6-custom")).not.toMatch(/^gpt-6/);
+    expect(inferModelFromLabel("gpt-6-astra-mini")).not.toMatch(/^gpt-6/);
   });
 
   test("infers 5.5 variants", () => {

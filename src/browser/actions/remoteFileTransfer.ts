@@ -12,7 +12,7 @@ import { beginAttachmentEvidence } from "./attachmentEvidence.js";
  * Used when browser is on a different machine than CLI
  */
 export async function uploadAttachmentViaDataTransfer(
-  deps: { runtime: ChromeClient["Runtime"]; dom?: ChromeClient["DOM"] },
+  deps: { runtime: ChromeClient["Runtime"]; dom?: ChromeClient["DOM"]; navigationUrl?: string },
   attachment: BrowserAttachment,
   logger: BrowserLogger,
 ): Promise<void> {
@@ -45,6 +45,7 @@ export async function uploadAttachmentViaDataTransfer(
     runtime,
     attachment,
     fileInputSelector,
+    deps.navigationUrl,
   );
 
   logger(`File transferred: ${transferResult.fileName} (${transferResult.size} bytes)`);
