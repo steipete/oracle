@@ -122,7 +122,8 @@ function assertResolvedModelSelection(desiredModel: string, resolvedLabel: strin
     // evidence of GPT-6 Astra. Do not let a generic picker result verify Latest.
     if (
       resolvedLabel.normalize("NFC").trim() === "Latest" ||
-      resolvedLabel.normalize("NFC").trim() === "最新"
+      resolvedLabel.normalize("NFC").trim() === "最新" ||
+      resolvedLabel.normalize("NFC").trim() === "최신"
     ) {
       return;
     }
@@ -254,7 +255,7 @@ function buildModelSelectionExpression(
     // Sol or an arbitrary localized menu row can never satisfy a Latest request.
     const isLatestModelLabel = (value) => {
       const label = String(value ?? '').normalize('NFC').trim();
-      return label === 'Latest' || label === '最新';
+      return label === 'Latest' || label === '最新' || label === '최신';
     };
     const normalizedTokens = Array.from(new Set([normalizedTarget, ...LABEL_TOKENS]))
       .map((token) => normalizeText(token))
@@ -1525,8 +1526,9 @@ function buildModelMatchersLiteral(targetModel: string): {
     testIdTokens.add("gpt56");
   }
   if (base === "latest") {
-    // ChatGPT's Japanese advanced-model radio is named exactly "最新".
+    // Exact Japanese and Korean labels for the advanced-model Latest radio.
     push("最新", labelTokens);
+    push("최신", labelTokens);
   }
   // Numeric variations (5.5 <-> 55 <-> gpt-5-5)
   if (base.includes("5.5") || base.includes("5-5") || base.includes("55")) {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: recognize the Korean `최신` model radio when selecting Latest, while retaining exact-label verification and rejecting older model targets.
+
 ## 0.20.0 - 2026-09-07
 
 **Highlights:** GPT-6 Astra API and ChatGPT Latest support, explicit Web Search, and safe cleanup after browser recovery.
