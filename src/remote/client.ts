@@ -6,7 +6,7 @@ import path from "node:path";
 import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import type { BrowserRunOptions } from "../browserMode.js";
 import type { BrowserRunResult } from "../browserMode.js";
-import type { BrowserAttachment, SavedBrowserFile } from "../browser/types.js";
+import type { BrowserAttachment, SavedBrowserFile, SavedBrowserImage } from "../browser/types.js";
 import {
   appendArtifacts,
   computeFileSha256,
@@ -27,11 +27,14 @@ import { materializeStagedFallbackBundle } from "../browser/prompt.js";
 import { checkRemoteHealth } from "./health.js";
 import { parseHostPort } from "../bridge/connection.js";
 import { BrowserRunCancelledError } from "../oracle/errors.js";
+import { resolveSiblingImagePath } from "../browser/chatgptImages.js";
 
 interface RemoteExecutorOptions {
   host: string;
   token?: string;
 }
+
+type TransferredBrowserArtifact = SavedBrowserFile | SavedBrowserImage;
 
 export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptions) {
   // Return a drop-in replacement for runBrowserMode so the browser session runner can stay unchanged.
@@ -65,6 +68,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
         sessionId: options.sessionId,
         followUpPrompts: options.followUpPrompts,
         cancelOnDisconnect: callerSignal ? true : undefined,
+        imageOutputRequested: Boolean(options.generateImagePath || options.outputPath),
       },
     };
 
@@ -76,10 +80,12 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
         reject(new Error("Browser run cancelled before the request was sent."));
         return;
       }
-      const transferredFiles: SavedBrowserFile[] = [];
+      const transferredArtifacts: TransferredBrowserArtifact[] = [];
       const transferFailures: string[] = [];
       const transferPromises: Promise<void>[] = [];
       let artifactTransferQueue = Promise.resolve();
+      const preferredImagePath = options.generateImagePath ?? options.outputPath;
+      let preferredImageIndex = 0;
       let settled = false;
       let resolved: BrowserRunResult | null = null;
 
@@ -128,7 +134,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
                     resolved = result;
                   },
                   onArtifact: (artifact) => {
-                    transferredFiles.push(artifact);
+                    transferredArtifacts.push(artifact);
                   },
                   onArtifactFailure: (message) => {
                     transferFailures.push(message);
@@ -137,6 +143,15 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
                     const queued = artifactTransferQueue.then(transfer);
                     artifactTransferQueue = queued.catch(() => undefined);
                     return queued;
+                  },
+                  resolvePreferredImagePath: (descriptor) => {
+                    if (!preferredImagePath) return undefined;
+                    const extension = path.extname(descriptor.filename).slice(1) || "png";
+                    return resolveSiblingImagePath(
+                      path.resolve(preferredImagePath),
+                      preferredImageIndex++,
+                      extension,
+                    );
                   },
                   onError: fail,
                 });
@@ -157,7 +172,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
               }
               settled = true;
               callerSignal?.removeEventListener("abort", onCallerAbort);
-              resolve(mergeTransferredArtifacts(resolved, transferredFiles, transferFailures));
+              resolve(mergeTransferredArtifacts(resolved, transferredArtifacts, transferFailures));
             })().catch(fail);
           });
           res.on("error", fail);
@@ -245,9 +260,10 @@ function handleEvent(params: {
   port: number;
   token?: string;
   onResult: (result: BrowserRunResult) => void;
-  onArtifact: (artifact: SavedBrowserFile) => void;
+  onArtifact: (artifact: TransferredBrowserArtifact) => void;
   onArtifactFailure: (message: string) => void;
   enqueueArtifactTransfer: (transfer: () => Promise<void>) => Promise<void>;
+  resolvePreferredImagePath: (descriptor: RemoteArtifactDescriptor) => string | undefined;
   onError: (error: Error) => void;
 }): Promise<void> | null {
   let event: RemoteRunEvent;
@@ -286,6 +302,10 @@ function handleEvent(params: {
       String(event.artifact?.filename ?? ""),
       "artifact.bin",
     );
+    const preferredPath =
+      event.artifact.kind === "image"
+        ? params.resolvePreferredImagePath(event.artifact)
+        : undefined;
     const transfer = params.enqueueArtifactTransfer(() =>
       transferRemoteArtifact({
         hostname: params.hostname,
@@ -293,6 +313,7 @@ function handleEvent(params: {
         token: params.token,
         descriptor: event.artifact,
         sessionId: params.options.sessionId,
+        preferredPath,
         signal: params.options.signal,
         log: params.options.log,
       })
@@ -324,19 +345,22 @@ async function transferRemoteArtifact(params: {
   token?: string;
   descriptor: RemoteArtifactDescriptor;
   sessionId?: string;
+  preferredPath?: string;
   log?: BrowserRunOptions["log"];
   signal?: AbortSignal;
-}): Promise<SavedBrowserFile> {
+}): Promise<TransferredBrowserArtifact> {
   params.signal?.throwIfAborted();
   validateRemoteArtifactDescriptor(params.descriptor);
   const sessionId = params.sessionId ?? params.descriptor.runId;
   const artifactsDir = resolveSessionArtifactsDir(sessionId);
-  await mkdir(artifactsDir, { recursive: true });
   const filename = sanitizeArtifactFilename(
     params.descriptor.filename,
     `artifact-${params.descriptor.artifactId}.bin`,
   );
-  const finalPath = await resolveUniqueArtifactPath(path.join(artifactsDir, filename));
+  const finalPath = params.preferredPath
+    ? path.resolve(params.preferredPath)
+    : await resolveUniqueArtifactPath(path.join(artifactsDir, filename));
+  await mkdir(path.dirname(finalPath), { recursive: true });
   const partPath = `${finalPath}.part-${params.descriptor.artifactId}`;
   const artifactPath = `/runs/${encodeURIComponent(params.descriptor.runId)}/artifacts/${encodeURIComponent(
     params.descriptor.artifactId,
@@ -383,8 +407,7 @@ async function transferRemoteArtifact(params: {
   await rename(partPath, finalPath);
   params.log?.(`[browser] Transferred artifact to ${finalPath}`);
   const publishedFilename = path.basename(finalPath);
-  return {
-    kind: "file",
+  const baseArtifact = {
     path: finalPath,
     label: publishedFilename,
     mimeType: sanitizeArtifactMimeType(params.descriptor.mimeType),
@@ -396,6 +419,16 @@ async function transferRemoteArtifact(params: {
     origin: { mode: "bridge" },
     url: "bridge-artifact",
     finalUrl: "bridge-artifact",
+  } as const;
+  if (params.descriptor.kind === "image") {
+    return {
+      ...baseArtifact,
+      kind: "image",
+    };
+  }
+  return {
+    ...baseArtifact,
+    kind: "file",
     filename: publishedFilename,
   };
 }
@@ -473,7 +506,7 @@ function validateRemoteArtifactDescriptor(descriptor: RemoteArtifactDescriptor):
   if (
     !descriptor ||
     typeof descriptor !== "object" ||
-    descriptor.kind !== "file" ||
+    (descriptor.kind !== "file" && descriptor.kind !== "image") ||
     typeof descriptor.runId !== "string" ||
     !/^[a-zA-Z0-9_-]{1,128}$/.test(descriptor.runId) ||
     typeof descriptor.artifactId !== "string" ||
@@ -491,11 +524,18 @@ function validateRemoteArtifactDescriptor(descriptor: RemoteArtifactDescriptor):
 
 function mergeTransferredArtifacts(
   result: BrowserRunResult,
-  transferredFiles: SavedBrowserFile[],
+  transferredArtifacts: TransferredBrowserArtifact[],
   transferFailures: string[],
 ): BrowserRunResult {
-  const artifacts = appendArtifacts(result.artifacts, transferredFiles);
+  const transferredFiles = transferredArtifacts.filter(
+    (artifact): artifact is SavedBrowserFile => artifact.kind === "file",
+  );
+  const transferredImages = transferredArtifacts.filter(
+    (artifact): artifact is SavedBrowserImage => artifact.kind === "image",
+  );
+  const artifacts = appendArtifacts(result.artifacts, transferredArtifacts);
   const savedFiles = appendSavedFiles(result.savedFiles, transferredFiles);
+  const savedImages = appendSavedImages(result.savedImages, transferredImages);
   const warnings = [
     ...(result.warnings ?? []),
     ...transferFailures.map((message) => ({
@@ -508,8 +548,24 @@ function mergeTransferredArtifacts(
     ...result,
     artifacts,
     savedFiles,
+    savedImages,
     warnings: warnings.length > 0 ? warnings : undefined,
   };
+}
+
+function appendSavedImages(
+  existing: SavedBrowserImage[] | undefined,
+  additions: SavedBrowserImage[],
+): SavedBrowserImage[] | undefined {
+  const merged = new Map<string, SavedBrowserImage>();
+  for (const artifact of existing ?? []) {
+    merged.set(artifact.path, artifact);
+  }
+  for (const artifact of additions) {
+    merged.set(artifact.path, artifact);
+  }
+  const values = Array.from(merged.values());
+  return values.length > 0 ? values : undefined;
 }
 
 function appendSavedFiles(

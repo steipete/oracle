@@ -30,6 +30,8 @@ export interface RemoteRunPayload {
     sessionId?: string;
     followUpPrompts?: string[];
     cancelOnDisconnect?: boolean;
+    /** Request image-aware waiting and capture without exposing a client filesystem path to the host. */
+    imageOutputRequested?: boolean;
   };
 }
 
@@ -44,7 +46,7 @@ export interface RemoteArtifactCapabilities {
 export interface RemoteArtifactDescriptor {
   artifactId: string;
   runId: string;
-  kind: "file";
+  kind: "file" | "image";
   filename: string;
   mimeType?: string;
   byteSize: number;

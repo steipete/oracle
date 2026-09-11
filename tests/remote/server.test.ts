@@ -12,6 +12,7 @@ import type { RemoteArtifactDescriptor } from "../../src/remote/types.js";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 import { runBrowserMode, runSubmissionWithRecoveryForTest } from "../../src/browser/index.js";
 import { BrowserAutomationError } from "../../src/oracle/errors.js";
+import { resolveSessionArtifactsDir } from "../../src/browser/artifacts.js";
 
 const CAN_LISTEN_LOCALHOST =
   spawnSync(
@@ -114,6 +115,10 @@ describe("remote browser service", () => {
             // cannot share an artifact directory; the caller's slug stays as the
             // prefix, and the client re-saves what it pulls under its own session.
             expect(options.sessionId).toMatch(/^remote-session-id-[0-9a-f-]{36}$/);
+            expect(options.generateImagePath).toBe(
+              path.join(resolveSessionArtifactsDir(options.sessionId!), "generated.png"),
+            );
+            expect(options.generateImagePath).not.toBe("/untrusted/client/generated.png");
             expect(options.followUpPrompts).toEqual(["follow up"]);
             expect(options.attachments).toHaveLength(1);
             const attachment = options.attachments?.[0];
@@ -159,6 +164,7 @@ describe("remote browser service", () => {
         },
         config: {},
         sessionId: "remote-session-id",
+        generateImagePath: "/untrusted/client/generated.png",
         followUpPrompts: ["follow up"],
         log: (message?: string) => {
           if (message) clientLogs.push(message);
@@ -405,14 +411,35 @@ describe("remote browser service", () => {
         "artifacts",
         "host-result.zip",
       );
+      const hostImagePath = path.join(
+        clientHome,
+        "sessions",
+        "host-image-session",
+        "artifacts",
+        "generated.png",
+      );
+      const secondHostImagePath = path.join(
+        clientHome,
+        "sessions",
+        "host-image-session",
+        "artifacts",
+        "generated.2.png",
+      );
+      const clientImageOutputPath = path.join(tmpDir, "requested-output.png");
       const emptyZip = Buffer.from([
         0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       ]);
+      const png = Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
+      ]);
       await mkdir(path.dirname(hostArtifactPath), { recursive: true });
       await mkdir(path.dirname(secondHostArtifactPath), { recursive: true });
+      await mkdir(path.dirname(hostImagePath), { recursive: true });
       await writeFile(hostArtifactPath, emptyZip);
       await writeFile(secondHostArtifactPath, emptyZip);
+      await writeFile(hostImagePath, png);
+      await writeFile(secondHostImagePath, png);
       await writeFile(hostPrivatePath, emptyZip);
 
       const server = await createRemoteServer(
@@ -420,8 +447,8 @@ describe("remote browser service", () => {
         {
           runBrowser: async () => {
             const result: BrowserRunResult = {
-              answerText: "done",
-              answerMarkdown: "done",
+              answerText: `done\n\nGenerated 2 images. Saved to: ${hostImagePath}`,
+              answerMarkdown: `done\n\n*Generated 2 images. Saved to: ${hostImagePath}*`,
               tookMs: 1000,
               answerTokens: 1,
               answerChars: 4,
@@ -460,6 +487,28 @@ describe("remote browser service", () => {
                   filename: "private.zip",
                 },
               ],
+              savedImages: [
+                {
+                  kind: "image",
+                  path: hostImagePath,
+                  label: "Generated image",
+                  mimeType: "image/png",
+                  sizeBytes: png.length,
+                  sourceUrl: "https://chatgpt.com/backend-api/estuary/content?id=file_image",
+                  url: "https://chatgpt.com/backend-api/estuary/content?id=file_image",
+                  fileId: "file_image",
+                },
+                {
+                  kind: "image",
+                  path: secondHostImagePath,
+                  label: "Generated image 2",
+                  mimeType: "image/png",
+                  sizeBytes: png.length,
+                  sourceUrl: "https://chatgpt.com/backend-api/estuary/content?id=file_image_2",
+                  url: "https://chatgpt.com/backend-api/estuary/content?id=file_image_2",
+                  fileId: "file_image_2",
+                },
+              ],
               artifacts: [
                 {
                   kind: "file",
@@ -491,9 +540,11 @@ describe("remote browser service", () => {
         prompt: "remote",
         config: {},
         sessionId: "remote-artifact-session",
+        generateImagePath: clientImageOutputPath,
       });
 
-      expect(result.answerText).toBe("done");
+      expect(result.answerText).toBe("done\n\nGenerated 2 images. Saved to: generated.png");
+      expect(result.answerMarkdown).toBe("done\n\n*Generated 2 images. Saved to: generated.png*");
       expect(result.warnings).toEqual([
         {
           code: "remote-artifact-registration-failed",
@@ -503,7 +554,7 @@ describe("remote browser service", () => {
       ]);
       expect(JSON.stringify(result)).not.toContain(hostPrivatePath);
       expect(JSON.stringify(result)).not.toContain("host-only warning /Users/private/profile");
-      expect(result.artifacts).toHaveLength(2);
+      expect(result.artifacts).toHaveLength(4);
       const artifact = result.artifacts?.[0];
       expect(artifact?.path).toBe(
         path.join(
@@ -545,6 +596,23 @@ describe("remote browser service", () => {
       await expect(stat(secondHostArtifactPath)).resolves.toMatchObject({
         size: emptyZip.length,
       });
+      expect(result.savedImages).toHaveLength(2);
+      expect(result.savedImages?.[0]).toMatchObject({
+        kind: "image",
+        path: clientImageOutputPath,
+        mimeType: "image/png",
+        sourceUrl: "bridge-artifact",
+        transfer: { status: "completed", bytes: png.length },
+        origin: { mode: "bridge" },
+      });
+      await expect(readFile(result.savedImages![0]!.path)).resolves.toEqual(png);
+      expect(result.savedImages?.[1]).toMatchObject({
+        kind: "image",
+        path: path.join(tmpDir, "requested-output.2.png"),
+        mimeType: "image/png",
+        sourceUrl: "bridge-artifact",
+      });
+      await expect(readFile(result.savedImages![1]!.path)).resolves.toEqual(png);
       await expect(stat(hostPrivatePath)).resolves.toMatchObject({ size: emptyZip.length });
       await expect(
         stat(

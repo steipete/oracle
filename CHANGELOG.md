@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remote/MCP: transfer ChatGPT-generated images from browser bridge hosts to the caller's requested local output path and expose them through `chatgpt_image`, instead of rejecting remote image runs or leaving host-only paths in the response.
+
 ## 0.20.0 - 2026-09-07
 
 **Highlights:** GPT-6 Astra API and ChatGPT Latest support, explicit Web Search, and safe cleanup after browser recovery.

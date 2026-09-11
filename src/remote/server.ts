@@ -39,6 +39,7 @@ import {
 import { normalizeChatgptUrl } from "../browser/utils.js";
 import {
   computeFileSha256,
+  resolveSessionArtifactsDir,
   sanitizeArtifactFilename,
   sanitizeArtifactMimeType,
   validateArtifactFile,
@@ -442,6 +443,10 @@ export async function createRemoteServer(
           ? payload.options.sessionId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 32)
           : "remote";
       payload.options.sessionId = `${clientSession || "remote"}-${runId}`;
+      const hostImageOutputPath =
+        payload.options.imageOutputRequested === true
+          ? path.join(resolveSessionArtifactsDir(payload.options.sessionId), "generated.png")
+          : undefined;
       if (browserTabCap !== undefined) payload.browserConfig.maxConcurrentTabs = browserTabCap;
       signal?.throwIfAborted();
 
@@ -473,6 +478,7 @@ export async function createRemoteServer(
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
         verbose: payload.options.verbose,
         sessionId: payload.options.sessionId,
+        generateImagePath: hostImageOutputPath,
         followUpPrompts: payload.options.followUpPrompts,
       });
 
@@ -788,13 +794,16 @@ async function registerRemoteArtifacts(params: {
 }): Promise<{ descriptors: RemoteArtifactDescriptor[]; warnings: BrowserRunWarning[] }> {
   pruneExpiredArtifacts(params.artifactRegistry);
   const seen = new Set<string>();
-  const fileArtifacts: SessionArtifact[] = [
+  const transferableArtifacts: SessionArtifact[] = [
     ...(params.result.savedFiles ?? []),
-    ...(params.result.artifacts ?? []).filter((artifact) => artifact.kind === "file"),
+    ...(params.result.savedImages ?? []),
+    ...(params.result.artifacts ?? []).filter(
+      (artifact) => artifact.kind === "file" || artifact.kind === "image",
+    ),
   ];
   const descriptors: RemoteArtifactDescriptor[] = [];
   const warnings: BrowserRunWarning[] = [];
-  for (const artifact of fileArtifacts) {
+  for (const artifact of transferableArtifacts) {
     if (!artifact?.path || seen.has(artifact.path)) {
       continue;
     }
@@ -860,7 +869,7 @@ async function buildRemoteArtifactRegistration(
     descriptor: {
       artifactId: randomUUID(),
       runId,
-      kind: "file",
+      kind: artifact.kind === "image" ? "image" : "file",
       filename,
       mimeType,
       byteSize: fileStat.size,
@@ -1007,10 +1016,24 @@ function sanitizeResult(
   result: BrowserRunResult,
   warnings: BrowserRunWarning[] = [],
 ): BrowserRunResult {
+  const hostArtifactPaths = [
+    ...(result.savedFiles ?? []),
+    ...(result.savedImages ?? []),
+    ...(result.artifacts ?? []),
+  ]
+    .map((artifact) => artifact.path)
+    .filter((artifactPath): artifactPath is string => Boolean(artifactPath));
+  const sanitizeAnswer = (value: string | undefined): string | undefined => {
+    let sanitized = value;
+    for (const artifactPath of hostArtifactPaths) {
+      sanitized = sanitized?.split(artifactPath).join(path.basename(artifactPath));
+    }
+    return sanitized;
+  };
   return {
-    answerText: result.answerText,
-    answerMarkdown: result.answerMarkdown,
-    answerHtml: result.answerHtml,
+    answerText: sanitizeAnswer(result.answerText) ?? "",
+    answerMarkdown: sanitizeAnswer(result.answerMarkdown) ?? "",
+    answerHtml: sanitizeAnswer(result.answerHtml),
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,

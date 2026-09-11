@@ -604,7 +604,7 @@ describe("summarizeModelRunsForConsult", () => {
     }
   });
 
-  test("fails closed for image output over a remote browser service", async () => {
+  test("allows image output over a remote browser service", async () => {
     const home = mkdtempSync(path.join(tmpdir(), "oracle-home-"));
     setOracleHomeDirOverrideForTest(home);
     const prevHost = process.env.ORACLE_REMOTE_HOST;
@@ -631,15 +631,11 @@ describe("summarizeModelRunsForConsult", () => {
         model: "gpt-5.5",
         prompt: "make an image",
         files: [],
-        // Path under the Oracle home so containment passes and we reach the
-        // remote guard rather than the path check.
         generateImage: path.join(home, "generated", "img.png"),
       })) as { isError?: boolean; content: Array<{ type: "text"; text: string }> };
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toMatch(
-        /image output is not supported with a remote browser/i,
-      );
+      expect(result.isError).not.toBe(true);
+      expect(result.content[0]?.text).toContain("image-aware wait/download path");
     } finally {
       if (prevHost === undefined) delete process.env.ORACLE_REMOTE_HOST;
       else process.env.ORACLE_REMOTE_HOST = prevHost;
