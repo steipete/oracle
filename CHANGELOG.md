@@ -4,7 +4,7 @@
 
 **Highlights:** Safer browser recovery and cancellation, with reliable effort selection across saved defaults and quota-limited accounts.
 
-- Browser: reject stale harvested answers using the latest submitted prompt, preserve original output on mismatch, and allow delayed hydration within the configured timeout; thanks @pdurlej.
+- Browser: verify new-session harvests against the committed user turn, preserve original output on mismatch, and retain legacy recovery with an explicit unverified warning; thanks @pdurlej.
 - CLI: cancel detached browser consultations with truthful terminal status, preserve kept tabs, and remove late cancellation requests after completion; thanks @pdurlej.
 - Browser: verify Extra High on quota-limited four-tier effort sliders and reject unavailable Pro before input or submission. Fixes #472; thanks @ventianima-lab.
 - CLI: preserve explicitly requested Pro effort over saved browser defaults while retaining explicit effort overrides and config-only preferences; thanks @pdurlej.
