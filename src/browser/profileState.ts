@@ -258,7 +258,11 @@ export async function readProcessStartTimeMs(pid: number): Promise<number | null
   if (Math.trunc(pid) === process.pid) {
     // Use the same OS identity as peer controllers, not wall time minus uptime.
     // Cache our own PID only: it cannot be reused during this process's lifetime.
-    return (ownProcessStartTime ??= queryProcessStartTimeMs(process.pid));
+    return (ownProcessStartTime ??= queryProcessStartTimeMs(process.pid).then((startedAt) => {
+      // A transient probe failure is not a permanent process identity.
+      if (startedAt === null) ownProcessStartTime = undefined;
+      return startedAt;
+    }));
   }
   return queryProcessStartTimeMs(pid);
 }
