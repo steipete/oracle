@@ -1140,11 +1140,12 @@ function buildThinkingTimeExpression(
           .filter(Boolean);
         if (selections.length !== 1) return null;
         const { label, index, level } = selections[0];
-        // This adapter owns the observed five-tier layout only. A different range
-        // or contradictory announcement must not turn a numeric guess into proof.
-        if (thumb.getAttribute('aria-valuemin') !== '0' || thumb.getAttribute('aria-valuemax') !== '4' ||
-            thumb.getAttribute('aria-valuenow') !== String(index)) return null;
-        return { control, label, index, level };
+        // Quota-limited accounts expose four tiers; the fourth remains Extra High.
+        // Require an observed range and matching label/index before trusting either.
+        const maximum = thumb.getAttribute('aria-valuemax');
+        if (thumb.getAttribute('aria-valuemin') !== '0' || !['3', '4'].includes(maximum) ||
+            index > Number(maximum) || thumb.getAttribute('aria-valuenow') !== String(index)) return null;
+        return { control, label, index, level, maximum: Number(maximum) };
       };
       let current = resolve();
       const finish = (result) => { closeOpenMenus(); return result; };
@@ -1164,6 +1165,10 @@ function buildThinkingTimeExpression(
         }
         return finish(failure('option-not-found'));
       }
+      const unavailable = () => finish(failure('option-disabled', {
+        label: 'Pro', notice: 'the available four-tier effort slider does not include Pro',
+      }));
+      if (targetIndex > current.maximum) return unavailable();
       if (current.level === target) return finish({ status: 'already-selected', label: current.label });
       const deadline = performance.now() + MAX_WAIT_MS;
       for (let attempt = 0; attempt < 4 && performance.now() < deadline; attempt += 1) {
@@ -1179,6 +1184,7 @@ function buildThinkingTimeExpression(
           if (next && next.index !== previousIndex) { current = next; break; }
         }
         if (!current) return finish(failure('selection-unverified'));
+        if (targetIndex > current.maximum) return unavailable();
         if (current.level === target) return finish({ status: 'switched', label: current.label });
       }
       return finish(failure('selection-unverified'));
