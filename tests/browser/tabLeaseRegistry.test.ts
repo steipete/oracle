@@ -12,7 +12,9 @@ import {
   type BrowserTabLease,
 } from "../../src/browser/tabLeaseRegistry.js";
 
-describe("tabLeaseRegistry", () => {
+// Native Windows identity probes can each take five seconds on a busy runner.
+// Keep the real process/filesystem coverage and allow multi-probe recovery to finish.
+describe("tabLeaseRegistry", { timeout: process.platform === "win32" ? 30_000 : 5_000 }, () => {
   test("normalizes the concurrent tab limit", () => {
     expect(normalizeMaxConcurrentTabs(undefined)).toBe(3);
     expect(normalizeMaxConcurrentTabs("4")).toBe(4);
