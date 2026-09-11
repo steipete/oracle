@@ -76,7 +76,7 @@ const send=()=>{
  state.sends++;state.sentTier=state.tier;report();
  const prompt=document.querySelector('#prompt-textarea').value;
  const turn=document.createElement('article');turn.dataset.testid='conversation-turn-0';turn.dataset.turn='user';
- const user=document.createElement('div');user.dataset.messageAuthorRole='user';user.textContent=prompt;turn.append(user);document.querySelector('#turns').append(turn);
+ const user=document.createElement('div');user.dataset.messageAuthorRole='user';user.dataset.messageId='effort-user-'+state.sends;user.textContent=prompt;turn.append(user);document.querySelector('#turns').append(turn);
  document.querySelector('#prompt-textarea').value='';history.replaceState({},'', '/c/fixture-'+mode);
  setTimeout(()=>{
  const answer=document.createElement('article');answer.dataset.testid='conversation-turn-1';answer.dataset.turn='assistant';

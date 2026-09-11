@@ -59,7 +59,7 @@ const html = (
 let sends=0;const name=${JSON.stringify(name)};
 function send(){
  sends++; const prompt=document.querySelector('textarea').value;document.querySelector('textarea').value='';
- const user=document.createElement('article');user.dataset.testid='conversation-turn-0';user.dataset.turn='user';const content=document.createElement('div');content.dataset.messageAuthorRole='user';content.textContent=prompt;user.append(content);document.querySelector('#turns').append(user);
+ const user=document.createElement('article');user.dataset.testid='conversation-turn-0';user.dataset.turn='user';const content=document.createElement('div');content.dataset.messageAuthorRole='user';content.dataset.messageId='lifecycle-user';content.textContent=prompt;user.append(content);document.querySelector('#turns').append(user);
  history.replaceState({},'', '/c/fixture-'+name);
  const stop=document.createElement('button');stop.dataset.testid='stop-button';stop.textContent='Stop';document.querySelector('form').append(stop);
  fetch('/submitted/'+name,{method:'POST',body:JSON.stringify({sends,url:location.href})});

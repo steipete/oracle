@@ -101,7 +101,7 @@ function commit(){
  state.sends++;state.sentWhileBusy=state.busy;state.sentUrl=location.href;state.sentFiles=uploads.map(f=>f.name);report();
  const prompt=editor.value;const stop=document.createElement('button');stop.type='button';stop.dataset.testid='stop-button';stop.textContent='Stop';document.querySelector('form').append(stop);
  setTimeout(()=>{
-  const user=document.createElement('article');user.dataset.testid='conversation-turn-0';user.dataset.turn='user';const message=document.createElement('div');message.dataset.messageAuthorRole='user';message.textContent=prompt;user.append(message);
+  const user=document.createElement('article');user.dataset.testid='conversation-turn-0';user.dataset.turn='user';const message=document.createElement('div');message.dataset.messageAuthorRole='user';message.dataset.messageId='attachment-user';message.textContent=prompt;user.append(message);
   for(const file of uploads){const chip=document.createElement('div');chip.dataset.testid='attachment-chip';chip.textContent=file.name;user.append(chip);}document.querySelector('#turns').append(user);
   editor.value='';document.querySelector('#chips').replaceChildren();stop.remove();history.replaceState({},'', '/c/fixture-'+mode);
   const answer=document.createElement('article');answer.dataset.testid='conversation-turn-1';answer.dataset.turn='assistant';answer.innerHTML='<div data-message-author-role="assistant" data-message-id="fixture-answer"><div class="markdown"><p>ORACLE_ATTACHMENT_CLI_OK</p></div></div><button type="button" data-testid="copy-turn-action-button">Copy</button>';answer.querySelector('button').onclick=()=>navigator.clipboard.writeText('ORACLE_ATTACHMENT_CLI_OK');document.querySelector('#turns').append(answer);report();

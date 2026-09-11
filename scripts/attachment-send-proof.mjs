@@ -101,7 +101,7 @@ try {
     const commit = () => {
       const editor = document.querySelector('#prompt-textarea'); const prompt = editor.value;
       setTimeout(() => {
-        const article = document.createElement('article'); article.dataset.testid = 'conversation-turn-' + (++window.proof.commits); article.dataset.messageAuthorRole = 'user';
+        const article = document.createElement('article'); article.dataset.testid = 'conversation-turn-' + (++window.proof.commits); article.dataset.messageAuthorRole = 'user'; article.dataset.messageId = 'attachment-user-' + window.proof.commits;
         const text = document.createElement('p'); text.textContent = prompt; article.append(text);
         for (const file of window.proofFiles) { const tile = document.createElement('div'); tile.dataset.testid = 'attachment-chip'; tile.textContent = file.name; article.append(tile); }
         document.querySelector('#turns').append(article); editor.value = ''; document.querySelector('#chips').replaceChildren();

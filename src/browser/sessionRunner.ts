@@ -426,6 +426,7 @@ async function executeAssembledBrowserSession({
       tabUrl: browserResult.tabUrl,
       conversationId: browserResult.conversationId,
       promptSubmitted: browserResult.promptSubmitted,
+      submittedPromptHash: browserResult.submittedPromptHash,
       researchPlan: browserResult.researchPlan,
       controllerPid: browserResult.controllerPid ?? process.pid,
     },
