@@ -395,6 +395,43 @@ describe("attachSession rendering", () => {
     );
   });
 
+  test("treats a cancelled detached session as terminal without rewriting it as error", async () => {
+    const runningMeta: SessionMetadata = {
+      ...baseMeta,
+      status: "running",
+      mode: "browser",
+      lifecycle: {
+        engine: "browser",
+        execution: "background",
+        attached: false,
+        detached: true,
+        workerPid: process.pid,
+        reattachCommand: "oracle session sess",
+      },
+    } as SessionMetadata;
+    const cancelledMeta: SessionMetadata = {
+      ...runningMeta,
+      status: "cancelled",
+      completedAt: new Date().toISOString(),
+      lifecycle: {
+        ...runningMeta.lifecycle,
+        workerPid: 2_147_483_647,
+      },
+    } as SessionMetadata;
+    readSessionMetadataMock.mockResolvedValueOnce(runningMeta).mockResolvedValue(cancelledMeta);
+    readSessionLogMock.mockResolvedValue("Browser run cancelled.");
+    readSessionRequestMock.mockResolvedValue({ prompt: "Prompt here" });
+
+    await attachSession("sess", {
+      renderMarkdown: false,
+      suppressMetadata: true,
+      propagateFailure: true,
+    });
+
+    expect(process.exitCode).toBeUndefined();
+    expect(sessionStoreMock.updateSession).not.toHaveBeenCalled();
+  });
+
   test("does not reattach while the detached browser worker is alive", async () => {
     const runningMeta: SessionMetadata = {
       ...baseMeta,

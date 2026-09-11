@@ -45,8 +45,19 @@ import {
 import { copyToClipboard } from "../src/cli/clipboard.js";
 import { isGpt6ProAlias } from "../src/cli/browserConfig.js";
 import { buildMarkdownBundle } from "../src/cli/markdownBundle.js";
-import { shouldDetachSession, stopDetachedWorker } from "../src/cli/detach.js";
-import { launchDetachedSession } from "../src/cli/detachedSession.js";
+import {
+  detachedCancellationExitCode,
+  shouldDetachSession,
+  shouldExitAfterTopLevelSigint,
+  stopDetachedWorker,
+} from "../src/cli/detach.js";
+import {
+  clearDetachedSessionCancellation,
+  detachedSessionCancellationPath,
+  launchDetachedSession,
+  requestDetachedSessionCancellation,
+  waitForDetachedSessionCancellation,
+} from "../src/cli/detachedSession.js";
 import { applyHiddenAliases } from "../src/cli/hiddenAliases.js";
 import type { BrowserSessionRunnerDeps } from "../src/browser/sessionRunner.js";
 import { isMediaFile } from "../src/browser/prompt.js";
@@ -80,6 +91,7 @@ import {
   isTraceValueFlag,
 } from "../src/cli/perfTrace.js";
 import { resolveBrowserFollowupReference } from "../src/cli/followup.js";
+import { BrowserRunCancelledError } from "../src/oracle/errors.js";
 
 interface CliOptions extends OptionValues {
   prompt?: string;
@@ -2585,17 +2597,29 @@ async function waitForDetachedStartGate(): Promise<void> {
 }
 
 async function attachToDetachedSession(sessionId: string, workerPid: number): Promise<void> {
+  const cancellationMarker = sessionStore
+    .getPaths(sessionId)
+    .then((paths) => detachedSessionCancellationPath(paths.dir, workerPid));
   let cancelled = false;
+  let cancellationRequest: Promise<void> | undefined;
   const cancelWorker = (): void => {
     cancelled = true;
-    try {
-      stopDetachedWorker(workerPid);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(chalk.red(`Unable to stop detached worker ${workerPid}: ${message}`));
-    }
+    cancellationRequest ??= cancellationMarker
+      .then((markerPath) => requestDetachedSessionCancellation(markerPath))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(
+          chalk.red(`Unable to request cancellation from worker ${workerPid}: ${message}`),
+        );
+        try {
+          stopDetachedWorker(workerPid);
+        } catch (stopError) {
+          const stopMessage = stopError instanceof Error ? stopError.message : String(stopError);
+          console.error(chalk.red(`Unable to stop detached worker ${workerPid}: ${stopMessage}`));
+        }
+      });
   };
-  process.once("SIGINT", cancelWorker);
+  process.on("SIGINT", cancelWorker);
   try {
     const { attachSession } = await import("../src/cli/sessionDisplay.js");
     await attachSession(sessionId, {
@@ -2605,9 +2629,17 @@ async function attachToDetachedSession(sessionId: string, workerPid: number): Pr
     });
   } finally {
     process.off("SIGINT", cancelWorker);
-    if (cancelled) {
-      process.exitCode = 130;
+    await cancellationRequest;
+    const finalStatus = (await sessionStore.readSession(sessionId).catch(() => null))?.status;
+    if (
+      cancellationRequest &&
+      finalStatus &&
+      ["completed", "partial", "cancelled", "error"].includes(finalStatus)
+    ) {
+      // The parent may publish its request after the worker's final cleanup.
+      await clearDetachedSessionCancellation(await cancellationMarker);
     }
+    process.exitCode = detachedCancellationExitCode(cancelled, finalStatus, process.exitCode);
   }
 }
 
@@ -2828,6 +2860,10 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
 async function executeSession(sessionId: string) {
   let metadata: SessionMetadata | null = null;
   let writer: ReturnType<typeof sessionStore.createLogWriter> | null = null;
+  const cancellation = new AbortController();
+  const stopCancellationMonitor = new AbortController();
+  let cancellationMarker: string | undefined;
+  let cancellationMonitor: Promise<void> | undefined;
   try {
     metadata = await sessionStore.readSession(sessionId);
     if (!metadata) {
@@ -2843,6 +2879,18 @@ async function executeSession(sessionId: string) {
     const sessionMode = getSessionMode(metadata);
     const browserConfig = getBrowserConfigFromMetadata(metadata);
     writer = sessionStore.createLogWriter(sessionId);
+    if (sessionMode === "browser") {
+      const paths = await sessionStore.getPaths(sessionId);
+      cancellationMarker = detachedSessionCancellationPath(paths.dir, process.pid);
+      cancellationMonitor = waitForDetachedSessionCancellation({
+        markerPath: cancellationMarker,
+        signal: stopCancellationMonitor.signal,
+      }).then((requested) => {
+        if (requested) {
+          cancellation.abort(new BrowserRunCancelledError("Browser run cancelled by the user."));
+        }
+      });
+    }
     const userConfig = (await loadUserConfig()).config;
     const notifications = deriveNotificationSettingsFromMetadata(
       metadata,
@@ -2860,17 +2908,19 @@ async function executeSession(sessionId: string) {
       write: writer.writeChunk,
       version: VERSION,
       notifications,
+      signal: sessionMode === "browser" ? cancellation.signal : undefined,
     });
   } catch (error) {
-    process.exitCode = 1;
+    const cancelled = error instanceof BrowserRunCancelledError;
+    process.exitCode = cancelled ? 130 : 1;
     const message = error instanceof Error ? error.message : String(error);
     if (!metadata) {
-      console.error(chalk.red(message));
+      if (!cancelled) console.error(chalk.red(message));
       return;
     }
-    writer?.logLine(`ERROR: Detached session worker failed: ${message}`);
+    if (!cancelled) writer?.logLine(`ERROR: Detached session worker failed: ${message}`);
     const latest = await sessionStore.readSession(sessionId).catch(() => null);
-    if (latest && !["completed", "partial", "error"].includes(latest.status)) {
+    if (latest && !["completed", "partial", "error", "cancelled"].includes(latest.status)) {
       await sessionStore.updateSession(sessionId, {
         status: "error",
         completedAt: new Date().toISOString(),
@@ -2883,6 +2933,14 @@ async function executeSession(sessionId: string) {
       });
     }
   } finally {
+    stopCancellationMonitor.abort();
+    await cancellationMonitor?.catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      writer?.logLine(`ERROR: Detached cancellation monitor failed: ${message}`);
+    });
+    if (cancellationMarker) {
+      await clearDetachedSessionCancellation(cancellationMarker).catch(() => undefined);
+    }
     writer?.stream.end();
   }
 }
@@ -3024,7 +3082,7 @@ async function main(): Promise<void> {
     console.log(chalk.yellow("\nCancelled."));
     process.exitCode = 130;
     // Browser/serve modes install their own SIGINT cleanup after this top-level handler.
-    if (process.listenerCount("SIGINT") <= 1) {
+    if (shouldExitAfterTopLevelSigint(process.listenerCount("SIGINT"))) {
       process.exit(130);
     }
   };

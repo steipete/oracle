@@ -28,6 +28,7 @@ export function buildTargetRetirementExpression(
   claimId: string,
   conversationId: string,
   reservationId: string,
+  options: { allowGenerating?: boolean } = {},
 ): string {
   return `(() => {
     let claim;
@@ -36,7 +37,7 @@ export function buildTargetRetirementExpression(
     const id = location.pathname.match(/\\/c\\/([^/]+)/)?.[1];
     if (id !== ${JSON.stringify(conversationId)}) return false;
     const generating = Array.from(document.querySelectorAll(${JSON.stringify(STOP_BUTTON_SELECTORS.join(","))})).some(node => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0);
-    if (generating) return false;
+    if (generating && !${JSON.stringify(options.allowGenerating === true)}) return false;
     claim.retiring = true;
     claim.retirementId = ${JSON.stringify(reservationId)};
     try { sessionStorage.setItem('oracle:target-claim', JSON.stringify(claim)); } catch { return false; }

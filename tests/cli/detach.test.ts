@@ -1,5 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
-import { shouldDetachSession, stopDetachedWorker } from "../../src/cli/detach.js";
+import {
+  detachedCancellationExitCode,
+  shouldDetachSession,
+  shouldExitAfterTopLevelSigint,
+  stopDetachedWorker,
+} from "../../src/cli/detach.js";
 
 describe("shouldDetachSession", () => {
   test("disables detach when env disables it", () => {
@@ -71,6 +76,19 @@ describe("shouldDetachSession", () => {
     },
   );
 
+  test.each([true, false])(
+    "isolates GPT-6 Pro browser runs while wait preference is %s",
+    (waitPreference) => {
+      const result = shouldDetachSession({
+        engine: "browser",
+        model: "gpt-6-pro" as never,
+        waitPreference,
+        disableDetachEnv: false,
+      });
+      expect(result).toBe(true);
+    },
+  );
+
   test("keeps non-pro browser runs inline", () => {
     const result = shouldDetachSession({
       engine: "browser",
@@ -107,5 +125,17 @@ describe("shouldDetachSession", () => {
       disableDetachEnv: false,
     });
     expect(result).toBe(true);
+  });
+
+  test("lets a remaining session SIGINT handler finish cancellation", () => {
+    expect(shouldExitAfterTopLevelSigint(1)).toBe(false);
+    expect(shouldExitAfterTopLevelSigint(0)).toBe(true);
+  });
+
+  test("restores success when completion wins after the parent recorded SIGINT", () => {
+    expect(detachedCancellationExitCode(true, "completed", 130)).toBe(0);
+    expect(detachedCancellationExitCode(true, "partial", 130)).toBe(0);
+    expect(detachedCancellationExitCode(true, "cancelled", 130)).toBe(130);
+    expect(detachedCancellationExitCode(false, "completed", undefined)).toBeUndefined();
   });
 });

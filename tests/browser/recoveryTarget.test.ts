@@ -7,6 +7,8 @@ import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
 import { connectToRemoteChromeTarget } from "../../src/browser/chromeLifecycle.js";
 import {
   matchesOwnedRecoveryTarget,
+  recoveryCaptureFromRuntime,
+  retireCancelledBrowserTarget,
   retireRecoveredBrowserTarget,
 } from "../../src/browser/recoveryTarget.js";
 import { completeOwnedBrowserHarvest } from "../../src/cli/recoveredBrowserHarvest.js";
@@ -69,8 +71,9 @@ beforeEach(async () => {
     },
   }));
   closeTarget = vi.fn(async () => {
-    expect((await sessionStore.readSession(metadata.id))?.status).toBe("completed");
-    expect(await sessionStore.readLog(metadata.id)).toContain(answer);
+    const status = (await sessionStore.readSession(metadata.id))?.status;
+    expect(["completed", "cancelled"]).toContain(status);
+    if (status === "completed") expect(await sessionStore.readLog(metadata.id)).toContain(answer);
     return { success: true };
   });
   createTarget = vi.fn(async () => ({ targetId: "replacement" }));
@@ -96,6 +99,42 @@ afterEach(async () => {
   vi.restoreAllMocks();
   setOracleHomeDirOverrideForTest(null);
   await fs.rm(root, { recursive: true, force: true });
+});
+
+test("derives the exact owned recovery capture from runtime metadata", () => {
+  expect(
+    recoveryCaptureFromRuntime({
+      conversationId: capture.conversationId,
+      ownedRecoveryTarget: capture,
+    }),
+  ).toEqual(capture);
+});
+
+test("retires an owned generating tab after cancellation is persisted", async () => {
+  await sessionStore.updateSession(metadata.id, { status: "cancelled" });
+  evaluate.mockImplementation(async ({ expression }: { expression: string }) => ({
+    result: {
+      value: expression.includes("claim.retiring = true")
+        ? true
+        : { url: "https://chatgpt.com/c/recovery", generating: true },
+    },
+  }));
+
+  await retireCancelledBrowserTarget(metadata.id, capture, () => {});
+
+  expect(closeTarget).toHaveBeenCalledWith({ targetId: capture.targetId });
+});
+
+test("preserves a kept tab when cancelled metadata still contains its ownership claim", async () => {
+  await sessionStore.updateSession(metadata.id, {
+    status: "cancelled",
+    browser: { ...metadata.browser, config: { keepBrowser: true } },
+  });
+
+  await retireCancelledBrowserTarget(metadata.id, capture, () => {});
+
+  expect(connectToRemoteChromeTarget).not.toHaveBeenCalled();
+  expect(closeTarget).not.toHaveBeenCalled();
 });
 const harvested = (patch: Partial<ChatGptTabSummary> = {}): ChatGptTabSummary => ({
   ...capture,

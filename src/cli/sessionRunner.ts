@@ -36,7 +36,6 @@ import {
   deriveNotificationSettingsFromMetadata,
 } from "./notifier.js";
 import { sessionStore } from "../sessionStore.js";
-import { wait } from "../sessionManager.js";
 import { runMultiModelApiSession, type MultiModelRunSummary } from "../oracle/multiModelRunner.js";
 import { MODEL_CONFIGS, DEFAULT_SYSTEM_PROMPT } from "../oracle/config.js";
 import { isKnownModel } from "../oracle/modelResolver.js";
@@ -49,13 +48,18 @@ import { sanitizeOscProgress } from "./oscUtils.js";
 import { readFiles } from "../oracle/files.js";
 import { cwd as getCwd } from "node:process";
 import { resumeBrowserSession } from "../browser/reattach.js";
-import { retireRecoveredBrowserTarget } from "../browser/recoveryTarget.js";
+import {
+  recoveryCaptureFromRuntime,
+  retireCancelledBrowserTarget,
+  retireRecoveredBrowserTarget,
+} from "../browser/recoveryTarget.js";
 import { hasRecoverableChatGptConversation } from "../browser/reattachability.js";
-import { estimateTokenCount } from "../browser/utils.js";
+import { delay, estimateTokenCount } from "../browser/utils.js";
 import type { BrowserLogger, SavedBrowserFile } from "../browser/types.js";
 import { computeFileSha256, sanitizeArtifactFilename } from "../browser/artifacts.js";
 import { formatElapsed } from "../oracle/format.js";
 import { formatBrowserReattachGuidance } from "./reattachGuidance.js";
+import { BrowserRunCancelledError } from "../oracle/errors.js";
 
 const isTty = process.stdout.isTTY;
 const dim = (text: string): string => (isTty ? kleur.dim(text) : text);
@@ -72,6 +76,7 @@ export interface SessionRunParams {
   notifications?: NotificationSettings;
   browserDeps?: BrowserSessionRunnerDeps;
   muteStdout?: boolean;
+  signal?: AbortSignal;
 }
 
 export async function performSessionRun({
@@ -86,6 +91,7 @@ export async function performSessionRun({
   notifications,
   browserDeps,
   muteStdout = false,
+  signal,
 }: SessionRunParams): Promise<void> {
   const writeInline = (chunk: string): boolean => {
     // Keep session logs intact while still echoing inline output to the user.
@@ -104,6 +110,45 @@ export async function performSessionRun({
   const notificationSettings =
     notifications ?? deriveNotificationSettingsFromMetadata(sessionMeta, process.env);
   const modelForStatus = runOptions.model ?? sessionMeta.model;
+  const checkBrowserCancellation = (): void => {
+    if (mode === "browser" && signal?.aborted) throw new BrowserRunCancelledError();
+  };
+  const finalizeBrowserCancellation = async (
+    cancellationError: BrowserRunCancelledError,
+  ): Promise<never> => {
+    const completedAt = new Date().toISOString();
+    log("Browser run cancelled.");
+    if (modelForStatus) {
+      await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
+        status: "cancelled",
+        completedAt,
+        response: { status: "cancelled" },
+        error: undefined,
+        transport: undefined,
+      });
+    }
+    await sessionStore.updateSession(sessionMeta.id, {
+      status: "cancelled",
+      completedAt,
+      errorMessage: undefined,
+      mode,
+      browser: browserConfig
+        ? {
+            ...currentBrowser,
+            config: browserConfig,
+          }
+        : undefined,
+      response: { status: "cancelled" },
+      error: undefined,
+      transport: undefined,
+    });
+    await retireCancelledBrowserTarget(
+      sessionMeta.id,
+      recoveryCaptureFromRuntime(currentBrowser?.runtime),
+      log,
+    );
+    throw cancellationError;
+  };
   try {
     if (mode === "browser") {
       if (!browserConfig) {
@@ -141,19 +186,23 @@ export async function performSessionRun({
           browserConfig,
           cwd,
           log,
+          signal,
         },
         runnerDeps,
       );
+      checkBrowserCancellation();
       const writtenOutputPath = await writeAssistantOutput(
         runOptions.writeOutputPath,
         result.answerText ?? "",
         log,
       );
+      checkBrowserCancellation();
       const outputArtifacts = await copyBrowserOutputArtifacts({
         outputPath: writtenOutputPath,
         savedFiles: runOptions.writeArtifacts ? result.savedFiles : undefined,
         log,
       });
+      checkBrowserCancellation();
       const browserWarnings = [...(result.warnings ?? []), ...outputArtifacts.warnings];
       await sendSessionNotification(
         {
@@ -168,13 +217,16 @@ export async function performSessionRun({
         log,
         result.answerText?.slice(0, 140),
       );
+      checkBrowserCancellation();
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "completed",
           completedAt: new Date().toISOString(),
           usage: result.usage,
         });
+        checkBrowserCancellation();
       }
+      checkBrowserCancellation();
       await sessionStore.updateSession(sessionMeta.id, {
         status: "completed",
         completedAt: new Date().toISOString(),
@@ -527,6 +579,9 @@ export async function performSessionRun({
       error: undefined,
     });
   } catch (error: unknown) {
+    if (error instanceof BrowserRunCancelledError) {
+      return await finalizeBrowserCancellation(error);
+    }
     const message = formatError(error);
     log(`ERROR: ${message}`);
     markErrorLogged(error);
@@ -556,6 +611,11 @@ export async function performSessionRun({
       const runtime = (userError.details as { runtime?: BrowserRuntimeMetadata } | undefined)
         ?.runtime;
       const recoverableRuntime = runtime ?? currentBrowser?.runtime;
+      currentBrowser = {
+        ...currentBrowser,
+        config: browserConfig,
+        runtime: recoverableRuntime,
+      };
       if (
         !hasRecoverableChatGptConversation(recoverableRuntime) &&
         recoverableRuntime?.promptSubmitted !== true
@@ -633,23 +693,32 @@ export async function performSessionRun({
         configuredIntervalMs > 0
           ? configuredIntervalMs
           : Math.max(1_000, Math.min(browserConfig?.timeoutMs ?? 30_000, 30_000));
-      const success = await autoReattachUntilComplete({
-        sessionMeta,
-        runtime: recoverableRuntime ?? undefined,
-        browserConfig: {
-          ...browserConfig,
-          autoReattachIntervalMs: connectionLostIntervalMs,
-          autoReattachDelayMs: browserConfig?.autoReattachDelayMs ?? 0,
-          autoReattachTimeoutMs:
-            browserConfig?.autoReattachTimeoutMs ?? browserConfig?.timeoutMs ?? 120_000,
-        },
-        browserMetadata: currentBrowser,
-        runOptions,
-        modelForStatus,
-        notificationSettings,
-        log,
-        maxAttempts: configuredIntervalMs > 0 ? undefined : 1,
-      });
+      let success: boolean;
+      try {
+        success = await autoReattachUntilComplete({
+          sessionMeta,
+          runtime: recoverableRuntime ?? undefined,
+          browserConfig: {
+            ...browserConfig,
+            autoReattachIntervalMs: connectionLostIntervalMs,
+            autoReattachDelayMs: browserConfig?.autoReattachDelayMs ?? 0,
+            autoReattachTimeoutMs:
+              browserConfig?.autoReattachTimeoutMs ?? browserConfig?.timeoutMs ?? 120_000,
+          },
+          browserMetadata: currentBrowser,
+          runOptions,
+          modelForStatus,
+          notificationSettings,
+          log,
+          maxAttempts: configuredIntervalMs > 0 ? undefined : 1,
+          signal,
+        });
+      } catch (recoveryError) {
+        if (signal?.aborted || recoveryError instanceof BrowserRunCancelledError) {
+          return await finalizeBrowserCancellation(new BrowserRunCancelledError());
+        }
+        throw recoveryError;
+      }
       if (success) {
         return;
       }
@@ -670,6 +739,11 @@ export async function performSessionRun({
       };
       const autoReattachIntervalMs = browserConfig?.autoReattachIntervalMs ?? 0;
       const autoRuntime = runtime ?? currentBrowser?.runtime;
+      currentBrowser = {
+        ...currentBrowser,
+        config: browserConfig,
+        runtime: autoRuntime,
+      };
       const willAutoReattach = autoReattachIntervalMs > 0 && Boolean(autoRuntime);
       if (willAutoReattach) {
         if (modelForStatus) {
@@ -693,16 +767,25 @@ export async function performSessionRun({
           response: timeoutResponse,
           error: timeoutError,
         });
-        const success = await autoReattachUntilComplete({
-          sessionMeta,
-          runtime: autoRuntime,
-          browserConfig,
-          browserMetadata: currentBrowser,
-          runOptions,
-          modelForStatus,
-          notificationSettings,
-          log,
-        });
+        let success: boolean;
+        try {
+          success = await autoReattachUntilComplete({
+            sessionMeta,
+            runtime: autoRuntime,
+            browserConfig,
+            browserMetadata: currentBrowser,
+            runOptions,
+            modelForStatus,
+            notificationSettings,
+            log,
+            signal,
+          });
+        } catch (recoveryError) {
+          if (signal?.aborted || recoveryError instanceof BrowserRunCancelledError) {
+            return await finalizeBrowserCancellation(new BrowserRunCancelledError());
+          }
+          throw recoveryError;
+        }
         if (success) {
           return;
         }
@@ -1255,6 +1338,7 @@ async function autoReattachUntilComplete({
   notificationSettings,
   log,
   maxAttempts,
+  signal,
 }: {
   sessionMeta: SessionMetadata;
   runtime?: BrowserRuntimeMetadata;
@@ -1265,6 +1349,7 @@ async function autoReattachUntilComplete({
   notificationSettings: NotificationSettings;
   log: (message?: string) => void;
   maxAttempts?: number;
+  signal?: AbortSignal;
 }): Promise<boolean> {
   if (!runtime || !browserConfig) {
     log(dim("Auto-reattach disabled: missing runtime or browser config."));
@@ -1281,6 +1366,9 @@ async function autoReattachUntilComplete({
     120_000;
   const maxTotalMs = 2 * 60 * 60 * 1000; // 2h hard cap; avoid infinite polling by default.
   const maxDeadline = Date.now() + maxTotalMs;
+  const checkCancellation = (): void => {
+    if (signal?.aborted) throw new BrowserRunCancelledError();
+  };
   const attemptLimit =
     typeof maxAttempts === "number" && maxAttempts > 0
       ? Math.floor(maxAttempts)
@@ -1288,7 +1376,7 @@ async function autoReattachUntilComplete({
 
   if (delayMs > 0) {
     log(dim(`Auto-reattach starting in ${formatElapsed(delayMs)}...`));
-    await wait(delayMs);
+    await delay(delayMs, signal);
   }
   if (Number.isFinite(attemptLimit)) {
     log(dim(`Auto-reattach will try up to ${attemptLimit} attempt(s).`));
@@ -1307,6 +1395,7 @@ async function autoReattachUntilComplete({
 
   let attempt = 0;
   for (;;) {
+    checkCancellation();
     const remainingBudgetMs = maxDeadline - Date.now();
     if (remainingBudgetMs <= 0) {
       log(
@@ -1324,9 +1413,14 @@ async function autoReattachUntilComplete({
         ...browserConfig,
         timeoutMs,
       };
-      const result = await resumeBrowserSession(runtime, reattachConfig, logger, {
-        promptPreview: sessionMeta.promptPreview,
-      });
+      const result = await awaitBrowserCancellation(
+        resumeBrowserSession(runtime, reattachConfig, logger, {
+          promptPreview: sessionMeta.promptPreview,
+          signal,
+        }),
+        signal,
+      );
+      checkCancellation();
       captureSucceeded = true;
       const answerText = result.answerMarkdown || result.answerText || "";
       const outputTokens = estimateTokenCount(answerText);
@@ -1339,12 +1433,15 @@ async function autoReattachUntilComplete({
         existingArtifacts: sessionMeta.artifacts,
         logger,
       });
+      checkCancellation();
       const paths = await sessionStore.getPaths(sessionMeta.id);
+      checkCancellation();
       await fs.appendFile(
         paths.log,
         `[auto-reattach] captured assistant response on attempt ${attempt}\nAnswer:\n${answerText}\n`,
         "utf8",
       );
+      checkCancellation();
       if (modelForStatus) {
         await sessionStore.updateModelRun(sessionMeta.id, modelForStatus, {
           status: "completed",
@@ -1356,8 +1453,10 @@ async function autoReattachUntilComplete({
             totalTokens: outputTokens,
           },
         });
+        checkCancellation();
       }
       await writeAssistantOutput(runOptions.writeOutputPath, answerText, log);
+      checkCancellation();
       await sendSessionNotification(
         {
           sessionId: sessionMeta.id,
@@ -1374,6 +1473,7 @@ async function autoReattachUntilComplete({
         log,
         answerText.slice(0, 140),
       );
+      checkCancellation();
       await sessionStore.updateSession(sessionMeta.id, {
         status: "completed",
         completedAt: new Date().toISOString(),
@@ -1398,6 +1498,9 @@ async function autoReattachUntilComplete({
       await retireRecoveredBrowserTarget(sessionMeta.id, result.captureTarget, logger);
       return true;
     } catch (error) {
+      if (signal?.aborted || error instanceof BrowserRunCancelledError) {
+        throw new BrowserRunCancelledError();
+      }
       if (captureSucceeded) {
         const message = formatError(error);
         if (modelForStatus) {
@@ -1439,7 +1542,22 @@ async function autoReattachUntilComplete({
       );
       return false;
     }
-    await wait(Math.min(intervalMs, remainingAfterAttemptMs));
+    await delay(Math.min(intervalMs, remainingAfterAttemptMs), signal);
+  }
+}
+
+async function awaitBrowserCancellation<T>(task: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return task;
+  if (signal.aborted) throw new BrowserRunCancelledError();
+  let abort: (() => void) | undefined;
+  const cancelled = new Promise<never>((_, reject) => {
+    abort = () => reject(new BrowserRunCancelledError());
+    signal.addEventListener("abort", abort, { once: true });
+  });
+  try {
+    return await Promise.race([task, cancelled]);
+  } finally {
+    if (abort) signal.removeEventListener("abort", abort);
   }
 }
 

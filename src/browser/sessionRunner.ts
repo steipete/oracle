@@ -18,7 +18,7 @@ import {
   cleanupGeneratedBrowserBundles,
   materializeBrowserFallback,
 } from "./prompt.js";
-import { BrowserAutomationError } from "../oracle/errors.js";
+import { BrowserAutomationError, BrowserRunCancelledError } from "../oracle/errors.js";
 import type { BrowserArchiveResult, BrowserLogger, SavedBrowserFile } from "./types.js";
 import {
   appendArtifacts,
@@ -55,6 +55,7 @@ interface RunBrowserSessionArgs {
   browserConfig: BrowserSessionConfig;
   cwd: string;
   log: (message?: string) => void;
+  signal?: AbortSignal;
 }
 
 export interface BrowserSessionRunnerDeps {
@@ -140,25 +141,29 @@ function buildBrowserRunWarnings(args: {
 }
 
 export async function runBrowserSessionExecution(
-  { runOptions, browserConfig, cwd, log }: RunBrowserSessionArgs,
+  { runOptions, browserConfig, cwd, log, signal }: RunBrowserSessionArgs,
   deps: BrowserSessionRunnerDeps = {},
 ): Promise<BrowserExecutionResult> {
   const assemblePrompt = deps.assemblePrompt ?? assembleBrowserPrompt;
   const executeBrowser = deps.executeBrowser ?? runBrowserMode;
   const persistRuntimeHint = deps.persistRuntimeHint ?? (() => {});
   const inputTimeoutMs = browserConfig.inputTimeoutMs ?? DEFAULT_BROWSER_CONFIG.inputTimeoutMs;
-  let preparationTimedOut = false;
+  let preparationAbandoned = false;
   let preparationTimeout: ReturnType<typeof setTimeout> | undefined;
+  let removePreparationAbortListener: (() => void) | undefined;
   let promptArtifacts: Awaited<ReturnType<typeof assembleBrowserPrompt>>;
+  if (signal?.aborted) {
+    throw new BrowserRunCancelledError();
+  }
   try {
     promptArtifacts = await Promise.race([
       assemblePrompt(runOptions, { cwd }).then(async (artifacts) => {
-        if (preparationTimedOut) await cleanupGeneratedBrowserBundles(artifacts);
+        if (preparationAbandoned) await cleanupGeneratedBrowserBundles(artifacts);
         return artifacts;
       }),
       new Promise<never>((_, reject) => {
         preparationTimeout = setTimeout(() => {
-          preparationTimedOut = true;
+          preparationAbandoned = true;
           reject(
             new BrowserAutomationError(
               `Browser prompt preparation timed out after ${inputTimeoutMs}ms; increase --browser-input-timeout if local files need more time.`,
@@ -171,11 +176,25 @@ export async function runBrowserSessionExecution(
           );
         }, inputTimeoutMs);
       }),
+      new Promise<never>((_, reject) => {
+        if (!signal) return;
+        const abort = () => {
+          preparationAbandoned = true;
+          reject(new BrowserRunCancelledError());
+        };
+        if (signal.aborted) {
+          abort();
+          return;
+        }
+        signal.addEventListener("abort", abort, { once: true });
+        removePreparationAbortListener = () => signal.removeEventListener("abort", abort);
+      }),
     ]);
   } finally {
     if (preparationTimeout) {
       clearTimeout(preparationTimeout);
     }
+    removePreparationAbortListener?.();
   }
   try {
     return await executeAssembledBrowserSession({
@@ -185,6 +204,7 @@ export async function runBrowserSessionExecution(
       promptArtifacts,
       executeBrowser,
       persistRuntimeHint,
+      signal,
     });
   } finally {
     await cleanupGeneratedBrowserBundles(promptArtifacts);
@@ -198,6 +218,7 @@ async function executeAssembledBrowserSession({
   promptArtifacts,
   executeBrowser,
   persistRuntimeHint,
+  signal,
 }: {
   runOptions: RunOracleOptions;
   browserConfig: BrowserSessionConfig;
@@ -205,6 +226,7 @@ async function executeAssembledBrowserSession({
   promptArtifacts: Awaited<ReturnType<typeof assembleBrowserPrompt>>;
   executeBrowser: NonNullable<BrowserSessionRunnerDeps["executeBrowser"]>;
   persistRuntimeHint: NonNullable<BrowserSessionRunnerDeps["persistRuntimeHint"]>;
+  signal?: AbortSignal;
 }): Promise<BrowserExecutionResult> {
   if (runOptions.verbose) {
     log(
@@ -298,6 +320,8 @@ async function executeAssembledBrowserSession({
       generateImagePath: runOptions.generateImage,
       outputPath: runOptions.outputPath,
       followUpPrompts: runOptions.browserFollowUps,
+      signal,
+      closeOwnedTabOnCancel: !executionBrowserConfig.keepBrowser,
       runtimeHintCb: async (runtime, modelSelection) => {
         const runtimeWithController = {
           ...runtime,
@@ -311,7 +335,7 @@ async function executeAssembledBrowserSession({
       },
     });
   } catch (error) {
-    if (error instanceof BrowserAutomationError) {
+    if (error instanceof BrowserAutomationError || error instanceof BrowserRunCancelledError) {
       throw error;
     }
     const message = error instanceof Error ? error.message : "Browser automation failed.";
