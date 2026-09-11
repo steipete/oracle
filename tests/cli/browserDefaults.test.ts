@@ -181,6 +181,56 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserThinkingTime).toBe("extended");
   });
 
+  test("keeps the GPT-6 Pro effort default when the model comes from CLI", async () => {
+    const options: BrowserDefaultsOptions = { model: "gpt-6-pro" };
+    const config: UserConfig = {
+      browser: {
+        thinkingTime: "extended",
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (key) => (key === "model" ? "cli" : "default"));
+
+    expect(options.browserThinkingTime).toBeUndefined();
+    await expect(
+      buildBrowserConfig({
+        model: options.model!,
+        browserThinkingTime: options.browserThinkingTime,
+      }),
+    ).resolves.toMatchObject({ thinkingTime: "pro" });
+  });
+
+  test("keeps an explicit CLI effort for GPT-6 Pro", () => {
+    const options: BrowserDefaultsOptions = {
+      model: "gpt-6-pro",
+      browserThinkingTime: "extended",
+    };
+    const config: UserConfig = {
+      browser: {
+        thinkingTime: "standard",
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (key) =>
+      key === "model" || key === "browserThinkingTime" ? "cli" : "default",
+    );
+
+    expect(options.browserThinkingTime).toBe("extended");
+  });
+
+  test("preserves configured effort when GPT-6 Pro does not come from CLI", () => {
+    const options: BrowserDefaultsOptions = { model: "gpt-6-pro" };
+    const config: UserConfig = {
+      browser: {
+        thinkingTime: "extended",
+      },
+    };
+
+    applyBrowserDefaultsFromConfig(options, config, (_key) => "default");
+
+    expect(options.browserThinkingTime).toBe("extended");
+  });
+
   test("applies browser research mode when CLI flag is untouched", () => {
     const options: BrowserDefaultsOptions = {};
     const config: UserConfig = {
