@@ -99,6 +99,8 @@ describe("remote browser service", () => {
     "streams logs and returns results via client executor",
     async () => {
       const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-remote-test-"));
+      setOracleHomeDirOverrideForTest(tmpDir);
+      const clientImagePath = path.join(tmpDir, "client-output.png");
       const attachmentPath = path.join(tmpDir, "note.txt");
       const fallbackAttachmentPath = path.join(tmpDir, "fallback.txt");
       await writeFile(attachmentPath, "hello world", "utf8");
@@ -118,7 +120,7 @@ describe("remote browser service", () => {
             expect(options.generateImagePath).toBe(
               path.join(resolveSessionArtifactsDir(options.sessionId!), "generated.png"),
             );
-            expect(options.generateImagePath).not.toBe("/untrusted/client/generated.png");
+            expect(options.generateImagePath).not.toBe(clientImagePath);
             expect(options.followUpPrompts).toEqual(["follow up"]);
             expect(options.attachments).toHaveLength(1);
             const attachment = options.attachments?.[0];
@@ -136,7 +138,16 @@ describe("remote browser service", () => {
             const fallbackStored = await readFile(fallbackAttachment.path, "utf8");
             expect(fallbackStored).toBe("fallback world");
             options.log?.("uploading attachment");
+            const imagePath = options.generateImagePath!;
+            await mkdir(path.dirname(imagePath), { recursive: true });
+            await writeFile(
+              imagePath,
+              Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]),
+            );
             const result: BrowserRunResult = {
+              savedImages: [
+                { kind: "image", path: imagePath, url: "browser-download", mimeType: "image/png" },
+              ],
               answerText: "hi",
               answerMarkdown: "hi",
               tookMs: 1000,
@@ -164,7 +175,7 @@ describe("remote browser service", () => {
         },
         config: {},
         sessionId: "remote-session-id",
-        generateImagePath: "/untrusted/client/generated.png",
+        generateImagePath: clientImagePath,
         followUpPrompts: ["follow up"],
         log: (message?: string) => {
           if (message) clientLogs.push(message);
@@ -222,6 +233,7 @@ describe("remote browser service", () => {
 
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
+      setOracleHomeDirOverrideForTest(null);
     },
   );
 
@@ -498,6 +510,8 @@ describe("remote browser service", () => {
                   sourceUrl: "https://chatgpt.com/backend-api/estuary/content?id=file_image",
                   url: "https://chatgpt.com/backend-api/estuary/content?id=file_image",
                   fileId: "file_image",
+                  width: 1,
+                  height: 1,
                 },
                 {
                   kind: "image",
@@ -601,6 +615,9 @@ describe("remote browser service", () => {
       expect(result.savedImages?.[0]).toMatchObject({
         kind: "image",
         path: clientImageOutputPath,
+        fileId: "file_image",
+        width: 1,
+        height: 1,
         mimeType: "image/png",
         sourceUrl: "bridge-artifact",
         transfer: { status: "completed", bytes: png.length },
@@ -624,6 +641,46 @@ describe("remote browser service", () => {
       await server.close();
       await rm(tmpDir, { recursive: true, force: true });
       setOracleHomeDirOverrideForTest(null);
+    },
+  );
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST).each(["missing", "checksum", "truncated", "registration"])(
+    "rejects explicit image output on %s transfer failure",
+    async (failure) => {
+      const tmpDir = await mkdtemp(path.join(os.tmpdir(), "oracle-image-transfer-failed-"));
+      setOracleHomeDirOverrideForTest(tmpDir);
+      const payload = Buffer.from("image payload");
+      const bridge = await createFakeArtifactBridge({
+        descriptor: createArtifactDescriptor(payload, {
+          kind: "image",
+          filename: "generated.png",
+          mimeType: "image/png",
+          ...(failure === "checksum" ? { sha256: "0".repeat(64) } : {}),
+        }),
+        payload: failure === "truncated" ? payload.subarray(0, 2) : payload,
+        artifactStatus: failure === "missing" ? 404 : undefined,
+        omitDescriptor: failure === "registration",
+      });
+      try {
+        await expect(
+          createRemoteBrowserExecutor({ host: `127.0.0.1:${bridge.port}`, token: "secret" })({
+            prompt: "Generate a test image",
+            config: {},
+            sessionId: "failed-image",
+            generateImagePath: path.join(tmpDir, "requested.png"),
+          }),
+        ).rejects.toThrow("Remote image output was not fully delivered");
+        await expect(stat(path.join(tmpDir, "requested.png"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect((await readdir(tmpDir)).filter((name) => name.startsWith("requested.png"))).toEqual(
+          [],
+        );
+      } finally {
+        await bridge.close();
+        await rm(tmpDir, { recursive: true, force: true });
+        setOracleHomeDirOverrideForTest(null);
+      }
     },
   );
 
@@ -829,9 +886,13 @@ function createArtifactDescriptor(
 async function createFakeArtifactBridge({
   descriptor,
   payload,
+  artifactStatus = 200,
+  omitDescriptor = false,
 }: {
   descriptor: RemoteArtifactDescriptor;
   payload: Buffer;
+  artifactStatus?: number;
+  omitDescriptor?: boolean;
 }): Promise<{
   port: number;
   artifactRequests(): number;
@@ -839,12 +900,28 @@ async function createFakeArtifactBridge({
 }> {
   let artifactRequestCount = 0;
   const server = http.createServer((req, res) => {
+    if (req.url === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          capabilities: {
+            artifactTransfer: true,
+            artifactProtocolVersion: 1,
+            generatedImages: true,
+            maxArtifactBytes: 512 * 1024 * 1024,
+          },
+        }),
+      );
+      return;
+    }
     if (req.method === "POST" && req.url === "/runs") {
       req.resume();
       res.writeHead(200, { "Content-Type": "application/x-ndjson" });
-      res.write(
-        `${JSON.stringify({ type: "artifact-ready", runId: descriptor.runId, artifact: descriptor })}\n`,
-      );
+      if (!omitDescriptor)
+        res.write(
+          `${JSON.stringify({ type: "artifact-ready", runId: descriptor.runId, artifact: descriptor })}\n`,
+        );
       res.end(
         `${JSON.stringify({
           type: "result",
@@ -865,8 +942,8 @@ async function createFakeArtifactBridge({
         `/runs/${encodeURIComponent(descriptor.runId)}/artifacts/${encodeURIComponent(descriptor.artifactId)}`
     ) {
       artifactRequestCount += 1;
-      res.writeHead(200, {
-        "Content-Type": "application/zip",
+      res.writeHead(artifactStatus, {
+        "Content-Type": descriptor.mimeType ?? "application/zip",
         "X-Oracle-Artifact-Sha256": descriptor.sha256,
       });
       res.write(payload);

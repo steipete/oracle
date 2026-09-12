@@ -18,6 +18,7 @@ import {
 } from "../browser/artifacts.js";
 import {
   MAX_REMOTE_ARTIFACT_BYTES,
+  pickRemoteImageMetadata,
   type RemoteArtifactDescriptor,
   type RemoteRunPayload,
   type RemoteRunEvent,
@@ -180,6 +181,23 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
               if (!resolved) {
                 fail(new Error("Remote browser run completed without a result."));
                 return;
+              }
+              if (preferredImagePath) {
+                const images = transferredArtifacts.filter((artifact) => artifact.kind === "image");
+                if (
+                  images.length === 0 ||
+                  images.length !== preferredImageIndex ||
+                  resolved.warnings?.some(
+                    (warning) => warning.code === "remote-image-registration-failed",
+                  )
+                ) {
+                  fail(
+                    new Error(
+                      "Remote image output was not fully delivered. Inspect the bridge host's generated images and the artifact transfer diagnostics before retrying.",
+                    ),
+                  );
+                  return;
+                }
               }
               settled = true;
               callerSignal?.removeEventListener("abort", onCallerAbort);
@@ -435,6 +453,7 @@ async function transferRemoteArtifact(params: {
     return {
       ...baseArtifact,
       kind: "image",
+      ...pickRemoteImageMetadata(params.descriptor.image),
     };
   }
   return {

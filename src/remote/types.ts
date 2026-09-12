@@ -54,8 +54,29 @@ export interface RemoteArtifactDescriptor {
   byteSize: number;
   sha256: string;
   validation?: SessionArtifactValidation;
+  image?: { width?: number; height?: number; fileId?: string };
   sourceUrlKind: "sandbox" | "chatgpt-file-endpoint" | "browser-download";
   transferStatus: "ready" | "streaming" | "completed" | "failed" | "skipped";
+}
+
+export function pickRemoteImageMetadata(
+  image: {
+    width?: unknown;
+    height?: unknown;
+    fileId?: unknown;
+  } = {},
+): NonNullable<RemoteArtifactDescriptor["image"]> {
+  return {
+    ...(Number.isSafeInteger(image.width) && Number(image.width) > 0
+      ? { width: Number(image.width) }
+      : {}),
+    ...(Number.isSafeInteger(image.height) && Number(image.height) > 0
+      ? { height: Number(image.height) }
+      : {}),
+    ...(typeof image.fileId === "string" && /^file[-_][a-z0-9_-]{1,200}$/i.test(image.fileId)
+      ? { fileId: image.fileId }
+      : {}),
+  };
 }
 
 export type RemoteRunEvent =

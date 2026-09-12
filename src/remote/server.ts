@@ -24,7 +24,7 @@ import type {
   RemoteRunPayload,
   RemoteRunEvent,
 } from "./types.js";
-import { MAX_REMOTE_ARTIFACT_BYTES } from "./types.js";
+import { MAX_REMOTE_ARTIFACT_BYTES, pickRemoteImageMetadata } from "./types.js";
 import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
@@ -816,7 +816,10 @@ async function registerRemoteArtifacts(params: {
           `[serve] Skipping remote artifact descriptor: ${error instanceof Error ? error.message : String(error)}`,
         );
         warnings.push({
-          code: "remote-artifact-registration-failed",
+          code:
+            artifact.kind === "image"
+              ? "remote-image-registration-failed"
+              : "remote-artifact-registration-failed",
           severity: "warning",
           message:
             `Oracle captured the browser text response, but the bridge host could not prepare ${filename} for transfer. ` +
@@ -871,6 +874,13 @@ async function buildRemoteArtifactRegistration(
       artifactId: randomUUID(),
       runId,
       kind: artifact.kind === "image" ? "image" : "file",
+      ...(artifact.kind === "image"
+        ? {
+            image: pickRemoteImageMetadata(
+              artifact as import("../browser/types.js").SavedBrowserImage,
+            ),
+          }
+        : {}),
       filename,
       mimeType,
       byteSize: fileStat.size,
