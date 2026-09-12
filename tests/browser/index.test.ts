@@ -8,7 +8,6 @@ import {
   formatBrowserTurnTranscript,
   isLocalChromeHostForTest,
   maybeArchiveCompletedConversationForTest,
-  redactBrowserConfigForDebugLogForTest,
   resolveRemoteTabLeaseProfileDirForTest,
   runBrowserMode,
   runSubmissionWithRecoveryForTest,
@@ -16,6 +15,7 @@ import {
   shouldPreserveBrowserOnErrorForTest,
 } from "../../src/browser/index.js";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
+import { redactBrowserConfigForDebugLog } from "../../src/browser/configLogging.js";
 import { BrowserAutomationError } from "../../src/oracle/errors.js";
 
 describe("generated image response failures", () => {
@@ -928,9 +928,9 @@ describe("image-only assistant turn detection", () => {
   });
 });
 
-describe("redactBrowserConfigForDebugLogForTest", () => {
+describe("redactBrowserConfigForDebugLog", () => {
   test("redacts inline cookie values while preserving count context", () => {
-    const redacted = redactBrowserConfigForDebugLogForTest({
+    const redacted = redactBrowserConfigForDebugLog({
       inlineCookies: [
         { name: "__Secure-next-auth.session-token", value: "secret-token" },
         { name: "_account", value: "secret-account" },
@@ -950,7 +950,7 @@ describe("redactBrowserConfigForDebugLogForTest", () => {
   });
 
   test("leaves missing inline cookies unchanged", () => {
-    expect(redactBrowserConfigForDebugLogForTest({ debug: true })).toEqual({ debug: true });
+    expect(redactBrowserConfigForDebugLog({ debug: true })).toEqual({ debug: true });
   });
 });
 
