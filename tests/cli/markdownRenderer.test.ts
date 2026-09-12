@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const codeToTokens = vi.fn();
 const createHighlighter = vi.fn().mockResolvedValue({
@@ -7,7 +7,6 @@ const createHighlighter = vi.fn().mockResolvedValue({
 });
 
 vi.mock("shiki", () => ({
-  // biome-ignore lint/style/useNamingConvention: mock flag required for ESM interop
   __esModule: true,
   createHighlighter,
   bundledThemes: { "github-dark": {} },
@@ -21,15 +20,24 @@ vi.mock("shiki", () => ({
   },
 }));
 
-let _originalIsTTY: unknown;
-let _originalColumns: unknown;
+const stdoutProperties = ["isTTY", "columns"] as const;
+const originalDescriptors = Object.getOwnPropertyDescriptors(process.stdout);
 
 beforeEach(() => {
-  _originalIsTTY = process.stdout.isTTY;
-  _originalColumns = process.stdout.columns;
   Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
   Object.defineProperty(process.stdout, "columns", { value: 80, configurable: true });
   codeToTokens.mockReset();
+});
+
+afterEach(() => {
+  for (const property of stdoutProperties) {
+    const descriptor = originalDescriptors[property];
+    if (descriptor) {
+      Object.defineProperty(process.stdout, property, descriptor);
+    } else {
+      delete process.stdout[property];
+    }
+  }
 });
 
 describe("renderMarkdownAnsi", () => {

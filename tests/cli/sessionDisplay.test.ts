@@ -41,7 +41,6 @@ vi.mock("../../src/cli/markdownRenderer.ts", () => {
   };
 });
 
-const _sessionManagerMock = await import("../../src/sessionManager.ts");
 const markdownMock = await import("../../src/cli/markdownRenderer.ts");
 const renderMarkdownMock = markdownMock.renderMarkdownAnsi as unknown as { mockClear?: () => void };
 const readSessionMetadataMock = sessionStoreMock.readSession as unknown as ReturnType<typeof vi.fn>;
