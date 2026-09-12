@@ -2,11 +2,9 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const cdp = vi.hoisted(() => Object.assign(vi.fn(), { List: vi.fn(), New: vi.fn() }));
 vi.mock("chrome-remote-interface", () => ({ default: cdp }));
-import {
-  inspectChatGptTab,
-  listChatGptTargets,
-  openChatGptTarget,
-} from "../../src/browser/liveTabs.js";
+let inspectChatGptTab: (typeof import("../../src/browser/liveTabs.js"))["inspectChatGptTab"];
+let listChatGptTargets: (typeof import("../../src/browser/liveTabs.js"))["listChatGptTargets"];
+let openChatGptTarget: (typeof import("../../src/browser/liveTabs.js"))["openChatGptTarget"];
 
 const endpoint = {
   host: "127.0.0.1",
@@ -46,7 +44,12 @@ function browserClient() {
 }
 
 describe("live tab transport", () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    ({ inspectChatGptTab, listChatGptTargets, openChatGptTarget } =
+      await import("../../src/browser/liveTabs.js"));
+  });
 
   test("uses the saved browser socket to discover targets when HTTP discovery is unavailable", async () => {
     cdp.List.mockRejectedValue(new Error());
@@ -62,7 +65,7 @@ describe("live tab transport", () => {
     ]);
     expect(cdp).toHaveBeenCalledWith({ target: endpoint.browserWSEndpoint, local: true });
     expect(cdp.List).not.toHaveBeenCalled();
-    expect(browser.close).toHaveBeenCalledOnce();
+    expect(browser.Target.getTargets).toHaveBeenCalledOnce();
   });
 
   test("reports endpoint and recovery guidance for an empty discovery error", async () => {
@@ -72,7 +75,7 @@ describe("live tab transport", () => {
     );
   });
 
-  test("inspects only the named browser target and closes the socket without closing the tab", async () => {
+  test("inspects only the named browser target and detaches without closing the tab", async () => {
     const browser = browserClient();
     cdp.mockResolvedValue(browser);
     await inspectChatGptTab({
@@ -85,7 +88,7 @@ describe("live tab transport", () => {
     });
     expect(browser.Runtime.enable).toHaveBeenCalledWith("session");
     expect(browser.Target.detachFromTarget).toHaveBeenCalledWith({ sessionId: "session" });
-    expect(browser.close).toHaveBeenCalledOnce();
+    expect(browser.Target.detachFromTarget).toHaveBeenCalledOnce();
     expect(browser.Target.closeTarget).not.toHaveBeenCalled();
   });
 
@@ -119,7 +122,7 @@ describe("live tab transport", () => {
       url: "https://chatgpt.com/c/saved",
     });
     expect(cdp.New).not.toHaveBeenCalled();
-    expect(browser.close).toHaveBeenCalledOnce();
+    expect(browser.Target.detachFromTarget).toHaveBeenCalledWith({ sessionId: "session" });
     expect(browser.Target.closeTarget).not.toHaveBeenCalled();
   });
 });
