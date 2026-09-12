@@ -68,6 +68,8 @@ Notes:
 - Pass `--no-gemini-fallback` to fail instead when the requested web model is unavailable.
 - If Google's session response exceeds Node's header limit, start Oracle with `NODE_OPTIONS=--max-http-header-size=65536` (append this to existing Node options). Oracle reports this condition explicitly and retains the process's configured proxy/TLS transport.
 - This path runs fully in Node/TypeScript (no Python/venv dependency).
+- Local MCP consultations and detached workers use the same Gemini executor as the CLI and preserve the session's saved Gemini options. The explicit model key takes precedence over ChatGPT picker labels.
+- Oracle's remote browser service supports ChatGPT only. Gemini requests with `--remote-host` are rejected before submission; run Gemini locally instead.
 - `--browser-model-strategy` only affects ChatGPT automation; Gemini web always uses the explicit Gemini model ID.
 - `gemini-3-deep-think` is browser-only for now. `--engine api` rejects it instead of silently falling back to regular Gemini Pro.
 - Oracle intentionally does not expose generic `low` / `medium` / `high` Gemini aliases. Explicit IDs keep model choice, billing, and thinking-effort configuration distinct.

@@ -1442,6 +1442,11 @@ function buildRunOptions(
     browserBundleFiles: overrides.browserBundleFiles ?? options.browserBundleFiles ?? false,
     browserBundleFormat: overrides.browserBundleFormat ?? options.browserBundleFormat ?? "auto",
     generateImage: overrides.generateImage ?? options.generateImage,
+    youtube: overrides.youtube ?? options.youtube,
+    editImage: overrides.editImage ?? options.editImage,
+    aspectRatio: overrides.aspectRatio ?? options.aspect,
+    geminiShowThoughts: overrides.geminiShowThoughts ?? options.geminiShowThoughts,
+    geminiAllowModelFallback: overrides.geminiAllowModelFallback ?? options.geminiFallback,
     outputPath: overrides.outputPath ?? options.output,
     browserFollowUps: overrides.browserFollowUps ?? options.browserFollowUp ?? [],
     background: overrides.background ?? undefined,
@@ -1746,6 +1751,11 @@ function buildRunOptionsFromMetadata(metadata: SessionMetadata): RunOracleOption
     browserBundleFiles: stored.browserBundleFiles,
     browserBundleFormat: stored.browserBundleFormat,
     generateImage: stored.generateImage,
+    youtube: stored.youtube,
+    editImage: stored.editImage,
+    aspectRatio: stored.aspectRatio,
+    geminiShowThoughts: stored.geminiShowThoughts,
+    geminiAllowModelFallback: stored.geminiAllowModelFallback,
     outputPath: stored.outputPath,
     browserFollowUps: stored.browserFollowUps,
     background: stored.background,
@@ -2339,24 +2349,11 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   } else if (browserConfig && activeModel.startsWith("gemini")) {
-    const { createGeminiWebExecutor } = await import("../src/gemini-web/index.js");
-    browserDeps = {
-      executeBrowser: createGeminiWebExecutor({
-        youtube: options.youtube,
-        generateImage: options.generateImage,
-        editImage: options.editImage,
-        outputPath: options.output,
-        aspectRatio: options.aspect,
-        showThoughts: options.geminiShowThoughts,
-        allowModelFallback: options.geminiFallback,
-      }),
-    };
     console.log(chalk.dim("Using Gemini web client for browser automation"));
     if (browserConfig.modelStrategy && browserConfig.modelStrategy !== "select") {
       console.log(chalk.dim("Browser model strategy is ignored for Gemini web runs."));
     }
   }
-  const remoteExecutionActive = Boolean(browserDeps);
 
   if (options.dryRun) {
     const baseRunOptions = buildRunOptions(resolvedOptions, {
@@ -2421,13 +2418,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       followupModel: resolvedOptions.followupModel,
       browserResumeConversationUrl: resolvedOptions.browserResumeConversationUrl,
       waitPreference,
-      youtube: options.youtube,
-      generateImage: options.generateImage,
-      editImage: options.editImage,
-      outputPath: options.output,
-      aspectRatio: options.aspect,
-      geminiShowThoughts: options.geminiShowThoughts,
-      geminiAllowModelFallback: options.geminiFallback,
     },
     process.cwd(),
     notifications,
@@ -2438,15 +2428,16 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     effectiveModelId: resolvedOptions.effectiveModelId ?? effectiveModelId,
   };
   const disableDetachEnv = process.env.ORACLE_NO_DETACH === "1";
-  const detachAllowed = remoteExecutionActive
-    ? false
-    : shouldDetachSession({
-        engine,
-        model: activeModel,
-        reasoningMode: resolvedOptions.reasoningMode,
-        waitPreference,
-        disableDetachEnv,
-      });
+  const detachAllowed =
+    browserConfig && (remoteHost || activeModel.startsWith("gemini"))
+      ? false
+      : shouldDetachSession({
+          engine,
+          model: activeModel,
+          reasoningMode: resolvedOptions.reasoningMode,
+          waitPreference,
+          disableDetachEnv,
+        });
   let lifecycle = buildSessionLifecycle({
     engine,
     detached: false,
@@ -2724,24 +2715,11 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   } else if (browserConfig && runOptions.model.startsWith("gemini")) {
-    const { createGeminiWebExecutor } = await import("../src/gemini-web/index.js");
-    browserDeps = {
-      executeBrowser: createGeminiWebExecutor({
-        youtube: storedOptions.youtube,
-        generateImage: storedOptions.generateImage,
-        editImage: storedOptions.editImage,
-        outputPath: storedOptions.outputPath,
-        aspectRatio: storedOptions.aspectRatio,
-        showThoughts: storedOptions.geminiShowThoughts,
-        allowModelFallback: storedOptions.geminiAllowModelFallback,
-      }),
-    };
     console.log(chalk.dim("Using Gemini web client for browser automation"));
     if (browserConfig.modelStrategy && browserConfig.modelStrategy !== "select") {
       console.log(chalk.dim("Browser model strategy is ignored for Gemini web runs."));
     }
   }
-  const remoteExecutionActive = Boolean(browserDeps);
 
   if (sessionMode === "api") {
     validateApiProviderRoutingForCli(runOptions);
@@ -2761,13 +2739,6 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
       followupSessionId: storedOptions.followupSessionId,
       followupModel: storedOptions.followupModel,
       waitPreference,
-      youtube: storedOptions.youtube,
-      generateImage: storedOptions.generateImage,
-      editImage: storedOptions.editImage,
-      outputPath: storedOptions.outputPath,
-      aspectRatio: storedOptions.aspectRatio,
-      geminiShowThoughts: storedOptions.geminiShowThoughts,
-      geminiAllowModelFallback: storedOptions.geminiAllowModelFallback,
     },
     cwd,
     notifications,
@@ -2781,15 +2752,16 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   };
 
   const disableDetachEnv = process.env.ORACLE_NO_DETACH === "1";
-  const detachAllowed = remoteExecutionActive
-    ? false
-    : shouldDetachSession({
-        engine,
-        model: runOptions.model,
-        reasoningMode: runOptions.reasoningMode,
-        waitPreference,
-        disableDetachEnv,
-      });
+  const detachAllowed =
+    browserConfig && (remoteHost || runOptions.model.startsWith("gemini"))
+      ? false
+      : shouldDetachSession({
+          engine,
+          model: runOptions.model,
+          reasoningMode: runOptions.reasoningMode,
+          waitPreference,
+          disableDetachEnv,
+        });
   let lifecycle = buildSessionLifecycle({
     engine,
     detached: false,

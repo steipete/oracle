@@ -10,6 +10,7 @@ import {
   normalizeBaseUrl,
 } from "./options.js";
 import { resolveGeminiModelId } from "../oracle/gemini.js";
+import { resolveBrowserProvider } from "../browser/provider.js";
 import { resolveOverriddenApiModel } from "../oracle/modelResolver.js";
 import { PromptValidationError } from "../oracle/errors.js";
 import { normalizeChatGptModelForBrowser, isGpt6ProAlias } from "./browserConfig.js";
@@ -89,9 +90,8 @@ export function resolveRunOptionsFromConfig({
       : [apiModel];
   const browserCompatibilityModels: ModelName[] =
     normalizedRequestedModels.length > 0 ? allModels : [browserModel ?? apiModel];
-  const isBrowserCompatible = (m: string) => m.startsWith("gpt-") || m.startsWith("gemini");
   const hasNonBrowserCompatibleTarget =
-    browserEngineRequested && browserCompatibilityModels.some((m) => !isBrowserCompatible(m));
+    browserEngineRequested && browserCompatibilityModels.some((m) => !resolveBrowserProvider(m));
   if (hasNonBrowserCompatibleTarget) {
     throw new PromptValidationError(
       "Browser engine only supports GPT and Gemini models. Re-run with --engine api for Grok, Claude, or other models.",

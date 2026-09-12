@@ -136,6 +136,8 @@ export interface BrowserAutomationConfig {
 
 export interface BrowserRunOptions {
   prompt: string;
+  /** Canonical model key, separate from a provider-specific picker label. */
+  model?: string;
   /**
    * Abort the run when the caller no longer wants it.
    *

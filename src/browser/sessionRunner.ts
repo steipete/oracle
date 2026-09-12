@@ -10,7 +10,7 @@ import type {
   BrowserRuntimeMetadata,
   SessionArtifact,
 } from "../sessionStore.js";
-import { runBrowserMode } from "../browserMode.js";
+import { resolveLocalBrowserExecutor, type BrowserExecutor } from "./executor.js";
 import type { BrowserRunOptions, BrowserRunResult } from "../browserMode.js";
 import { DEFAULT_BROWSER_CONFIG } from "./config.js";
 import { redactBrowserConfigForDebugLog } from "./configLogging.js";
@@ -61,7 +61,7 @@ interface RunBrowserSessionArgs {
 
 export interface BrowserSessionRunnerDeps {
   assemblePrompt?: typeof assembleBrowserPrompt;
-  executeBrowser?: typeof runBrowserMode;
+  executeBrowser?: BrowserExecutor;
   persistRuntimeHint?: (
     runtime: BrowserRuntimeMetadata,
     modelSelection?: BrowserModelSelectionEvidence,
@@ -146,7 +146,6 @@ export async function runBrowserSessionExecution(
   deps: BrowserSessionRunnerDeps = {},
 ): Promise<BrowserExecutionResult> {
   const assemblePrompt = deps.assemblePrompt ?? assembleBrowserPrompt;
-  const executeBrowser = deps.executeBrowser ?? runBrowserMode;
   const persistRuntimeHint = deps.persistRuntimeHint ?? (() => {});
   const inputTimeoutMs = browserConfig.inputTimeoutMs ?? DEFAULT_BROWSER_CONFIG.inputTimeoutMs;
   let preparationAbandoned = false;
@@ -156,6 +155,7 @@ export async function runBrowserSessionExecution(
   if (signal?.aborted) {
     throw new BrowserRunCancelledError();
   }
+  const executeBrowser = deps.executeBrowser ?? (await resolveLocalBrowserExecutor(runOptions));
   try {
     promptArtifacts = await Promise.race([
       assemblePrompt(runOptions, { cwd }).then(async (artifacts) => {
@@ -313,6 +313,7 @@ async function executeAssembledBrowserSession({
   try {
     browserResult = await executeBrowser({
       prompt: promptArtifacts.composerText,
+      model: runOptions.model,
       attachments: promptArtifacts.attachments,
       fallbackSubmission,
       config: executionBrowserConfig,

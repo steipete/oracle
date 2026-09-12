@@ -29,6 +29,7 @@ import { checkRemoteHealth } from "./health.js";
 import { parseHostPort } from "../bridge/connection.js";
 import { BrowserRunCancelledError } from "../oracle/errors.js";
 import { resolveSiblingImagePath } from "../browser/chatgptImages.js";
+import { resolveBrowserProvider, REMOTE_GEMINI_UNSUPPORTED_MESSAGE } from "../browser/provider.js";
 
 interface RemoteExecutorOptions {
   host: string;
@@ -42,6 +43,17 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
   return async function remoteBrowserExecutor(
     options: BrowserRunOptions,
   ): Promise<BrowserRunResult> {
+    if (options.model !== undefined && !resolveBrowserProvider(options.model)) {
+      throw new Error(
+        `Unsupported browser model: ${options.model}. Remote services support ChatGPT only.`,
+      );
+    }
+    if (
+      resolveBrowserProvider(options.model) === "gemini" ||
+      resolveBrowserProvider(options.config?.desiredModel) === "gemini"
+    ) {
+      throw new Error(REMOTE_GEMINI_UNSUPPORTED_MESSAGE);
+    }
     if (options.config?.researchMode === "search") {
       throw new Error(
         "Web Search is a local browser pilot; --remote-host does not negotiate this capability yet. Use local Chrome or --browser-attach-running.",
