@@ -8,6 +8,8 @@ import {
   buildBrowserRunWarningsForTest,
   runBrowserSessionExecution,
 } from "../../src/browser/sessionRunner.js";
+import { BrowserRunCancelledError } from "../../src/oracle/errors.js";
+import type { BrowserPromptArtifacts } from "../../src/browser/prompt.js";
 
 const baseRunOptions: RunOracleOptions = {
   prompt: "Hello world",
@@ -19,6 +21,114 @@ const baseRunOptions: RunOracleOptions = {
 const baseConfig: BrowserSessionConfig = {};
 
 describe("runBrowserSessionExecution", () => {
+  test("does not start prompt preparation for an already cancelled run", async () => {
+    const cancellation = new AbortController();
+    cancellation.abort();
+    const assemblePrompt = vi.fn();
+    const executeBrowser = vi.fn();
+
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+          signal: cancellation.signal,
+        },
+        { assemblePrompt, executeBrowser },
+      ),
+    ).rejects.toThrow(BrowserRunCancelledError);
+
+    expect(assemblePrompt).not.toHaveBeenCalled();
+    expect(executeBrowser).not.toHaveBeenCalled();
+  });
+
+  test("cancellation wins during prompt preparation and cleans late bundles", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-cancel-preparation-"));
+    const bundleDir = path.join(root, "oracle-browser-bundle-test");
+    const bundlePath = path.join(bundleDir, "context.txt");
+    const cancellation = new AbortController();
+    let resolvePrompt!: (value: BrowserPromptArtifacts) => void;
+    const assemblePrompt = vi.fn(
+      () =>
+        new Promise<BrowserPromptArtifacts>((resolve) => {
+          resolvePrompt = resolve;
+        }),
+    );
+    const executeBrowser = vi.fn();
+
+    try {
+      const execution = runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: { inputTimeoutMs: 60_000 },
+          cwd: "/repo",
+          log: vi.fn(),
+          signal: cancellation.signal,
+        },
+        { assemblePrompt, executeBrowser },
+      );
+      cancellation.abort();
+      await expect(execution).rejects.toThrow(BrowserRunCancelledError);
+
+      await fs.mkdir(bundleDir, { recursive: true });
+      await fs.writeFile(bundlePath, "public test bundle", "utf8");
+      resolvePrompt({
+        markdown: "prompt",
+        composerText: "prompt",
+        estimatedInputTokens: 1,
+        attachments: [{ path: bundlePath, displayPath: "context.txt", generatedBundle: true }],
+        inlineFileCount: 0,
+        tokenEstimateIncludesInlineFiles: false,
+        attachmentsPolicy: "auto",
+        attachmentMode: "bundle",
+        fallback: null,
+        bundled: { originalCount: 1, bundlePath },
+      });
+
+      await vi.waitFor(async () => {
+        await expect(fs.stat(bundleDir)).rejects.toThrow();
+      });
+      expect(executeBrowser).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves browser cancellation as a cancellation", async () => {
+    const cancellation = new AbortController();
+    const executeBrowser = vi.fn(async () => {
+      throw new BrowserRunCancelledError();
+    });
+
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: baseRunOptions,
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log: vi.fn(),
+          signal: cancellation.signal,
+        },
+        {
+          assemblePrompt: async () => ({
+            markdown: "prompt",
+            composerText: "prompt",
+            estimatedInputTokens: 1,
+            attachments: [],
+            inlineFileCount: 0,
+            tokenEstimateIncludesInlineFiles: false,
+            attachmentsPolicy: "auto",
+            attachmentMode: "inline",
+            fallback: null,
+          }),
+          executeBrowser,
+        },
+      ),
+    ).rejects.toThrow(BrowserRunCancelledError);
+  });
+
   test("bounds browser prompt preparation with the configured input timeout", async () => {
     vi.useFakeTimers();
     const executeBrowser = vi.fn();
@@ -81,6 +191,7 @@ describe("runBrowserSessionExecution", () => {
   test("logs stats and returns usage/runtime", async () => {
     const log = vi.fn();
     const persistRuntimeHint = vi.fn();
+    const cancellation = new AbortController();
     const executeBrowser = vi.fn(async (options) => {
       await options.runtimeHintCb?.(
         {
@@ -134,6 +245,7 @@ describe("runBrowserSessionExecution", () => {
         browserConfig: baseConfig,
         cwd: "/repo",
         log,
+        signal: cancellation.signal,
       },
       {
         assemblePrompt: async () => ({
@@ -173,7 +285,50 @@ describe("runBrowserSessionExecution", () => {
       expect.objectContaining({ chromePort: 9999, chromeHost: "127.0.0.1", chromeTargetId: "t-1" }),
       expect.objectContaining({ resolvedLabel: "Pro", verified: true }),
     );
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signal: cancellation.signal,
+        closeOwnedTabOnCancel: true,
+      }),
+    );
     expect(log).toHaveBeenCalled();
+  });
+
+  test("preserves an explicit keep-browser preference during cancellation", async () => {
+    const executeBrowser = vi.fn(async () => ({
+      answerText: "ok",
+      answerMarkdown: "ok",
+      tookMs: 1000,
+      answerTokens: 1,
+      answerChars: 2,
+    }));
+
+    await runBrowserSessionExecution(
+      {
+        runOptions: baseRunOptions,
+        browserConfig: { keepBrowser: true },
+        cwd: "/repo",
+        log: vi.fn(),
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 1,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser,
+      },
+    );
+
+    expect(executeBrowser).toHaveBeenCalledWith(
+      expect.objectContaining({ closeOwnedTabOnCancel: false }),
+    );
   });
 
   test("passes browser resume conversation URL to executeBrowser", async () => {

@@ -90,6 +90,7 @@ const ARTIFACT_CAPABILITIES: RemoteArtifactCapabilities = {
   runCancellation: true,
   deferredFallbackBundling: true,
   artifactTransfer: true,
+  generatedImages: true,
   artifactProtocolVersion: ARTIFACT_PROTOCOL_VERSION,
   maxArtifactBytes: MAX_REMOTE_ARTIFACT_BYTES,
 };
@@ -1023,8 +1024,21 @@ function sanitizeResult(
   ]
     .map((artifact) => artifact.path)
     .filter((artifactPath): artifactPath is string => Boolean(artifactPath));
+  const savedImagePaths = [
+    ...(result.savedImages ?? []),
+    ...(result.artifacts ?? []).filter((artifact) => artifact.kind === "image"),
+  ].map((artifact) => artifact.path);
+  const imageCount = new Set(savedImagePaths).size;
   const sanitizeAnswer = (value: string | undefined): string | undefined => {
     let sanitized = value;
+    // Local save notices describe the host filesystem, not the client's transferred files.
+    for (const imagePath of savedImagePaths) {
+      sanitized = sanitized
+        ?.split(` Saved to: ${imagePath}`)
+        .join("")
+        .split(` Saved ${imageCount} file(s) starting at: ${imagePath}`)
+        .join("");
+    }
     for (const artifactPath of hostArtifactPaths) {
       sanitized = sanitized?.split(artifactPath).join(path.basename(artifactPath));
     }
@@ -1044,6 +1058,7 @@ function sanitizeResult(
     tabUrl: result.tabUrl,
     conversationId: result.conversationId,
     promptSubmitted: result.promptSubmitted,
+    submittedPromptHash: result.submittedPromptHash,
     warnings: warnings.length > 0 ? warnings : undefined,
     chromePid: undefined,
     chromePort: undefined,

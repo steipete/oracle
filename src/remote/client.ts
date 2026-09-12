@@ -47,12 +47,23 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
       );
     }
     const callerSignal = options.signal;
+    const imageOutputRequested = Boolean(options.generateImagePath || options.outputPath);
     if (callerSignal?.aborted)
       throw new BrowserRunCancelledError("Browser run cancelled before the request was sent.");
-    if (callerSignal) {
+    if (callerSignal || imageOutputRequested) {
       const health = await checkRemoteHealth({ host, token, signal: callerSignal });
-      if (callerSignal.aborted) throw new BrowserRunCancelledError();
-      if (health.capabilities?.runCancellation !== true)
+      if (callerSignal?.aborted) throw new BrowserRunCancelledError();
+      if (
+        imageOutputRequested &&
+        (!health.ok ||
+          health.capabilities?.generatedImages !== true ||
+          health.capabilities.artifactProtocolVersion !== 1)
+      ) {
+        throw new Error(
+          "Remote host cannot capture and transfer generated images; upgrade Oracle on the host and retry. The image request was not sent.",
+        );
+      }
+      if (callerSignal && health.capabilities?.runCancellation !== true)
         throw new Error(
           "Remote host does not support run cancellation; upgrade the host before using an AbortSignal.",
         );
@@ -68,7 +79,7 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
         sessionId: options.sessionId,
         followUpPrompts: options.followUpPrompts,
         cancelOnDisconnect: callerSignal ? true : undefined,
-        imageOutputRequested: Boolean(options.generateImagePath || options.outputPath),
+        imageOutputRequested,
       },
     };
 

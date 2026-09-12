@@ -192,6 +192,7 @@ describe("remote browser service", () => {
       expect(healthOk.json?.ok).toBe(true);
       expect(typeof healthOk.json?.version).toBe("string");
       expect(healthOk.json?.capabilities).toMatchObject({
+        generatedImages: true,
         artifactTransfer: true,
         artifactProtocolVersion: 1,
       });
@@ -543,8 +544,8 @@ describe("remote browser service", () => {
         generateImagePath: clientImageOutputPath,
       });
 
-      expect(result.answerText).toBe("done\n\nGenerated 2 images. Saved to: generated.png");
-      expect(result.answerMarkdown).toBe("done\n\n*Generated 2 images. Saved to: generated.png*");
+      expect(result.answerText).toBe("done\n\nGenerated 2 images.");
+      expect(result.answerMarkdown).toBe("done\n\n*Generated 2 images.*");
       expect(result.warnings).toEqual([
         {
           code: "remote-artifact-registration-failed",

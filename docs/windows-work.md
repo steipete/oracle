@@ -14,6 +14,8 @@ Read this file whenever you're working from Windows and add new findings so the 
 
 Future Windows gotchas belong here. Update this doc when you learn something new.
 
+- Tab-lease tests run real PowerShell process-identity probes (up to five seconds each). Their Windows test budget must cover multiple probes and registry cleanup. Failed self-identity probes are retried on the next lookup; only a successful identity is cached for the controller lifetime.
+
 - A fresh Windows worktree with `core.autocrlf=true` can make `oxfmt --check` flag otherwise unchanged files. Use LF checkout contents for validation and inspect the staged diff to keep checkout-only line-ending changes out of the PR.
 
 - ChatGPT sidebar/history labels can include phrases like "Login setup instruction"; login probes must match exact auth CTAs, not any visible text starting with login, or manual-login automation loops forever before typing.

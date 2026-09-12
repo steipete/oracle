@@ -8,8 +8,10 @@ import type {
   BrowserModelStrategy,
   BrowserResearchMode,
 } from "../browser/types.js";
+import { isGpt6ProAlias } from "./browserConfig.js";
 
 export interface BrowserDefaultsOptions {
+  model?: string;
   remoteChrome?: string;
   copyProfile?: string;
   chatgptUrl?: string;
@@ -64,6 +66,7 @@ export function applyBrowserDefaultsFromConfig(
     (isUnset("browserAttachRunning") && browser.attachRunning === true);
   const currentModelRequestedByCli =
     options.browserModelStrategy === "current" && getSource("browserModelStrategy") === "cli";
+  const gpt6ProRequestedByCli = getSource("model") === "cli" && isGpt6ProAlias(options.model);
 
   if (
     !options.copyProfile &&
@@ -170,6 +173,7 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (
     !currentModelRequestedByCli &&
+    !gpt6ProRequestedByCli &&
     isUnset("browserThinkingTime") &&
     browser.thinkingTime !== undefined
   ) {

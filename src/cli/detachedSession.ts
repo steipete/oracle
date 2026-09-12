@@ -1,6 +1,53 @@
 import { spawn } from "node:child_process";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
+import { access, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+
+const CANCELLATION_MARKER = ".cancel-requested";
+
+export function detachedSessionCancellationPath(sessionDir: string, workerPid: number): string {
+  return path.join(sessionDir, `${CANCELLATION_MARKER}-${workerPid}`);
+}
+
+export async function requestDetachedSessionCancellation(markerPath: string): Promise<void> {
+  await writeFile(markerPath, "cancel\n", "utf8");
+}
+
+export async function clearDetachedSessionCancellation(markerPath: string): Promise<void> {
+  await rm(markerPath, { force: true });
+}
+
+export async function waitForDetachedSessionCancellation({
+  markerPath,
+  signal,
+  pollIntervalMs = 100,
+}: {
+  markerPath: string;
+  signal: AbortSignal;
+  pollIntervalMs?: number;
+}): Promise<boolean> {
+  while (!signal.aborted) {
+    try {
+      await access(markerPath);
+      return true;
+    } catch (error) {
+      if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    try {
+      await delay(pollIntervalMs, undefined, { signal });
+    } catch (error) {
+      if (signal.aborted && error instanceof Error && error.name === "AbortError") {
+        return false;
+      }
+      throw error;
+    }
+  }
+  return false;
+}
 
 export interface DetachedSessionSpawnSpec {
   command: string;

@@ -1,4 +1,6 @@
 import path from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
@@ -6,11 +8,35 @@ import type { ChildProcess } from "node:child_process";
 import { describe, expect, test, vi } from "vitest";
 import {
   buildDetachedSessionSpawnSpec,
+  clearDetachedSessionCancellation,
+  detachedSessionCancellationPath,
   launchDetachedSession,
+  requestDetachedSessionCancellation,
   resolveOracleCliEntrypoint,
+  waitForDetachedSessionCancellation,
 } from "../../src/cli/detachedSession.js";
 
 describe("detached session launcher", () => {
+  test("observes a cancellation requested before the worker starts waiting", async () => {
+    const sessionDir = await mkdtemp(path.join(os.tmpdir(), "oracle-cancel-marker-"));
+    const markerPath = detachedSessionCancellationPath(sessionDir, 4242);
+    const stop = new AbortController();
+
+    try {
+      await requestDetachedSessionCancellation(markerPath);
+      await expect(
+        waitForDetachedSessionCancellation({ markerPath, signal: stop.signal, pollIntervalMs: 1 }),
+      ).resolves.toBe(true);
+      await clearDetachedSessionCancellation(markerPath);
+      expect(detachedSessionCancellationPath(sessionDir, 4243)).not.toBe(markerPath);
+      await expect(
+        waitForDetachedSessionCancellation({ markerPath, signal: AbortSignal.abort() }),
+      ).resolves.toBe(false);
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true });
+    }
+  });
+
   test("uses a hidden detached Node child with a gated session handoff", () => {
     const spec = buildDetachedSessionSpawnSpec({
       sessionId: "long-pro-session",

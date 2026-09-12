@@ -40,7 +40,7 @@ const html = `<!doctype html><meta charset="utf-8"><title>Oracle artifact export
 <script>
 function send(){
  fetch('/fixture-sent',{method:'POST'});const editor=document.querySelector('textarea');const prompt=editor.value;editor.value='';
- const user=document.createElement('article');user.dataset.testid='conversation-turn-0';user.dataset.turn='user';const text=document.createElement('div');text.dataset.messageAuthorRole='user';text.textContent=prompt;user.append(text);document.querySelector('#turns').append(user);
+ const user=document.createElement('article');user.dataset.testid='conversation-turn-0';user.dataset.turn='user';const text=document.createElement('div');text.dataset.messageAuthorRole='user';text.dataset.messageId='artifact-user';text.textContent=prompt;user.append(text);document.querySelector('#turns').append(user);
  history.replaceState({},'', '/c/artifact-fixture');
  const response=document.createElement('article');response.dataset.testid='conversation-turn-1';response.dataset.turn='assistant';response.innerHTML='<div data-message-author-role="assistant" data-message-id="artifact-answer"><div class="markdown"><p><a href="sandbox:/mnt/data/report.dat">sandbox:/mnt/data/report.dat</a></p></div></div><button type="button" data-testid="copy-turn-action-button">Copy</button>';response.querySelector('button').onclick=()=>navigator.clipboard.writeText(${JSON.stringify(answer)});document.querySelector('#turns').append(response);
 }

@@ -41,6 +41,8 @@ export interface RemoteArtifactCapabilities {
   maxArtifactBytes: number;
   deferredFallbackBundling?: boolean;
   runCancellation?: boolean;
+  /** Captures requested images on the host and transfers them with artifact protocol v1. */
+  generatedImages?: boolean;
 }
 
 export interface RemoteArtifactDescriptor {

@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import chalk from "chalk";
 import { sessionStore } from "../sessionStore.js";
 import type { SessionMetadata } from "../sessionStore.js";
+import { resolveBrowserConfig } from "../browser/config.js";
+import { browserPromptFingerprint } from "../browser/promptFingerprint.js";
 import {
   collectChatGptTabs,
   DEFAULT_REMOTE_CHROME_HOST,
@@ -23,6 +25,7 @@ import type { BrowserHarvestIntegrity } from "../sessionManager.js";
 
 const LIVE_POLL_MS = 2000;
 const DEFAULT_STALL_THRESHOLD_MS = 60_000;
+const HARVEST_FRESHNESS_POLL_MS = 250;
 
 function isRecoverableMissingTabError(message: string): boolean {
   return (
@@ -49,6 +52,54 @@ function finishRecoveredChrome(
   } catch {
     // best-effort cleanup
   }
+}
+
+function harvestMatchesSessionPrompt(
+  harvested: ChatGptTabSummary,
+  fingerprint: string | undefined,
+): boolean {
+  const answer = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText;
+  if (harvested.assistantFollowsLatestUser !== true || !answer?.trim()) return false;
+  return (
+    fingerprint === undefined ||
+    (typeof harvested.lastUserMessageId === "string" &&
+      harvested.lastUserMessageId.trim().length > 0 &&
+      browserPromptFingerprint(
+        harvested.lastUserTextRaw ?? harvested.lastUserText,
+        harvested.lastUserMessageId,
+      ) === fingerprint)
+  );
+}
+
+async function harvestSessionPrompt(
+  meta: SessionMetadata,
+  options: Parameters<typeof harvestChatGptTab>[0],
+  requireSessionPrompt = true,
+): Promise<ChatGptTabSummary> {
+  const fingerprint = requireSessionPrompt ? meta.browser?.runtime?.submittedPromptHash : undefined;
+  if (fingerprint === null) {
+    throw new Error(
+      "This browser session has no confirmed submitted user turn; retry after submission or use --browser-tab to inspect a specific tab.",
+    );
+  }
+  if (requireSessionPrompt && fingerprint === undefined) {
+    console.warn(
+      "Legacy browser session: submitted-turn identity is unavailable; verifying only latest user/assistant pairing.",
+    );
+  }
+  const freshnessTimeoutMs = resolveBrowserConfig(meta.browser?.config).inputTimeoutMs;
+  const deadline = Date.now() + freshnessTimeoutMs;
+  let harvested = await harvestChatGptTab(options);
+  while (!harvestMatchesSessionPrompt(harvested, fingerprint) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, HARVEST_FRESHNESS_POLL_MS));
+    harvested = await harvestChatGptTab(options);
+  }
+  if (!harvestMatchesSessionPrompt(harvested, fingerprint)) {
+    throw new Error(
+      `Latest ChatGPT turn did not contain an assistant answer paired with this session prompt after ${Math.ceil(freshnessTimeoutMs / 1000)}s; refusing to harvest stale output.`,
+    );
+  }
+  return harvested;
 }
 
 export interface BrowserHarvestOptions {
@@ -265,12 +316,16 @@ export async function harvestSessionBrowserOutput(
   try {
     let harvested: ChatGptTabSummary;
     try {
-      harvested = await harvestChatGptTab({
-        host: initialEndpoint.host,
-        port: initialEndpoint.port,
-        ref,
-        stallWindowMs: options.stallWindowMs,
-      });
+      harvested = await harvestSessionPrompt(
+        meta,
+        {
+          host: initialEndpoint.host,
+          port: initialEndpoint.port,
+          ref,
+          stallWindowMs: options.stallWindowMs,
+        },
+        !options.browserTabRef,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!isRecoverableMissingTabError(message) || !recoverIfMissing) {
@@ -285,7 +340,7 @@ export async function harvestSessionBrowserOutput(
         existingEndpoint: recordedEndpoint ?? undefined,
       });
       recoveredChrome = recovered.chrome;
-      harvested = await harvestChatGptTab({
+      harvested = await harvestSessionPrompt(meta, {
         host: recovered.host,
         port: recovered.port,
         ref: recovered.ref,

@@ -40,15 +40,12 @@ describe("zero-arg TUI entry", () => {
     process.argv = ["node", "bin/oracle-cli.js", "tui"];
     Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
 
-    await import("../../bin/oracle-cli.js");
-
-    for (let i = 0; i < 10 && launchTuiMock.mock.calls.length === 0; i += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 10));
+    try {
+      await import("../../bin/oracle-cli.js");
+      await vi.waitFor(() => expect(launchTuiMock).toHaveBeenCalled(), { timeout: 5_000 });
+    } finally {
+      process.argv = originalArgv;
+      Object.defineProperty(process.stdout, "isTTY", { value: originalTty, configurable: true });
     }
-
-    expect(launchTuiMock).toHaveBeenCalled();
-
-    process.argv = originalArgv;
-    Object.defineProperty(process.stdout, "isTTY", { value: originalTty, configurable: true });
   }, 15_000);
 });

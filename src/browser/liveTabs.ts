@@ -52,6 +52,8 @@ export interface ChatGptTabSummary {
   lastUserTurnIndex?: number;
   lastAssistantSnippet: string;
   lastUserText: string;
+  lastUserTextRaw?: string;
+  lastUserMessageId?: string;
   lastUserSnippet: string;
   focused: boolean;
   visibilityState: string;
@@ -248,6 +250,8 @@ function buildTabInspectionExpression(): string {
       const assistantCount = new Set(assistantOwners).size;
       const lastAssistantText = normalize(lastAssistantNode?.textContent);
       const lastUserText = normalize(lastUserTurn?.textContent);
+      const lastUserMessage = lastUserTurn?.matches?.('[data-message-author-role="user"]')
+        ? lastUserTurn : lastUserTurn?.querySelector?.('[data-message-author-role="user"]');
       const authenticated = !loginButtonExists && (promptReady || sendExists || stopExists || assistantCount > 0);
       return {
         title: normalize(document.title),
@@ -264,6 +268,8 @@ function buildTabInspectionExpression(): string {
         lastAssistantTurnIndex,
         lastUserTurnIndex,
         lastUserText,
+        lastUserTextRaw: lastUserMessage?.textContent,
+        lastUserMessageId: lastUserMessage?.getAttribute?.('data-message-id'),
         visibilityState: document.visibilityState,
         focused: Boolean(document.hasFocus?.()),
       };
@@ -334,6 +340,8 @@ export async function inspectChatGptTab(
       lastAssistantTurnIndex?: number;
       lastUserTurnIndex?: number;
       lastUserText?: string;
+      lastUserTextRaw?: string;
+      lastUserMessageId?: string;
       visibilityState?: string;
       focused?: boolean;
     };
@@ -380,6 +388,8 @@ export async function inspectChatGptTab(
           : undefined,
       lastAssistantSnippet: trimToSnippet(lastAssistantText),
       lastUserText,
+      lastUserTextRaw: info.lastUserTextRaw,
+      lastUserMessageId: info.lastUserMessageId,
       lastUserSnippet: trimToSnippet(lastUserText),
       focused: Boolean(info.focused),
       visibilityState: typeof info.visibilityState === "string" ? info.visibilityState : "",
@@ -612,6 +622,8 @@ export async function harvestChatGptTab(
       harvested.authenticated = followup.authenticated;
       harvested.loginButtonExists = followup.loginButtonExists;
       harvested.lastUserText = followup.lastUserText;
+      harvested.lastUserTextRaw = followup.lastUserTextRaw;
+      harvested.lastUserMessageId = followup.lastUserMessageId;
       harvested.lastUserSnippet = followup.lastUserSnippet;
       harvested.assistantFollowsLatestUser = followup.assistantFollowsLatestUser;
       harvested.lastAssistantTurnIndex = followup.lastAssistantTurnIndex;

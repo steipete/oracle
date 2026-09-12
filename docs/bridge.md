@@ -15,7 +15,7 @@ The host sanitizes incoming attachment filenames for staging. If names collide a
 
 ## Generated artifact transfer
 
-Bridge runs now keep the Windows browser host and Linux client separated while still returning ChatGPT-generated files and images, such as PNG, ZIP, CSV, PDF, wheels, and source distributions, to a cloud-readable path. The host advertises artifact-transfer support from the token-protected `GET /health` response. The Linux client uses that capability signal in `oracle bridge client --test` and `oracle bridge doctor`; older hosts remain usable for text responses, but generated artifacts require manual copy from the Windows browser until both sides are upgraded.
+Bridge runs now keep the Windows browser host and Linux client separated while still returning ChatGPT-generated files and images, such as PNG, ZIP, CSV, PDF, wheels, and source distributions, to a cloud-readable path. The host advertises artifact-transfer support from the token-protected `GET /health` response. The Linux client uses that capability signal in `oracle bridge client --test` and `oracle bridge doctor`; older hosts remain usable for text responses. Explicit image-output requests require the host to advertise `generatedImages: true` with artifact protocol v1; otherwise the client refuses before sending the prompt or attachments and asks for a host upgrade. Other generated artifacts still require manual copying when the host lacks artifact transfer.
 
 The transfer protocol is pull-based and keeps secrets local to the host:
 

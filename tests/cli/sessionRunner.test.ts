@@ -61,6 +61,7 @@ import {
   OracleTransportError,
   runOracle,
 } from "../../src/oracle.ts";
+import { BrowserRunCancelledError } from "../../src/oracle/errors.ts";
 import {
   runMultiModelApiSession,
   type ModelExecutionResult,
@@ -1349,6 +1350,58 @@ describe("performSessionRun", () => {
     expect(result).toBe(expected);
   });
 
+  test.each([null, "previous-turn-fingerprint"])(
+    "preserves pending fingerprint state after preparation fails (previous: %s)",
+    async (submittedPromptHash) => {
+      vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(
+        new BrowserAutomationError("preparation failed", { stage: "execute-browser" }),
+      );
+      const sessionMeta = {
+        ...baseSessionMeta,
+        browser: {
+          config: { desiredModel: "Old Pro" },
+          runtime: {
+            submittedPromptHash,
+            promptSubmitted: true,
+            tabUrl: "https://chatgpt.com/c/old",
+          },
+          modelSelection: {
+            requestedModel: "Old Pro",
+            resolvedLabel: "Old Pro",
+            strategy: "select" as const,
+            status: "already-selected" as const,
+            verified: true,
+            source: "chatgpt-model-picker" as const,
+            capturedAt: "2026-07-02T00:00:00.000Z",
+          },
+        },
+      };
+
+      await expect(
+        performSessionRun({
+          sessionMeta,
+          runOptions: baseRunOptions,
+          mode: "browser",
+          browserConfig: { chromePath: null },
+          cwd: "/tmp",
+          log,
+          write,
+          version: cliVersion,
+        }),
+      ).rejects.toThrow("preparation failed");
+
+      const updates = sessionStoreMock.updateSession.mock.calls;
+      expect(updates[0]?.[1]?.status).toBe("running");
+      expect(updates.at(-1)?.[1]?.status).toBe("error");
+      for (const update of [updates[0]?.[1], updates.at(-1)?.[1]]) {
+        expect(update?.browser).toEqual({
+          config: { chromePath: null },
+          runtime: { submittedPromptHash: null },
+        });
+      }
+    },
+  );
+
   test("records metadata when browser automation fails", async () => {
     const automationError = new BrowserAutomationError("automation failed", {
       stage: "execute-browser",
@@ -1401,6 +1454,268 @@ describe("performSessionRun", () => {
     expect(logLines).not.toContain("Next steps (browser fallback)");
     expect(logLines).not.toContain("--engine api");
     expect(logLines).not.toContain("This run did not return cleanly");
+  });
+
+  test("records browser cancellation truthfully for the session and model", async () => {
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(new BrowserRunCancelledError());
+
+    await expect(
+      performSessionRun({
+        sessionMeta: baseSessionMeta,
+        runOptions: baseRunOptions,
+        mode: "browser",
+        browserConfig: { chromePath: null },
+        cwd: "/tmp",
+        log,
+        write,
+        version: cliVersion,
+      }),
+    ).rejects.toThrow(BrowserRunCancelledError);
+
+    expect(sessionStoreMock.updateModelRun).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      "gpt-5.2-pro",
+      expect.objectContaining({ status: "cancelled", completedAt: expect.any(String) }),
+    );
+    expect(sessionStoreMock.updateSession).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({
+        status: "cancelled",
+        completedAt: expect.any(String),
+        response: { status: "cancelled" },
+      }),
+    );
+  });
+
+  test("cancellation during normal browser output persistence cannot commit completion", async () => {
+    const cancellation = new AbortController();
+    vi.mocked(runBrowserSessionExecution).mockResolvedValueOnce({
+      usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, totalTokens: 2 },
+      elapsedMs: 10,
+      runtime: { chromePort: 9222 },
+      answerText: "answer",
+    });
+    let finishOutput!: () => void;
+    vi.mocked(fsPromises.writeFile).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOutput = resolve;
+        }),
+    );
+
+    const execution = performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: { ...baseRunOptions, writeOutputPath: "/tmp/browser-cancelled.md" },
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+      signal: cancellation.signal,
+    });
+    await vi.waitFor(() => expect(fsPromises.writeFile).toHaveBeenCalledOnce());
+    cancellation.abort();
+    finishOutput();
+
+    await expect(execution).rejects.toThrow(BrowserRunCancelledError);
+    expect(sessionStoreMock.updateSession).toHaveBeenLastCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(sessionStoreMock.updateSession).not.toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  test("cancels during an auto-reattach delay without starting recovery", async () => {
+    const cancellation = new AbortController();
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(
+      new BrowserAutomationError("recoverable disconnect", {
+        stage: "connection-lost",
+        recoverableDisconnect: true,
+        runtime: {
+          chromePort: 9222,
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+      }),
+    );
+
+    const execution = performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: {
+        chromePath: null,
+        autoReattachDelayMs: 60_000,
+        autoReattachIntervalMs: 1_000,
+      },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+      signal: cancellation.signal,
+    });
+    await vi.waitFor(() =>
+      expect(log).toHaveBeenCalledWith(expect.stringContaining("Auto-reattach starting")),
+    );
+    cancellation.abort();
+
+    await expect(execution).rejects.toThrow(BrowserRunCancelledError);
+    expect(vi.mocked(resumeBrowserSession)).not.toHaveBeenCalled();
+    expect(sessionStoreMock.updateSession).toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "cancelled" }),
+    );
+  });
+
+  test("cancellation interrupts an active auto-reattach attempt", async () => {
+    const cancellation = new AbortController();
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(
+      new BrowserAutomationError("recoverable disconnect", {
+        stage: "connection-lost",
+        recoverableDisconnect: true,
+        runtime: {
+          chromePort: 9222,
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+      }),
+    );
+    vi.mocked(resumeBrowserSession).mockImplementationOnce(() => new Promise(() => undefined));
+
+    const execution = performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+      signal: cancellation.signal,
+    });
+    await vi.waitFor(() => expect(resumeBrowserSession).toHaveBeenCalledTimes(1));
+    cancellation.abort();
+
+    await expect(execution).rejects.toThrow(BrowserRunCancelledError);
+    expect(sessionStoreMock.updateSession).toHaveBeenLastCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(sessionStoreMock.updateSession).not.toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  test("cancellation during recovered artifact persistence cannot commit completion", async () => {
+    const cancellation = new AbortController();
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(
+      new BrowserAutomationError("recoverable disconnect", {
+        stage: "connection-lost",
+        recoverableDisconnect: true,
+        runtime: {
+          chromePort: 9222,
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+      }),
+    );
+    vi.mocked(resumeBrowserSession).mockResolvedValueOnce({
+      answerText: "recovered answer",
+      answerMarkdown: "recovered answer",
+    });
+    let finishArtifacts!: (value: []) => void;
+    vi.mocked(ensureSessionArtifacts).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishArtifacts = resolve;
+        }),
+    );
+
+    const execution = performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+      signal: cancellation.signal,
+    });
+    await vi.waitFor(() => expect(ensureSessionArtifacts).toHaveBeenCalledOnce());
+    cancellation.abort();
+    finishArtifacts([]);
+
+    await expect(execution).rejects.toThrow(BrowserRunCancelledError);
+    expect(sessionStoreMock.updateSession).toHaveBeenLastCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(sessionStoreMock.updateSession).not.toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  test("recovery completion remains terminal once its final session write begins", async () => {
+    const cancellation = new AbortController();
+    vi.mocked(runBrowserSessionExecution).mockRejectedValueOnce(
+      new BrowserAutomationError("recoverable disconnect", {
+        stage: "connection-lost",
+        recoverableDisconnect: true,
+        runtime: {
+          chromePort: 9222,
+          tabUrl: "https://chatgpt.com/c/demo",
+          promptSubmitted: true,
+        },
+      }),
+    );
+    vi.mocked(resumeBrowserSession).mockResolvedValueOnce({
+      answerText: "recovered answer",
+      answerMarkdown: "recovered answer",
+    });
+    let completionStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      completionStarted = resolve;
+    });
+    let finishCompletion!: () => void;
+    sessionStoreMock.updateSession.mockImplementation((_id, patch) => {
+      if (patch.status !== "completed") return Promise.resolve();
+      completionStarted();
+      return new Promise<void>((resolve) => {
+        finishCompletion = resolve;
+      });
+    });
+
+    const execution = performSessionRun({
+      sessionMeta: baseSessionMeta,
+      runOptions: baseRunOptions,
+      mode: "browser",
+      browserConfig: { chromePath: null },
+      cwd: "/tmp",
+      log,
+      write,
+      version: cliVersion,
+      signal: cancellation.signal,
+    });
+    await started;
+    cancellation.abort();
+    finishCompletion();
+
+    await expect(execution).resolves.toBeUndefined();
+    expect(sessionStoreMock.updateSession).not.toHaveBeenCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "cancelled" }),
+    );
+    expect(sessionStoreMock.updateSession).toHaveBeenLastCalledWith(
+      baseSessionMeta.id,
+      expect.objectContaining({ status: "completed" }),
+    );
   });
 
   test("preserves persisted runtime hints when browser automation fails without runtime details", async () => {

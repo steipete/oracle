@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-- Remote/MCP: transfer ChatGPT-generated images from browser bridge hosts to the caller's requested local output path and expose them through `chatgpt_image`, instead of rejecting remote image runs or leaving host-only paths in the response.
+## 0.20.1 - 2026-09-11
+
+**Highlights:** Safer browser recovery and cancellation, with reliable effort selection across saved defaults and quota-limited accounts.
+
+- Browser: verify new-session harvests against the committed user turn, preserve original output on mismatch, and retain legacy recovery with an explicit unverified warning; thanks @pdurlej.
+- CLI: cancel detached browser consultations with truthful terminal status, preserve kept tabs, and remove late cancellation requests after completion; thanks @pdurlej.
+- Browser: verify Extra High on quota-limited four-tier effort sliders and reject unavailable Pro before input or submission. Fixes #472; thanks @ventianima-lab.
+- CLI: preserve explicitly requested Pro effort over saved browser defaults while retaining explicit effort overrides and config-only preferences; thanks @pdurlej.
+- Browser: retry unavailable controller identity probes instead of caching failures for the process lifetime, and stabilize native Windows lease verification.
+- Dependencies: refresh OpenAI, Zod, Inquirer, TokenTally, Node types, formatting/lint tooling, and the pinned Chrome DevTools protocol while retaining Node >=24 and the two-day release-age policy.
 
 ## 0.20.0 - 2026-09-07
 

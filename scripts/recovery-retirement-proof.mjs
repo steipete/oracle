@@ -22,7 +22,7 @@ const answer = "ORACLE_RECOVERY_SAVED";
 const server = http.createServer((req, res) => {
   res.setHeader("content-type", "text/html");
   res.end(`<!doctype html><title>ChatGPT synthetic recovery</title>
-  <article data-testid="conversation-turn-0" data-turn="user"><div data-message-author-role="user">Recovery proof</div></article>
+  <article data-testid="conversation-turn-0" data-turn="user"><div data-message-author-role="user" data-message-id="recovery-user">Recovery proof</div></article>
   <article data-testid="conversation-turn-1" data-turn="assistant"><div data-message-author-role="assistant" data-message-id="answer"><div class="markdown"><p>${answer}</p></div></div></article>
   <form><textarea id="prompt-textarea"></textarea><button data-testid="send-button">Send</button>${req.url.includes("generating") ? '<button data-testid="composer-stop-button">Stop generating</button>' : ""}</form>`);
 });

@@ -135,6 +135,17 @@ describe("session identifiers", () => {
 });
 
 describe("session lifecycle", () => {
+  test("new browser sessions cannot be mistaken for legacy sessions before submission", async () => {
+    const metadata = await sessionModule.initializeSession(
+      { prompt: "Pending browser prompt", model: "gpt-5.5", mode: "browser" },
+      "/tmp/cwd",
+    );
+    const stored = JSON.parse(
+      await readFile(path.join(sessionModule.getSessionsDir(), metadata.id, "meta.json"), "utf8"),
+    );
+    expect(stored.browser.runtime.submittedPromptHash).toBeNull();
+  });
+
   test("initializeSession writes metadata, request, and log files", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2025-04-01T00:00:00Z"));

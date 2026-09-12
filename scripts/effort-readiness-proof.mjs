@@ -21,6 +21,7 @@ const option = (name) => {
 };
 const baseline = option("--baseline-cli");
 const captures = option("--captures");
+const fourTier = process.argv.includes("--four-tier");
 // Snap Chromium can access home-backed files, unlike the host's private /tmp.
 const root = await fs.mkdtemp(path.join(os.homedir(), "oracle-effort-proof-"));
 const chromePath = [
@@ -46,21 +47,21 @@ const page = (
 <button type="button" data-testid="send-button">Send</button></form></main>
 <div id="menu" role="menu" style="display:none"><div data-testid="composer-intelligence-picker-content" role="group"><div data-model-selection-view="true"><div id="simple" data-testid="composer-model-picker-slider-simple-view" data-active="true"></div></div></div></div>
 <script>
-const mode=${JSON.stringify(mode)}, labels=['Instant','Medium','High','Extra High','Pro'];
-let index=${mode === "already" ? 4 : 3}, opened=false; const state={mode,keys:[],sends:0,ready:false,tier:labels[index]};
+const mode=${JSON.stringify(mode)}, labels=${JSON.stringify(fourTier ? ["Instant", "Medium", "High", "Extra High"] : ["Instant", "Medium", "High", "Extra High", "Pro"])};
+let index=${mode === "four-move" ? 1 : mode === "already" ? 4 : 3}, opened=false; const state={mode,keys:[],sends:0,ready:false,tier:labels[index]};
 const report=()=>fetch('/events/'+mode,{method:'POST',body:JSON.stringify(state)});
 const close=()=>{document.querySelector('#menu').style.display='none';document.querySelector('#pill').setAttribute('aria-expanded','false');};
 const mount=()=>{
- const simple=document.querySelector('#simple');simple.innerHTML='<div id="control" tabindex="0" role="menuitem" aria-label="Power" aria-describedby="announcement"><div data-model-reasoning-effort-slider><div role="slider" aria-hidden="true" aria-valuemin="0" aria-valuemax="4" aria-valuenow="'+index+'"></div></div></div><div id="announcement">'+labels[index]+', '+(index+1)+' of 5.</div>';
+ const simple=document.querySelector('#simple');simple.innerHTML='<div id="control" tabindex="0" role="menuitem" aria-label="Power" aria-describedby="announcement"><div data-model-reasoning-effort-slider><div role="slider" aria-hidden="true" aria-valuemin="0" aria-valuemax="'+(labels.length-1)+'" aria-valuenow="'+index+'"></div></div></div><div id="announcement">'+labels[index]+', '+(index+1)+' of '+labels.length+'.</div>';
  const control=document.querySelector('#control');
  if(mode==='geometry'||mode==='never')control.className='hidden';
  else state.ready=true;
  control.addEventListener('keydown',event=>{
   if(!['ArrowLeft','ArrowRight'].includes(event.key))return;
   state.keys.push({key:event.key,ready:state.ready});
-  index=Math.max(0,Math.min(4,index+(event.key==='ArrowRight'?1:-1)));state.tier=labels[index];
+  index=Math.max(0,Math.min(labels.length-1,index+(event.key==='ArrowRight'?1:-1)));state.tier=labels[index];
   control.querySelector('[role=slider]').setAttribute('aria-valuenow',String(index));
-  document.querySelector('#announcement').textContent=labels[index]+', '+(index+1)+' of 5.';
+  document.querySelector('#announcement').textContent=labels[index]+', '+(index+1)+' of '+labels.length+'.';
   document.querySelector('#pill').textContent=labels[index];report();
  });report();
 };
@@ -75,7 +76,7 @@ const send=()=>{
  state.sends++;state.sentTier=state.tier;report();
  const prompt=document.querySelector('#prompt-textarea').value;
  const turn=document.createElement('article');turn.dataset.testid='conversation-turn-0';turn.dataset.turn='user';
- const user=document.createElement('div');user.dataset.messageAuthorRole='user';user.textContent=prompt;turn.append(user);document.querySelector('#turns').append(turn);
+ const user=document.createElement('div');user.dataset.messageAuthorRole='user';user.dataset.messageId='effort-user-'+state.sends;user.textContent=prompt;turn.append(user);document.querySelector('#turns').append(turn);
  document.querySelector('#prompt-textarea').value='';history.replaceState({},'', '/c/fixture-'+mode);
  setTimeout(()=>{
  const answer=document.createElement('article');answer.dataset.testid='conversation-turn-1';answer.dataset.turn='assistant';
@@ -246,36 +247,58 @@ async function startBridge() {
 try {
   await fs.mkdir(path.join(root, "chrome"));
   await chrome.launch();
-  for (const run of [
-    ...(baseline ? [{ name: "baseline", mode: "mounted", cli: baseline, success: false }] : []),
-    ...["mounted", "geometry", "never"].map((mode) => ({
-      name: "candidate-" + mode,
-      mode,
-      cli: path.join(repo, "dist/bin/oracle-cli.js"),
-      success: mode !== "never",
-    })),
-    {
-      name: "candidate-already",
-      mode: "already",
-      strategy: "select",
-      cli: path.join(repo, "dist/bin/oracle-cli.js"),
-      success: true,
-    },
-    {
-      name: "candidate-unverified",
-      mode: "never",
-      level: "standard",
-      cli: path.join(repo, "dist/bin/oracle-cli.js"),
-      success: true,
-    },
-    {
-      name: "candidate-bridge",
-      mode: "mounted",
-      bridge: true,
-      cli: path.join(repo, "dist/bin/oracle-cli.js"),
-      success: true,
-    },
-  ]) {
+  for (const run of fourTier
+    ? [
+        ...(baseline
+          ? [
+              {
+                name: "baseline-four",
+                mode: "four-already",
+                cli: baseline,
+                level: "extra-high",
+                success: true,
+                baseline: true,
+              },
+            ]
+          : []),
+        ...["four-already", "four-move", "four-pro"].map((mode) => ({
+          name: "candidate-" + mode,
+          mode,
+          level: mode === "four-pro" ? "pro" : "extra-high",
+          cli: path.join(repo, "dist/bin/oracle-cli.js"),
+          success: mode !== "four-pro",
+        })),
+      ]
+    : [
+        ...(baseline ? [{ name: "baseline", mode: "mounted", cli: baseline, success: false }] : []),
+        ...["mounted", "geometry", "never"].map((mode) => ({
+          name: "candidate-" + mode,
+          mode,
+          cli: path.join(repo, "dist/bin/oracle-cli.js"),
+          success: mode !== "never",
+        })),
+        {
+          name: "candidate-already",
+          mode: "already",
+          strategy: "select",
+          cli: path.join(repo, "dist/bin/oracle-cli.js"),
+          success: true,
+        },
+        {
+          name: "candidate-unverified",
+          mode: "never",
+          level: "standard",
+          cli: path.join(repo, "dist/bin/oracle-cli.js"),
+          success: true,
+        },
+        {
+          name: "candidate-bridge",
+          mode: "mounted",
+          bridge: true,
+          cli: path.join(repo, "dist/bin/oracle-cli.js"),
+          success: true,
+        },
+      ]) {
     if (run.bridge) await startBridge();
     activeRun = run.name;
     submissionCapture = Promise.resolve();
@@ -373,7 +396,13 @@ try {
     assert.equal(state.sends, run.success ? 1 : 0, JSON.stringify(state));
     assert.deepEqual(
       state.keys.map((k) => k.key),
-      run.success && run.mode !== "already" && !run.level ? ["ArrowRight"] : [],
+      fourTier
+        ? run.mode === "four-move"
+          ? ["ArrowRight", "ArrowRight"]
+          : []
+        : run.success && run.mode !== "already" && !run.level
+          ? ["ArrowRight"]
+          : [],
       JSON.stringify(state),
     );
     assert.ok(state.keys.every((k) => k.ready));
@@ -383,7 +412,9 @@ try {
     } else
       assert.match(
         result.output,
-        /selection unverified[^\n]*refusing to submit without confirmed Pro/,
+        fourTier
+          ? /Pro is unavailable[^\n]*four-tier[^\n]*refusing to submit/
+          : /selection unverified[^\n]*refusing to submit without confirmed Pro/,
       );
     const sessions = await fs.readdir(path.join(home, "sessions"));
     assert.equal(sessions.length, 1);
@@ -391,7 +422,16 @@ try {
       await fs.readFile(path.join(home, "sessions", sessions[0], "meta.json"), "utf8"),
     );
     assert.equal(meta.status, run.success ? "completed" : "error");
-    if (run.success) {
+    if (fourTier && run.success) {
+      const evidence = meta.browser.thinkingSelection;
+      assert.equal(evidence.requestedLevel, "extra-high");
+      assert.equal(evidence.verified, !run.baseline);
+      assert.equal(evidence.resolvedLabel, run.baseline ? null : "Extra High");
+      assert.equal(
+        evidence.status,
+        run.baseline ? "unverified" : run.mode === "four-move" ? "switched" : "already-selected",
+      );
+    } else if (run.success) {
       assert.equal(meta.browser.thinkingSelection.requestedLevel, run.level ?? "pro");
       assert.equal(meta.browser.thinkingSelection.verified, !run.level);
       assert.equal(meta.browser.thinkingSelection.strictFailClosed, !run.level);

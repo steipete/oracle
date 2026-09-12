@@ -6,7 +6,7 @@ import {
   normalizeChromeHost,
 } from "../../src/browser/targetClaim.js";
 
-function renderer() {
+function renderer(options: { generating?: boolean } = {}) {
   const storage = new Map<string, string>();
   const sessionStorage = {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -25,7 +25,16 @@ function renderer() {
       "location",
       "document",
       `return ${expression}`,
-    )({}, window, sessionStorage, { pathname: "/c/owned" }, { querySelectorAll: () => [] });
+    )(
+      {},
+      window,
+      sessionStorage,
+      { pathname: "/c/owned" },
+      {
+        querySelectorAll: () =>
+          options.generating ? [{ getBoundingClientRect: () => ({ width: 1, height: 1 }) }] : [],
+      },
+    );
   };
   return { run, storage, sessionStorage };
 }
@@ -34,6 +43,18 @@ test("retirement survives document replacement and excludes a new controller", (
   expect(run(buildTargetClaimExpression("original"))).toBe(true);
   expect(run(buildTargetRetirementExpression("original", "owned", "reservation-a"))).toBe(true);
   expect(run(buildTargetClaimExpression("new-controller"))).toBe(false);
+});
+test("explicit cancellation retirement can close a generating owned target", () => {
+  const { run } = renderer({ generating: true });
+  expect(run(buildTargetClaimExpression("original"))).toBe(true);
+  expect(run(buildTargetRetirementExpression("original", "owned", "reservation-a"))).toBe(false);
+  expect(
+    run(
+      buildTargetRetirementExpression("original", "owned", "reservation-b", {
+        allowGenerating: true,
+      }),
+    ),
+  ).toBe(true);
 });
 test("borrower ownership survives document replacement and blocks original retirement", () => {
   const { run } = renderer();
