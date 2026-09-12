@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**Highlights:** Fewer Chrome approval prompts, reliable browser harvest recovery, and generated-image delivery across remote hosts.
+
+- Browser: reuse one DevTools connection per browser endpoint and Oracle process across discovery, page sessions, and service requests, while keeping cancellation local and reconnecting after a real disconnect. Fixes #484.
+- Browser: recover saved attach-running conversations through refreshed browser WebSocket metadata, keep transient status notices out of prompt verification, and report actionable harvest errors. Fixes #482.
+- Remote: transfer generated images to the requested client path and numbered siblings, require image-capable hosts before submission, and omit host-only save locations from answers; thanks @malvarezcastillo.
+- Browser: warn before an implicit default switches away from a visibly newer selected model, including delayed picker rendering, while preserving explicit models, saved preferences, and current-model behavior. Fixes #375.
+- Browser: recognize the exact Korean Latest label (`최신`) during selection and verification; thanks @thisisjun786.
+- Dependencies: update Zod to 4.6.1 while retaining Node >=24 and the two-day release-age policy.
+
 ## 0.20.1 - 2026-09-11
 
 **Highlights:** Safer browser recovery and cancellation, with reliable effort selection across saved defaults and quota-limited accounts.
