@@ -24,6 +24,8 @@ test("built MCP entrypoints preserve detached workers across caller lifecycle ch
       reconnect: true,
       completed: true,
       requests: 1,
+      workerExited: true,
+      cleanup: true,
     });
   }
 }, 100_000);

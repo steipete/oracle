@@ -23,6 +23,28 @@ const clients = [
   { name: "v2-modern", Client: ModernClient, Transport: ModernTransport, modern: true },
 ];
 const results = [];
+
+async function stopWorker(pid) {
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error) {
+    if (error.code === "ESRCH") return;
+    throw error;
+  }
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if (error.code === "ESRCH") return;
+      throw error;
+    }
+    if (Date.now() >= deadline)
+      throw new Error("Detached proof worker did not exit during cleanup");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 for (const { name, Client, Transport, modern } of clients) {
   for (const alias of [false, true]) {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-mcp-lifecycle-"));
@@ -39,6 +61,7 @@ for (const { name, Client, Transport, modern } of clients) {
     requested.catch(() => {});
     let requests = 0;
     let workerPid;
+    let proofResult;
     const marker = "ORACLE_MCP_LIFECYCLE_OK";
     const server = http.createServer(async (req, res) => {
       try {
@@ -204,7 +227,7 @@ for (const { name, Client, Transport, modern } of clients) {
       assert.equal(requests, 1, "Timeout/cancellation/reconnect must not resubmit");
       await client.close();
       assert.equal(transport.pid, null);
-      results.push({
+      proofResult = {
         client: name,
         entrypoint: alias ? "oracle oracle-mcp" : "oracle-mcp",
         startMs,
@@ -213,19 +236,17 @@ for (const { name, Client, Transport, modern } of clients) {
         reconnect: true,
         completed: true,
         requests,
-      });
+      };
     } finally {
       releaseResponse();
       await client?.close();
-      if (workerPid) {
-        try {
-          process.kill(workerPid, "SIGTERM");
-        } catch {}
-      }
+      if (workerPid) await stopWorker(workerPid);
       server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
-      await fs.rm(home, { recursive: true, force: true });
+      // Windows releases a process's cwd and file handles after termination completes.
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
+    results.push({ ...proofResult, workerExited: true, cleanup: true });
   }
 }
 console.log(
