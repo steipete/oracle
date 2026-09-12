@@ -101,7 +101,6 @@ async function pollBackgroundResponse(params: BackgroundPollParams): Promise<Ora
   let response = initialResponse;
   let firstCycle = true;
   let lastStatus: string | undefined = response.status;
-  // biome-ignore lint/nursery/noUnnecessaryConditions: intentional polling loop.
   while (true) {
     const status = response.status ?? "completed";
     // firstCycle toggles immediately; keep for clarity in logs.
@@ -172,7 +171,6 @@ async function retrieveBackgroundResponseWithRetry(
 ): Promise<{ response: OracleResponse; reconnected: boolean }> {
   const { client, responseId, wait, now, maxWaitMs, startMark, log } = params;
   let retries = 0;
-  // biome-ignore lint/nursery/noUnnecessaryConditions: intentional retry loop
   while (true) {
     try {
       const next = await client.responses.retrieve(responseId);

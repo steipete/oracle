@@ -17,7 +17,6 @@ function readVersionFromPackage(): string {
   let currentDir = path.dirname(modulePath);
   const filesystemRoot = path.parse(currentDir).root;
 
-  // biome-ignore lint/nursery/noUnnecessaryConditions: deliberate sentinel loop to walk up directories
   while (true) {
     const candidate = path.join(currentDir, "package.json");
     try {

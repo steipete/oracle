@@ -1214,7 +1214,6 @@ function summarizeCommitProbe(probe: CommitProbeState): Record<string, unknown> 
   };
 }
 
-// biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
   activateExactAttachmentSendButton,
   attemptSendButton,

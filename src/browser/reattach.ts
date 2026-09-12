@@ -576,7 +576,6 @@ async function readPromptPreviewTurnIndex(
   return typeof result?.value === "number" ? result.value : null;
 }
 
-// biome-ignore lint/style/useNamingConvention: test-only export used in vitest suite
 export const __test__ = {
   pickTarget,
   extractConversationIdFromUrl,
