@@ -18,6 +18,9 @@ await fs.writeFile(
   guard,
   `import {createRequire,syncBuiltinESMExports} from "node:module";
 const cp=createRequire(import.meta.url)("node:child_process");
+const os=createRequire(import.meta.url)("node:os");
+// Keep profile discovery inside the fixture instead of scanning the user's application data.
+os.homedir=()=>process.env.ORACLE_HOME_DIR;
 const spawn=cp.spawn;
 cp.spawn=function(command,...args){
   if(/(?:chrome|chromium)(?:\\.exe)?$/i.test(String(command)))throw new Error("UNEXPECTED_CHROME_LAUNCH");

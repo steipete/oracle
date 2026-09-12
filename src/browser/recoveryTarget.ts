@@ -1,4 +1,8 @@
-import type { BrowserRecoveryTarget, SessionMetadata } from "../sessionStore.js";
+import type {
+  BrowserRecoveryTarget,
+  BrowserRuntimeMetadata,
+  SessionMetadata,
+} from "../sessionStore.js";
 import { randomUUID } from "node:crypto";
 import { sessionStore } from "../sessionStore.js";
 import { connectToRemoteChromeTarget } from "./chromeLifecycle.js";
@@ -88,12 +92,52 @@ export function matchesOwnedRecoveryTarget(
   );
 }
 
+export function recoveryCaptureFromRuntime(
+  runtime: BrowserRuntimeMetadata | undefined,
+): BrowserRecoveryCapture | undefined {
+  const owned = runtime?.ownedRecoveryTarget;
+  const conversationId =
+    runtime?.conversationId ?? extractConversationIdFromUrl(runtime?.tabUrl ?? "");
+  return owned && conversationId ? { ...owned, conversationId } : undefined;
+}
+
 /** Call only after the full recovered answer and completed session have been saved. */
 export async function retireRecoveredBrowserTarget(
   sessionId: string,
   capture: BrowserRecoveryCapture | undefined,
   logger: BrowserLogger,
   deps: { connect?: typeof connectToRemoteChromeTarget } = {},
+): Promise<void> {
+  await retireOwnedBrowserTarget(sessionId, capture, logger, {
+    ...deps,
+    terminalStatus: "completed",
+    requireIdle: true,
+  });
+}
+
+/** Call only after cancellation has been persisted for the owning session. */
+export async function retireCancelledBrowserTarget(
+  sessionId: string,
+  capture: BrowserRecoveryCapture | undefined,
+  logger: BrowserLogger,
+  deps: { connect?: typeof connectToRemoteChromeTarget } = {},
+): Promise<void> {
+  await retireOwnedBrowserTarget(sessionId, capture, logger, {
+    ...deps,
+    terminalStatus: "cancelled",
+    requireIdle: false,
+  });
+}
+
+async function retireOwnedBrowserTarget(
+  sessionId: string,
+  capture: BrowserRecoveryCapture | undefined,
+  logger: BrowserLogger,
+  options: {
+    connect?: typeof connectToRemoteChromeTarget;
+    terminalStatus: "completed" | "cancelled";
+    requireIdle: boolean;
+  },
 ): Promise<void> {
   if (!capture) return;
   let connection: Awaited<ReturnType<typeof connectToRemoteChromeTarget>> | undefined;
@@ -104,14 +148,15 @@ export async function retireRecoveredBrowserTarget(
     const metadata = await sessionStore.readSession(sessionId);
     if (
       !metadata ||
-      metadata.status !== "completed" ||
+      metadata.status !== options.terminalStatus ||
+      metadata.browser?.config?.keepBrowser === true ||
       hasOtherLiveBrowserController(metadata) ||
       !matchesOwnedRecoveryTarget(metadata, capture)
     )
       return;
     const claimId = metadata.browser?.runtime?.ownedRecoveryTarget?.claimId;
     if (!claimId) return;
-    const connect = deps.connect ?? connectToRemoteChromeTarget;
+    const connect = options.connect ?? connectToRemoteChromeTarget;
     connection = await connect(capture.host, capture.port, logger, {
       targetId: capture.targetId,
       browserWSEndpoint: capture.browserWSEndpoint,
@@ -126,7 +171,7 @@ export async function retireRecoveredBrowserTarget(
     const value = state.result?.value as { url?: string; generating?: boolean } | undefined;
     if (
       !value ||
-      value.generating !== false ||
+      (options.requireIdle && value.generating !== false) ||
       extractConversationIdFromUrl(value.url ?? "") !== capture.conversationId
     )
       return;
@@ -140,17 +185,23 @@ export async function retireRecoveredBrowserTarget(
     if (await targetHasActiveController(metadata, capture)) return;
     lockedClaim = claimId;
     const locked = await Runtime.evaluate({
-      expression: buildTargetRetirementExpression(claimId, capture.conversationId!, reservationId),
+      expression: buildTargetRetirementExpression(claimId, capture.conversationId!, reservationId, {
+        allowGenerating: !options.requireIdle,
+      }),
       returnByValue: true,
     });
     if (locked.exceptionDetails || locked.result?.value !== true) return;
     const result = await Target.closeTarget({ targetId: capture.targetId });
     if (!result.success) throw new Error("Chrome refused target retirement");
     retired = true;
-    logger("Retired Oracle-owned browser tab after saving the recovered answer.");
+    logger(
+      options.terminalStatus === "completed"
+        ? "Retired Oracle-owned browser tab after saving the recovered answer."
+        : "Retired Oracle-owned browser tab after cancellation.",
+    );
   } catch (error) {
     logger(
-      `Recovered answer is saved; browser tab cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+      `${options.terminalStatus === "completed" ? "Recovered answer is saved" : "Cancellation is saved"}; browser tab cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   } finally {
     if (connection && lockedClaim && !retired) {

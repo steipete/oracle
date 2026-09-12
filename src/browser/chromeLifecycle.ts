@@ -15,6 +15,7 @@ import type { BrowserLogger, ResolvedBrowserConfig, ChromeClient } from "./types
 import { cleanupStaleProfileState } from "./profileState.js";
 import { delay } from "./utils.js";
 import { isWsl, resolveWslChromeLaunchRoute } from "./wslHost.js";
+import { BrowserCancellation } from "./cancellation.js";
 
 export async function launchChrome(
   config: ResolvedBrowserConfig,
@@ -585,27 +586,43 @@ export async function listRemoteChromeTargets(options: {
   browserWSEndpoint?: string;
   approvalWaitMs?: number;
   logger?: BrowserLogger;
+  signal?: AbortSignal;
 }): Promise<RemoteTargetInfo[]> {
-  if (!options.browserWSEndpoint) {
-    const targets = await CDP.List({ host: options.host, port: options.port });
-    return targets as unknown as RemoteTargetInfo[];
-  }
-  const browser = await connectToBrowserWebSocket(
-    options.host,
-    options.port,
-    options.browserWSEndpoint,
-    options.logger ?? (() => {}),
-    options.approvalWaitMs,
-  );
+  const logger = options.logger ?? (() => {});
+  const cancellation = new BrowserCancellation(options.signal, logger);
   try {
-    const result = await browser.Target.getTargets();
-    return (result.targetInfos ?? []).map((target) => ({
-      targetId: target.targetId,
-      type: target.type,
-      url: target.url,
-    }));
+    return await cancellation.run(async () => {
+      if (!options.browserWSEndpoint) {
+        const targets = await cancellation.call(() =>
+          CDP.List({ host: options.host, port: options.port }),
+        );
+        return targets as unknown as RemoteTargetInfo[];
+      }
+      const browser = await cancellation.acquire(
+        () =>
+          connectToBrowserWebSocket(
+            options.host,
+            options.port,
+            options.browserWSEndpoint!,
+            logger,
+            options.approvalWaitMs,
+          ),
+        (lateBrowser) => lateBrowser.close(),
+      );
+      try {
+        const client = cancellation.client(browser);
+        const result = await client.Target.getTargets();
+        return (result.targetInfos ?? []).map((target) => ({
+          targetId: target.targetId,
+          type: target.type,
+          url: target.url,
+        }));
+      } finally {
+        await browser.close().catch(() => undefined);
+      }
+    });
   } finally {
-    await browser.close().catch(() => undefined);
+    cancellation.dispose();
   }
 }
 

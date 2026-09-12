@@ -3063,6 +3063,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
   function buildDirectSlider(
     currentIndex: number,
     labels = ["Instant", "Medium", "High", "Extra High", "Pro"],
+    maximum = 4,
   ) {
     const dom = buildDom(labels[currentIndex]!);
     const announcement = new Node(`${labels[currentIndex]}, ${currentIndex + 1} of 5.`);
@@ -3070,7 +3071,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       role: "slider",
       "aria-hidden": "true",
       "aria-valuemin": "0",
-      "aria-valuemax": "4",
+      "aria-valuemax": String(maximum),
       "aria-valuenow": String(currentIndex),
     });
     const slider = new Node("", { "data-model-reasoning-effort-slider": "" }, [thumb]);
@@ -3089,7 +3090,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       const key = (event as { key?: string }).key;
       if (key !== "ArrowLeft" && key !== "ArrowRight") return true;
       keys.push(key);
-      currentIndex = Math.max(0, Math.min(4, currentIndex + (key === "ArrowRight" ? 1 : -1)));
+      currentIndex = Math.max(0, Math.min(maximum, currentIndex + (key === "ArrowRight" ? 1 : -1)));
       thumb.setAttribute("aria-valuenow", String(currentIndex));
       announcement.textContent = `${labels[currentIndex]}, ${currentIndex + 1} of 5.`;
       return true;
@@ -3105,6 +3106,57 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       id === "slider-announcement" ? announcement : null;
     return { ...dom, thumb, announcement, control, simple, keys };
   }
+
+  it("verifies Extra High already selected on the four-tier slider", async () => {
+    const dom = buildDirectSlider(3, undefined, 3);
+    dom.announcement.textContent = "Extra High, 4 of 4";
+    await expect(run(dom.documentStub, "extra-high", "Latest")).resolves.toEqual({
+      status: "already-selected",
+      label: "Extra High",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  it("moves to Extra High on the four-tier slider", async () => {
+    const dom = buildDirectSlider(1, undefined, 3);
+    await expect(run(dom.documentStub, "extra-high", "Latest")).resolves.toEqual({
+      status: "switched",
+      label: "Extra High",
+    });
+    expect(dom.keys).toEqual(["ArrowRight", "ArrowRight"]);
+  });
+
+  it("rejects unavailable Pro without input on the four-tier slider", async () => {
+    const dom = buildDirectSlider(3, undefined, 3);
+    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toMatchObject({
+      status: "option-disabled",
+      label: "Pro",
+      notice: expect.stringContaining("four-tier"),
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  it.each([
+    ["0", "3", "4", "Pro, 5 of 5"],
+    ["0", "3", "3", "Pro, 4 of 4"],
+    ["0", "3", "2", "Extra High, 4 of 4"],
+    ["1", "3", "3", "Extra High, 4 of 4"],
+    ["0", "03", "3", "Extra High, 4 of 4"],
+    ["0", "2", "2", "High, 3 of 3"],
+  ])(
+    "rejects contradictory or unknown slider range %s..%s at %s (%s)",
+    async (min, max, now, label) => {
+      const dom = buildDirectSlider(3);
+      dom.thumb.setAttribute("aria-valuemin", min);
+      dom.thumb.setAttribute("aria-valuemax", max);
+      dom.thumb.setAttribute("aria-valuenow", now);
+      dom.announcement.textContent = label;
+      expect((await run(dom.documentStub, "extra-high", "Latest")).status).toBe(
+        "selection-unverified",
+      );
+      expect(dom.keys).toEqual([]);
+    },
+  );
 
   it("selects Pro from the observed Japanese 極高 tier for Astra Latest", async () => {
     const dom = buildDirectSlider(3, ["Instant", "Medium", "High", "極高", "Pro"]);

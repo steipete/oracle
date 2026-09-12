@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { BrowserRunCancelledError } from "../../src/oracle/errors.js";
 
 const cdpNewMock = vi.fn();
 const cdpCloseMock = vi.fn();
@@ -894,6 +895,27 @@ describe("closeBlankChromeTabs", () => {
     await expect(waiting).resolves.toEqual([]);
     expect(browser.close).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test("closes the browser-level CDP connection when target discovery is cancelled", async () => {
+    const cancellation = new AbortController();
+    const browser = {
+      Target: { getTargets: vi.fn(() => new Promise(() => undefined)) },
+      close: vi.fn(async () => {}),
+    };
+    cdpMock.mockResolvedValueOnce(browser);
+    const { listRemoteChromeTargets } = await import("../../src/browser/chromeLifecycle.js");
+    const waiting = listRemoteChromeTargets({
+      host: "127.0.0.1",
+      port: 9222,
+      browserWSEndpoint: "ws://127.0.0.1:9222/devtools/browser/abc",
+      signal: cancellation.signal,
+    });
+    await vi.waitFor(() => expect(browser.Target.getTargets).toHaveBeenCalledOnce());
+    cancellation.abort();
+
+    await expect(waiting).rejects.toThrow(BrowserRunCancelledError);
+    expect(browser.close).toHaveBeenCalledOnce();
   });
 
   test("cleans up a connection approved after its deadline without creating a tab", async () => {

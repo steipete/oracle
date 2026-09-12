@@ -223,6 +223,7 @@ export interface BrowserRunResult {
   tabUrl?: string;
   conversationId?: string;
   promptSubmitted?: boolean;
+  submittedPromptHash?: string | null;
   researchPlan?: BrowserResearchPlanMetadata;
   controllerPid?: number;
 }

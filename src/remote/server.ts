@@ -1021,6 +1021,7 @@ function sanitizeResult(
     tabUrl: result.tabUrl,
     conversationId: result.conversationId,
     promptSubmitted: result.promptSubmitted,
+    submittedPromptHash: result.submittedPromptHash,
     warnings: warnings.length > 0 ? warnings : undefined,
     chromePid: undefined,
     chromePort: undefined,
