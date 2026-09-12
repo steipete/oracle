@@ -390,6 +390,7 @@ export function buildConsultBrowserConfig({
     researchMode: browserResearchMode ?? configuredBrowser.researchMode,
     archiveConversations: browserArchive ?? configuredBrowser.archiveConversations,
     desiredModel: desiredModelLabel || mapModelToBrowserLabel(runModel),
+    modelIsImplicitDefault: !inputModel && !userConfig.model && !browserModelLabel,
   };
 }
 

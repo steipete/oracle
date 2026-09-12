@@ -43,6 +43,13 @@ oracle --engine browser \
 
 You can pass the same payload inline (`--browser-inline-cookies '<json or base64>'`) or via env (`ORACLE_BROWSER_COOKIES_JSON`, `ORACLE_BROWSER_COOKIES_FILE`). Cloudflare cookies (`cf_clearance`, `__cf_bm`, etc.) are only needed when you hit a challenge.
 
+When no model is supplied on the command line or in configuration, Oracle keeps
+its existing browser default. If the visible ChatGPT selection is a newer model,
+Oracle prints a model-selection warning before switching and submitting the
+prompt. Pass `--model` to choose explicitly, or `--browser-model-strategy current`
+to retain ChatGPT's selection. Explicit models, saved model preferences, and
+`current`/`ignore` strategies do not produce this warning.
+
 ## Quick example: attach to your running Chrome
 
 Use this when you already have a signed-in Chrome session running with DevTools access enabled and want Oracle to reuse that browser instead of launching its own copy.

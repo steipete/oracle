@@ -277,6 +277,21 @@ describe("summarizeModelRunsForConsult", () => {
     ).toMatchObject({ desiredModel: "Latest", modelStrategy: "select" });
   });
 
+  test("marks only omitted MCP models as implicit defaults", () => {
+    const base = { userConfig: {}, env: {}, runModel: "gpt-5.5-pro" };
+    expect(buildConsultBrowserConfig(base).modelIsImplicitDefault).toBe(true);
+    expect(
+      buildConsultBrowserConfig({ ...base, inputModel: "gpt-5.5-pro" }).modelIsImplicitDefault,
+    ).toBe(false);
+    expect(
+      buildConsultBrowserConfig({ ...base, userConfig: { model: "gpt-5.5-pro" } })
+        .modelIsImplicitDefault,
+    ).toBe(false);
+    expect(
+      buildConsultBrowserConfig({ ...base, browserModelLabel: "GPT-5.5" }).modelIsImplicitDefault,
+    ).toBe(false);
+  });
+
   test("merges browser defaults from config for consult runs", () => {
     const config = buildConsultBrowserConfig({
       userConfig: {

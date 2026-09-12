@@ -2226,6 +2226,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       browserRequestedModel: cliModelArg,
       browserModelLabel: resolveBrowserModelLabel(cliModelArg, activeModel),
     });
+    config.modelIsImplicitDefault =
+      optionUsesDefault("model") && !userConfig.model && !options.browserModelLabel;
     return resolvedOptions.browserResumeConversationUrl
       ? { ...config, resumeConversationUrl: resolvedOptions.browserResumeConversationUrl }
       : config;
