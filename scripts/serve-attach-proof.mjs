@@ -194,6 +194,41 @@ async function prove(mode) {
     assert.equal(code, 1, `${mode}: expected synthetic endpoint refusal`);
     assert.equal(targetRequests, 1, `${mode}: host route did not reach its DevTools endpoint`);
     if (mode !== "classic") {
+      // A second real CLI client uses the same long-running host and its approval.
+      const retry = spawn(
+        process.execPath,
+        [
+          path.join(repo, "dist/bin/oracle-cli.js"),
+          "--engine",
+          "browser",
+          "--model",
+          "gpt-5.5",
+          "--remote-host",
+          address,
+          "--wait",
+          "--no-notify",
+          "--prompt",
+          "Second synthetic routing proof",
+        ],
+        {
+          cwd: clientHome,
+          env: { ...env, ORACLE_HOME_DIR: clientHome, ORACLE_REMOTE_TOKEN: token },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let retryOutput = "";
+      retry.stdout.on("data", (chunk) => {
+        retryOutput += chunk;
+      });
+      retry.stderr.on("data", (chunk) => {
+        retryOutput += chunk;
+      });
+      const retryTimeout = setTimeout(() => retry.kill("SIGKILL"), 20_000);
+      const retryCode = await new Promise((resolve) => retry.on("exit", resolve));
+      clearTimeout(retryTimeout);
+      assert.equal(retryCode, 1, `${mode}: expected second synthetic refusal`);
+      assert.ok(retryOutput.includes("SERVE_ATTACH_ROUTED"), retryOutput);
+      assert.equal(targetRequests, 2, `${mode}: second request reached the browser`);
       assert.equal(connections, 1, `${mode}: expected one pending approval connection`);
       assert.ok(output.includes("SERVE_ATTACH_ROUTED"), `${mode}: target creation was not reached`);
     }

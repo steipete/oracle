@@ -1,4 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
 import * as childProcess from "node:child_process";
 import net from "node:net";
 import path from "node:path";
@@ -16,6 +17,7 @@ import { cleanupStaleProfileState } from "./profileState.js";
 import { delay } from "./utils.js";
 import { isWsl, resolveWslChromeLaunchRoute } from "./wslHost.js";
 import { BrowserCancellation } from "./cancellation.js";
+import { acquireBrowserConnection } from "./browserConnection.js";
 
 export async function launchChrome(
   config: ResolvedBrowserConfig,
@@ -657,31 +659,35 @@ export async function connectToRemoteChromeTarget(
     options.approvalWaitMs,
   );
   let targetId = options.targetId;
+  let createdTargetId: string | undefined;
   try {
     if (!targetId) {
       const created = await browser.Target.createTarget({
         url: options.targetUrl ?? "about:blank",
       });
       targetId = created.targetId;
+      createdTargetId = targetId;
       logger(`Opened dedicated remote Chrome tab targeting ${options.targetUrl ?? "about:blank"}`);
     }
     const attached = await browser.Target.attachToTarget({ targetId, flatten: true });
     const client = createSessionBoundChromeClient(browser, attached.sessionId);
+    let closing: Promise<void> | undefined;
     return {
       client,
       targetId,
       browserWSEndpoint: options.browserWSEndpoint,
-      close: async (closeOptions) => {
-        await browser.Target.detachFromTarget({ sessionId: attached.sessionId }).catch(
-          () => undefined,
-        );
-        if (options.closeTargetOnDispose && targetId && !closeOptions?.preserveTarget) {
-          await browser.Target.closeTarget({ targetId }).catch(() => undefined);
-        }
-        await browser.close().catch(() => undefined);
-      },
+      close: (closeOptions) =>
+        (closing ??= (async () => {
+          if (options.closeTargetOnDispose && targetId && !closeOptions?.preserveTarget) {
+            await browser.Target.closeTarget({ targetId }).catch(() => undefined);
+          }
+          await client.close();
+        })()),
     };
   } catch (error) {
+    if (createdTargetId) {
+      await browser.Target.closeTarget({ targetId: createdTargetId }).catch(() => undefined);
+    }
     await browser.close().catch(() => undefined);
     throw error;
   }
@@ -694,8 +700,13 @@ async function connectToBrowserWebSocket(
   logger: BrowserLogger,
   approvalWaitMs?: number,
 ): Promise<ChromeClient> {
+  const acquire = () =>
+    acquireBrowserConnection(
+      browserWSEndpoint,
+      async () => (await CDP({ target: browserWSEndpoint, local: true })) as ChromeClient,
+    );
   if (!approvalWaitMs || approvalWaitMs <= 0) {
-    return (await CDP({ target: browserWSEndpoint, local: true })) as ChromeClient;
+    return acquire();
   }
 
   logger(`[browser] Waiting for Chrome remote debugging approval for ${host}:${port}...`);
@@ -714,10 +725,8 @@ async function connectToBrowserWebSocket(
       let timeout: ReturnType<typeof setTimeout> | undefined;
       let expired = false;
       try {
-        const connecting = (
-          CDP({ target: browserWSEndpoint, local: true }) as Promise<ChromeClient>
-        ).then(async (client) => {
-          // An approval arriving after our deadline must not leak a connection.
+        const connecting = acquire().then(async (client) => {
+          // Release this waiter; another request may still be awaiting the same approval.
           if (expired) await client.close().catch(() => undefined);
           return client;
         });
@@ -809,6 +818,33 @@ function createSessionBoundChromeClient(browser: ChromeClient, sessionId: string
     off?: (event: string, listener: (...args: unknown[]) => void) => void;
     removeListener: (event: string, listener: (...args: unknown[]) => void) => void;
   };
+  const events = new EventEmitter();
+  const bridges = new Map<string, (...args: unknown[]) => void>();
+  let closing: Promise<void> | undefined;
+  const remove = (name: string, listener: (...args: unknown[]) => void) => {
+    events.removeListener(name, listener);
+    if (events.listenerCount(name) === 0) {
+      const bridge = bridges.get(name);
+      if (bridge) browserWithEvents.removeListener(name, bridge);
+      bridges.delete(name);
+    }
+  };
+  const listen = (name: string, listener: (...args: unknown[]) => void, once = false) => {
+    if (closing) return () => {};
+    if (!bridges.has(name)) {
+      const bridge = (...args: unknown[]) => events.emit(name, ...args);
+      bridges.set(name, bridge);
+      browserWithEvents.on(name, bridge);
+    }
+    if (once) events.once(name, listener);
+    else events.on(name, listener);
+    return () => remove(name, listener);
+  };
+  const onDetached = (event: { sessionId?: string }) => {
+    if (event.sessionId === sessionId) events.emit("disconnect");
+  };
+  browserWithEvents.on("Target.detachedFromTarget", onDetached as (...args: unknown[]) => void);
+
   const bindDomain = <T extends object>(domainName: string): T => {
     const domain = (browser as unknown as Record<string, Record<string, unknown>>)[domainName] as
       | Record<string, unknown>
@@ -818,27 +854,34 @@ function createSessionBoundChromeClient(browser: ChromeClient, sessionId: string
       get(target, prop, receiver) {
         if (prop === "on") {
           return (name: string, listener: (...args: unknown[]) => void) => {
-            const domainEvent = (target as Record<string, unknown>)[name];
-            if (typeof domainEvent === "function") {
-              return (domainEvent as (...args: unknown[]) => unknown)(sessionId, listener);
-            }
-            browserWithEvents.on(eventName(name), listener);
-            return () => browserWithEvents.removeListener(eventName(name), listener);
+            return listen(eventName(name), listener);
           };
         }
         if (prop === "off" || prop === "removeListener") {
           return (name: string, listener: (...args: unknown[]) => void) => {
-            const off =
-              browserWithEvents.off ?? browserWithEvents.removeListener.bind(browserWithEvents);
-            off(eventName(name), listener);
+            remove(eventName(name), listener);
           };
         }
         const value = Reflect.get(target, prop, receiver);
         if (typeof value !== "function") {
           return value;
         }
-        return (...args: unknown[]) =>
-          (value as (...callArgs: unknown[]) => unknown)(...args, sessionId);
+        if ((value as { category?: string }).category === "event") {
+          return (listener?: (...args: unknown[]) => void) =>
+            listener
+              ? listen(eventName(String(prop)), listener)
+              : new Promise((resolve) => listen(eventName(String(prop)), resolve, true));
+        }
+        return (...args: unknown[]) => {
+          if (closing) return Promise.reject(new Error("Chrome page session is closed."));
+          if (typeof args[0] === "function") {
+            return (value as (...callArgs: unknown[]) => unknown)({}, sessionId, args[0]);
+          }
+          if (typeof args[1] === "function") {
+            return (value as (...callArgs: unknown[]) => unknown)(args[0], sessionId, args[1]);
+          }
+          return (value as (...callArgs: unknown[]) => unknown)(...args, sessionId);
+        };
       },
     });
   };
@@ -858,15 +901,25 @@ function createSessionBoundChromeClient(browser: ChromeClient, sessionId: string
     Input: bindDomain("Input"),
     DOM: bindDomain("DOM"),
     Emulation: bindDomain("Emulation"),
-    on: browserWithEvents.on.bind(browserWithEvents),
-    once: browserWithEvents.once.bind(browserWithEvents),
-    off:
-      browserWithEvents.off?.bind(browserWithEvents) ??
-      browserWithEvents.removeListener.bind(browserWithEvents),
-    removeListener: browserWithEvents.removeListener.bind(browserWithEvents),
-    close: async () => {
-      await browser.Target.detachFromTarget({ sessionId }).catch(() => undefined);
-    },
+    on: (name: string, listener: (...args: unknown[]) => void) => listen(name, listener),
+    once: (name: string, listener: (...args: unknown[]) => void) => listen(name, listener, true),
+    off: remove,
+    removeListener: remove,
+    close: () =>
+      (closing ??= (async () => {
+        for (const [name, bridge] of bridges) browserWithEvents.removeListener(name, bridge);
+        bridges.clear();
+        events.removeAllListeners();
+        browserWithEvents.removeListener(
+          "Target.detachedFromTarget",
+          onDetached as (...args: unknown[]) => void,
+        );
+        try {
+          await browser.Target.detachFromTarget({ sessionId }).catch(() => undefined);
+        } finally {
+          await browser.close();
+        }
+      })()),
   } as ChromeClient;
 }
 
