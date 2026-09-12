@@ -164,6 +164,64 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
     );
   });
 
+  test.each(["profile", "http"])(
+    "refreshes expired saved sockets via %s for harvest and live-tail",
+    async (source) => {
+      const meta = {
+        ...baseMeta,
+        browser: {
+          ...baseMeta.browser,
+          runtime: {
+            ...baseMeta.browser?.runtime,
+            chromeBrowserWSEndpoint: "ws://127.0.0.1:9223/devtools/browser/expired",
+            ...(source === "profile" ? { chromeProfileRoot: "/synthetic/profile" } : {}),
+          },
+        },
+      };
+      const current = "ws://127.0.0.1:9223/devtools/browser/current";
+      const readActive = vi.fn(async () => ({ port: 9223, browserWSEndpoint: current }));
+      vi.doMock("../../src/browser/detect.js", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("../../src/browser/detect.js")>()),
+        readDevToolsActivePortInfo: readActive,
+      }));
+      const fetchVersion = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ webSocketDebuggerUrl: current }), { status: 200 }),
+        );
+      const harvestChatGptTab = vi.fn().mockResolvedValue(completedHarvest);
+      vi.doMock("../../src/browser/liveTabs.js", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("../../src/browser/liveTabs.js")>()),
+        harvestChatGptTab,
+      }));
+      vi.doMock("../../src/sessionStore.js", () => ({
+        sessionStore: { readSession: async () => meta, updateSession: vi.fn(), getPaths },
+      }));
+      const { harvestSessionBrowserOutput, liveTailSessionBrowserOutput } =
+        await import("../../src/cli/browserTabs.js");
+      try {
+        await harvestSessionBrowserOutput(meta.id, { quietOutput: true });
+        fetchVersion.mockResolvedValue(
+          new Response(JSON.stringify({ webSocketDebuggerUrl: current }), { status: 200 }),
+        );
+        await liveTailSessionBrowserOutput(meta.id);
+        expect(harvestChatGptTab.mock.calls.length).toBeGreaterThanOrEqual(3);
+        for (const [options] of harvestChatGptTab.mock.calls) {
+          expect(options).toMatchObject({
+            browserWSEndpoint: current,
+            host: "127.0.0.1",
+            port: 9223,
+          });
+        }
+        if (source === "profile") expect(fetchVersion).not.toHaveBeenCalled();
+        else expect(readActive).not.toHaveBeenCalled();
+      } finally {
+        fetchVersion.mockRestore();
+        vi.doUnmock("../../src/browser/detect.js");
+      }
+    },
+  );
+
   test("recovers the original committed prompt when ChatGPT appends a status notice", async () => {
     const prompt = "Explain: Something went wrong. Please try again.";
     const meta = {

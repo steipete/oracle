@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { sessionStore } from "../sessionStore.js";
 import type { SessionMetadata } from "../sessionStore.js";
 import { resolveBrowserConfig } from "../browser/config.js";
+import { formatWebSocketHost, readDevToolsActivePortInfo } from "../browser/detect.js";
 import { browserPromptFingerprint } from "../browser/promptFingerprint.js";
 import {
   collectChatGptTabs,
@@ -141,9 +142,9 @@ export interface BrowserLiveTailOptions {
   closeAfterRecover?: boolean;
 }
 
-function sessionBrowserEndpoint(
+async function sessionBrowserEndpoint(
   meta: SessionMetadata | null | undefined,
-): (LiveChromeEndpoint & { host: string; port: number }) | null {
+): Promise<(LiveChromeEndpoint & { host: string; port: number }) | null> {
   const runtime = meta?.browser?.runtime ?? {};
   const remote: { host?: string; port?: number } = meta?.browser?.config?.remoteChrome ?? {};
   const host = runtime.chromeHost ?? remote.host;
@@ -151,28 +152,61 @@ function sessionBrowserEndpoint(
   if (!host || !port) {
     return null;
   }
+  let browserWSEndpoint = runtime.chromeBrowserWSEndpoint;
+  let livePort = port;
+  if (browserWSEndpoint) {
+    const active = runtime.chromeProfileRoot
+      ? await readDevToolsActivePortInfo(runtime.chromeProfileRoot, { host }).catch(() => null)
+      : null;
+    if (active) {
+      browserWSEndpoint = active.browserWSEndpoint;
+      livePort = active.port;
+    } else {
+      // A restarted Chrome can keep its port while changing its browser socket ID.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1000);
+      try {
+        const response = await fetch(`http://${formatWebSocketHost(host)}:${port}/json/version`, {
+          signal: controller.signal,
+        });
+        if (response.ok) {
+          const version = (await response.json()) as { webSocketDebuggerUrl?: string };
+          const advertised = new URL(version.webSocketDebuggerUrl ?? "");
+          if (advertised.pathname.startsWith("/devtools/browser/")) {
+            const refreshed = new URL(browserWSEndpoint);
+            refreshed.pathname = advertised.pathname;
+            browserWSEndpoint = refreshed.toString();
+          }
+        }
+      } catch {
+        // Attach-running Chrome may disable HTTP discovery; keep its saved socket.
+      } finally {
+        clearTimeout(timeout);
+        controller.abort();
+      }
+    }
+  }
   return {
     host,
-    port,
-    ...(runtime.chromeBrowserWSEndpoint
+    port: livePort,
+    ...(browserWSEndpoint
       ? {
-          browserWSEndpoint: runtime.chromeBrowserWSEndpoint,
+          browserWSEndpoint,
           approvalWaitMs: resolveBrowserConfig(meta?.browser?.config).approvalWaitMs,
         }
       : {}),
   };
 }
 
-function collectUniqueEndpoints(
+async function collectUniqueEndpoints(
   metas: SessionMetadata[],
-): Array<LiveChromeEndpoint & { host: string; port: number }> {
+): Promise<Array<LiveChromeEndpoint & { host: string; port: number }>> {
   const entries = new Map<string, LiveChromeEndpoint & { host: string; port: number }>();
   entries.set(`${DEFAULT_REMOTE_CHROME_HOST}:${DEFAULT_REMOTE_CHROME_PORT}:http`, {
     host: DEFAULT_REMOTE_CHROME_HOST,
     port: DEFAULT_REMOTE_CHROME_PORT,
   });
-  for (const meta of metas) {
-    const endpoint = sessionBrowserEndpoint(meta);
+  for (const endpoint of await Promise.all(metas.map(sessionBrowserEndpoint))) {
     if (!endpoint) {
       continue;
     }
@@ -277,7 +311,7 @@ async function maybeWriteHarvestOutput(
 
 export async function showBrowserTabsStatus(): Promise<void> {
   const metas = await sessionStore.listSessions().catch(() => [] as SessionMetadata[]);
-  const endpoints = collectUniqueEndpoints(metas);
+  const endpoints = await collectUniqueEndpoints(metas);
   let printedAny = false;
   for (const endpoint of endpoints) {
     let tabs: ChatGptTabSummary[];
@@ -322,7 +356,7 @@ export async function harvestSessionBrowserOutput(
   if (!meta) {
     throw new Error(`No session found with ID ${sessionId}.`);
   }
-  const recordedEndpoint = sessionBrowserEndpoint(meta);
+  const recordedEndpoint = await sessionBrowserEndpoint(meta);
   const initialEndpoint = recordedEndpoint ?? {
     host: DEFAULT_REMOTE_CHROME_HOST,
     port: DEFAULT_REMOTE_CHROME_PORT,
@@ -395,7 +429,7 @@ export async function liveTailSessionBrowserOutput(
   if (!meta) {
     throw new Error(`No session found with ID ${sessionId}.`);
   }
-  const recordedEndpoint = sessionBrowserEndpoint(meta);
+  const recordedEndpoint = await sessionBrowserEndpoint(meta);
   let endpoint = recordedEndpoint ?? {
     host: DEFAULT_REMOTE_CHROME_HOST,
     port: DEFAULT_REMOTE_CHROME_PORT,
