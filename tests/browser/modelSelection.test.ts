@@ -1345,22 +1345,29 @@ describe("browser model selection matchers", () => {
     );
   });
 
-  it("matches the exact Japanese Latest radio label without accepting GPT-5.6 Sol", async () => {
-    const { labelTokens } = buildModelMatchersLiteralForTest("Latest");
-    expect(labelTokens).toContain("最新");
-    await expect(
-      evaluateMenuModelSelectionExpression("Latest", {
-        label: "最新",
-        selectedButtonLabel: "6 Pro",
-      }),
-    ).resolves.toMatchObject({ status: "switched", label: "最新" });
-    await expect(
-      evaluateMenuModelSelectionExpression("Latest", { label: "GPT-5.6 Sol" }),
-    ).resolves.toMatchObject({ status: "option-not-found" });
-  });
+  it.each(["最新", "최신"])(
+    "matches the exact localized Latest radio %s without accepting GPT-5.6 Sol",
+    async (label) => {
+      const { labelTokens } = buildModelMatchersLiteralForTest("Latest");
+      expect(labelTokens).toContain(label);
+      await expect(
+        evaluateMenuModelSelectionExpression("Latest", {
+          label,
+          selectedButtonLabel: "6 Pro",
+        }),
+      ).resolves.toMatchObject({ status: "switched", label });
+      await expect(
+        evaluateMenuModelSelectionExpression("Latest", { label: "GPT-5.6 Sol" }),
+      ).resolves.toMatchObject({ status: "option-not-found" });
+    },
+  );
 
   it("accepts only exact localized Latest evidence after selection", () => {
     expect(() => assertResolvedModelSelectionForTest("Latest", "最新")).not.toThrow();
+    expect(() => assertResolvedModelSelectionForTest("Latest", "최신")).not.toThrow();
+    expect(() => assertResolvedModelSelectionForTest("Latest", "최신 아님")).toThrow(
+      /requires GPT-6 Astra/,
+    );
     expect(() => assertResolvedModelSelectionForTest("Latest", "Latest")).not.toThrow();
     expect(() => assertResolvedModelSelectionForTest("Latest", "GPT-5.6 Sol")).toThrow(
       /requires GPT-6 Astra/,
