@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.2 - 2026-09-11
 
 **Highlights:** Fewer Chrome approval prompts, reliable browser harvest recovery, and generated-image delivery across remote hosts.
 
