@@ -64,17 +64,12 @@ export function formatClaudeMcpConfig({
   localBrowser?: boolean;
 }): string {
   const env: Record<string, string> = {};
-  // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
   env["ORACLE_ENGINE"] = "browser";
-  // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
   env["ORACLE_HOME_DIR"] = oracleHomeDir;
-  // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
   env["ORACLE_BROWSER_PROFILE_DIR"] = browserProfileDir;
 
   if (remoteHost && !localBrowser) {
-    // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
     env["ORACLE_REMOTE_HOST"] = remoteHost;
-    // biome-ignore lint/complexity/useLiteralKeys: env vars are uppercase and include underscores.
     env["ORACLE_REMOTE_TOKEN"] = includeToken ? (remoteToken ?? "<YOUR_TOKEN>") : "<YOUR_TOKEN>";
   }
 

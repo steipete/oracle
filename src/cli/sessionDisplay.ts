@@ -623,7 +623,6 @@ export async function attachSession(
 
   await printNew();
 
-  // biome-ignore lint/nursery/noUnnecessaryConditions: deliberate infinite poll
   while (true) {
     const latest = await sessionStore.readSession(sessionId);
     if (!latest) {
