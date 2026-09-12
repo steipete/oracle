@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.20.1 - 2026-09-11
 
 **Highlights:** Safer browser recovery and cancellation, with reliable effort selection across saved defaults and quota-limited accounts.
