@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Dependencies: refresh OpenAI, Chrome DevTools protocol, Hono, Vite, and pnpm; remove unused SDK/type packages while retaining Node >=24 and the two-day release-age policy.
+
 ## 0.20.2 - 2026-09-11
 
 **Highlights:** Fewer Chrome approval prompts, reliable browser harvest recovery, and generated-image delivery across remote hosts.
