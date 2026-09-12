@@ -13,6 +13,7 @@ import type {
 import { runBrowserMode } from "../browserMode.js";
 import type { BrowserRunOptions, BrowserRunResult } from "../browserMode.js";
 import { DEFAULT_BROWSER_CONFIG } from "./config.js";
+import { redactBrowserConfigForDebugLog } from "./configLogging.js";
 import {
   assembleBrowserPrompt,
   cleanupGeneratedBrowserBundles,
@@ -231,9 +232,11 @@ async function executeAssembledBrowserSession({
   if (runOptions.verbose) {
     log(
       chalk.dim(
-        `[verbose] Browser config: ${JSON.stringify({
-          ...browserConfig,
-        })}`,
+        `[verbose] Browser config: ${JSON.stringify(
+          redactBrowserConfigForDebugLog({
+            ...browserConfig,
+          }),
+        )}`,
       ),
     );
     log(chalk.dim(`[verbose] Browser prompt length: ${promptArtifacts.composerText.length} chars`));

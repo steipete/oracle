@@ -2023,16 +2023,47 @@ describe("uploadAttachmentFile", () => {
     transferSpy.mockRestore();
   });
 
-  test.skip("selects DOM input and uploads file", async () => {
+  test("selects DOM input and uploads file", async () => {
     logger.mockClear();
-    vi.spyOn(attachments, "waitForAttachmentVisible").mockResolvedValue(undefined);
+    let uploaded = false;
     const dom = {
       getDocument: vi.fn().mockResolvedValue({ root: { nodeId: 1 } }),
       querySelector: vi.fn().mockResolvedValue({ nodeId: 2 }),
-      setFileInputFiles: vi.fn().mockResolvedValue(undefined),
+      setFileInputFiles: vi.fn(async () => {
+        uploaded = true;
+      }),
     } as unknown as ChromeClient["DOM"];
     const runtime = {
-      evaluate: vi.fn().mockResolvedValue({ result: { value: { matched: true, found: true } } }),
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+        if (
+          expression.includes("const normalizedExpected") &&
+          expression.includes("chipSignature")
+        ) {
+          return {
+            result: {
+              value: {
+                ui: uploaded,
+                input: uploaded,
+                chipCount: uploaded ? 1 : 0,
+                inputCount: uploaded ? 1 : 0,
+                uploading: false,
+                chipSignature: uploaded ? "foo.md" : "",
+              },
+            },
+          };
+        }
+        if (expression.includes("baselineChipCount") && expression.includes("baselineChips")) {
+          return {
+            result: {
+              value: { ok: true, baselineChipCount: 0, baselineChips: [], order: [0] },
+            },
+          };
+        }
+        if (expression.includes("const matchesExpectedFileName =")) {
+          return { result: { value: { found: uploaded } } };
+        }
+        return { result: { value: null } };
+      }),
     } as unknown as ChromeClient["Runtime"];
     await expect(
       uploadAttachmentFile(
@@ -2043,6 +2074,8 @@ describe("uploadAttachmentFile", () => {
     ).resolves.toBe(true);
     expect(dom.querySelector).toHaveBeenCalled();
     expect(dom.setFileInputFiles).toHaveBeenCalledWith({ nodeId: 2, files: ["/tmp/foo.md"] });
+    expect(dom.setFileInputFiles).toHaveBeenCalledTimes(1);
+    expect(transferSpy).not.toHaveBeenCalled();
     expect(logger).toHaveBeenCalledWith(expect.stringContaining("Attachment queued"));
   }, 15_000);
 

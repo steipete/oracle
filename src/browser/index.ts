@@ -6,6 +6,7 @@ import net from "node:net";
 import { randomUUID } from "node:crypto";
 import { claimBrowserTarget } from "./targetClaim.js";
 import { resolveBrowserConfig } from "./config.js";
+import { redactBrowserConfigForDebugLog } from "./configLogging.js";
 import { copyChromeProfile } from "./profileCopy.js";
 import { BrowserCancellation, withoutBrowserCancellation } from "./cancellation.js";
 import type {
@@ -149,21 +150,6 @@ export {
   sanitizeThinkingText,
   startThinkingStatusMonitorForTest,
 } from "./actions/thinkingStatus.js";
-
-function redactBrowserConfigForDebugLog(config: Record<string, unknown>): Record<string, unknown> {
-  const redacted = { ...config };
-  if (Array.isArray(config.inlineCookies)) {
-    redacted.inlineCookies = `[redacted:${config.inlineCookies.length} cookies]`;
-    redacted.inlineCookieCount = config.inlineCookies.length;
-  }
-  return redacted;
-}
-
-export function redactBrowserConfigForDebugLogForTest(
-  config: Record<string, unknown>,
-): Record<string, unknown> {
-  return redactBrowserConfigForDebugLog(config);
-}
 
 function isCloudflareChallengeError(error: unknown): error is BrowserAutomationError {
   if (!(error instanceof BrowserAutomationError)) return false;

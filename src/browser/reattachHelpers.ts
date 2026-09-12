@@ -101,11 +101,9 @@ export async function openConversationFromSidebar(
     expression: `(() => {
       const conversationId = ${JSON.stringify(options.conversationId ?? null)};
       const preferProjects = ${JSON.stringify(Boolean(options.preferProjects))};
-      const promptPreview = ${JSON.stringify(options.promptPreview ?? null)};
       const attemptIndex = ${Math.max(0, attempt)};
-      const promptNeedleFull = promptPreview ? promptPreview.trim().toLowerCase().slice(0, 100) : '';
-      const promptNeedleShort = promptNeedleFull.replace(/\\s*\\d{4,}\\s*$/, '').trim();
-      const promptNeedles = Array.from(new Set([promptNeedleFull, promptNeedleShort].filter(Boolean)));
+      const promptNeedles = ${JSON.stringify(buildPromptPreviewNeedles(options.promptPreview, 100))};
+      const normalizeText = ${normalizeForComparison.toString()};
       const nav = document.querySelector('nav') || document.querySelector('aside') || document.body;
       if (preferProjects) {
         const projectLink = Array.from(nav.querySelectorAll('a,button'))
@@ -167,7 +165,7 @@ export async function openConversationFromSidebar(
         target = pick(mainCandidates.filter(byId)) || pick(navCandidates.filter(byId));
       }
       if (!target && promptNeedles.length > 0) {
-        const byPrompt = (item) => promptNeedles.some((needle) => item.text && item.text.toLowerCase().includes(needle));
+        const byPrompt = (item) => promptNeedles.some((needle) => item.text && normalizeText(item.text).includes(needle));
         const sortBySpecificity = (items) =>
           items
             .filter(byPrompt)
@@ -241,13 +239,12 @@ export async function waitForPromptPreview(
   promptPreview: string,
   timeoutMs: number,
 ): Promise<boolean> {
-  const needleFull = promptPreview.trim().toLowerCase().slice(0, 120);
-  const needleShort = needleFull.replace(/\\s*\\d{4,}\\s*$/, "").trim();
-  const needles = Array.from(new Set([needleFull, needleShort].filter(Boolean)));
+  const needles = buildPromptPreviewNeedles(promptPreview, 120);
   if (needles.length === 0) return false;
   const selectorLiteral = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   const expression = `(() => {
     const needles = ${JSON.stringify(needles)};
+    const normalizeText = ${normalizeForComparison.toString()};
     const root =
       document.querySelector('section[data-testid="screen-threadFlyOut"]') ||
       document.querySelector('[data-testid="chat-thread"]') ||
@@ -255,20 +252,17 @@ export async function waitForPromptPreview(
       document.querySelector('[role="main"]');
     if (!root) return false;
     const userTurns = Array.from(root.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'));
-    const collectText = (nodes) =>
+    const collectText = (nodes) => normalizeText(
       nodes
         .map((node) => (node.innerText || node.textContent || ''))
-        .join(' ')
-        .toLowerCase();
+        .join(' '));
     let text = collectText(userTurns);
-    let hasTurns = userTurns.length > 0;
     if (!text) {
       const turns = Array.from(root.querySelectorAll(${selectorLiteral}));
-      hasTurns = hasTurns || turns.length > 0;
       text = collectText(turns);
     }
     if (!text) {
-      text = (root.innerText || root.textContent || '').toLowerCase();
+      text = normalizeText(root.innerText || root.textContent || '');
     }
     return needles.some((needle) => text.includes(needle));
   })()`;
@@ -331,8 +325,14 @@ export async function readConversationTurnIndex(
 function normalizeForComparison(text: string): string {
   return String(text || "")
     .toLowerCase()
-    .replace(/\\s+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
+}
+
+function buildPromptPreviewNeedles(promptPreview: string | undefined, limit: number): string[] {
+  const full = normalizeForComparison(promptPreview ?? "").slice(0, limit);
+  const withoutCounter = full.replace(/\s*\d{4,}\s*$/, "").trim();
+  return [...new Set([full, withoutCounter].filter(Boolean))];
 }
 
 export function buildPromptEchoMatcher(promptPreview?: string | null): PromptEchoMatcher | null {

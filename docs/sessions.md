@@ -76,6 +76,8 @@ For API runs, `--wait` executes the request in the foreground. Local Pro browser
 
 MCP callers can make the same ownership split explicit for any local run: call `consult` with `waitForCompletion:false`, then call `wait` with the returned session id. `wait.timeoutMs` bounds only the caller's wait; timeout, request cancellation, or MCP transport closure does not cancel the detached worker. Omit the timeout to wait until a terminal status, or use `0` for an immediate snapshot.
 
+Reattachment recognizes prompt echoes even when spacing or line breaks differ, and keeps waiting for assistant content instead of treating the echoed prompt as an answer.
+
 For browser runs, ChatGPT sometimes redirects mid-page-load. The auto-reattach flags poll the existing tab without manual intervention:
 
 ```bash

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: redact inline cookie values in verbose session logs while preserving credentials for execution.
+- Browser: recognize prompt echoes across whitespace changes, preserve literal backslashes, and share prompt-preview matching between sidebar lookup and recovery.
 - Dependencies: refresh OpenAI, Chrome DevTools protocol, Hono, Vite, and pnpm; remove unused SDK/type packages while retaining Node >=24 and the two-day release-age policy.
 
 ## 0.20.2 - 2026-09-11
