@@ -24,7 +24,7 @@ import type {
   RemoteRunPayload,
   RemoteRunEvent,
 } from "./types.js";
-import { MAX_REMOTE_ARTIFACT_BYTES } from "./types.js";
+import { MAX_REMOTE_ARTIFACT_BYTES, pickRemoteImageMetadata } from "./types.js";
 import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
@@ -39,6 +39,7 @@ import {
 import { normalizeChatgptUrl } from "../browser/utils.js";
 import {
   computeFileSha256,
+  resolveSessionArtifactsDir,
   sanitizeArtifactFilename,
   sanitizeArtifactMimeType,
   validateArtifactFile,
@@ -89,6 +90,7 @@ const ARTIFACT_CAPABILITIES: RemoteArtifactCapabilities = {
   runCancellation: true,
   deferredFallbackBundling: true,
   artifactTransfer: true,
+  generatedImages: true,
   artifactProtocolVersion: ARTIFACT_PROTOCOL_VERSION,
   maxArtifactBytes: MAX_REMOTE_ARTIFACT_BYTES,
 };
@@ -442,6 +444,10 @@ export async function createRemoteServer(
           ? payload.options.sessionId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 32)
           : "remote";
       payload.options.sessionId = `${clientSession || "remote"}-${runId}`;
+      const hostImageOutputPath =
+        payload.options.imageOutputRequested === true
+          ? path.join(resolveSessionArtifactsDir(payload.options.sessionId), "generated.png")
+          : undefined;
       if (browserTabCap !== undefined) payload.browserConfig.maxConcurrentTabs = browserTabCap;
       signal?.throwIfAborted();
 
@@ -473,6 +479,7 @@ export async function createRemoteServer(
         heartbeatIntervalMs: payload.options.heartbeatIntervalMs,
         verbose: payload.options.verbose,
         sessionId: payload.options.sessionId,
+        generateImagePath: hostImageOutputPath,
         followUpPrompts: payload.options.followUpPrompts,
       });
 
@@ -788,13 +795,16 @@ async function registerRemoteArtifacts(params: {
 }): Promise<{ descriptors: RemoteArtifactDescriptor[]; warnings: BrowserRunWarning[] }> {
   pruneExpiredArtifacts(params.artifactRegistry);
   const seen = new Set<string>();
-  const fileArtifacts: SessionArtifact[] = [
+  const transferableArtifacts: SessionArtifact[] = [
     ...(params.result.savedFiles ?? []),
-    ...(params.result.artifacts ?? []).filter((artifact) => artifact.kind === "file"),
+    ...(params.result.savedImages ?? []),
+    ...(params.result.artifacts ?? []).filter(
+      (artifact) => artifact.kind === "file" || artifact.kind === "image",
+    ),
   ];
   const descriptors: RemoteArtifactDescriptor[] = [];
   const warnings: BrowserRunWarning[] = [];
-  for (const artifact of fileArtifacts) {
+  for (const artifact of transferableArtifacts) {
     if (!artifact?.path || seen.has(artifact.path)) {
       continue;
     }
@@ -806,7 +816,10 @@ async function registerRemoteArtifacts(params: {
           `[serve] Skipping remote artifact descriptor: ${error instanceof Error ? error.message : String(error)}`,
         );
         warnings.push({
-          code: "remote-artifact-registration-failed",
+          code:
+            artifact.kind === "image"
+              ? "remote-image-registration-failed"
+              : "remote-artifact-registration-failed",
           severity: "warning",
           message:
             `Oracle captured the browser text response, but the bridge host could not prepare ${filename} for transfer. ` +
@@ -860,7 +873,14 @@ async function buildRemoteArtifactRegistration(
     descriptor: {
       artifactId: randomUUID(),
       runId,
-      kind: "file",
+      kind: artifact.kind === "image" ? "image" : "file",
+      ...(artifact.kind === "image"
+        ? {
+            image: pickRemoteImageMetadata(
+              artifact as import("../browser/types.js").SavedBrowserImage,
+            ),
+          }
+        : {}),
       filename,
       mimeType,
       byteSize: fileStat.size,
@@ -1008,10 +1028,37 @@ function sanitizeResult(
   result: BrowserRunResult,
   warnings: BrowserRunWarning[] = [],
 ): BrowserRunResult {
+  const hostArtifactPaths = [
+    ...(result.savedFiles ?? []),
+    ...(result.savedImages ?? []),
+    ...(result.artifacts ?? []),
+  ]
+    .map((artifact) => artifact.path)
+    .filter((artifactPath): artifactPath is string => Boolean(artifactPath));
+  const savedImagePaths = [
+    ...(result.savedImages ?? []),
+    ...(result.artifacts ?? []).filter((artifact) => artifact.kind === "image"),
+  ].map((artifact) => artifact.path);
+  const imageCount = new Set(savedImagePaths).size;
+  const sanitizeAnswer = (value: string | undefined): string | undefined => {
+    let sanitized = value;
+    // Local save notices describe the host filesystem, not the client's transferred files.
+    for (const imagePath of savedImagePaths) {
+      sanitized = sanitized
+        ?.split(` Saved to: ${imagePath}`)
+        .join("")
+        .split(` Saved ${imageCount} file(s) starting at: ${imagePath}`)
+        .join("");
+    }
+    for (const artifactPath of hostArtifactPaths) {
+      sanitized = sanitized?.split(artifactPath).join(path.basename(artifactPath));
+    }
+    return sanitized;
+  };
   return {
-    answerText: result.answerText,
-    answerMarkdown: result.answerMarkdown,
-    answerHtml: result.answerHtml,
+    answerText: sanitizeAnswer(result.answerText) ?? "",
+    answerMarkdown: sanitizeAnswer(result.answerMarkdown) ?? "",
+    answerHtml: sanitizeAnswer(result.answerHtml),
     tookMs: result.tookMs,
     answerTokens: result.answerTokens,
     answerChars: result.answerChars,

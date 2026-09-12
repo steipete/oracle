@@ -243,7 +243,11 @@ function detectImageFile(buffer: Buffer): { extension: string; mimeType: string 
   return null;
 }
 
-function resolveSiblingImagePath(basePath: string, index: number, extension: string): string {
+export function resolveSiblingImagePath(
+  basePath: string,
+  index: number,
+  extension: string,
+): string {
   const ext = path.extname(basePath);
   const dir = path.dirname(basePath);
   const stem = ext ? path.basename(basePath, ext) : path.basename(basePath);

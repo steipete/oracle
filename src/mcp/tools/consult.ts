@@ -589,15 +589,6 @@ export async function runConsultTool(
     requestLog(level, { text, bytes: Buffer.byteLength(text, "utf8") }).catch(() => {});
 
   const resolvedRemote = resolveRemoteServiceConfig({ userConfig, env: process.env });
-  const imageOutputPath = runOptions.generateImage ?? runOptions.outputPath;
-  if (resolvedEngine === "browser" && resolvedRemote.host && imageOutputPath) {
-    return {
-      isError: true,
-      content: textContent(
-        "ChatGPT image output is not supported with a remote browser service: generated files are not transferred back to the MCP caller. Unset ORACLE_REMOTE_HOST to generate images locally, or omit generateImage/outputPath.",
-      ),
-    };
-  }
   let browserConfig: BrowserSessionConfig | undefined;
   if (resolvedEngine === "browser") {
     browserConfig = buildConsultBrowserConfig({

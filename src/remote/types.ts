@@ -30,6 +30,8 @@ export interface RemoteRunPayload {
     sessionId?: string;
     followUpPrompts?: string[];
     cancelOnDisconnect?: boolean;
+    /** Request image-aware waiting and capture without exposing a client filesystem path to the host. */
+    imageOutputRequested?: boolean;
   };
 }
 
@@ -39,19 +41,42 @@ export interface RemoteArtifactCapabilities {
   maxArtifactBytes: number;
   deferredFallbackBundling?: boolean;
   runCancellation?: boolean;
+  /** Captures requested images on the host and transfers them with artifact protocol v1. */
+  generatedImages?: boolean;
 }
 
 export interface RemoteArtifactDescriptor {
   artifactId: string;
   runId: string;
-  kind: "file";
+  kind: "file" | "image";
   filename: string;
   mimeType?: string;
   byteSize: number;
   sha256: string;
   validation?: SessionArtifactValidation;
+  image?: { width?: number; height?: number; fileId?: string };
   sourceUrlKind: "sandbox" | "chatgpt-file-endpoint" | "browser-download";
   transferStatus: "ready" | "streaming" | "completed" | "failed" | "skipped";
+}
+
+export function pickRemoteImageMetadata(
+  image: {
+    width?: unknown;
+    height?: unknown;
+    fileId?: unknown;
+  } = {},
+): NonNullable<RemoteArtifactDescriptor["image"]> {
+  return {
+    ...(Number.isSafeInteger(image.width) && Number(image.width) > 0
+      ? { width: Number(image.width) }
+      : {}),
+    ...(Number.isSafeInteger(image.height) && Number(image.height) > 0
+      ? { height: Number(image.height) }
+      : {}),
+    ...(typeof image.fileId === "string" && /^file[-_][a-z0-9_-]{1,200}$/i.test(image.fileId)
+      ? { fileId: image.fileId }
+      : {}),
+  };
 }
 
 export type RemoteRunEvent =
