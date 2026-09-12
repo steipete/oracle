@@ -118,6 +118,141 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
     expect(fakeChrome.process.unref).toHaveBeenCalledTimes(1);
   });
 
+  test("retains saved browser transport during harvest and missing-tab recovery", async () => {
+    const endpoint = {
+      host: "127.0.0.1",
+      port: 9223,
+      browserWSEndpoint: "ws://127.0.0.1:9223/devtools/browser/saved",
+      approvalWaitMs: 12345,
+    };
+    const meta = {
+      ...baseMeta,
+      browser: {
+        ...baseMeta.browser,
+        config: { ...baseMeta.browser?.config, approvalWaitMs: 12345 },
+        runtime: {
+          ...baseMeta.browser?.runtime,
+          chromeBrowserWSEndpoint: endpoint.browserWSEndpoint,
+        },
+      },
+    };
+    const harvestChatGptTab = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("No ChatGPT tab matched"))
+      .mockResolvedValue(completedHarvest);
+    const recoverConversationTab = vi.fn(async () => ({
+      ...endpoint,
+      ref: "reopened",
+      chrome: null,
+    }));
+    vi.doMock("../../src/browser/liveTabs.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/browser/liveTabs.js")>()),
+      harvestChatGptTab,
+    }));
+    vi.doMock("../../src/browser/recoverConversation.js", () => ({ recoverConversationTab }));
+    vi.doMock("../../src/sessionStore.js", () => ({
+      sessionStore: { readSession: async () => meta, updateSession: vi.fn(), getPaths },
+    }));
+    const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
+    await harvestSessionBrowserOutput("sess-recover", { quietOutput: true });
+    expect(harvestChatGptTab).toHaveBeenNthCalledWith(1, expect.objectContaining(endpoint));
+    expect(recoverConversationTab).toHaveBeenCalledWith(meta, expect.any(Function), {
+      existingEndpoint: endpoint,
+    });
+    expect(harvestChatGptTab).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ...endpoint, ref: "reopened" }),
+    );
+  });
+
+  test.each(["profile", "http"])(
+    "refreshes expired saved sockets via %s for harvest and live-tail",
+    async (source) => {
+      const meta = {
+        ...baseMeta,
+        browser: {
+          ...baseMeta.browser,
+          runtime: {
+            ...baseMeta.browser?.runtime,
+            chromeBrowserWSEndpoint: "ws://127.0.0.1:9223/devtools/browser/expired",
+            ...(source === "profile" ? { chromeProfileRoot: "/synthetic/profile" } : {}),
+          },
+        },
+      };
+      const current = "ws://127.0.0.1:9223/devtools/browser/current";
+      const readActive = vi.fn(async () => ({ port: 9223, browserWSEndpoint: current }));
+      vi.doMock("../../src/browser/detect.js", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("../../src/browser/detect.js")>()),
+        readDevToolsActivePortInfo: readActive,
+      }));
+      const fetchVersion = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(
+          new Response(JSON.stringify({ webSocketDebuggerUrl: current }), { status: 200 }),
+        );
+      const harvestChatGptTab = vi.fn().mockResolvedValue(completedHarvest);
+      vi.doMock("../../src/browser/liveTabs.js", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("../../src/browser/liveTabs.js")>()),
+        harvestChatGptTab,
+      }));
+      vi.doMock("../../src/sessionStore.js", () => ({
+        sessionStore: { readSession: async () => meta, updateSession: vi.fn(), getPaths },
+      }));
+      const { harvestSessionBrowserOutput, liveTailSessionBrowserOutput } =
+        await import("../../src/cli/browserTabs.js");
+      try {
+        await harvestSessionBrowserOutput(meta.id, { quietOutput: true });
+        fetchVersion.mockResolvedValue(
+          new Response(JSON.stringify({ webSocketDebuggerUrl: current }), { status: 200 }),
+        );
+        await liveTailSessionBrowserOutput(meta.id);
+        expect(harvestChatGptTab.mock.calls.length).toBeGreaterThanOrEqual(3);
+        for (const [options] of harvestChatGptTab.mock.calls) {
+          expect(options).toMatchObject({
+            browserWSEndpoint: current,
+            host: "127.0.0.1",
+            port: 9223,
+          });
+        }
+        if (source === "profile") expect(fetchVersion).not.toHaveBeenCalled();
+        else expect(readActive).not.toHaveBeenCalled();
+      } finally {
+        fetchVersion.mockRestore();
+        vi.doUnmock("../../src/browser/detect.js");
+      }
+    },
+  );
+
+  test("recovers the original committed prompt when ChatGPT appends a status notice", async () => {
+    const prompt = "Explain: Something went wrong. Please try again.";
+    const meta = {
+      ...baseMeta,
+      browser: {
+        ...baseMeta.browser,
+        runtime: {
+          ...baseMeta.browser?.runtime,
+          submittedPromptHash: browserPromptFingerprint(prompt, "current-message"),
+        },
+      },
+    };
+    const harvestChatGptTab = vi.fn().mockResolvedValue({
+      ...completedHarvest,
+      lastUserTextRaw: prompt + "Something went wrong. Please try again.",
+      lastUserContentText: prompt,
+    });
+    vi.doMock("../../src/browser/liveTabs.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/browser/liveTabs.js")>()),
+      harvestChatGptTab,
+    }));
+    vi.doMock("../../src/sessionStore.js", () => ({
+      sessionStore: { readSession: async () => meta, updateSession: vi.fn(), getPaths },
+    }));
+    const { harvestSessionBrowserOutput } = await import("../../src/cli/browserTabs.js");
+    expect(
+      (await harvestSessionBrowserOutput("sess-recover", { quietOutput: true })).lastAssistantText,
+    ).toBe(completedHarvest.lastAssistantText);
+    expect(harvestChatGptTab).toHaveBeenCalledOnce();
+  });
+
   test("does not recover when recoverIfMissing is false; surfaces the original error", async () => {
     const harvestChatGptTab = vi
       .fn()
@@ -710,5 +845,41 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("browser tab endpoint discovery", () => {
+  test("preserves HTTP discovery and distinct saved browser sockets after restarts", async () => {
+    vi.resetModules();
+    const collectChatGptTabs = vi.fn(async () => []);
+    vi.doMock("../../src/browser/liveTabs.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/browser/liveTabs.js")>()),
+      collectChatGptTabs,
+    }));
+    vi.doMock("../../src/sessionStore.js", () => ({
+      sessionStore: {
+        listSessions: async () =>
+          ["old", "current"].map((id) => ({
+            ...baseMeta,
+            browser: {
+              runtime: {
+                chromeHost: "127.0.0.1",
+                chromePort: 9222,
+                chromeBrowserWSEndpoint: `ws://127.0.0.1:9222/devtools/browser/${id}`,
+              },
+            },
+          })),
+      },
+    }));
+    const { showBrowserTabsStatus } = await import("../../src/cli/browserTabs.js");
+    await showBrowserTabsStatus();
+    expect(collectChatGptTabs).toHaveBeenCalledTimes(3);
+    expect(collectChatGptTabs).toHaveBeenCalledWith({ host: "127.0.0.1", port: 9222 });
+    for (const id of ["old", "current"])
+      expect(collectChatGptTabs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          browserWSEndpoint: `ws://127.0.0.1:9222/devtools/browser/${id}`,
+        }),
+      );
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { isErrorLogged, markErrorLogged } from "../../src/cli/errorUtils.ts";
+import { isErrorLogged, markErrorLogged, formatCliError } from "../../src/cli/errorUtils.ts";
 
 describe("errorUtils", () => {
   test("marks errors as logged", () => {
@@ -13,5 +13,22 @@ describe("errorUtils", () => {
     expect(isErrorLogged("oops")).toBe(false);
     markErrorLogged("oops");
     expect(isErrorLogged("oops")).toBe(false);
+  });
+});
+
+describe("formatCliError", () => {
+  test.each([new Error(), new Error("   "), "", "\n", undefined, null])(
+    "never renders a blank failure for %s",
+    (error) => {
+      expect(formatCliError(error)).toBe(
+        "An unexpected error occurred. Retry with --verbose for more details.",
+      );
+    },
+  );
+  test("preserves useful error messages and codes", () => {
+    expect(formatCliError(new Error("missing conversation"))).toBe("missing conversation");
+    expect(formatCliError(Object.assign(new Error(), { code: "ECONNREFUSED" }))).toContain(
+      "ECONNREFUSED",
+    );
   });
 });

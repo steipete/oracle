@@ -580,6 +580,7 @@ export interface RemoteTargetInfo {
   targetId?: string;
   type?: string;
   url?: string;
+  title?: string;
 }
 
 export async function listRemoteChromeTargets(options: {
@@ -618,6 +619,7 @@ export async function listRemoteChromeTargets(options: {
           targetId: target.targetId,
           type: target.type,
           url: target.url,
+          title: target.title,
         }));
       } finally {
         await browser.close().catch(() => undefined);

@@ -3295,6 +3295,8 @@ async function runRemoteBrowserMode(
           connectToExistingChatGptTab({
             host,
             port,
+            browserWSEndpoint,
+            approvalWaitMs: config.approvalWaitMs,
             ref: tabRef,
           }),
         (attached) => attached.client.close(),

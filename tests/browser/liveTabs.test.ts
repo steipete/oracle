@@ -78,6 +78,32 @@ describe("liveTabs helpers", () => {
     expect(observed.lastUserMessageId).toBe("current-message");
   });
 
+  test("separates the user content from a later provider error notice", () => {
+    const text = "Explain: Something went wrong. Please try again.";
+    const content = new FakeElement("div", { class: "whitespace-pre-wrap" }, [], text);
+    const notice = new FakeElement("div", {}, [], "Something went wrong. Please try again.");
+    const user = new FakeElement(
+      "div",
+      { "data-message-author-role": "user", "data-message-id": "saved" },
+      [content, notice],
+    );
+    const observed = new Function(
+      "document",
+      "Element",
+      "window",
+      "location",
+      `return ${buildTabInspectionExpressionForTest()}`,
+    )(
+      new FakeDocument([user]),
+      FakeElement,
+      { getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) },
+      { href: "https://chatgpt.com/c/saved" },
+    );
+    expect(observed.lastUserContentText).toBe(text);
+    expect(observed.lastUserTextRaw).toContain(text);
+    expect(observed.lastUserTextRaw).not.toBe(text);
+  });
+
   test("keeps a visible composer stop control running even behind a hidden legacy control", () => {
     const hidden = new FakeElement("button", { "data-testid": "stop-button" });
     hidden.getBoundingClientRect = () => ({ width: 0, height: 0, x: 0, y: 0 });
