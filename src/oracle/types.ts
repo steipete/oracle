@@ -218,6 +218,11 @@ export interface RunOracleOptions {
   generateImage?: string;
   /** Optional output path used by browser image operations. */
   outputPath?: string;
+  youtube?: string;
+  editImage?: string;
+  aspectRatio?: string;
+  geminiShowThoughts?: boolean;
+  geminiAllowModelFallback?: boolean;
   /**
    * Browser-only: submit these prompts sequentially after the initial answer in
    * the same ChatGPT conversation.

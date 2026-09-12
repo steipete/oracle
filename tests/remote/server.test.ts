@@ -30,6 +30,57 @@ const CAN_LISTEN_LOCALHOST =
   ).status === 0;
 
 describe("remote browser service", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST).each([undefined, 1])(
+    "rejects Gemini and releases admission capacity (maxConcurrentRuns=%s)",
+    async (maxConcurrentRuns) => {
+      let runs = 0;
+      const server = await createRemoteServer(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          token: "provider-fixture",
+          maxConcurrentRuns,
+          logger: () => {},
+        },
+        {
+          runBrowser: async () => {
+            runs += 1;
+            return {
+              answerText: "fixture",
+              answerMarkdown: "fixture",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 7,
+            };
+          },
+        },
+      );
+      const submit = (desiredModel: string) =>
+        fetch(`http://127.0.0.1:${server.port}/runs`, {
+          method: "POST",
+          headers: { Authorization: "Bearer provider-fixture", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: "fixture",
+            attachments: [],
+            browserConfig: { desiredModel },
+            options: {},
+          }),
+        });
+      try {
+        const rejected = await submit("gemini-3.1-pro");
+        expect(rejected.status).toBe(400);
+        expect(await rejected.json()).toMatchObject({ error: "unsupported_browser_provider" });
+        expect(runs).toBe(0);
+        const accepted = await submit("GPT-5.5");
+        expect(accepted.status).toBe(200);
+        expect(await accepted.text()).toContain('"type":"result"');
+        expect(runs).toBe(1);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   test.skipIf(!CAN_LISTEN_LOCALHOST).each([true, false])(
     "enforces the host endpoint and wait over client injection (attachRunning=%s)",
     async (attachRunning) => {

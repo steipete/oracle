@@ -203,6 +203,39 @@ describe("gemini-web executor", () => {
     vi.unstubAllGlobals();
   });
 
+  it("uses the canonical model instead of a conflicting picker label", async () => {
+    const { createGeminiWebExecutor } = await import("../../src/gemini-web/executor.js");
+    await createGeminiWebExecutor({})({
+      prompt: "fixture",
+      model: "gemini-3.5-flash",
+      config: { desiredModel: "Gemini 3 Pro" },
+      log: () => {},
+    });
+    expect(runGeminiWebWithFallback).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gemini-3.5-flash" }),
+    );
+  });
+
+  it("propagates caller cancellation to the HTTP transport", async () => {
+    const { createGeminiWebExecutor } = await import("../../src/gemini-web/executor.js");
+    const cancellation = new AbortController();
+    let transportSignal: AbortSignal | undefined;
+    runGeminiWebWithFallback.mockImplementationOnce(async (request) => {
+      transportSignal = (request as { signal: AbortSignal }).signal;
+      cancellation.abort();
+      throw new Error("fixture-stop");
+    });
+    await expect(
+      createGeminiWebExecutor({})({
+        prompt: "fixture",
+        model: "gemini-3.5-flash",
+        signal: cancellation.signal,
+        log: () => {},
+      }),
+    ).rejects.toThrow("fixture-stop");
+    expect(transportSignal?.aborted).toBe(true);
+  });
+
   it("builds a generate-image prompt with aspect ratio and passes attachments", async () => {
     const { createGeminiWebExecutor } = await import("../../src/gemini-web/executor.js");
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "oracle-gemini-exec-"));

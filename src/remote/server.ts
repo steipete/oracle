@@ -29,6 +29,7 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
 import { getOracleHomeDir } from "../oracleHome.js";
+import { resolveBrowserProvider, REMOTE_GEMINI_UNSUPPORTED_MESSAGE } from "../browser/provider.js";
 import {
   cleanupStaleProfileState,
   readDevToolsPort,
@@ -315,6 +316,19 @@ export async function createRemoteServer(
     }
     if (res.destroyed || req.aborted) {
       await abandon();
+      return;
+    }
+    if (resolveBrowserProvider(payload.browserConfig?.desiredModel) === "gemini") {
+      await abandon();
+      if (!res.destroyed) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "unsupported_browser_provider",
+            message: REMOTE_GEMINI_UNSUPPORTED_MESSAGE,
+          }),
+        );
+      }
       return;
     }
     if (!admissionEnabled) {
