@@ -68,7 +68,7 @@ import { formatRenderedMarkdown } from "../src/cli/renderOutput.js";
 import { resolveRenderFlag, resolveRenderPlain } from "../src/cli/renderFlags.js";
 import { resolveGeminiModelId } from "../src/oracle/geminiModels.js";
 import type { StatusOptions } from "../src/cli/sessionCommand.js";
-import { isErrorLogged } from "../src/cli/errorUtils.js";
+import { formatCliError, isErrorLogged } from "../src/cli/errorUtils.js";
 import { resolveOutputPath } from "../src/cli/writeOutputPath.js";
 import { getCliVersion } from "../src/version.js";
 import {
@@ -3095,12 +3095,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  if (error instanceof Error) {
-    if (!isErrorLogged(error)) {
-      console.error(chalk.red("✖"), error.message);
-    }
-  } else {
-    console.error(chalk.red("✖"), error);
-  }
+  if (!isErrorLogged(error)) console.error(chalk.red("✖"), formatCliError(error));
   process.exitCode = 1;
 });

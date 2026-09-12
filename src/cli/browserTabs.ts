@@ -13,6 +13,7 @@ import {
   harvestChatGptTab,
   sessionMatchesTab,
   type ChatGptTabSummary,
+  type LiveChromeEndpoint,
 } from "../browser/liveTabs.js";
 import {
   isRecoveredConversationHarvestReady,
@@ -64,10 +65,13 @@ function harvestMatchesSessionPrompt(
     fingerprint === undefined ||
     (typeof harvested.lastUserMessageId === "string" &&
       harvested.lastUserMessageId.trim().length > 0 &&
-      browserPromptFingerprint(
-        harvested.lastUserTextRaw ?? harvested.lastUserText,
-        harvested.lastUserMessageId,
-      ) === fingerprint)
+      // ChatGPT can append transient status text outside the user's content after submission.
+      // Keep legacy full-container hashes valid and require an exact match for either form.
+      [harvested.lastUserTextRaw ?? harvested.lastUserText, harvested.lastUserContentText].some(
+        (text) =>
+          typeof text === "string" &&
+          browserPromptFingerprint(text, harvested.lastUserMessageId!) === fingerprint,
+      ))
   );
 }
 
@@ -139,7 +143,7 @@ export interface BrowserLiveTailOptions {
 
 function sessionBrowserEndpoint(
   meta: SessionMetadata | null | undefined,
-): { host: string; port: number } | null {
+): (LiveChromeEndpoint & { host: string; port: number }) | null {
   const runtime = meta?.browser?.runtime ?? {};
   const remote: { host?: string; port?: number } = meta?.browser?.config?.remoteChrome ?? {};
   const host = runtime.chromeHost ?? remote.host;
@@ -147,12 +151,23 @@ function sessionBrowserEndpoint(
   if (!host || !port) {
     return null;
   }
-  return { host, port };
+  return {
+    host,
+    port,
+    ...(runtime.chromeBrowserWSEndpoint
+      ? {
+          browserWSEndpoint: runtime.chromeBrowserWSEndpoint,
+          approvalWaitMs: resolveBrowserConfig(meta?.browser?.config).approvalWaitMs,
+        }
+      : {}),
+  };
 }
 
-function collectUniqueEndpoints(metas: SessionMetadata[]): Array<{ host: string; port: number }> {
-  const entries = new Map<string, { host: string; port: number }>();
-  entries.set(`${DEFAULT_REMOTE_CHROME_HOST}:${DEFAULT_REMOTE_CHROME_PORT}`, {
+function collectUniqueEndpoints(
+  metas: SessionMetadata[],
+): Array<LiveChromeEndpoint & { host: string; port: number }> {
+  const entries = new Map<string, LiveChromeEndpoint & { host: string; port: number }>();
+  entries.set(`${DEFAULT_REMOTE_CHROME_HOST}:${DEFAULT_REMOTE_CHROME_PORT}:http`, {
     host: DEFAULT_REMOTE_CHROME_HOST,
     port: DEFAULT_REMOTE_CHROME_PORT,
   });
@@ -161,7 +176,10 @@ function collectUniqueEndpoints(metas: SessionMetadata[]): Array<{ host: string;
     if (!endpoint) {
       continue;
     }
-    entries.set(`${endpoint.host}:${endpoint.port}`, endpoint);
+    entries.set(
+      `${endpoint.host}:${endpoint.port}:${endpoint.browserWSEndpoint ?? "http"}`,
+      endpoint,
+    );
   }
   return Array.from(entries.values());
 }
@@ -319,8 +337,7 @@ export async function harvestSessionBrowserOutput(
       harvested = await harvestSessionPrompt(
         meta,
         {
-          host: initialEndpoint.host,
-          port: initialEndpoint.port,
+          ...initialEndpoint,
           ref,
           stallWindowMs: options.stallWindowMs,
         },
@@ -343,6 +360,8 @@ export async function harvestSessionBrowserOutput(
       harvested = await harvestSessionPrompt(meta, {
         host: recovered.host,
         port: recovered.port,
+        browserWSEndpoint: recovered.browserWSEndpoint,
+        approvalWaitMs: recovered.approvalWaitMs,
         ref: recovered.ref,
         stallWindowMs: options.stallWindowMs,
       });
@@ -394,8 +413,7 @@ export async function liveTailSessionBrowserOutput(
     // Probe once to see if the live tab is still alive; recover if not.
     try {
       await harvestChatGptTab({
-        host: endpoint.host,
-        port: endpoint.port,
+        ...endpoint,
         ref: browserTabRef,
       });
     } catch (error) {
@@ -413,7 +431,12 @@ export async function liveTailSessionBrowserOutput(
         waitForReady: false,
       });
       recoveredChrome = recovered.chrome;
-      endpoint = { host: recovered.host, port: recovered.port };
+      endpoint = {
+        host: recovered.host,
+        port: recovered.port,
+        browserWSEndpoint: recovered.browserWSEndpoint,
+        approvalWaitMs: recovered.approvalWaitMs,
+      };
       browserTabRef = recovered.ref;
       requireRecoveredContent = true;
       recoveredContentDeadlineMs = Date.now() + stallThresholdMs;
@@ -421,8 +444,7 @@ export async function liveTailSessionBrowserOutput(
 
     while (true) {
       const harvested = await harvestChatGptTab({
-        host: endpoint.host,
-        port: endpoint.port,
+        ...endpoint,
         ref: browserTabRef,
       });
       const fullText = harvested.lastAssistantMarkdown ?? harvested.lastAssistantText ?? "";

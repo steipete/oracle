@@ -140,6 +140,16 @@ Every run gets a default slug derived from the prompt. Override with `--slug "my
 
 ## Browser harvest identity
 
+`oracle session <id> --harvest` and `--live` reuse the saved Chrome transport,
+including the browser WebSocket endpoint and approval wait for attach-running
+sessions. This supports Chrome configurations without HTTP target discovery.
+If the saved tab is gone, recovery reopens the saved conversation through the
+same endpoint. Keep Chrome running with remote debugging enabled and allow its
+connection prompt when requested; transport failures identify the operation and
+endpoint instead of displaying an empty error. Transient ChatGPT status notices
+appended outside the user content do not invalidate the submitted prompt hash;
+the stable user message ID and exact prompt text must still match.
+
 Browser harvest and live-tail compare the observed conversation with saved
 runtime, archive, artifact-source, and transcript-header identities. A mismatch
 is retained under `browser.harvest.integrity` and shown as a browser warning;

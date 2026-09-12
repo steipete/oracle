@@ -5,12 +5,12 @@ import { isAnswerNowPlaceholderText } from "./actions/assistantResponse.js";
 import { resolveBrowserConfig } from "./config.js";
 import { acquireManualLoginChromeForRun, isImageOnlyUiChromeText } from "./index.js";
 import { isRecoverableChatGptConversationUrl } from "./reattachability.js";
-import { harvestChatGptTab, openChatGptTarget } from "./liveTabs.js";
+import { harvestChatGptTab, openChatGptTarget, type LiveChromeEndpoint } from "./liveTabs.js";
 
 const DEFAULT_READY_TIMEOUT_MS = 30_000;
 const READY_POLL_MS = 1_000;
 
-export interface RecoveredConversation {
+export interface RecoveredConversation extends RecoveryEndpoint {
   host: string;
   port: number;
   url: string;
@@ -18,7 +18,7 @@ export interface RecoveredConversation {
   chrome: LaunchedChrome | null;
 }
 
-export interface RecoveryEndpoint {
+export interface RecoveryEndpoint extends LiveChromeEndpoint {
   host: string;
   port: number;
 }
