@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Tests: complete the Vitest 5 migration, keep runner and V8 coverage versions aligned, and verify Node 24 and 26 across Linux, macOS, and Windows with coverage on Linux; retain the Node >=24 runtime floor.
 - Dependencies: update Google GenAI to 2.22.0, Zod to 4.6.2, and the Chrome DevTools protocol snapshot; refresh transitive dependencies within the two-day release-age policy.
 - Browser: select Gemini consistently for local CLI, MCP, and detached workers, preserve saved Gemini options and HTTP cancellation, and reject unsupported remote Gemini requests before submission.
 - Browser: redact inline cookie values in verbose session logs while preserving credentials for execution.

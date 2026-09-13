@@ -7,8 +7,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      all: true,
-      // Measure the real TypeScript sources (the repo doesn’t ship .js in src).
+      // Include covered and uncovered TypeScript sources.
       include: ["src/**/*.ts"],
       // Exclude interactive/IPC entrypoints that aren’t practical to unit test.
       exclude: [

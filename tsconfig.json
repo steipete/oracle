@@ -21,6 +21,13 @@
       "@tests/*": ["./tests/*"]
     }
   },
-  "include": ["bin/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts", "types/**/*.d.ts"],
+  "include": [
+    "bin/**/*.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "types/**/*.d.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["node_modules", "dist", ".bun-check"]
 }

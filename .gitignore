@@ -2,6 +2,7 @@ node_modules
 .DS_Store
 .env
 coverage
+.vitest/
 npm-debug.log*
 .bun-check/
 dist/
