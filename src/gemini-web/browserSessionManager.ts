@@ -2,7 +2,13 @@ import path from "node:path";
 import os from "node:os";
 import { mkdir } from "node:fs/promises";
 import type { BrowserRunOptions, BrowserLogger, ChromeClient } from "../browser/types.js";
-import { launchChrome, connectWithNewTab, closeTab } from "../browser/chromeLifecycle.js";
+import {
+  launchChrome,
+  connectWithNewTab,
+  connectToRemoteChrome,
+  closeTab,
+} from "../browser/chromeLifecycle.js";
+import { resolveAttachRunningConnection } from "../browser/attachRunning.js";
 import { resolveBrowserConfig } from "../browser/config.js";
 import {
   readDevToolsPort,
@@ -38,8 +44,29 @@ export async function openGeminiBrowserSession(
   });
   const profileDir =
     resolvedConfig.manualLoginProfileDir ?? path.join(os.homedir(), ".oracle", "browser-profile");
-  await mkdir(profileDir, { recursive: true });
   const keepBrowser = Boolean(resolvedConfig.keepBrowser);
+
+  if (resolvedConfig.attachRunning || resolvedConfig.remoteChrome) {
+    const logger = log ?? (() => {});
+    const endpoint = await resolveAttachRunningConnection(resolvedConfig, logger);
+    const connection = await connectToRemoteChrome(
+      endpoint.host,
+      endpoint.port,
+      logger,
+      "about:blank",
+      endpoint.browserWSEndpoint,
+      { approvalWaitMs: resolvedConfig.approvalWaitMs, fallbackToDefault: false },
+    );
+    return {
+      profileDir: endpoint.profileRoot ?? profileDir,
+      port: endpoint.port,
+      client: connection.client,
+      targetId: connection.targetId,
+      close: () => connection.close({ preserveTarget: keepBrowser }),
+    };
+  }
+
+  await mkdir(profileDir, { recursive: true });
 
   let port = await readDevToolsPort(profileDir);
   let launchedChrome: Awaited<ReturnType<typeof launchChrome>> | null = null;

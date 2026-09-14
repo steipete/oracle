@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remote: dispatch Gemini browser models through the host's Gemini web executor for new runs and restarts, preserve host-only authentication and Gemini text options, and support the host's running Chrome connection. Fixes #392; thanks @solomonneas.
+
 ## 0.21.0 - 2026-09-14
 
 **Highlights:** Opt-in ChatGPT conversation records and independent turn digests provide evidence of answer fidelity.

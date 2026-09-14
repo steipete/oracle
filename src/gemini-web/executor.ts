@@ -310,7 +310,9 @@ async function loadGeminiCookies(
   }
 
   const manualNoKeychain =
-    Boolean(browserConfig?.manualLogin) || Boolean(options?.preferManualNoKeychain);
+    Boolean(
+      browserConfig?.manualLogin || browserConfig?.attachRunning || browserConfig?.remoteChrome,
+    ) || Boolean(options?.preferManualNoKeychain);
   if (manualNoKeychain) {
     log?.("[gemini-web] Using manual-login cookie extraction path (no keychain cookie read).");
     const cdpResult = await loadGeminiCookiesFromCDP(browserConfig, log);

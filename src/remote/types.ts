@@ -25,6 +25,11 @@ export interface RemoteRunPayload {
   };
   browserConfig: BrowserSessionConfig;
   options: {
+    /** Canonical model, separate from ChatGPT's display/picker label. */
+    model?: string;
+    youtube?: string;
+    geminiShowThoughts?: boolean;
+    geminiAllowModelFallback?: boolean;
     heartbeatIntervalMs?: number;
     verbose?: boolean;
     sessionId?: string;

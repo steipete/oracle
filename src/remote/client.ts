@@ -29,30 +29,37 @@ import { checkRemoteHealth } from "./health.js";
 import { parseHostPort } from "../bridge/connection.js";
 import { BrowserRunCancelledError } from "../oracle/errors.js";
 import { resolveSiblingImagePath } from "../browser/chatgptImages.js";
-import { resolveBrowserProvider, REMOTE_GEMINI_UNSUPPORTED_MESSAGE } from "../browser/provider.js";
+import { resolveBrowserProvider, resolveRemoteBrowserModel } from "../browser/provider.js";
+import type { BrowserExecutorOptions } from "../browser/executor.js";
 
 interface RemoteExecutorOptions {
   host: string;
   token?: string;
+  runOptions?: BrowserExecutorOptions;
 }
 
 type TransferredBrowserArtifact = SavedBrowserFile | SavedBrowserImage;
 
-export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptions) {
+export function createRemoteBrowserExecutor({ host, token, runOptions }: RemoteExecutorOptions) {
   // Return a drop-in replacement for runBrowserMode so the browser session runner can stay unchanged.
   return async function remoteBrowserExecutor(
     options: BrowserRunOptions,
   ): Promise<BrowserRunResult> {
-    if (options.model !== undefined && !resolveBrowserProvider(options.model)) {
-      throw new Error(
-        `Unsupported browser model: ${options.model}. Remote services support ChatGPT only.`,
-      );
-    }
+    const model = resolveRemoteBrowserModel(
+      options.model ?? runOptions?.model,
+      options.config?.desiredModel,
+    );
+    const gemini = resolveBrowserProvider(model) === "gemini";
     if (
-      resolveBrowserProvider(options.model) === "gemini" ||
-      resolveBrowserProvider(options.config?.desiredModel) === "gemini"
+      gemini &&
+      (runOptions?.editImage ||
+        runOptions?.generateImage ||
+        options.generateImagePath ||
+        options.outputPath)
     ) {
-      throw new Error(REMOTE_GEMINI_UNSUPPORTED_MESSAGE);
+      throw new Error(
+        "Remote Gemini image generation and editing are not supported; run these requests locally.",
+      );
     }
     if (options.config?.researchMode === "search") {
       throw new Error(
@@ -85,8 +92,22 @@ export function createRemoteBrowserExecutor({ host, token }: RemoteExecutorOptio
       prompt: options.prompt,
       attachments: await serializeAttachments(options.attachments ?? []),
       fallbackSubmission: await serializeFallback(options.fallbackSubmission, { host, token }),
-      browserConfig: options.config ?? {},
+      browserConfig: {
+        ...options.config,
+        // Keep old hosts fail-closed for Gemini even when the picker label is unrelated.
+        ...(gemini ? { desiredModel: model } : {}),
+        inlineCookies: null,
+        inlineCookiesSource: null,
+      },
       options: {
+        model,
+        ...(gemini
+          ? {
+              youtube: runOptions?.youtube,
+              geminiShowThoughts: runOptions?.geminiShowThoughts,
+              geminiAllowModelFallback: runOptions?.geminiAllowModelFallback,
+            }
+          : {}),
         heartbeatIntervalMs: options.heartbeatIntervalMs,
         verbose: options.verbose,
         sessionId: options.sessionId,

@@ -1375,7 +1375,7 @@ program
   .option("--remote-host <host:port>", "Delegate browser runs to a remote `oracle serve` instance.")
   .option("--remote-token <token>", "Access token for the remote `oracle serve` instance.")
   .action(async (sessionId: string, _options: RestartCommandOptions, cmd: Command) => {
-    const restartOptions = cmd.opts<RestartCommandOptions>();
+    const restartOptions = cmd.optsWithGlobals<RestartCommandOptions>();
     await restartSession(sessionId, restartOptions);
   });
 
@@ -2349,9 +2349,12 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
   if (browserConfig && remoteHost) {
-    const { createRemoteBrowserExecutor } = await import("../src/remote/client.js");
+    const { resolveBrowserExecutor } = await import("../src/browser/executor.js");
     browserDeps = {
-      executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
+      executeBrowser: await resolveBrowserExecutor(
+        { ...resolvedOptions, model: activeModel },
+        { host: remoteHost, token: remoteToken },
+      ),
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   } else if (browserConfig && activeModel.startsWith("gemini")) {
@@ -2715,9 +2718,12 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
 
   let browserDeps: BrowserSessionRunnerDeps | undefined;
   if (browserConfig && remoteHost) {
-    const { createRemoteBrowserExecutor } = await import("../src/remote/client.js");
+    const { resolveBrowserExecutor } = await import("../src/browser/executor.js");
     browserDeps = {
-      executeBrowser: createRemoteBrowserExecutor({ host: remoteHost, token: remoteToken }),
+      executeBrowser: await resolveBrowserExecutor(runOptions, {
+        host: remoteHost,
+        token: remoteToken,
+      }),
     };
     console.log(chalk.dim(`Routing browser automation to remote host ${remoteHost}`));
   } else if (browserConfig && runOptions.model.startsWith("gemini")) {

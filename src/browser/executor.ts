@@ -4,10 +4,30 @@ import { resolveBrowserProvider } from "./provider.js";
 
 export type BrowserExecutor = (options: BrowserRunOptions) => Promise<BrowserRunResult>;
 
-export async function resolveLocalBrowserExecutor(
-  options: RunOracleOptions,
+export type BrowserExecutorOptions = Pick<
+  RunOracleOptions,
+  | "model"
+  | "youtube"
+  | "generateImage"
+  | "editImage"
+  | "outputPath"
+  | "aspectRatio"
+  | "geminiShowThoughts"
+  | "geminiAllowModelFallback"
+>;
+
+export async function resolveBrowserExecutor(
+  options: BrowserExecutorOptions,
+  remote?: { host: string; token?: string },
 ): Promise<BrowserExecutor> {
   const provider = resolveBrowserProvider(options.model);
+  if (!provider) {
+    throw new Error(`Unsupported browser model: ${options.model}. Use a GPT or Gemini model.`);
+  }
+  if (remote) {
+    const { createRemoteBrowserExecutor } = await import("../remote/client.js");
+    return createRemoteBrowserExecutor({ ...remote, runOptions: options });
+  }
   if (provider === "gemini") {
     const { createGeminiWebExecutor } = await import("../gemini-web/index.js");
     return createGeminiWebExecutor({
@@ -20,6 +40,5 @@ export async function resolveLocalBrowserExecutor(
       allowModelFallback: options.geminiAllowModelFallback,
     });
   }
-  if (provider === "chatgpt") return (await import("../browserMode.js")).runBrowserMode;
-  throw new Error(`Unsupported browser model: ${options.model}. Use a GPT or Gemini model.`);
+  return (await import("../browserMode.js")).runBrowserMode;
 }

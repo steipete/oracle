@@ -6,5 +6,21 @@ export function resolveBrowserProvider(model: unknown): "chatgpt" | "gemini" | u
   return undefined;
 }
 
-export const REMOTE_GEMINI_UNSUPPORTED_MESSAGE =
-  "Gemini browser runs are supported locally; remote browser services support ChatGPT only.";
+export function resolveRemoteBrowserModel(
+  model: unknown,
+  desiredModel: unknown,
+): string | undefined {
+  if (model !== undefined) {
+    if (typeof model === "string" && resolveBrowserProvider(model)) return model;
+    throw new Error(`Unsupported browser model: ${String(model)}. Use a GPT or Gemini model.`);
+  }
+  if (typeof desiredModel === "string" && resolveBrowserProvider(desiredModel)) return desiredModel;
+  // Older ChatGPT clients send only a picker label, or omit the selection entirely.
+  if (
+    desiredModel == null ||
+    (typeof desiredModel === "string" &&
+      /^(?:|latest|auto|pro|thinking|instant)(?:\s.*)?$/i.test(desiredModel.trim()))
+  )
+    return undefined;
+  throw new Error(`Unsupported browser model: ${String(desiredModel)}. Use a GPT or Gemini model.`);
+}

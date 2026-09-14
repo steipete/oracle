@@ -6,6 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 const {
   launchChrome,
   connectWithNewTab,
+  connectToRemoteChrome,
+  resolveAttachRunningConnection,
   closeTab,
   readDevToolsPort,
   writeDevToolsActivePort,
@@ -15,6 +17,8 @@ const {
 } = vi.hoisted(() => ({
   launchChrome: vi.fn(),
   connectWithNewTab: vi.fn(),
+  connectToRemoteChrome: vi.fn(),
+  resolveAttachRunningConnection: vi.fn(),
   closeTab: vi.fn(async () => undefined),
   readDevToolsPort: vi.fn(async () => null),
   writeDevToolsActivePort: vi.fn(async () => undefined),
@@ -26,8 +30,11 @@ const {
 vi.mock("../../src/browser/chromeLifecycle.js", () => ({
   launchChrome,
   connectWithNewTab,
+  connectToRemoteChrome,
   closeTab,
 }));
+
+vi.mock("../../src/browser/attachRunning.js", () => ({ resolveAttachRunningConnection }));
 
 vi.mock("../../src/browser/profileState.js", () => ({
   readDevToolsPort,
@@ -47,6 +54,8 @@ describe("openGeminiBrowserSession", () => {
 
     launchChrome.mockReset();
     connectWithNewTab.mockReset();
+    connectToRemoteChrome.mockReset();
+    resolveAttachRunningConnection.mockReset();
     closeTab.mockClear();
     readDevToolsPort.mockReset();
     writeDevToolsActivePort.mockClear();
@@ -77,6 +86,52 @@ describe("openGeminiBrowserSession", () => {
     }
     await rm(tempRoot, { recursive: true, force: true });
   });
+
+  it.each([true, false])(
+    "honors host Chrome attachment and closes only its own tab (attachRunning=%s)",
+    async (attachRunning) => {
+      const endpoint = {
+        host: "host.example",
+        port: 9333,
+        browserWSEndpoint: "ws://host.example:9333/devtools/browser/fixture",
+        profileRoot: null,
+      };
+      resolveAttachRunningConnection.mockResolvedValue(endpoint);
+      const close = vi.fn(async () => {});
+      const client = { close: vi.fn() };
+      connectToRemoteChrome.mockResolvedValue({ client, targetId: "owned-tab", close });
+      const { openGeminiBrowserSession } =
+        await import("../../src/gemini-web/browserSessionManager.js");
+      const browserConfig = {
+        attachRunning,
+        remoteChrome: { host: endpoint.host, port: endpoint.port },
+        approvalWaitMs: 60_000,
+      };
+      const session = await openGeminiBrowserSession({
+        browserConfig,
+        keepBrowserDefault: false,
+        purpose: "fixture",
+      });
+      expect(resolveAttachRunningConnection).toHaveBeenCalledWith(
+        expect.objectContaining(browserConfig),
+        expect.any(Function),
+      );
+      expect(connectToRemoteChrome).toHaveBeenCalledWith(
+        endpoint.host,
+        endpoint.port,
+        expect.any(Function),
+        "about:blank",
+        endpoint.browserWSEndpoint,
+        { approvalWaitMs: 60_000, fallbackToDefault: false },
+      );
+      expect(readDevToolsPort).not.toHaveBeenCalled();
+      expect(launchChrome).not.toHaveBeenCalled();
+      expect(writeDevToolsActivePort).not.toHaveBeenCalled();
+      expect(session.client).toBe(client);
+      await session.close();
+      expect(close).toHaveBeenCalledWith({ preserveTarget: false });
+    },
+  );
 
   it("prefers an explicit manual-login profile dir over the environment", async () => {
     const explicitDir = path.join(tempRoot, "explicit-profile");

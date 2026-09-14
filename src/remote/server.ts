@@ -11,7 +11,8 @@ import chalk from "chalk";
 import type { BrowserAttachment, BrowserLogger, CookieParam } from "../browser/types.js";
 import { materializeStagedFallbackBundle } from "../browser/prompt.js";
 import type { BrowserSessionConfig } from "../sessionManager.js";
-import { runBrowserMode } from "../browserMode.js";
+import type { runBrowserMode } from "../browserMode.js";
+import { resolveBrowserExecutor } from "../browser/executor.js";
 import { resolveBrowserConfig } from "../browser/config.js";
 import { RunSlots } from "./runSlots.js";
 export { RunSlots } from "./runSlots.js";
@@ -29,7 +30,7 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
 import { getOracleHomeDir } from "../oracleHome.js";
-import { resolveBrowserProvider, REMOTE_GEMINI_UNSUPPORTED_MESSAGE } from "../browser/provider.js";
+import { resolveBrowserProvider, resolveRemoteBrowserModel } from "../browser/provider.js";
 import {
   cleanupStaleProfileState,
   readDevToolsPort,
@@ -131,7 +132,6 @@ export async function createRemoteServer(
   options: RemoteServerOptions = {},
   deps: RemoteServerDeps = {},
 ): Promise<RemoteServerInstance> {
-  const runBrowser = deps.runBrowser ?? runBrowserMode;
   const attachedBrowser = usesHostBrowserAttachment(options.browserConfig);
   const manualLoginDefault = !attachedBrowser && options.manualLoginDefault;
   const hostBrowserConfig: RemoteHostBrowserConfig = options.browserConfig
@@ -318,14 +318,22 @@ export async function createRemoteServer(
       await abandon();
       return;
     }
-    if (resolveBrowserProvider(payload.browserConfig?.desiredModel) === "gemini") {
+    let model: string | undefined;
+    try {
+      model = resolveRemoteBrowserModel(payload.options.model, payload.browserConfig?.desiredModel);
+      if (resolveBrowserProvider(model) === "gemini" && payload.options.imageOutputRequested) {
+        throw new Error(
+          "Remote Gemini image generation and editing are not supported; run these requests locally.",
+        );
+      }
+    } catch (error) {
       await abandon();
       if (!res.destroyed) {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             error: "unsupported_browser_provider",
-            message: REMOTE_GEMINI_UNSUPPORTED_MESSAGE,
+            message: error instanceof Error ? error.message : String(error),
           }),
         );
       }
@@ -477,8 +485,18 @@ export async function createRemoteServer(
         }
       }
 
+      const runBrowser =
+        deps.runBrowser ??
+        (await resolveBrowserExecutor({
+          model: model ?? "gpt-5.5",
+          youtube:
+            typeof payload.options.youtube === "string" ? payload.options.youtube : undefined,
+          geminiShowThoughts: payload.options.geminiShowThoughts === true,
+          geminiAllowModelFallback: payload.options.geminiAllowModelFallback !== false,
+        }));
       const result = await runBrowser({
         prompt: payload.prompt,
+        model,
         attachments,
         fallbackSubmission,
         config: payload.browserConfig,

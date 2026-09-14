@@ -11,7 +11,7 @@ import type {
   BrowserRuntimeMetadata,
   SessionArtifact,
 } from "../sessionStore.js";
-import { resolveLocalBrowserExecutor, type BrowserExecutor } from "./executor.js";
+import { resolveBrowserExecutor, type BrowserExecutor } from "./executor.js";
 import type { BrowserRunOptions, BrowserRunResult } from "../browserMode.js";
 import { DEFAULT_BROWSER_CONFIG } from "./config.js";
 import { redactBrowserConfigForDebugLog } from "./configLogging.js";
@@ -157,7 +157,7 @@ export async function runBrowserSessionExecution(
   if (signal?.aborted) {
     throw new BrowserRunCancelledError();
   }
-  const executeBrowser = deps.executeBrowser ?? (await resolveLocalBrowserExecutor(runOptions));
+  const executeBrowser = deps.executeBrowser ?? (await resolveBrowserExecutor(runOptions));
   try {
     promptArtifacts = await Promise.race([
       assemblePrompt(runOptions, { cwd }).then(async (artifacts) => {

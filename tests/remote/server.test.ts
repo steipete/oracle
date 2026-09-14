@@ -31,7 +31,7 @@ const CAN_LISTEN_LOCALHOST =
 
 describe("remote browser service", () => {
   test.skipIf(!CAN_LISTEN_LOCALHOST).each([undefined, 1])(
-    "rejects Gemini and releases admission capacity (maxConcurrentRuns=%s)",
+    "rejects unknown providers and releases admission capacity (maxConcurrentRuns=%s)",
     async (maxConcurrentRuns) => {
       let runs = 0;
       const server = await createRemoteServer(
@@ -67,7 +67,7 @@ describe("remote browser service", () => {
           }),
         });
       try {
-        const rejected = await submit("gemini-3.1-pro");
+        const rejected = await submit("unknown-provider");
         expect(rejected.status).toBe(400);
         expect(await rejected.json()).toMatchObject({ error: "unsupported_browser_provider" });
         expect(runs).toBe(0);
