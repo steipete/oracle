@@ -66,7 +66,7 @@ Notes:
 - Legacy `gemini-3-pro`, `gemini-2.5-pro`, and `gemini-2.5-flash` browser names remain accepted and map to current Gemini web models.
 - If your logged-in Gemini account can’t access the requested model, Oracle auto-falls back to Gemini 3.1 Flash-Lite and logs the fallback in verbose mode.
 - Pass `--no-gemini-fallback` to fail instead when the requested web model is unavailable.
-- If Google's session response exceeds Node's header limit, start Oracle with `NODE_OPTIONS=--max-http-header-size=65536` (append this to existing Node options). Oracle reports this condition explicitly and retains the process's configured proxy/TLS transport.
+- Gemini web requests accept response headers up to 64 KiB automatically, including Google's large security and reporting policies; no Node options are required. These requests honor `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` (including lowercase equivalents) and Node's TLS trust configuration.
 - This path runs fully in Node/TypeScript (no Python/venv dependency).
 - Local MCP consultations and detached workers use the same Gemini executor as the CLI and preserve the session's saved Gemini options. The explicit model key takes precedence over ChatGPT picker labels.
 - Gemini browser runs also support `--remote-host`. Upgrade both endpoints, sign into Gemini on the service host, then run `oracle --engine browser --model gemini-3.5-flash --remote-host <host:port> --remote-token <token> --prompt "Say OK."`. New runs and restarts dispatch the Gemini web executor on that host; Google cookies and browser state stay there. Host manual-login profiles and `oracle serve --browser-attach-running` are supported. Text, file attachments, YouTube prompts, thoughts, and `--no-gemini-fallback` are forwarded; image generation/editing still require a local Gemini run.
@@ -91,6 +91,7 @@ Notes:
 
 - `src/gemini-web/models.ts` — centralizes current private web model headers, legacy aliases, and fallback selection.
 - `src/gemini-web/client.ts` — talks to `gemini.google.com` and downloads generated images via authenticated `gg-dl` redirects.
+- `src/gemini-web/http.ts` — uses a reusable, Gemini-only Undici dispatcher with a 64 KiB response-header limit. It does not change the global dispatcher or replay failed requests. Embedders with custom dispatcher/proxy/TLS settings can use `createGeminiWebDispatcher(options)` and pass `dispatcher` to `fetchGeminiWebResource`; an explicitly supplied dispatcher owns its header limit. Global dispatcher customizations do not configure this dedicated transport.
 - `src/gemini-web/executor.ts` — browser-engine executor for Gemini (loads Chrome cookies and runs the web client).
 
 ## Testing

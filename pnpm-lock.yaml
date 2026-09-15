@@ -82,6 +82,9 @@ importers:
       tokentally:
         specifier: ^0.1.6
         version: 0.1.6
+      undici:
+        specifier: ^7.29.1
+        version: 7.29.1
       zod:
         specifier: ^4.6.2
         version: 4.6.2
@@ -4318,8 +4321,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@7.29.1:
-    optional: true
+  undici@7.29.1: {}
 
   unicorn-magic@0.3.0: {}
 
