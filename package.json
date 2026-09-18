@@ -72,14 +72,14 @@
     "inquirer": "14.2.2",
     "json5": "^2.2.3",
     "kleur": "^4.1.5",
-    "markdansi": "0.3.3",
+    "markdansi": "0.3.4",
     "openai": "^7.15.0",
     "osc-progress": "^0.3.3",
     "qs": "^6.16.0",
     "shiki": "^4.4.3",
     "toasted-notifier": "^10.1.0",
     "tokentally": "^0.1.6",
-    "undici": "^7.29.1",
+    "undici": "^8.10.2",
     "zod": "^4.6.2"
   },
   "devDependencies": {
@@ -87,16 +87,16 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/node": "^26.5.1",
-    "@vitest/coverage-v8": "5.0.0",
-    "devtools-protocol": "0.0.1695952",
+    "@vitest/coverage-v8": "5.0.1",
+    "devtools-protocol": "0.0.1697629",
     "es-toolkit": "^1.52.0",
     "esbuild": "^0.28.2",
-    "oxfmt": "0.67.0",
+    "oxfmt": "0.68.0",
     "oxlint": "^1.82.0",
     "puppeteer-core": "^25.10.0",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vitest": "5.0.0"
+    "vitest": "5.0.1"
   },
   "devEngines": {
     "runtime": [
