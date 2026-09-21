@@ -4,6 +4,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { delay } from "./utils.js";
+import { formatWebSocketHost } from "./detect.js";
 
 export type ProfileStateLogger = (message: string) => void;
 
@@ -422,17 +423,22 @@ export async function verifyDevToolsReachable({
   attempts?: number;
   timeoutMs?: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const versionUrl = `http://${host}:${port}/json/version`;
+  const versionUrl = `http://${formatWebSocketHost(host)}:${port}/json/version`;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const response = await fetch(versionUrl, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      try {
+        const response = await fetch(versionUrl, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return { ok: true };
+      } finally {
+        // Headers can arrive before a stalled body; bound and clean up the whole request.
+        clearTimeout(timeout);
+        controller.abort();
       }
-      return { ok: true };
     } catch (error) {
       if (attempt < attempts - 1) {
         await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));

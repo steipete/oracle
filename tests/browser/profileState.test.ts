@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -331,3 +331,47 @@ test.each(["--remote-debugging-port=9222", "about:blank"])(
     expect(isChromeCommandForUserDataDirForTest(command, path.resolve("Shared"))).toBe(false);
   },
 );
+
+describe("verifyDevToolsReachable", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  test("brackets an IPv6 host when probing DevTools", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      profileState.verifyDevToolsReachable({ port: 9222, host: "::1" }),
+    ).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith("http://[::1]:9222/json/version", {
+      signal: expect.any(AbortSignal),
+    });
+    const [versionUrl] = fetchMock.mock.calls[0] as [string];
+    expect(() => new URL(versionUrl)).not.toThrow();
+  });
+
+  test("keeps an IPv4 host unchanged when probing DevTools", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      profileState.verifyDevToolsReachable({ port: 9222, host: "127.0.0.1" }),
+    ).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:9222/json/version", {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  test("clears the abort timer when the probe rejects", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      profileState.verifyDevToolsReachable({ port: 9222, attempts: 1 }),
+    ).resolves.toEqual({ ok: false, error: "ECONNREFUSED" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
