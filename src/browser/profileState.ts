@@ -283,9 +283,7 @@ async function queryProcessStartTimeMs(pid: number): Promise<number | null> {
       maxBuffer: 1024 * 1024,
       windowsHide: true,
       timeout: 5000,
-      // `ps -o lstart=` renders in the user's locale (e.g. "三 9月/16 ..." on
-      // zh_CN macOS), which Date.parse cannot read and makes every probe
-      // return null. Force the C locale so the timestamp stays parseable.
+      // Keep ps timestamps parseable regardless of the user's locale.
       env: { ...process.env, LC_ALL: "C" },
     });
     const startedAt = Date.parse(String(stdout ?? "").trim());

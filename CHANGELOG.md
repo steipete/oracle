@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: preserve process identity and stale-lock recovery on non-English systems by normalizing process timestamps; thanks @zianai.
 - CLI: show advanced options with `--help --verbose` and `-h --verbose` in either flag order, without starting a session; fixes #500, thanks @postoso.
 
 ## 0.21.1 - 2026-09-14
