@@ -1,29 +1,61 @@
-import { describe, expect, test } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { resolveBridgeHostToken } from "../../src/cli/bridge/host.js";
 
+let dir: string;
+let artifact: string;
+
+beforeEach(async () => {
+  dir = await mkdtemp(path.join(os.tmpdir(), "oracle-bridge-host-"));
+  artifact = path.join(dir, "bridge-connection.json");
+});
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+async function seedArtifact(token: string): Promise<void> {
+  await writeFile(artifact, JSON.stringify({ remoteHost: "127.0.0.1:9473", remoteToken: token }));
+}
+
 describe("resolveBridgeHostToken", () => {
-  test("uses the explicit token when provided", () => {
-    expect(resolveBridgeHostToken("explicit-token", "env-token")).toBe("explicit-token");
+  test("uses the explicit token when provided", async () => {
+    await seedArtifact("artifact-token");
+    expect(await resolveBridgeHostToken("explicit-token", true, artifact)).toBe("explicit-token");
   });
 
-  test("explicit --token auto generates a fresh token even when an env token exists", () => {
-    const generated = resolveBridgeHostToken("auto", "stale-env-token");
-    expect(generated).not.toBe("stale-env-token");
+  test("explicit --token auto generates a fresh token even on the respawn path", async () => {
+    await seedArtifact("artifact-token");
+    const generated = await resolveBridgeHostToken("auto", true, artifact);
+    expect(generated).not.toBe("artifact-token");
     expect(generated).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  test("auto regenerates on each call", () => {
-    expect(resolveBridgeHostToken("auto", undefined)).not.toBe(
-      resolveBridgeHostToken("auto", undefined),
-    );
+  test("auto regenerates on each call", async () => {
+    const a = await resolveBridgeHostToken("auto", false, artifact);
+    const b = await resolveBridgeHostToken("auto", false, artifact);
+    expect(a).not.toBe(b);
   });
 
-  test("falls back to the inherited background token when --token is unset", () => {
-    expect(resolveBridgeHostToken(undefined, "env-token")).toBe("env-token");
+  test("the --background respawn reuses the artifact token via --foreground", async () => {
+    await seedArtifact("handoff-token");
+    expect(await resolveBridgeHostToken(undefined, true, artifact)).toBe("handoff-token");
   });
 
-  test("generates a token when neither flag nor env are set", () => {
-    expect(resolveBridgeHostToken(undefined, undefined)).toMatch(/^[0-9a-f]{32}$/);
-    expect(resolveBridgeHostToken("", "  ")).toMatch(/^[0-9a-f]{32}$/);
+  test("respawn generates a fresh token when the artifact is missing or invalid", async () => {
+    expect(await resolveBridgeHostToken(undefined, true, artifact)).toMatch(/^[0-9a-f]{32}$/);
+    await writeFile(artifact, "not json");
+    expect(await resolveBridgeHostToken(undefined, true, artifact)).toMatch(/^[0-9a-f]{32}$/);
+    await writeFile(artifact, JSON.stringify({ remoteToken: "  " }));
+    expect(await resolveBridgeHostToken(undefined, true, artifact)).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  test("a direct run generates a fresh token even when an artifact exists", async () => {
+    await seedArtifact("previous-run-token");
+    const generated = await resolveBridgeHostToken(undefined, false, artifact);
+    expect(generated).not.toBe("previous-run-token");
+    expect(generated).toMatch(/^[0-9a-f]{32}$/);
   });
 });

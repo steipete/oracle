@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 const execFileAsync = promisify(execFile);
+// Resolve tsx to an absolute URL so the spawned CLI works with cwd=oracleHome
+// (isolates project-config discovery from any ancestor .oracle/config.json).
+const tsxSpecifier = pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href;
 let oracleHome: string;
 let sourceFile: string;
 const sessionId = "test-shadowed-globals";
@@ -78,8 +83,8 @@ async function oracle(args: string[]): Promise<{ stdout: string; stderr: string;
   try {
     const { stdout, stderr } = await execFileAsync(
       process.execPath,
-      ["--import", "tsx", path.join(process.cwd(), "bin/oracle-cli.ts"), ...args],
-      { env, timeout: 30_000 },
+      ["--import", tsxSpecifier, path.join(process.cwd(), "bin/oracle-cli.ts"), ...args],
+      { env, cwd: oracleHome, timeout: 30_000 },
     );
     return { stdout, stderr, code: 0 };
   } catch (error) {
@@ -176,7 +181,18 @@ test("legacy --session alias still honors an explicit --model", async () => {
   const mismatch = await oracle(["--session", sessionId, "--model", "nonexistent"]);
   expect(mismatch.stderr).toContain(`Model "nonexistent" not found in session ${sessionId}.`);
   expect(mismatch.code).toBe(1);
+  const listed = await oracle(["--status", "--model", "nonexistent"]);
+  expect(listed.stdout).not.toContain(sessionId);
 }, 40_000);
+
+test("bridge host --token has no parser default (unset vs explicit auto)", async () => {
+  // A commander default would silently resurrect the stale-token bug: the
+  // respawned child would regenerate instead of reusing the artifact token.
+  const help = await oracle(["bridge", "host", "--help"]);
+  const tokenLine = help.stdout.split("\n").find((line) => line.includes("--token"));
+  expect(tokenLine).toBeTruthy();
+  expect(tokenLine).not.toContain('(default: "auto")');
+}, 20_000);
 
 test("project-sources add still resolves root --include alias", async () => {
   const run = await oracle([

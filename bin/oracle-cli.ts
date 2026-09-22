@@ -2105,7 +2105,8 @@ async function runRootCommand(options: CliOptions): Promise<void> {
 
   // Only a user-typed --model narrows these views; configured defaults must not
   // silently filter legacy session/status lookups.
-  const explicitModelFilter = optionUsesDefault("model") ? undefined : options.model;
+  const explicitModelFilter =
+    program.getOptionValueSource("model") === "cli" ? options.model : undefined;
   if (options.status) {
     if (options.verboseRender) {
       process.env.ORACLE_VERBOSE_RENDER = "1";
