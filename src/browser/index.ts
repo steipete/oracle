@@ -31,7 +31,11 @@ import {
   ensureChromePageTargetAfterClose,
   closeBlankChromeTabs,
 } from "./chromeLifecycle.js";
-import { clearStaleChatGptConversationCookies, syncCookies } from "./cookies.js";
+import {
+  ChromeKeychainNonInteractiveError,
+  clearStaleChatGptConversationCookies,
+  syncCookies,
+} from "./cookies.js";
 import {
   navigateToChatGPT,
   navigateToPromptReadyWithFallback,
@@ -1285,13 +1289,24 @@ async function runBrowserModeInternal(
         logger("Applying inline cookies (skipping Chrome profile read and Keychain prompt)");
       }
       // Learned: always sync cookies before the first navigation so /backend-api/me succeeds.
-      const cookieCount = await syncCookies(Network, config.url, config.chromeProfile, logger, {
-        allowErrors: config.allowCookieErrors ?? false,
-        filterNames: config.cookieNames ?? undefined,
-        inlineCookies: config.inlineCookies ?? undefined,
-        cookiePath: config.chromeCookiePath ?? undefined,
-        waitMs: config.cookieSyncWaitMs ?? 0,
-      });
+      let cookieCount: number;
+      try {
+        cookieCount = await syncCookies(Network, config.url, config.chromeProfile, logger, {
+          allowErrors: config.allowCookieErrors ?? false,
+          filterNames: config.cookieNames ?? undefined,
+          inlineCookies: config.inlineCookies ?? undefined,
+          cookiePath: config.chromeCookiePath ?? undefined,
+          waitMs: config.cookieSyncWaitMs ?? 0,
+        });
+      } catch (error) {
+        if (error instanceof ChromeKeychainNonInteractiveError) {
+          throw new BrowserAutomationError(error.message, {
+            stage: "execute-browser",
+            details: { profile: config.chromeProfile ?? "Default", reason: "no-interactive-session" },
+          });
+        }
+        throw error;
+      }
       appliedCookies = cookieCount;
       if (config.inlineCookies && cookieCount === 0) {
         throw new Error("No inline cookies were applied; aborting before navigation.");

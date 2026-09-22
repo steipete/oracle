@@ -5,6 +5,67 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 
 export class ChromeCookieSyncError extends Error {}
 
+/**
+ * Thrown when we skip the macOS Keychain read entirely because no interactive
+ * session is available to answer the one-time "Always Allow" prompt. Distinct
+ * from ChromeCookieSyncError (a real Keychain/CDP failure) so callers can tell
+ * "we didn't even try" apart from "we tried and it failed".
+ */
+export class ChromeKeychainNonInteractiveError extends ChromeCookieSyncError {}
+
+export interface KeychainInteractivityContext {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  stdinIsTTY?: boolean;
+  stdoutIsTTY?: boolean;
+}
+
+/**
+ * macOS's Keychain ACL prompt has nowhere to render and nobody to click when
+ * Oracle is invoked from a non-interactive/background process (e.g. an agent
+ * or automation with no attached WindowServer session): `security
+ * find-generic-password` just hangs until its timeout and then fails. Detect
+ * that up front so we can fail fast instead of waiting out the timeout.
+ */
+export function isLikelyNonInteractiveKeychainSession(
+  context: KeychainInteractivityContext = {},
+): boolean {
+  const platform = context.platform ?? process.platform;
+  if (platform !== "darwin") {
+    // The Keychain prompt hang is macOS-specific; other platforms take other paths.
+    return false;
+  }
+  const env = context.env ?? process.env;
+  if (env.ORACLE_ASSUME_INTERACTIVE === "1") {
+    return false;
+  }
+  if (env.VITEST) {
+    // Learned: the test suite mocks sweet-cookie's getCookies entirely, so it never
+    // touches the real Keychain; don't let this check trip on CI's non-TTY runners.
+    return false;
+  }
+  if (env.ORACLE_NONINTERACTIVE === "1" || env.CI === "true" || env.CI === "1") {
+    return true;
+  }
+  const stdinIsTTY = context.stdinIsTTY ?? Boolean(process.stdin.isTTY);
+  const stdoutIsTTY = context.stdoutIsTTY ?? Boolean(process.stdout.isTTY);
+  return !stdinIsTTY && !stdoutIsTTY;
+}
+
+export function nonInteractiveKeychainErrorMessage(): string {
+  return (
+    "No interactive session detected: skipping the macOS Keychain read for Chrome cookie copy " +
+    "instead of waiting for a prompt nobody can answer. Cookie-copy mode needs a one-time human " +
+    '"Always Allow" approval in Keychain Access, so it cannot work unattended from an automation ' +
+    "or agent process.\n" +
+    "Recommended: use --browser-manual-login (add --browser-manual-login-profile-dir for a persistent, " +
+    "reusable profile) instead of Chrome cookie copy for automation/agent runs. If you're already using " +
+    "--browser-manual-login with --browser-manual-login-cookie-sync, drop --browser-manual-login-cookie-sync " +
+    "or complete one interactive login first so no Keychain read is required.\n" +
+    "Set ORACLE_ASSUME_INTERACTIVE=1 to bypass this check if you know a human is available to approve the prompt."
+  );
+}
+
 export async function clearStaleChatGptConversationCookies(
   Network: ChromeClient["Network"],
   Target: ChromeClient["Target"],
@@ -118,6 +179,12 @@ export async function syncCookies(
     return applied;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ChromeKeychainNonInteractiveError) {
+      // Learned: this is a "we didn't even try" fail-fast, not a flaky Keychain/CDP error;
+      // swallowing it under allowErrors would just trade a clear message for a slower,
+      // more confusing "no cookies were applied" failure later. Always surface it.
+      throw error;
+    }
     if (allowErrors) {
       logger(`Cookie sync failed (continuing with override): ${message}`);
       return 0;
@@ -149,6 +216,12 @@ async function readChromeCookiesWithWait(
     return cookies;
   }
 
+  if (firstError instanceof ChromeKeychainNonInteractiveError) {
+    // Learned: waiting and retrying would just re-hit the same "no one can answer
+    // the Keychain prompt" condition; fail fast instead of doubling the delay.
+    throw firstError;
+  }
+
   const waitLabel = waitMs >= 1000 ? `${Math.round(waitMs / 1000)}s` : `${waitMs}ms`;
   const message = firstError instanceof Error ? firstError.message : String(firstError ?? "");
   if (firstError) {
@@ -166,6 +239,10 @@ async function readChromeCookies(
   filterNames?: string[],
   cookiePath?: string | null,
 ): Promise<CookieParam[]> {
+  if (isLikelyNonInteractiveKeychainSession()) {
+    throw new ChromeKeychainNonInteractiveError(nonInteractiveKeychainErrorMessage());
+  }
+
   const origins = Array.from(new Set([stripQuery(url), ...COOKIE_URLS]));
   const chromeProfile = cookiePath ?? profile ?? undefined;
   const timeoutMs = readDuration("ORACLE_COOKIE_LOAD_TIMEOUT_MS", 5_000);

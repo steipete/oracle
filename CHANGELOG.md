@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: fail fast with a `--browser-manual-login` recommendation instead of hanging on a macOS Keychain cookie-copy prompt when no interactive session is available (agent/automation runs).
 - Browser: preserve reachable IPv6 Chrome profiles and release failed DevTools probe timers promptly; thanks @devYRPauli.
 
 ## 0.21.2 - 2026-09-22

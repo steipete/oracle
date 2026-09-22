@@ -785,7 +785,7 @@ program
   .addOption(
     new Option(
       "--browser-cookie-sync",
-      "Copy cookies from live Chrome (opt-in; token rotation may invalidate that session).",
+      "Copy cookies from live Chrome (opt-in; requires an interactive session for the one-time Keychain approval; use --browser-manual-login for automation).",
     ),
   )
   .addOption(new Option("--browser-no-cookie-sync", "Skip copying cookies from Chrome.").hideHelp())
@@ -1068,7 +1068,7 @@ function addProjectSourcesCommonOptions(command: Command): Command {
     .option("--browser-inline-cookies-file <path>", "File containing ChatGPT cookies JSON.")
     .option(
       "--browser-cookie-sync",
-      "Copy cookies from live Chrome (opt-in; token rotation may invalidate that session).",
+      "Copy cookies from live Chrome (opt-in; requires an interactive session for the one-time Keychain approval; use --browser-manual-login for automation).",
     )
     .option("--browser-no-cookie-sync", "Skip copying cookies from Chrome.")
     .option("--browser-keep-browser", "Keep Chrome running after completion.", false)
@@ -2977,7 +2977,7 @@ function printDebugHelp(cliName: string): void {
     ],
     [
       "--browser-cookie-sync",
-      "Copy cookies from live Chrome (opt-in; token rotation may invalidate that session).",
+      "Copy cookies from live Chrome (opt-in; requires an interactive session for the one-time Keychain approval; use --browser-manual-login for automation).",
     ],
     ["--browser-no-cookie-sync", "Skip copying cookies from your main profile."],
     [

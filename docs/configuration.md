@@ -35,7 +35,11 @@ JSON5 parsing, so trailing commas and comments are allowed.
     inputTimeoutMs: 30000,
     attachmentTimeoutMs: 90000, // wait for file upload/readiness before clicking Send (default: 45s)
     captureProviderNative: false, // opt in to full ChatGPT conversation evidence (user config only)
-    cookieSync: false, // opt in to copying cookies from a live Chrome profile (prefer manualLogin)
+    cookieSync: false, // opt in to copying cookies from a live Chrome profile (prefer manualLogin).
+    // NOTE: on macOS this requires a one-time interactive Keychain "Always Allow" approval, so it
+    // only works from a real human-attended terminal; it is not reliable for background/automation
+    // runs. Oracle fails fast with a manualLogin recommendation when no interactive session is
+    // detected (no TTY, or CI/ORACLE_NONINTERACTIVE=1). Set manualLogin: true instead for agents.
     cookieSyncWaitMs: 0, // wait (ms) before retrying cookie sync when Chrome cookies are empty/locked
     assistantRecheckDelayMs: 0, // wait this long after timeout, then retry capture (0 = disabled)
     assistantRecheckTimeoutMs: 120000, // time budget for the recheck attempt (default: 2m)
@@ -54,6 +58,7 @@ JSON5 parsing, so trailing commas and comments are allowed.
     hideWindow: false,
     keepBrowser: false,
     manualLoginCookieSync: false, // explicitly seed the manual-login profile from live Chrome cookies
+    // (still needs one interactive Keychain approval on macOS; leave false for unattended agent runs)
   },
 
   // Azure OpenAI defaults (only used when endpoint is set)

@@ -3,6 +3,8 @@ import {
   clearStaleChatGptConversationCookies,
   syncCookies,
   ChromeCookieSyncError,
+  ChromeKeychainNonInteractiveError,
+  isLikelyNonInteractiveKeychainSession,
 } from "../../src/browser/cookies.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
@@ -306,5 +308,164 @@ describe("syncCookies", () => {
     expect(getCookies).toHaveBeenCalledTimes(2);
     expect(logger).toHaveBeenCalledWith(expect.stringContaining("No cookies found"));
     vi.useRealTimers();
+  });
+});
+
+describe("isLikelyNonInteractiveKeychainSession", () => {
+  test("is false on non-macOS platforms regardless of TTY state", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "linux",
+        env: {},
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("is true on macOS with no TTY and no interactive override", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "darwin",
+        env: {},
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+      }),
+    ).toBe(true);
+  });
+
+  test("is false on macOS when a real terminal is attached", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "darwin",
+        env: {},
+        stdinIsTTY: true,
+        stdoutIsTTY: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("ORACLE_NONINTERACTIVE=1 forces non-interactive even with a TTY", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "darwin",
+        env: { ORACLE_NONINTERACTIVE: "1" },
+        stdinIsTTY: true,
+        stdoutIsTTY: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("CI=true forces non-interactive even with a TTY", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "darwin",
+        env: { CI: "true" },
+        stdinIsTTY: true,
+        stdoutIsTTY: true,
+      }),
+    ).toBe(true);
+  });
+
+  test("ORACLE_ASSUME_INTERACTIVE=1 bypasses the check with no TTY", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "darwin",
+        env: { ORACLE_ASSUME_INTERACTIVE: "1" },
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+      }),
+    ).toBe(false);
+  });
+
+  test("VITEST bypasses the check so the mocked test suite is unaffected", () => {
+    expect(
+      isLikelyNonInteractiveKeychainSession({
+        platform: "darwin",
+        env: { VITEST: "true" },
+        stdinIsTTY: false,
+        stdoutIsTTY: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("syncCookies fail-fast on non-interactive Keychain access", () => {
+  test("throws ChromeKeychainNonInteractiveError without calling sweet-cookie's getCookies", async () => {
+    const originalVitestEnv = process.env.VITEST;
+    const originalPlatform = process.platform;
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    delete process.env.VITEST;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+
+    try {
+      const setCookie = vi.fn();
+      await expect(
+        syncCookies(
+          { setCookie } as unknown as ChromeClient["Network"],
+          "https://chatgpt.com",
+          "Default",
+          logger,
+        ),
+      ).rejects.toBeInstanceOf(ChromeKeychainNonInteractiveError);
+      await expect(
+        syncCookies(
+          { setCookie } as unknown as ChromeClient["Network"],
+          "https://chatgpt.com",
+          "Default",
+          logger,
+        ),
+      ).rejects.toThrow(/--browser-manual-login/);
+      expect(getCookies).not.toHaveBeenCalled();
+      expect(setCookie).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+      if (stdinDescriptor) Object.defineProperty(process.stdin, "isTTY", stdinDescriptor);
+      if (stdoutDescriptor) Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      if (originalVitestEnv !== undefined) process.env.VITEST = originalVitestEnv;
+    }
+  });
+
+  test("does not fail fast when inline cookies are supplied (no Keychain read needed)", async () => {
+    const originalVitestEnv = process.env.VITEST;
+    const originalPlatform = process.platform;
+    const stdinDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
+    delete process.env.VITEST;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+
+    try {
+      const setCookie = vi.fn().mockResolvedValue({ success: true });
+      const applied = await syncCookies(
+        { setCookie } as unknown as ChromeClient["Network"],
+        "https://chatgpt.com",
+        null,
+        logger,
+        {
+          inlineCookies: [
+            {
+              name: "sid",
+              value: "abc",
+              domain: "chatgpt.com",
+              path: "/",
+              secure: true,
+              httpOnly: true,
+            },
+          ],
+        },
+      );
+      expect(applied).toBe(1);
+      expect(getCookies).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform });
+      if (stdinDescriptor) Object.defineProperty(process.stdin, "isTTY", stdinDescriptor);
+      if (stdoutDescriptor) Object.defineProperty(process.stdout, "isTTY", stdoutDescriptor);
+      if (originalVitestEnv !== undefined) process.env.VITEST = originalVitestEnv;
+    }
   });
 });
