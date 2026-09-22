@@ -965,6 +965,13 @@ program
   .addOption(new Option("--no-wait").default(undefined).hideHelp())
   .showHelpAfterError("(use --help for usage)");
 
+program.on("afterHelp", ({ error }: { error: boolean }) => {
+  if (!error && program.opts<CliOptions>().verbose) {
+    console.log("");
+    printDebugHelp(program.name());
+  }
+});
+
 program.addHelpText(
   "after",
   `
@@ -1788,7 +1795,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     return;
   }
   const userConfig = (await loadUserConfig()).config;
-  const helpRequested = rawCliArgs.some((arg: string) => arg === "--help" || arg === "-h");
   const multiModelProvided = Array.isArray(options.models) && options.models.length > 0;
   const optionUsesDefault = (name: string): boolean => {
     // Commander reports undefined for untouched options, so treat undefined/default the same
@@ -1797,15 +1803,6 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   };
   if (multiModelProvided && !optionUsesDefault("model") && normalizeModelOption(options.model)) {
     throw new Error("--models cannot be combined with --model.");
-  }
-  if (helpRequested) {
-    if (options.verbose) {
-      console.log("");
-      printDebugHelp(program.name());
-      console.log("");
-    }
-    program.help({ error: false });
-    return;
   }
   const previewMode = resolvePreviewMode(options.dryRun || options.preview);
   const mergedFileInputs = mergePathLikeOptions(

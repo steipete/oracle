@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CLI: show advanced options with `--help --verbose` and `-h --verbose` in either flag order, without starting a session; fixes #500, thanks @postoso.
+
 ## 0.21.1 - 2026-09-14
 
 **Highlights:** Live Gemini answers work out of the box.
