@@ -1138,6 +1138,7 @@ bridgeCommand
   .option("--ssh-extra-args <args>", "Extra args passed to ssh (quoted string).")
   .option("--background", "Run the host in the background and write pid/log files.", false)
   .option("--foreground", "Run the host in the foreground (default).", false)
+  .addOption(new Option("--respawn").hideHelp())
   .option("--print", "Print the client connection string (includes token).", false)
   .option("--print-token", "Print only the token.", false)
   .action(async (_commandOptions, command: Command) => {

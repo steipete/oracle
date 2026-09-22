@@ -22,6 +22,7 @@ export interface BridgeHostCliOptions {
   sshExtraArgs?: string;
   background?: boolean;
   foreground?: boolean;
+  respawn?: boolean;
   print?: boolean;
   printToken?: boolean;
 }
@@ -32,18 +33,18 @@ interface ReverseTunnelHandle {
 
 export async function resolveBridgeHostToken(
   cliToken: string | undefined,
-  foreground: boolean | undefined,
+  respawn: boolean | undefined,
   artifactPath: string,
 ): Promise<string> {
   const explicit = cliToken?.trim();
   if (explicit && explicit !== "auto") {
     return explicit;
   }
-  // The internal --foreground respawn (spawned by --background) reuses the token
-  // the parent already wrote to the connection artifact, so the credential never
-  // travels through argv or the environment. Explicit "--token auto" and any
-  // direct invocation always generate a fresh credential.
-  if (!explicit && foreground) {
+  // The internal --respawn child (spawned by --background) reuses the token the
+  // parent already wrote to the connection artifact, so the credential never
+  // travels through argv or the environment. Every other start — including a
+  // direct `--foreground` restart — generates a fresh credential.
+  if (!explicit && respawn) {
     const existing = await readArtifactToken(artifactPath);
     if (existing) {
       return existing;
@@ -68,11 +69,7 @@ export async function runBridgeHost(options: BridgeHostCliOptions): Promise<void
 
   const writeConnectionPath =
     options.writeConnection?.trim() || path.join(getOracleHomeDir(), "bridge-connection.json");
-  const token = await resolveBridgeHostToken(
-    options.token,
-    options.foreground,
-    writeConnectionPath,
-  );
+  const token = await resolveBridgeHostToken(options.token, options.respawn, writeConnectionPath);
 
   const sshTarget = options.ssh?.trim();
   const sshRemotePort =
@@ -353,6 +350,7 @@ async function spawnBridgeHostInBackground({
     "bridge",
     "host",
     "--foreground",
+    "--respawn",
     "--bind",
     bind,
     "--write-connection",

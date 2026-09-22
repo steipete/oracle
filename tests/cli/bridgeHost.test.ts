@@ -39,7 +39,7 @@ describe("resolveBridgeHostToken", () => {
     expect(a).not.toBe(b);
   });
 
-  test("the --background respawn reuses the artifact token via --foreground", async () => {
+  test("the internal --respawn child reuses the artifact token", async () => {
     await seedArtifact("handoff-token");
     expect(await resolveBridgeHostToken(undefined, true, artifact)).toBe("handoff-token");
   });
@@ -52,7 +52,7 @@ describe("resolveBridgeHostToken", () => {
     expect(await resolveBridgeHostToken(undefined, true, artifact)).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  test("a direct run generates a fresh token even when an artifact exists", async () => {
+  test("an ordinary restart rotates the credential even when an artifact exists", async () => {
     await seedArtifact("previous-run-token");
     const generated = await resolveBridgeHostToken(undefined, false, artifact);
     expect(generated).not.toBe("previous-run-token");
