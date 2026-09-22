@@ -156,6 +156,28 @@ test("session attach falls back to the session log for legacy sessions", async (
   expect(run.stdout).toContain("Legacy Hello");
 }, 20_000);
 
+test("legacy --session/--status aliases ignore configured default model", async () => {
+  const configPath = path.join(oracleHome, "config.json");
+  await writeFile(configPath, JSON.stringify({ model: "configured-other-model" }));
+  try {
+    const attached = await oracle(["--session", sessionId]);
+    expect(attached.code).toBe(0);
+    expect(attached.stdout).toContain("Answer:");
+    const listed = await oracle(["--status"]);
+    expect(listed.stdout).toContain(sessionId);
+  } finally {
+    await rm(configPath, { force: true });
+  }
+}, 60_000);
+
+test("legacy --session alias still honors an explicit --model", async () => {
+  const attached = await oracle(["--session", sessionId, "--model", "gpt-5.5"]);
+  expect(attached.stdout).toContain("Answer:");
+  const mismatch = await oracle(["--session", sessionId, "--model", "nonexistent"]);
+  expect(mismatch.stderr).toContain(`Model "nonexistent" not found in session ${sessionId}.`);
+  expect(mismatch.code).toBe(1);
+}, 40_000);
+
 test("project-sources add still resolves root --include alias", async () => {
   const run = await oracle([
     "project-sources",

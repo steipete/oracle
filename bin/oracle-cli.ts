@@ -1123,7 +1123,7 @@ bridgeCommand
   .command("host")
   .description("Start a secure oracle serve host (optionally with an SSH reverse tunnel).")
   .option("--bind <host:port>", "Local bind address for the host service (default 127.0.0.1:9473).")
-  .option("--token <token|auto>", "Service access token (default auto).", "auto")
+  .option("--token <token|auto>", "Service access token (default auto).")
   .option(
     "--write-connection <path>",
     "Write a connection artifact JSON (default ~/.oracle/bridge-connection.json).",
@@ -2103,20 +2103,23 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   resolvedOptions.provider = providerMode;
   resolvedOptions.writeOutputPath = resolveOutputPath(options.writeOutput, process.cwd());
 
+  // Only a user-typed --model narrows these views; configured defaults must not
+  // silently filter legacy session/status lookups.
+  const explicitModelFilter = optionUsesDefault("model") ? undefined : options.model;
   if (options.status) {
     if (options.verboseRender) {
       process.env.ORACLE_VERBOSE_RENDER = "1";
     }
     const { attachSession, showStatus } = await import("../src/cli/sessionDisplay.js");
     if (options.session) {
-      await attachSession(options.session, { model: options.model });
+      await attachSession(options.session, { model: explicitModelFilter });
     } else {
       await showStatus({
         hours: 24,
         includeAll: false,
         limit: 100,
         showExamples: true,
-        modelFilter: options.model,
+        modelFilter: explicitModelFilter,
       });
     }
     return;
@@ -2127,7 +2130,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       process.env.ORACLE_VERBOSE_RENDER = "1";
     }
     const { attachSession } = await import("../src/cli/sessionDisplay.js");
-    await attachSession(options.session, { model: options.model });
+    await attachSession(options.session, { model: explicitModelFilter });
     return;
   }
 

@@ -30,16 +30,21 @@ interface ReverseTunnelHandle {
   stop: () => void;
 }
 
+export function resolveBridgeHostToken(
+  cliToken: string | undefined,
+  envToken: string | undefined,
+): string {
+  // An explicit --token (including "auto") always wins over the inherited
+  // background-handoff token; "auto" generates a fresh credential.
+  const raw = cliToken?.trim() || envToken?.trim() || "auto";
+  return raw === "auto" ? randomBytes(16).toString("hex") : raw;
+}
+
 export async function runBridgeHost(options: BridgeHostCliOptions): Promise<void> {
   const bindRaw = options.bind?.trim() || "127.0.0.1:9473";
   const { hostname: bindHost, port: bindPort } = parseHostPort(bindRaw);
 
-  const tokenArg = options.token?.trim();
-  const tokenRaw =
-    tokenArg && tokenArg !== "auto"
-      ? tokenArg
-      : process.env.ORACLE_BRIDGE_HOST_TOKEN?.trim() || "auto";
-  const token = tokenRaw === "auto" ? randomBytes(16).toString("hex") : tokenRaw;
+  const token = resolveBridgeHostToken(options.token, process.env.ORACLE_BRIDGE_HOST_TOKEN);
   if (!token.trim()) {
     throw new Error("Token is required (use --token auto to generate one).");
   }
