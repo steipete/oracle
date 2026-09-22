@@ -34,7 +34,11 @@ export async function runBridgeHost(options: BridgeHostCliOptions): Promise<void
   const bindRaw = options.bind?.trim() || "127.0.0.1:9473";
   const { hostname: bindHost, port: bindPort } = parseHostPort(bindRaw);
 
-  const tokenRaw = options.token?.trim() || "auto";
+  const tokenArg = options.token?.trim();
+  const tokenRaw =
+    tokenArg && tokenArg !== "auto"
+      ? tokenArg
+      : process.env.ORACLE_BRIDGE_HOST_TOKEN?.trim() || "auto";
   const token = tokenRaw === "auto" ? randomBytes(16).toString("hex") : tokenRaw;
   if (!token.trim()) {
     throw new Error("Token is required (use --token auto to generate one).");
@@ -327,8 +331,6 @@ async function spawnBridgeHostInBackground({
     "--foreground",
     "--bind",
     bind,
-    "--token",
-    token,
     "--write-connection",
     writeConnectionPath,
   ];
@@ -345,7 +347,11 @@ async function spawnBridgeHostInBackground({
     args.push("--ssh-extra-args", sshExtraArgs);
   }
 
-  const child = spawn(process.execPath, args, { detached: true, stdio });
+  const child = spawn(process.execPath, args, {
+    detached: true,
+    stdio,
+    env: { ...process.env, ORACLE_BRIDGE_HOST_TOKEN: token },
+  });
   child.unref();
   await fs.writeFile(pidPath, `${child.pid ?? ""}\n`, { encoding: "utf8", mode: 0o600 });
   if (process.platform !== "win32") {

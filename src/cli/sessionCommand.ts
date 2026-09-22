@@ -81,6 +81,8 @@ const SESSION_OPTION_KEYS = new Set([
   "live",
   "writeOutput",
   "browserTab",
+  "hidePrompt",
+  "verboseRender",
 ]);
 
 export async function handleSessionCommand(
@@ -104,13 +106,11 @@ export async function handleSessionCommand(
     allOptions.browserTabRef ??
     command.getOptionValue?.("browserTab") ??
     command.getOptionValue?.("browserTabRef");
-  if (sessionOptions.verboseRender) {
+  if (allOptions.verboseRender) {
     process.env.ORACLE_VERBOSE_RENDER = "1";
   }
-  const renderSource = command.getOptionValueSource?.("render");
-  const renderMarkdownSource = command.getOptionValueSource?.("renderMarkdown");
-  const renderExplicit = renderSource === "cli" || renderMarkdownSource === "cli";
-  const autoRender = !renderExplicit && process.stdout.isTTY;
+  const renderRequested = Boolean(allOptions.render || allOptions.renderMarkdown);
+  const autoRender = !renderRequested && process.stdout.isTTY;
   const pathRequested = Boolean(sessionOptions.path);
   const clearRequested = Boolean(sessionOptions.clear || sessionOptions.clean);
   if (clearRequested) {
@@ -198,7 +198,7 @@ export async function handleSessionCommand(
       includeAll: sessionOptions.all,
       limit: sessionOptions.limit,
       showExamples,
-      modelFilter: sessionOptions.model,
+      modelFilter: allOptions.model,
     });
     return;
   }
@@ -207,13 +207,11 @@ export async function handleSessionCommand(
   if (ignoredFlags.length > 0) {
     console.log(`Ignoring flags on session attach: ${ignoredFlags.join(", ")}`);
   }
-  const renderMarkdown = Boolean(
-    sessionOptions.render || sessionOptions.renderMarkdown || autoRender,
-  );
+  const renderMarkdown = Boolean(renderRequested || autoRender);
   await deps.attachSession(sessionId, {
     renderMarkdown,
     renderPrompt: !sessionOptions.hidePrompt,
-    model: sessionOptions.model,
+    model: allOptions.model,
   });
 }
 
@@ -227,15 +225,15 @@ export function formatSessionCleanupMessage(
   return `Deleted ${deletedLabel} (${scope}). ${remainingLabel}.\n${hint}`;
 }
 
-function listIgnoredFlags(command: Command): string[] {
+export function listIgnoredFlags(command: Command): string[] {
   const opts = command.optsWithGlobals() as Record<string, unknown>;
   const ignored: string[] = [];
   for (const key of Object.keys(opts)) {
     if (SESSION_OPTION_KEYS.has(key)) {
       continue;
     }
-    const source = command.getOptionValueSource?.(key);
-    if (source !== "cli" && source !== "env") {
+    const source = command.getOptionValueSourceWithGlobals?.(key);
+    if (source !== "cli") {
       continue;
     }
     const value = opts[key];

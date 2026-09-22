@@ -6,6 +6,7 @@ import type { BrowserAttachment } from "../browser/types.js";
 import type { BrowserFlagOptions } from "./browserConfig.js";
 import { buildBrowserConfig } from "./browserConfig.js";
 import { readFiles } from "../oracle/files.js";
+import { mergePathLikeOptions } from "./options.js";
 import { loadUserConfig } from "../config.js";
 import { resolveConfiguredMaxFileSizeBytes } from "./fileSize.js";
 import { runBrowserProjectSources } from "../browser/projectSourcesRunner.js";
@@ -14,6 +15,10 @@ import { normalizeProjectSourcesUrl } from "../projectSources/url.js";
 
 export interface ProjectSourcesCliOptions extends Partial<BrowserFlagOptions> {
   file?: string[];
+  include?: string[];
+  files?: string[];
+  path?: string[];
+  paths?: string[];
   dryRun?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -30,9 +35,16 @@ export async function runProjectSourcesCliCommand(
   const projectUrl = normalizeProjectSourcesUrl(options.chatgptUrl ?? configuredUrl ?? "");
   const maxFileSizeBytes =
     options.maxFileSizeBytes ?? resolveConfiguredMaxFileSizeBytes(userConfig, process.env);
+  const mergedFileInputs = mergePathLikeOptions(
+    options.file,
+    options.include,
+    options.files,
+    options.path,
+    options.paths,
+  );
   const files =
     operation === "add"
-      ? await resolveProjectSourceFiles(options.file ?? [], {
+      ? await resolveProjectSourceFiles(mergedFileInputs, {
           cwd: process.cwd(),
           maxFileSizeBytes,
         })

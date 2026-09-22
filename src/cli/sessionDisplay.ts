@@ -1003,7 +1003,11 @@ async function buildSessionLogForDisplay(
   const models = freshMetadata.models ?? fallbackMeta.models ?? [];
   if (models.length === 0) {
     if (normalizedFilter) {
-      return await sessionStore.readModelLog(sessionId, modelFilter as string);
+      const modelLog = await sessionStore.readModelLog(
+        sessionId,
+        freshMetadata.model ?? (modelFilter as string),
+      );
+      return modelLog || sessionStore.readLog(sessionId);
     }
     return await sessionStore.readLog(sessionId);
   }

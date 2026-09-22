@@ -3,6 +3,7 @@
 ## Unreleased
 
 - CLI: show advanced options with `--help --verbose` and `-h --verbose` in either flag order, without starting a session; fixes #500, thanks @postoso.
+- CLI: honor root-declared flags passed after a subcommand — `--model` filtering and `--render`/`--verbose-render` on `session`/`status`, `--browser-cookie-sync` on `serve`, and `--background` on `bridge host` were silently dropped because handlers read subcommand-local options while the root program captured the values; `status <id>` also auto-renders on a rich TTY like `session`, the "ignoring flags" warning now actually fires for unrecognized root flags on attach (and no longer fires for the honored `--hide-prompt`), `project-sources add` accepts the root `--include`/`--files`/`--path`/`--paths` file aliases, and the `bridge host` background respawn passes its token via environment instead of process argv.
 
 ## 0.21.1 - 2026-09-14
 
