@@ -11,6 +11,7 @@ import {
   registerTerminationHooks,
 } from "./chromeLifecycle.js";
 import { resolveBrowserConfig } from "./config.js";
+import { maybeReuseRunningChrome } from "./reuseChrome.js";
 import { clearStaleChatGptConversationCookies, syncCookies } from "./cookies.js";
 import {
   installJavaScriptDialogAutoDismissal,
@@ -22,12 +23,8 @@ import { acquireBrowserTabLease, type BrowserTabLease } from "./tabLeaseRegistry
 import {
   acquireProfileRunLock,
   cleanupStaleProfileState,
-  findRunningChromeDebugTargetForProfile,
-  readChromePid,
-  readDevToolsPort,
   shouldCleanupManualLoginProfileState,
   terminateRecordedChromeForProfile,
-  verifyDevToolsReachable,
   writeChromePid,
   writeDevToolsActivePort,
   type ProfileRunLock,
@@ -517,8 +514,9 @@ async function acquireManualLoginChromeForProjectSources(
     });
   }
   try {
-    const reusedChrome = await maybeReuseProjectSourcesChrome(userDataDir, logger, {
+    const reusedChrome = await maybeReuseRunningChrome(userDataDir, logger, {
       waitForPortMs: config.reuseChromeWaitMs,
+      chromePath: config.chromePath,
     });
     const chrome =
       reusedChrome ??
@@ -540,79 +538,6 @@ async function acquireManualLoginChromeForProjectSources(
   } finally {
     await launchLock?.release().catch(() => undefined);
   }
-}
-
-async function maybeReuseProjectSourcesChrome(
-  userDataDir: string,
-  logger: BrowserLogger,
-  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
-): Promise<LaunchedChrome | null> {
-  const waitForPortMs = Math.max(0, options.waitForPortMs ?? 0);
-  let port = await readDevToolsPort(userDataDir);
-  if (!port && waitForPortMs > 0) {
-    const deadline = Date.now() + waitForPortMs;
-    logger(`Waiting up to ${Math.round(waitForPortMs / 1000)}s for shared Chrome to appear...`);
-    while (!port && Date.now() < deadline) {
-      await delay(250);
-      port = await readDevToolsPort(userDataDir);
-    }
-  }
-  let pid = await readChromePid(userDataDir);
-  if (!port) {
-    const discovered = await findRunningChromeDebugTargetForProfile(userDataDir);
-    if (!discovered) {
-      if (pid) {
-        logger(
-          `No reachable Chrome DevTools target found for ${userDataDir}; clearing stale profile state before launching new Chrome.`,
-        );
-        await cleanupStaleProfileState(userDataDir, logger, {
-          lockRemovalMode: "if_oracle_pid_dead",
-        });
-      }
-      return null;
-    }
-    const probe = await (options.probe ?? verifyDevToolsReachable)({ port: discovered.port });
-    if (!probe.ok) {
-      logger(
-        `Discovered Chrome for ${userDataDir} on port ${discovered.port} but it was unreachable (${probe.error}); launching new Chrome.`,
-      );
-      await cleanupStaleProfileState(userDataDir, logger, {
-        lockRemovalMode: "if_oracle_pid_dead",
-      });
-      return null;
-    }
-    await writeDevToolsActivePort(userDataDir, discovered.port);
-    await writeChromePid(userDataDir, discovered.pid);
-    port = discovered.port;
-    pid = discovered.pid;
-    logger(
-      `Discovered running Chrome for ${userDataDir}; reusing (DevTools port ${port}, pid ${pid})`,
-    );
-    return { port, pid, kill: async () => {}, process: undefined } as unknown as LaunchedChrome;
-  }
-  const probe = await (options.probe ?? verifyDevToolsReachable)({ port });
-  if (!probe.ok) {
-    logger(
-      `Recorded Chrome DevTools port ${port} is stale (${probe.error}); launching new Chrome.`,
-    );
-    await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "if_oracle_pid_dead" });
-    return null;
-  }
-  logger(`Reusing running Chrome on port ${port} with profile ${userDataDir}`);
-  return {
-    port,
-    pid: pid ?? undefined,
-    kill: async () => {},
-    process: undefined,
-  } as unknown as LaunchedChrome;
-}
-
-export async function maybeReuseProjectSourcesChromeForTest(
-  userDataDir: string,
-  logger: BrowserLogger,
-  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
-): Promise<LaunchedChrome | null> {
-  return maybeReuseProjectSourcesChrome(userDataDir, logger, options);
 }
 
 export const releaseProjectSourcesBrowserTabLeaseForTest = releaseProjectSourcesBrowserTabLease;

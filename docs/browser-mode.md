@@ -100,6 +100,8 @@ Notes:
 
 - `--engine browser`: enables browser mode (legacy `--browser` remains as an alias for now). Without `--engine`, Oracle chooses API when `OPENAI_API_KEY` exists, otherwise browser.
 - `--browser-chrome-profile`: selects the cookie source profile when copying is explicitly enabled. `--browser-chrome-path` overrides the launched Chrome/Chromium binary.
+- Chrome channel selection follows `chrome-launcher` discovery, which may select Canary when several channels are installed. Set `--browser-chrome-path` (or `browser.chromePath`) to pin stable Chrome. This controls new launches only: a reachable manual-login profile keeps using its existing browser. Oracle warns when an explicit executable accompanies reuse; finish active runs and close that profile’s Chrome, or choose a different `--browser-manual-login-profile-dir`, to apply the new executable.
+
 - `--browser-cookie-path`: explicit path to the Chrome/Chromium/Edge `Cookies` SQLite DB. Handy when you launch a fork via `--browser-chrome-path` and want to copy its session cookies; see [docs/chromium-forks.md](chromium-forks.md) for examples.
 - `--browser-approval-wait <duration>`: time to allow each Chrome remote-debugging connection (default `20s`); also `browser.approvalWaitMs` or `ORACLE_BROWSER_APPROVAL_WAIT`.
 - `--browser-attach-running`: attach to a local already-running browser instead of launching Chrome directly. Defaults to `127.0.0.1:9222`; combine with `--remote-chrome <host:port>` to use a different local attach hint.

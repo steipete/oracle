@@ -5,22 +5,14 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import {
-  acquireManualLoginChromeForRunForTest,
-  maybeReuseRunningChromeForTest,
-} from "../../src/browser/index.js";
-import {
-  maybeReuseProjectSourcesChromeForTest,
-  releaseProjectSourcesBrowserTabLeaseForTest,
-} from "../../src/browser/projectSourcesRunner.js";
+import { acquireManualLoginChromeForRunForTest } from "../../src/browser/index.js";
+import { releaseProjectSourcesBrowserTabLeaseForTest } from "../../src/browser/projectSourcesRunner.js";
 import { resolveBrowserConfig } from "../../src/browser/config.js";
+import { maybeReuseRunningChrome as maybeReuseRunningChromeForTest } from "../../src/browser/reuseChrome.js";
 import type { LaunchedChrome } from "chrome-launcher";
 
 const noopLogger = () => {};
-const reusePaths = [
-  ["browser runs", maybeReuseRunningChromeForTest],
-  ["Project Sources", maybeReuseProjectSourcesChromeForTest],
-] as const;
+const reusePaths = [["browser runs", maybeReuseRunningChromeForTest]] as const;
 
 async function writeChromeLocks(dir: string): Promise<string[]> {
   const lockFiles = [
@@ -161,6 +153,27 @@ describe("maybeReuseRunningChrome", () => {
     },
   );
 
+  test("warns when a configured executable cannot replace shared Chrome", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chrome-reuse-"));
+    try {
+      await fs.writeFile(path.join(tmpDir, "DevToolsActivePort"), "45678\n/devtools/browser");
+      await fs.writeFile(path.join(tmpDir, "chrome.pid"), "12345");
+      const logger = vi.fn();
+      const reused = await maybeReuseRunningChromeForTest(tmpDir, logger, {
+        chromePath: "/custom/stable-chrome",
+        probe: async () => ({ ok: true }),
+      });
+      expect(reused?.pid).toBe(12345);
+      expect(logger).toHaveBeenCalledWith(
+        expect.stringContaining("configured executable /custom/stable-chrome"),
+      );
+      expect(logger).toHaveBeenCalledWith(expect.stringContaining("pid 12345, port 45678"));
+      expect(logger).toHaveBeenCalledWith(expect.stringContaining("finish active runs and close"));
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   test("serializes manual-login Chrome launch so parallel runs reuse the first browser", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-chrome-launch-lock-"));
     try {
@@ -169,6 +182,7 @@ describe("maybeReuseRunningChrome", () => {
         manualLoginProfileDir: tmpDir,
         profileLockTimeoutMs: 2_000,
         reuseChromeWaitMs: 0,
+        chromePath: "/custom/stable-chrome",
       });
       const launch = vi.fn(async () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -209,6 +223,10 @@ describe("maybeReuseRunningChrome", () => {
       const [firstResult, secondResult] = await Promise.all([first, second]);
 
       expect(launch).toHaveBeenCalledTimes(1);
+      expect(maybeReuse).toHaveBeenCalledWith(tmpDir, noopLogger, {
+        waitForPortMs: 0,
+        chromePath: "/custom/stable-chrome",
+      });
       const results = [firstResult, secondResult];
       expect(results.filter((result) => result.reusedChrome === null)).toHaveLength(1);
       expect(results.filter((result) => result.reusedChrome?.port === 45678)).toHaveLength(1);

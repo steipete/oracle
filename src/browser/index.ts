@@ -6,6 +6,7 @@ import net from "node:net";
 import { randomUUID } from "node:crypto";
 import { claimBrowserTarget } from "./targetClaim.js";
 import { resolveBrowserConfig } from "./config.js";
+import { maybeReuseRunningChrome } from "./reuseChrome.js";
 import { redactBrowserConfigForDebugLog } from "./configLogging.js";
 import { copyChromeProfile } from "./profileCopy.js";
 import { BrowserCancellation, withoutBrowserCancellation } from "./cancellation.js";
@@ -95,12 +96,8 @@ import type { ProfileRunLock } from "./profileState.js";
 import {
   cleanupStaleProfileState,
   acquireProfileRunLock,
-  findRunningChromeDebugTargetForProfile,
-  readChromePid,
-  readDevToolsPort,
   shouldCleanupManualLoginProfileState,
   terminateRecordedChromeForProfile,
-  verifyDevToolsReachable,
   writeChromePid,
   writeDevToolsActivePort,
 } from "./profileState.js";
@@ -2854,6 +2851,7 @@ export async function acquireManualLoginChromeForRun(
   try {
     const reusedChrome = await maybeReuse(userDataDir, logger, {
       waitForPortMs: config.reuseChromeWaitMs,
+      chromePath: config.chromePath,
     });
     const chrome =
       reusedChrome ??
@@ -2881,83 +2879,6 @@ export async function acquireManualLoginChromeForRun(
       await launchLock.release().catch(() => undefined);
     }
   }
-}
-
-async function maybeReuseRunningChrome(
-  userDataDir: string,
-  logger: BrowserLogger,
-  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
-): Promise<LaunchedChrome | null> {
-  const waitForPortMs = Math.max(0, options.waitForPortMs ?? 0);
-  let port = await readDevToolsPort(userDataDir);
-  if (!port && waitForPortMs > 0) {
-    const deadline = Date.now() + waitForPortMs;
-    logger(`Waiting up to ${formatElapsed(waitForPortMs)} for shared Chrome to appear...`);
-    while (!port && Date.now() < deadline) {
-      await delay(250);
-      port = await readDevToolsPort(userDataDir);
-    }
-  }
-  let pid = await readChromePid(userDataDir);
-  if (!port) {
-    const discovered = await findRunningChromeDebugTargetForProfile(userDataDir);
-    if (!discovered) {
-      if (pid) {
-        logger(
-          `No reachable Chrome DevTools target found for ${userDataDir}; clearing stale profile state before launching new Chrome.`,
-        );
-        await cleanupStaleProfileState(userDataDir, logger, {
-          lockRemovalMode: "if_oracle_pid_dead",
-        });
-      }
-      return null;
-    }
-    const discoveredProbe = await (options.probe ?? verifyDevToolsReachable)({
-      port: discovered.port,
-    });
-    if (!discoveredProbe.ok) {
-      logger(
-        `Discovered Chrome for ${userDataDir} on port ${discovered.port} but it was unreachable (${discoveredProbe.error}); launching new Chrome.`,
-      );
-      await cleanupStaleProfileState(userDataDir, logger, {
-        lockRemovalMode: "if_oracle_pid_dead",
-      });
-      return null;
-    }
-    await writeDevToolsActivePort(userDataDir, discovered.port);
-    await writeChromePid(userDataDir, discovered.pid);
-    port = discovered.port;
-    pid = discovered.pid;
-    logger(
-      `Discovered running Chrome for ${userDataDir}; reusing (DevTools port ${port}, pid ${pid})`,
-    );
-    return {
-      port,
-      pid,
-      kill: async () => {},
-      process: undefined,
-    } as unknown as LaunchedChrome;
-  }
-
-  const probe = await (options.probe ?? verifyDevToolsReachable)({ port });
-  if (!probe.ok) {
-    logger(
-      `DevToolsActivePort found for ${userDataDir} but unreachable (${probe.error}); launching new Chrome.`,
-    );
-    // Safe cleanup: remove stale DevToolsActivePort; only remove lock files if this was an Oracle-owned pid that died.
-    await cleanupStaleProfileState(userDataDir, logger, { lockRemovalMode: "if_oracle_pid_dead" });
-    return null;
-  }
-
-  logger(
-    `Found running Chrome for ${userDataDir}; reusing (DevTools port ${port}${pid ? `, pid ${pid}` : ""})`,
-  );
-  return {
-    port,
-    pid: pid ?? undefined,
-    kill: async () => {},
-    process: undefined,
-  } as unknown as LaunchedChrome;
 }
 
 async function runRemoteBrowserMode(
@@ -4113,14 +4034,6 @@ export {
   uploadAttachmentFile,
   waitForAttachmentCompletion,
 } from "./pageActions.js";
-
-export async function maybeReuseRunningChromeForTest(
-  userDataDir: string,
-  logger: BrowserLogger,
-  options: { waitForPortMs?: number; probe?: typeof verifyDevToolsReachable } = {},
-): Promise<LaunchedChrome | null> {
-  return maybeReuseRunningChrome(userDataDir, logger, options);
-}
 
 export async function acquireManualLoginChromeForRunForTest(
   userDataDir: string,
