@@ -383,7 +383,7 @@ describe("promptComposer", () => {
           if (expression.includes("return !selectors.some")) {
             return { result: { value: true } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("const button = (() =>")) {
             events.push("focusSendButton");
             return { result: { value: { status: "focused" } } };
           }
@@ -440,6 +440,11 @@ describe("promptComposer", () => {
       ]);
       expect(logger).toHaveBeenCalledWith("Closed attachment menu before send");
       expect(logger).toHaveBeenCalledWith("Activated exact attachment send button via keyboard");
+      const guardExpression = runtime.evaluate.mock.calls
+        .map(([request]) => request.expression)
+        .find((expression) => expression.includes("const onClick = event =>"));
+      expect(guardExpression).toContain("!button.contains(event.target)");
+      expect(guardExpression).not.toContain("event.target.closest(");
       expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -469,7 +474,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("const button = (() =>")) {
             return { result: { value: { status: "focused" } } };
           }
           if (expression.includes("currentUrl: location.href")) {
@@ -542,7 +547,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("const button = (() =>")) {
             return { result: { value: { status: "focused" } } };
           }
           if (expression.includes("currentUrl: location.href")) {
@@ -605,7 +610,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("const button = (() =>")) {
             return { result: { value: { status: "absent" } } };
           }
           if (expression.includes("dispatchClickSequence")) {
@@ -638,6 +643,11 @@ describe("promptComposer", () => {
       await vi.runAllTimersAsync();
 
       await assertion;
+      expect(runtime.evaluate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expression: expect.stringContaining("const button = (() =>"),
+        }),
+      );
       expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
       expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
     } finally {

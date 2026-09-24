@@ -2847,6 +2847,15 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       if (selector === "[data-model-reasoning-effort-slider]") {
         return this.attrs["data-model-reasoning-effort-slider"] !== undefined;
       }
+      if (selector === '[data-reasoning-slider="true"]') {
+        return this.attrs["data-reasoning-slider"] === "true";
+      }
+      if (selector === '[data-reasoning-slider] [role="slider"]') {
+        return (
+          this.attrs["data-reasoning-slider"] !== undefined &&
+          this.querySelector('[role="slider"]') !== null
+        );
+      }
       if (selector.includes("composer-model-picker-slider-simple-view")) {
         return testid === "composer-model-picker-slider-simple-view";
       }
@@ -3126,6 +3135,29 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     expect(dom.keys).toEqual(["ArrowRight", "ArrowRight"]);
   });
 
+  it("recognizes the current three-tier reasoning slider", async () => {
+    const dom = buildDirectSlider(1, ["Instant", "Medium", "High"], 2);
+    dom.announcement.textContent = "Medium, 2 of 3.";
+    const currentControl = new Node(
+      "",
+      {
+        role: "menuitem",
+        "aria-label": "Power",
+        "aria-describedby": "slider-announcement",
+        "data-reasoning-slider": "true",
+      },
+      [dom.thumb],
+    );
+    currentControl.dispatchEvent = dom.control.dispatchEvent;
+    dom.pickerContent.children.splice(0, dom.pickerContent.children.length, currentControl);
+
+    await expect(run(dom.documentStub, "extended", "gpt-5.6-sol")).resolves.toEqual({
+      status: "switched",
+      label: "High",
+    });
+    expect(dom.keys).toEqual(["ArrowRight"]);
+  });
+
   it("rejects unavailable Pro without input on the four-tier slider", async () => {
     const dom = buildDirectSlider(3, undefined, 3);
     await expect(run(dom.documentStub, "pro", "Latest")).resolves.toMatchObject({
@@ -3142,7 +3174,6 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     ["0", "3", "2", "Extra High, 4 of 4"],
     ["1", "3", "3", "Extra High, 4 of 4"],
     ["0", "03", "3", "Extra High, 4 of 4"],
-    ["0", "2", "2", "High, 3 of 3"],
   ])(
     "rejects contradictory or unknown slider range %s..%s at %s (%s)",
     async (min, max, now, label) => {
