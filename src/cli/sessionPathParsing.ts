@@ -21,8 +21,11 @@ export function scopeSessionPathOption(program: Command, args: string[]): string
   const commandIndex = args.length - parsed.unknown.length;
   if (parsed.operands[0] !== "session" || args[commandIndex] !== "session") return args;
 
-  // Preserve root aliases before the command, then let session own its boolean --path.
+  // Preserve root file aliases before the command, then parse --path as a session boolean.
   program.parseOptions(args.slice(0, commandIndex));
-  program.options = program.options.filter((option) => option !== rootPath);
+  rootPath.flags = "--path";
+  rootPath.required = false;
+  rootPath.variadic = false;
+  rootPath.parseArg = undefined;
   return args.slice(commandIndex);
 }

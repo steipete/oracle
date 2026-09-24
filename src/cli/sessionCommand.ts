@@ -111,7 +111,7 @@ export async function handleSessionCommand(
   }
   const renderRequested = Boolean(allOptions.render || allOptions.renderMarkdown);
   const autoRender = !renderRequested && process.stdout.isTTY;
-  const pathRequested = Boolean(sessionOptions.path);
+  const pathRequested = Boolean(sessionOptions.path || allOptions.path === true);
   const clearRequested = Boolean(sessionOptions.clear || sessionOptions.clean);
   if (clearRequested) {
     if (sessionId) {
