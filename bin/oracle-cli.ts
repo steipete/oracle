@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { scopeSessionPathOption } from "../src/cli/sessionPathParsing.js";
 import "dotenv/config";
 import { fileURLToPath } from "node:url";
 import { Command, Option } from "commander";
@@ -3099,7 +3100,10 @@ async function main(): Promise<void> {
   };
   process.once("SIGINT", handleSigint);
   try {
-    await program.parseAsync(normalizedArgv);
+    await program.parseAsync([
+      ...normalizedArgv.slice(0, 2),
+      ...scopeSessionPathOption(program, normalizedArgv.slice(2)),
+    ]);
   } finally {
     process.off("SIGINT", handleSigint);
   }

@@ -252,3 +252,35 @@ test.each([false, true])(
   },
   30_000,
 );
+
+test.each([false, true])(
+  "session --path prints stored paths (root flags=%s)",
+  async (rootFlags) => {
+    const prefix = rootFlags ? ["--model", "gpt-5.5"] : [];
+    const run = await oracle([...prefix, "session", sessionId, "--path"]);
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain(path.join(oracleHome, "sessions", sessionId));
+    expect(run.stdout).not.toContain("Answer:");
+  },
+  30_000,
+);
+
+test("session --path rejects an extra positional argument", async () => {
+  const run = await oracle(["session", sessionId, "--path", "extra"]);
+  expect(run.code).toBe(1);
+  expect(run.stderr).toContain("too many arguments");
+}, 30_000);
+
+test("root --path still includes files, even with a prompt named session", async () => {
+  const run = await oracle([
+    "--prompt",
+    "session",
+    "--path",
+    sourceFile,
+    "--engine",
+    "api",
+    "--dry-run",
+  ]);
+  expect(run.code).toBe(0);
+  expect(run.stdout).toContain("source.txt");
+}, 30_000);

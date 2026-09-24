@@ -40,6 +40,7 @@ pending   gpt-5.2-pro   api     03/01 09:25 AM       900        -  └─ risk-c
 
 ```bash
 oracle session <id>            # print metadata + answer
+oracle session <id> --path     # print stored session paths
 oracle session <id> --render   # render the stored prompt and answer as Markdown
 ```
 
