@@ -183,17 +183,17 @@ export async function showStatus({
   modelFilter,
 }: ShowStatusOptions): Promise<void> {
   const metas = await sessionStore.listSessions();
-  const { entries, truncated, total } = sessionStore.filterSessions(metas, {
+  const matchingMetas = modelFilter
+    ? metas.filter((entry) => matchesModel(entry, modelFilter))
+    : metas;
+  const { entries, truncated, total } = sessionStore.filterSessions(matchingMetas, {
     hours,
     includeAll,
     limit,
   });
-  const filteredEntries = modelFilter
-    ? entries.filter((entry) => matchesModel(entry, modelFilter))
-    : entries;
   const richTty = process.stdout.isTTY && chalk.level > 0;
   const responseOwners = buildResponseOwnerIndex(metas);
-  if (!filteredEntries.length) {
+  if (!entries.length) {
     console.log(CLEANUP_TIP);
     if (showExamples) {
       printStatusExamples();
@@ -202,7 +202,7 @@ export async function showStatus({
   }
   console.log(chalk.bold("Recent Sessions"));
   console.log(formatSessionTableHeader(richTty));
-  const treeRows = buildStatusTreeRows(filteredEntries, responseOwners);
+  const treeRows = buildStatusTreeRows(entries, responseOwners);
   for (const row of treeRows) {
     const line = formatSessionTableRow(row.entry, { rich: richTty, displaySlug: row.displaySlug });
     const detachedParent =
@@ -1027,7 +1027,8 @@ async function buildSessionLogForDisplay(
     sections.push(`=== ${model.model} ===\n${body}`.trimEnd());
   }
   if (!hasContent) {
-    // Fallback for runs that recorded output only in the session log (e.g., browser runs without per-model logs).
+    if (normalizedFilter && models.length > 1) return "";
+    // Single-model browser runs may record output only in the session log.
     return await sessionStore.readLog(sessionId);
   }
   return sections.join("\n\n");

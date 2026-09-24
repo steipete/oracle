@@ -159,6 +159,10 @@ test("session attach falls back to the session log for legacy sessions", async (
   const run = await oracle(["session", "test-shadowed-legacy", "--model", "gpt-5.5"]);
   expect(run.stdout).toContain("Answer:");
   expect(run.stdout).toContain("Legacy Hello");
+  const mismatch = await oracle(["session", "test-shadowed-legacy", "--model", "nonexistent"]);
+  expect(mismatch.code).toBe(1);
+  expect(mismatch.stderr).toContain('Model "nonexistent" not found');
+  expect(mismatch.stdout).not.toContain("Legacy Hello");
 }, 20_000);
 
 test("legacy --session/--status aliases ignore configured default model", async () => {
@@ -207,3 +211,44 @@ test("project-sources add still resolves root --include alias", async () => {
   expect(run.stdout).toContain("Planned uploads: 1");
   expect(run.stdout).not.toContain("requires at least one --file");
 }, 30_000);
+
+test.each(["session", "status"])(
+  "%s limits matching models rather than recent unfiltered sessions",
+  async (command) => {
+    const newerDir = path.join(oracleHome, "sessions", "test-shadowed-newer");
+    await mkdir(newerDir, { recursive: true });
+    await writeFile(
+      path.join(newerDir, "meta.json"),
+      JSON.stringify({
+        id: "test-shadowed-newer",
+        status: "completed",
+        createdAt: new Date(Date.now() + 60_000).toISOString(),
+        mode: "api",
+        model: "gpt-5.4",
+        cwd: "/tmp",
+      }),
+    );
+    try {
+      const run = await oracle([command, "--model", "gpt-5.5", "--limit", "1"]);
+      expect(run.code).toBe(0);
+      expect(run.stdout).toMatch(/test-shadowed-(globals|legacy)/);
+      expect(run.stdout).not.toContain("test-shadowed-newer");
+      expect(run.stdout).toContain("Showing 1 of 2 sessions");
+    } finally {
+      await rm(newerDir, { recursive: true, force: true });
+    }
+  },
+  30_000,
+);
+
+test.each([false, true])(
+  "legacy --session renders when explicitly requested (status=%s)",
+  async (includeStatus) => {
+    const prefix = includeStatus ? ["--status"] : [];
+    const run = await oracle([...prefix, "--session", sessionId, "--render", "--verbose-render"]);
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain("Verbose: renderMarkdown=true tty=false");
+    expect(run.stdout).toContain("Render requested but stdout is not a TTY");
+  },
+  30_000,
+);

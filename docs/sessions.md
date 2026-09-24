@@ -40,10 +40,10 @@ pending   gpt-5.2-pro   api     03/01 09:25 AM       900        -  └─ risk-c
 
 ```bash
 oracle session <id>            # print metadata + answer
-oracle session <id> --render   # print the prompt that was sent
+oracle session <id> --render   # render the stored prompt and answer as Markdown
 ```
 
-Use the slug or a unique id prefix; Oracle resolves both.
+Use the slug or a unique id prefix; Oracle resolves both. `session` and `status` accept `--model <name>` to filter a listing or replay one model’s output. For replay, `--hide-prompt` omits the stored prompt, `--render` requests Markdown rendering, and `--verbose-render` shows rendering diagnostics. Both commands render automatically on a rich terminal; redirected output remains plain text.
 
 ## Reattach
 

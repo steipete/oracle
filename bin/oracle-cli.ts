@@ -2114,7 +2114,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     }
     const { attachSession, showStatus } = await import("../src/cli/sessionDisplay.js");
     if (options.session) {
-      await attachSession(options.session, { model: explicitModelFilter });
+      await attachSession(options.session, { model: explicitModelFilter, renderMarkdown });
     } else {
       await showStatus({
         hours: 24,
@@ -2132,7 +2132,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
       process.env.ORACLE_VERBOSE_RENDER = "1";
     }
     const { attachSession } = await import("../src/cli/sessionDisplay.js");
-    await attachSession(options.session, { model: explicitModelFilter });
+    await attachSession(options.session, { model: explicitModelFilter, renderMarkdown });
     return;
   }
 

@@ -860,6 +860,29 @@ describe("attachSession rendering", () => {
     expect(sessionStoreMock.readModelLog).toHaveBeenCalledWith("sess", "gemini-3-pro");
   });
 
+  test("does not replay another model when the selected model has no output", async () => {
+    const metadata: SessionMetadata = {
+      ...baseMeta,
+      models: [
+        { model: "gpt-5.2-pro", status: "completed" },
+        { model: "gemini-3-pro", status: "error" },
+      ],
+    };
+    readSessionMetadataMock.mockResolvedValue(metadata);
+    readSessionRequestMock.mockResolvedValue({ prompt: "Prompt here" });
+    sessionStoreMock.readModelLog.mockResolvedValue("");
+    sessionStoreMock.readLog.mockResolvedValue("Answer:\nfrom the other model");
+    const writeSpy = vi.spyOn(process.stdout, "write");
+
+    await attachSession("sess", { renderMarkdown: false, model: "gemini-3-pro" });
+
+    expect(writeSpy.mock.calls.map((call) => call[0]).join("")).not.toContain(
+      "from the other model",
+    );
+    expect(sessionStoreMock.readLog).not.toHaveBeenCalled();
+    expect(sessionStoreMock.readModelLog).toHaveBeenCalledWith("sess", "gemini-3-pro");
+  });
+
   test("exits with error when requested model is not part of the session", async () => {
     const multiMeta: SessionMetadata = {
       ...baseMeta,
