@@ -20,7 +20,12 @@ import {
   buildThinkingActivePredicateJsForTest,
   buildThinkingActivityDetailsPredicateJsForTest,
 } from "../../src/browser/actions/thinkingStatus.js";
-import { STOP_BUTTON_SELECTORS } from "../../src/browser/constants.js";
+import {
+  COPY_BUTTON_SELECTOR,
+  FINISHED_ACTIONS_SELECTOR,
+  MODEL_BUTTON_SELECTOR,
+  STOP_BUTTON_SELECTORS,
+} from "../../src/browser/constants.js";
 
 // Completed-summary shapes the veto must treat as NOT active: bare, heading-prefixed
 // (the GPT-5.6 DOM renders "Reasoning Thought for 12s"), worded non-numeric durations,
@@ -238,6 +243,21 @@ describe("completion action correlation", () => {
     expect(
       evaluateCompletionVisibility({ messageId: "current-message", turns: [currentTurn] }),
     ).toBe(true);
+  });
+
+  test("recognizes current search-unit assistant turns", () => {
+    const currentTurn = new FakeTurn(
+      { "data-chatgpt-search-unit-key": "fallback-turn-0:2:assistant" },
+      true,
+    );
+    expect(evaluateCompletionVisibility({ minTurnIndex: 0, turns: [currentTurn] })).toBe(true);
+  });
+
+  test("includes current aria-label completion controls", () => {
+    expect(COPY_BUTTON_SELECTOR).toContain('button[aria-label="Copy"]');
+    expect(FINISHED_ACTIONS_SELECTOR).toContain('button[aria-label="Rate response"]');
+    expect(FINISHED_ACTIONS_SELECTOR).toContain('button[aria-label="Regenerate response"]');
+    expect(MODEL_BUTTON_SELECTOR).toContain('button[aria-label="Select ChatGPT model"]');
   });
 
   test("rejects controls whose assistant identity differs from the sample", () => {

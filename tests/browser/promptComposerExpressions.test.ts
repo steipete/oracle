@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { buildAttachmentReadyExpressionForTest } from "../../src/browser/actions/promptComposer.ts";
+import {
+  buildAttachmentReadyExpressionForTest,
+  buildExactAttachmentSendButtonLookupExpressionForTest,
+} from "../../src/browser/actions/promptComposer.ts";
 
 import { FakeElement, FakeInputElement, FakeDocument } from "./domFixture.js";
 
@@ -22,6 +25,25 @@ function evaluateAttachmentReadyExpression(
 }
 
 describe("prompt composer attachment expressions", () => {
+  test("scopes the exact Send fallback to the form that owns the active composer", () => {
+    const unrelated = new FakeElement("button", { type: "submit", "aria-label": "Send" });
+    const intended = new FakeElement("button", { type: "submit", "aria-label": "Send" });
+    const document = new FakeDocument([
+      new FakeElement("form", {}, [unrelated]),
+      new FakeElement("form", {}, [
+        new FakeElement("div", { id: "prompt-textarea", contenteditable: "true" }),
+        intended,
+      ]),
+    ]);
+    const evaluate = new Function(
+      "document",
+      "HTMLElement",
+      `return ${buildExactAttachmentSendButtonLookupExpressionForTest()};`,
+    );
+
+    expect(evaluate(document, FakeElement)).toBe(intended);
+  });
+
   test("attachment ready check does not match prompt text", () => {
     const expression = buildAttachmentReadyExpressionForTest(["oracle-attach-verify.txt"]);
     expect(expression).toContain("closestComposerRoot(sendButton)");
@@ -46,6 +68,25 @@ describe("prompt composer attachment expressions", () => {
     expect(expression).toContain("parentElement");
     expect(expression).toContain("__oracleAttachmentEvidence");
     expect(expression).not.toContain("countReady");
+  });
+
+  test("recognizes the current attachment surface and collision-renamed filename", () => {
+    const document = new FakeDocument([
+      new FakeElement("form", {}, [
+        new FakeElement("button", {
+          class: "composer-attachment-surface",
+          "aria-label": "oracle-attachment-marker(2).txt",
+        }),
+        new FakeElement("button", {
+          "aria-label": "Remove oracle-attachment-marker(2).txt",
+        }),
+        new FakeElement("button", { type: "submit", "aria-label": "Send" }),
+      ]),
+    ]);
+
+    expect(evaluateAttachmentReadyExpression(["oracle-attachment-marker.txt"], document)).toBe(
+      true,
+    );
   });
 
   test("attachment ready check stays scoped to the active composer", () => {

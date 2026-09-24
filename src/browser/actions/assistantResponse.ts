@@ -803,6 +803,8 @@ function buildCompletionVisibilityExpression(
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
+      const searchUnitKey = (node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+      if (searchUnitKey.endsWith(':assistant')) return true;
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
@@ -1032,6 +1034,8 @@ function buildResponseObserverExpression(
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
+      const searchUnitKey = (node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+      if (searchUnitKey.endsWith(':assistant')) return true;
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
@@ -1243,6 +1247,10 @@ function buildAssistantExtractor(functionName: string): string {
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') {
+        return true;
+      }
+      const searchUnitKey = (node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+      if (searchUnitKey.endsWith(':assistant')) {
         return true;
       }
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
@@ -1511,6 +1519,8 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
         if (!(node instanceof HTMLElement)) return false;
         const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
         if (turnAttr === 'assistant') return true;
+        const searchUnitKey = (node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+        if (searchUnitKey.endsWith(':assistant')) return true;
         const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
         if (role === 'assistant') return true;
         const testId = (node.getAttribute('data-testid') || '').toLowerCase();

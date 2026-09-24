@@ -78,6 +78,49 @@ describe("liveTabs helpers", () => {
     expect(observed.lastUserMessageId).toBe("current-message");
   });
 
+  test("recognizes current ChatGPT search-unit turn attributes", () => {
+    const user = new FakeElement(
+      "article",
+      {
+        "data-chatgpt-search-unit-key": "fallback-turn-0:0:user",
+        "data-chatgpt-search-message-ids": "user-message",
+      },
+      [],
+      "Question",
+    );
+    const assistant = new FakeElement(
+      "article",
+      { "data-chatgpt-search-unit-key": "fallback-turn-0:2:assistant" },
+      [],
+      "Answer",
+    );
+    const order = [user, assistant];
+    for (const node of order)
+      Object.assign(node, {
+        compareDocumentPosition: (other: FakeElement) =>
+          order.indexOf(other) > order.indexOf(node) ? 4 : 2,
+        contains: (other: FakeElement) => node === other,
+      });
+
+    const observed = new Function(
+      "document",
+      "Element",
+      "window",
+      "location",
+      `return ${buildTabInspectionExpressionForTest()}`,
+    )(
+      new FakeDocument(order),
+      FakeElement,
+      { getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) },
+      { href: "https://chatgpt.com/c/test" },
+    );
+
+    expect(observed.assistantCount).toBe(1);
+    expect(observed.lastAssistantText).toBe("Answer");
+    expect(observed.lastUserText).toBe("Question");
+    expect(observed.lastUserMessageId).toBe("user-message");
+  });
+
   test("separates the user content from a later provider error notice", () => {
     const text = "Explain: Something went wrong. Please try again.";
     const content = new FakeElement("div", { class: "whitespace-pre-wrap" }, [], text);
