@@ -44,8 +44,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0
       dotenv:
-        specifier: ^17.4.2
-        version: 17.4.2
+        specifier: ^18.0.3
+        version: 18.0.3
       fast-glob:
         specifier: ^3.3.3
         version: 3.3.3
@@ -66,7 +66,7 @@ importers:
         version: 0.3.4
       openai:
         specifier: ^7.21.0
-        version: 7.21.0(undici@7.29.1)(ws@8.21.3)(zod@4.6.5)
+        version: 7.22.0(undici@8.11.0)(ws@8.21.3)(zod@4.6.5)
       osc-progress:
         specifier: ^0.3.3
         version: 0.3.4
@@ -83,8 +83,8 @@ importers:
         specifier: ^0.1.6
         version: 0.1.7
       undici:
-        specifier: ^7.29.1
-        version: 7.29.1
+        specifier: ^8.11.0
+        version: 8.11.0
       zod:
         specifier: ^4.6.2
         version: 4.6.5
@@ -1287,9 +1287,10 @@ packages:
   devtools-protocol@0.0.1702366:
     resolution: {integrity: sha512-4soaeiRt7KK6qZfbhBCxxJzFOxXQrBWu0U+yXSF/Eumh9qyk8gjDPVcJWD4/0wykyb9DHCR/37S1b781sIH1EQ==}
 
-  dotenv@17.4.2:
-    resolution: {integrity: sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==}
+  dotenv@18.0.3:
+    resolution: {integrity: sha512-/8CJTyL817qPnfbQrJgOEcrU3fDrJkRIoXBE566wHuvIXKOCHUZhPqGPbCPi9SogjdGnreF0TlvnTgK6J/8zpA==}
     engines: {node: '>=12'}
+    hasBin: true
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -1900,8 +1901,8 @@ packages:
   oniguruma-to-es@4.3.6:
     resolution: {integrity: sha512-csuQ9x3Yr0cEIs/Zgx/OEt9iBw9vqIunAPQkx19R/fiMq2oGVTgcMqO/V3Ybqefr1TBvosI6jU539ksaBULJyA==}
 
-  openai@7.21.0:
-    resolution: {integrity: sha512-APwDcMhduWCSkKDLF4VZtAC5MGLRdJ0l+PUirz2fuSPXo/LNfEe8OuJVWOk8iJbO55sd8F5aOXvx8cfR5Eax1g==}
+  openai@7.22.0:
+    resolution: {integrity: sha512-C4bv09YtQQb1qcFrEAENJXkuCZA72kGRwws6QIXgf0oJW6pDOmDC2WaZpQVII3Rl+RNE3Z+TQI92uNfetGwY3w==}
     engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
@@ -2270,9 +2271,9 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
-  undici@7.29.1:
-    resolution: {integrity: sha512-RYONW2MeafgYlkVOKYKkA/Ag7BmXqgIWCa8t1m0JcxrQg9pI9lEqRhAOruOBCbAohOa/gkCF+iPi9hrgvTzu6Q==}
-    engines: {node: '>=20.18.1'}
+  undici@8.11.0:
+    resolution: {integrity: sha512-AdzuGcAkzhbha3GgCSoUBx2P0quwym6qdFNCQz/fDGZc8w9XJ741wHUbt2kTmfPz+ZIOMkySFkiY7RXmiDDC8w==}
+    engines: {node: '>=22.19.0'}
 
   unicorn-magic@0.3.0:
     resolution: {integrity: sha512-+QBBXBCvifc56fsbuxZQ6Sic3wqqc3WWaqxs58gvJrcOuN83HGTCwz3oS5phzU9LthRNE9VrJCFCLUgHeeFnfA==}
@@ -3288,7 +3289,7 @@ snapshots:
 
   devtools-protocol@0.0.1702366: {}
 
-  dotenv@17.4.2: {}
+  dotenv@18.0.3: {}
 
   dunder-proto@1.0.1:
     dependencies:
@@ -3914,9 +3915,9 @@ snapshots:
       regex: 6.1.0
       regex-recursion: 6.0.2
 
-  openai@7.21.0(undici@7.29.1)(ws@8.21.3)(zod@4.6.5):
+  openai@7.22.0(undici@8.11.0)(ws@8.21.3)(zod@4.6.5):
     optionalDependencies:
-      undici: 7.29.1
+      undici: 8.11.0
       ws: 8.21.3
       zod: 4.6.5
 
@@ -4321,7 +4322,7 @@ snapshots:
 
   undici-types@8.9.0: {}
 
-  undici@7.29.1: {}
+  undici@8.11.0: {}
 
   unicorn-magic@0.3.0: {}
 

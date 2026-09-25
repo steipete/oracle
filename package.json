@@ -66,7 +66,7 @@
     "chrome-remote-interface": "^0.34.0",
     "clipboardy": "^5.3.2",
     "commander": "^15.0.0",
-    "dotenv": "^17.4.2",
+    "dotenv": "^18.0.3",
     "fast-glob": "^3.3.3",
     "gpt-tokenizer": "^4.0.0",
     "inquirer": "14.2.2",
@@ -79,7 +79,7 @@
     "shiki": "^4.4.3",
     "toasted-notifier": "^10.1.0",
     "tokentally": "^0.1.6",
-    "undici": "^7.29.1",
+    "undici": "^8.11.0",
     "zod": "^4.6.2"
   },
   "devDependencies": {
