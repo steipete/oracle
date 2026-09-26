@@ -140,7 +140,36 @@ export async function submitPrompt(
       throw new Error("Failed to focus prompt textarea");
     }
 
-    await input.insertText({ text: prompt });
+    // ChatGPT's newer contenteditable (ProseMirror) composer treats a typed newline as Enter,
+    // which submits the first paragraph and silently drops the rest (seen 2026-09-26: a
+    // multi-line prompt reached ChatGPT as its first line only). Deliver multi-line text as a
+    // paste, which ProseMirror turns into paragraphs without submitting; fall back to typing.
+    let pastedMultiline = false;
+    if (prompt.includes("\n")) {
+      const pasteResult = await runtime.evaluate({
+        expression: `(() => {
+        const selectors = ${JSON.stringify(INPUT_SELECTORS)};
+        const visible = (node) => { const r = node?.getBoundingClientRect?.(); return Boolean(r && r.width > 0 && r.height > 0); };
+        const editor = selectors.map((s) => document.querySelector(s)).find((n) => n && visible(n));
+        if (!editor || editor instanceof HTMLTextAreaElement || !editor.isContentEditable) return { used: false };
+        const text = ${encodedPrompt};
+        const data = new DataTransfer();
+        data.setData('text/plain', text);
+        editor.focus();
+        editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+        return { used: true, length: (editor.innerText || '').replace(/\\s+/g, '').length };
+      })()`,
+        returnByValue: true,
+      });
+      const pasted = pasteResult.result?.value as { used?: boolean; length?: number } | undefined;
+      pastedMultiline = Boolean(pasted?.used && (pasted.length ?? 0) > 0);
+      logger(
+        `Prompt delivery: ${pastedMultiline ? "paste (multi-line, contenteditable)" : "typed"}`,
+      );
+    }
+    if (!pastedMultiline) {
+      await input.insertText({ text: prompt });
+    }
 
     // Some pages (notably ChatGPT when subscriptions/widgets load) need a brief settle
     // before the send button becomes enabled; give it a short breather to avoid races.

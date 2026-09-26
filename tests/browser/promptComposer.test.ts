@@ -316,6 +316,44 @@ describe("promptComposer", () => {
     }
   });
 
+  describe("prompt delivery into a contenteditable composer", () => {
+    // ChatGPT's newer ProseMirror composer treats a typed newline as Enter: a multi-line prompt was
+    // submitted after its first line and the rest silently dropped (#517). Multi-line text is pasted.
+    const run = async (prompt: string) => {
+      const calls: string[] = [];
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("ClipboardEvent('paste'")) {
+            calls.push("paste");
+            return { result: { value: { used: true, length: prompt.replace(/\s+/g, "").length } } };
+          }
+          if (expression.includes("editorText")) throw new Error("stop-after-insert");
+          return { result: { value: { focused: true, ready: true, composer: true } } };
+        }),
+      };
+      const input = {
+        insertText: vi.fn(async () => calls.push("insertText")),
+        dispatchKeyEvent: vi.fn(),
+      };
+      await expect(
+        submitPrompt(
+          { runtime: runtime as never, input: input as never },
+          prompt,
+          Object.assign(vi.fn(), { verbose: false }) as never,
+        ),
+      ).rejects.toThrow("stop-after-insert");
+      return calls;
+    };
+
+    test("pastes a multi-line prompt instead of typing it", async () => {
+      expect(await run("line one\n\nline two\n```\ncode\n```")).toEqual(["paste"]);
+    });
+
+    test("still types a single-line prompt", async () => {
+      expect(await run("Reply with exactly one word: pong")).toEqual(["insertText"]);
+    });
+  });
+
   test("only attachment sends get the longer send-button deadline", () => {
     expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
     expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
