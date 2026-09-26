@@ -2834,6 +2834,10 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       return this.attrs[name] ?? null;
     }
 
+    get id(): string {
+      return this.attrs.id ?? "";
+    }
+
     setAttribute(name: string, value: string): void {
       this.attrs[name] = value;
     }
@@ -2843,6 +2847,20 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       const testid = this.attrs["data-testid"] ?? "";
       if (selector === '[data-model-selection-view="true"]') {
         return this.attrs["data-model-selection-view"] === "true";
+      }
+      if (selector === '[data-model-picker-view="simple"]') {
+        return this.attrs["data-model-picker-view"] === "simple";
+      }
+      if (selector === "[data-model-picker-power-slider]") {
+        return this.attrs["data-model-picker-power-slider"] !== undefined;
+      }
+      if (selector.includes('[data-model-picker-view="simple"] [data-reasoning-slider="true"]')) {
+        return this.attrs["data-reasoning-slider"] === "true";
+      }
+      if (
+        selector.includes('[data-model-picker-view] [role="menuitemradio"][aria-checked="true"]')
+      ) {
+        return role === "menuitemradio" && this.attrs["aria-checked"] === "true";
       }
       if (selector === "[data-model-reasoning-effort-slider]") {
         return this.attrs["data-model-reasoning-effort-slider"] !== undefined;
@@ -2884,6 +2902,9 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     }
 
     matches(selector: string): boolean {
+      if (selector.includes("data-codex-intelligence-trigger")) {
+        return this.attrs["data-codex-intelligence-trigger"] === "true";
+      }
       if (selector.includes("__composer-pill")) {
         return (this.attrs.class ?? "").includes("__composer-pill");
       }
@@ -3106,6 +3127,70 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       id === "slider-announcement" ? announcement : null;
     return { ...dom, thumb, announcement, control, simple, keys };
   }
+
+  function buildCurrentAstraPicker(currentIndex: number, checkedModel = "Latest") {
+    const dom = buildDirectSlider(currentIndex);
+    const trigger = new Node("Thinking effortThinking effort", {
+      id: "current-model-trigger",
+      "data-codex-intelligence-trigger": "true",
+      "aria-haspopup": "menu",
+      "aria-expanded": "true",
+    });
+    const simple = new Node("", { "data-model-picker-view": "simple" }, [dom.control]);
+    const latest = new Node("Latest", {
+      role: "menuitemradio",
+      "aria-checked": checkedModel === "Latest" ? "true" : "false",
+    });
+    const sol = new Node("GPT-5.6 Sol", {
+      role: "menuitemradio",
+      "aria-checked": checkedModel === "GPT-5.6 Sol" ? "true" : "false",
+    });
+    const menu = new Node("6 Pro", { role: "menu", "aria-labelledby": trigger.id }, [
+      simple,
+      latest,
+      sol,
+    ]);
+    const documentStub = {
+      body: new Node(""),
+      getElementById: (id: string) => (id === "slider-announcement" ? dom.announcement : null),
+      querySelector: (selector: string) =>
+        selector.includes("data-codex-intelligence-trigger") ? trigger : null,
+      querySelectorAll: (selector: string) =>
+        selector.includes('role="menu"') || selector.includes("data-radix") ? [menu] : [],
+      dispatchEvent: () => true,
+    };
+    // Current ChatGPT names its slider container differently from the older
+    // direct-slider layout while keeping the same numeric thumb proof.
+    dom.control.setAttribute("data-reasoning-slider", "true");
+    dom.control.children.splice(0, dom.control.children.length);
+    const currentSlider = new Node("", { "data-model-picker-power-slider": "" }, [dom.thumb]);
+    currentSlider.closest = () => dom.control;
+    dom.control.children.push(currentSlider);
+    return { ...dom, documentStub, trigger, menu };
+  }
+
+  it("verifies the current GPT-6 Pro picker from Latest radio and Pro slider", async () => {
+    const dom = buildCurrentAstraPicker(4);
+    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+      status: "already-selected",
+      label: "Pro",
+    });
+    expect(dom.keys).toHaveLength(0);
+  });
+
+  it("moves the current GPT-6 slider to Pro and rejects a checked Sol radio", async () => {
+    const medium = buildCurrentAstraPicker(1);
+    await expect(run(medium.documentStub, "pro", "Latest")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(medium.keys).toContain("ArrowRight");
+
+    const wrongModel = buildCurrentAstraPicker(4, "GPT-5.6 Sol");
+    await expect(run(wrongModel.documentStub, "pro", "Latest")).resolves.toMatchObject({
+      status: "selection-unverified",
+    });
+  });
 
   it("verifies Extra High already selected on the four-tier slider", async () => {
     const dom = buildDirectSlider(3, undefined, 3);

@@ -150,6 +150,30 @@ describe("browser run target cleanup", () => {
     ).toBe(false);
   });
 
+  test("keeps an archived tab when keepBrowser is enabled unless closure was requested", () => {
+    for (const keepBrowser of [true, false]) {
+      const closeOwnedTabOnComplete = __test__.resolveCloseOwnedTabOnComplete({
+        archived: true,
+        keepBrowser,
+      });
+      expect(
+        __test__.shouldCloseOwnedRunTargetAfterRun({
+          runStatus: "complete",
+          ownsTarget: true,
+          keepBrowser,
+          closeOwnedTabOnComplete,
+        }),
+      ).toBe(!keepBrowser);
+    }
+    expect(
+      __test__.resolveCloseOwnedTabOnComplete({
+        archived: true,
+        keepBrowser: true,
+        requested: true,
+      }),
+    ).toBe(true);
+  });
+
   test("closes owned completed tabs by default", () => {
     expect(
       __test__.shouldCloseOwnedRunTargetAfterRun({

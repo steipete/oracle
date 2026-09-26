@@ -701,6 +701,14 @@ function buildThinkingTimeExpression(
       if (!isVisible(menu)) return false;
       if (menu.getAttribute?.('data-testid') === 'composer-intelligence-picker-content') return true;
       if (menu.querySelector?.(INTELLIGENCE_MENU_SELECTOR)) return true;
+      // The current picker owns both its model radios and its power slider in one
+      // Radix menu. Tie it to the actual composer trigger before treating it as
+      // an effort control, so another open menu cannot satisfy a Pro request.
+      if (
+        TARGET_IS_ASTRA_LATEST &&
+        menu.getAttribute?.('aria-labelledby') === findModelButton()?.id &&
+        menu.querySelector?.('[data-model-picker-view="simple"] [data-reasoning-slider="true"]')
+      ) return true;
       const label = menu.querySelector?.('.__menu-label, [class*="menu-label"]');
       const labelText = normalize(label?.textContent ?? '');
       return (
@@ -1100,14 +1108,27 @@ function buildThinkingTimeExpression(
     // owner announces the actual tier via aria-describedby; neither the pill nor
     // the slider's maximum position alone proves that Pro was selected.
     const selectDirectEffortSlider = async (menu) => {
-      const view = menu.querySelector?.('[data-model-selection-view="true"]');
-      const simple = view?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
-      if (!simple || simple.getAttribute('data-active') !== 'true' || !isVisible(simple)) return null;
+      const simpleView = () => {
+        const legacyView = menu.querySelector?.('[data-model-selection-view="true"]');
+        return legacyView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]') ??
+          menu.querySelector?.('[data-model-picker-view="simple"]');
+      };
+      const isActiveSimple = (node) =>
+        node?.getAttribute('data-active') === 'true' ||
+        node?.getAttribute('data-model-picker-view') === 'simple';
+      const simple = simpleView();
+      if (!simple || !isActiveSimple(simple) || !isVisible(simple)) return null;
+      if (TARGET_IS_ASTRA_LATEST && simple.getAttribute('data-model-picker-view') === 'simple') {
+        const checked = menu.querySelector?.('[data-model-picker-view] [role="menuitemradio"][aria-checked="true"]');
+        if (!['Latest', '最新', '최신'].includes((checked?.textContent ?? '').trim())) {
+          return failure('selection-unverified');
+        }
+      }
       const resolve = () => {
-        const currentView = menu.querySelector?.('[data-model-selection-view="true"]');
-        const currentSimple = currentView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
-        if (currentSimple?.getAttribute('data-active') !== 'true') return null;
-        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]');
+        const currentSimple = simpleView();
+        if (!isActiveSimple(currentSimple)) return null;
+        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]') ??
+          currentSimple.querySelector('[data-model-picker-power-slider]');
         const control = slider?.closest?.('[role="menuitem"]');
         const thumb = slider?.querySelector?.('[role="slider"]');
         if (!control || !thumb || !isVisible(control)) return null;
@@ -1199,6 +1220,12 @@ function buildThinkingTimeExpression(
       '.__composer-pill-composite button.__composer-pill',
     ];
     const findComposerEffortPill = () => {
+      const currentAstraTrigger = findModelButton();
+      if (
+        TARGET_IS_ASTRA_LATEST &&
+        currentAstraTrigger?.matches?.('button[data-codex-intelligence-trigger="true"]') &&
+        isVisible(currentAstraTrigger)
+      ) return currentAstraTrigger;
       const seen = new Set();
       let gpt56Fallback = null;
       for (const selector of COMPOSER_EFFORT_PILL_SELECTORS) {

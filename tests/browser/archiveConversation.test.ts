@@ -2,6 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 import {
   archiveChatGptConversation,
   buildArchiveConversationExpressionForTest,
+  buildTrustedArchiveConfirmationPointExpressionForTest,
+  buildTrustedArchiveMenuPointExpressionForTest,
   isProjectChatgptUrl,
   isTemporaryChatgptUrl,
   resolveBrowserArchiveDecision,
@@ -96,6 +98,70 @@ describe("browser conversation archive policy", () => {
 });
 
 describe("archiveChatGptConversation", () => {
+  test("selects only a visible Archive confirmation button inside a dialog", () => {
+    class FakeElement {
+      constructor(
+        readonly innerText: string,
+        readonly visible = true,
+      ) {}
+      getAttribute() {
+        return null;
+      }
+      getBoundingClientRect() {
+        return { left: 20, top: 30, width: this.visible ? 40 : 0, height: 20 };
+      }
+    }
+    const candidates = [
+      new FakeElement("Unarchive"),
+      new FakeElement("Archive", false),
+      new FakeElement("Archive"),
+    ];
+    const expression = buildTrustedArchiveConfirmationPointExpressionForTest();
+    const point = Function(
+      "document",
+      "HTMLElement",
+      "getComputedStyle",
+      `return ${expression};`,
+    )({ querySelectorAll: () => candidates }, FakeElement, () => ({
+      display: "block",
+      visibility: "visible",
+    }));
+    expect(point).toEqual({ x: 40, y: 40 });
+  });
+
+  test("never chooses another chat menu when the current row has no actions button", () => {
+    class FakeElement {
+      getBoundingClientRect() {
+        return { left: 40, top: 20, width: 20, height: 20 };
+      }
+      scrollIntoView() {}
+    }
+    const otherChatButton = new FakeElement();
+    const row = {
+      querySelectorAll: () => [currentLink],
+      querySelector: () => null,
+    };
+    const currentLink = {
+      getAttribute: () => "/c/current",
+      closest: () => row,
+    };
+    const document = {
+      querySelectorAll: (selector: string) =>
+        selector === "a[href]" ? [currentLink] : [otherChatButton],
+    };
+    const expression = buildTrustedArchiveMenuPointExpressionForTest(
+      "https://chatgpt.com/c/current",
+    );
+    const point = Function(
+      "document",
+      "location",
+      "HTMLElement",
+      "URL",
+      `return ${expression};`,
+    )(document, { href: "https://chatgpt.com/c/current" }, FakeElement, URL);
+    expect(point).toBeNull();
+  });
+
   test("returns archived result when the DOM action succeeds", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
@@ -146,6 +212,157 @@ describe("archiveChatGptConversation", () => {
       conversationUrl: "https://chatgpt.com/c/abc",
     });
   });
+
+  test("does not claim an archive from a successful PATCH without exact detail readback", async () => {
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes('button[aria-label="Chat actions"]')) {
+            return { result: { value: { x: 50, y: 50 } } };
+          }
+          if (expression.includes("const roots = Array.from")) {
+            return { result: { value: { x: 60, y: 60 } } };
+          }
+          if (expression.includes("return { sidebarLinkPresent, saved: resources.some")) {
+            return { result: { value: { sidebarLinkPresent: false, saved: true } } };
+          }
+          return { result: { value: 0 } };
+        }),
+      };
+      const page = { bringToFront: vi.fn(), navigate: vi.fn(), reload: vi.fn() };
+      const input = { dispatchMouseEvent: vi.fn(async () => {}) };
+      const result = archiveChatGptConversation(runtime as never, vi.fn() as never, {
+        mode: "always",
+        conversationUrl: "https://chatgpt.com/c/abc",
+        input: input as never,
+        page: page as never,
+      });
+      await vi.runAllTimersAsync();
+      await expect(result).resolves.toMatchObject({
+        archived: false,
+        reason: "archive-readback-pending",
+      });
+      expect(page.navigate).toHaveBeenCalledWith({ url: "https://chatgpt.com/" });
+      expect(page.reload).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each([
+    [true, true, "GET", true, undefined, false],
+    [true, true, "GET", true, undefined, true],
+    [false, false, "GET", false, "archive-readback-detail-not-archived", false],
+    [true, true, "PATCH", false, "archive-readback-pending", false],
+  ] as const)(
+    "uses the authenticated detail readback when sidebar present=%s and archive state=%s via %s (dialog=%s)",
+    async (
+      sidebarPresent,
+      detailArchived,
+      requestMethod,
+      expectedArchived,
+      expectedReason,
+      confirmation,
+    ) => {
+      vi.useFakeTimers();
+      try {
+        let onRequest:
+          | ((event: { requestId: string; request: { url: string; method: string } }) => void)
+          | undefined;
+        let onResponse:
+          | ((event: { requestId: string; response: { url: string; status: number } }) => void)
+          | undefined;
+        let onFinished: ((event: { requestId: string }) => void) | undefined;
+        const runtime = {
+          evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+            if (expression.includes('button[aria-label="Chat actions"]')) {
+              return { result: { value: { x: 50, y: 50 } } };
+            }
+            if (expression.includes("const roots = Array.from")) {
+              return { result: { value: { x: 60, y: 60 } } };
+            }
+            if (expression.includes('[role="dialog"] button')) {
+              return { result: { value: confirmation ? { x: 70, y: 70 } : null } };
+            }
+            if (expression.includes("return { sidebarLinkPresent, saved: resources.some")) {
+              return { result: { value: { sidebarLinkPresent: sidebarPresent, saved: true } } };
+            }
+            if (expression.includes("performance.getEntriesByType('resource').filter")) {
+              return { result: { value: 0 } };
+            }
+            return {
+              result: { value: { recentCount: 5, currentPresent: sidebarPresent, onHome: true } },
+            };
+          }),
+        };
+        const input = { dispatchMouseEvent: vi.fn(async (_event: { type: string }) => {}) };
+        const page = {
+          bringToFront: vi.fn(),
+          reload: vi.fn(async () => {}),
+          navigate: vi.fn(async ({ url }: { url: string }) => {
+            if (!url.endsWith("/c/abc")) return;
+            onRequest?.({
+              requestId: "detail-1",
+              request: {
+                url: "https://chatgpt.com/backend-api/conversations/abc",
+                method: requestMethod,
+              },
+            });
+            onResponse?.({
+              requestId: "detail-1",
+              response: { url: "https://chatgpt.com/backend-api/conversations/abc", status: 200 },
+            });
+            onFinished?.({ requestId: "detail-1" });
+          }),
+        };
+        const client = {
+          Network: {
+            enable: vi.fn(async () => {}),
+            requestWillBeSent: vi.fn((listener: typeof onRequest) => {
+              onRequest = listener;
+              return () => {};
+            }),
+            responseReceived: vi.fn((listener: typeof onResponse) => {
+              onResponse = listener;
+              return () => {};
+            }),
+            loadingFinished: vi.fn((listener: typeof onFinished) => {
+              onFinished = listener;
+              return () => {};
+            }),
+            getResponseBody: vi.fn(async () => ({
+              body: JSON.stringify({ is_archived: detailArchived }),
+              base64Encoded: false,
+            })),
+          },
+        };
+        const result = archiveChatGptConversation(runtime as never, vi.fn() as never, {
+          mode: "always",
+          conversationUrl: "https://chatgpt.com/c/abc",
+          input: input as never,
+          page: page as never,
+          client: client as never,
+        });
+        await vi.runAllTimersAsync();
+        await expect(result).resolves.toMatchObject(
+          expectedReason
+            ? { archived: expectedArchived, reason: expectedReason }
+            : { archived: expectedArchived },
+        );
+        if (requestMethod === "GET") {
+          expect(client.Network.getResponseBody).toHaveBeenCalledWith({ requestId: "detail-1" });
+        } else {
+          expect(client.Network.getResponseBody).not.toHaveBeenCalled();
+        }
+        expect(
+          input.dispatchMouseEvent.mock.calls.filter(([event]) => event.type === "mouseReleased"),
+        ).toHaveLength(confirmation ? 3 : 2);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   test("keeps the archive expression scoped to Archive actions", () => {
     const expression = buildArchiveConversationExpressionForTest();

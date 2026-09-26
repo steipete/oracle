@@ -448,6 +448,9 @@ export function formatBrowserTurnTranscript(turns: BrowserConversationTurn[]): {
 
 async function maybeArchiveCompletedConversation({
   Runtime,
+  Input,
+  Page,
+  Client,
   logger,
   config,
   conversationUrl,
@@ -455,6 +458,9 @@ async function maybeArchiveCompletedConversation({
   requiredArtifactsSaved,
 }: {
   Runtime: ChromeClient["Runtime"];
+  Input?: ChromeClient["Input"];
+  Page?: ChromeClient["Page"];
+  Client?: ChromeClient;
   logger: BrowserLogger;
   config: ResolvedBrowserConfig;
   conversationUrl?: string | null;
@@ -491,6 +497,9 @@ async function maybeArchiveCompletedConversation({
   return archiveChatGptConversation(Runtime, logger, {
     mode: decision.mode,
     conversationUrl,
+    input: Input,
+    page: Page,
+    client: Client,
   }).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     logger(`[browser] ChatGPT archive failed (${message}).`);
@@ -664,6 +673,15 @@ function shouldCloseOwnedRunTargetAfterRun(options: {
       (options.runStatus === "complete" &&
         (Boolean(options.closeOwnedTabOnComplete) || !options.keepBrowser)))
   );
+}
+
+function resolveCloseOwnedTabOnComplete(options: {
+  requested?: boolean;
+  archived: boolean;
+  keepBrowser: boolean;
+}): boolean {
+  // Archiving never overrides an explicit request to retain the tab.
+  return Boolean(options.requested) || (options.archived && !options.keepBrowser);
 }
 
 function shouldCleanupBlankTabsAfterLastLease(options: {
@@ -1121,6 +1139,7 @@ async function runBrowserModeInternal(
   let answerMessageId: string | undefined;
   let answerHtml = "";
   let runStatus: "attempted" | "complete" | "cancelled" = "attempted";
+  let archivedOnComplete = false;
   let connectionClosedUnexpectedly = false;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
@@ -1804,12 +1823,16 @@ async function runBrowserModeInternal(
       );
       const archive = await maybeArchiveCompletedConversation({
         Runtime,
+        Input,
+        Page,
+        Client: client,
         logger,
         config,
         conversationUrl: lastUrl,
         followUpCount: 0,
         requiredArtifactsSaved: Boolean(reportArtifact && transcriptArtifact),
       });
+      archivedOnComplete = archive.archived;
       return {
         answerText: researchResult.text,
         answerMarkdown: researchResult.text,
@@ -2337,6 +2360,9 @@ async function runBrowserModeInternal(
     const savedArtifacts = appendArtifacts(browserArtifactsWithCapture, [transcriptArtifact]);
     const archive = await maybeArchiveCompletedConversation({
       Runtime,
+      Input,
+      Page,
+      Client: client,
       logger,
       config,
       conversationUrl: lastUrl,
@@ -2346,6 +2372,7 @@ async function runBrowserModeInternal(
         imageArtifacts.savedImages.length === imageArtifacts.imageCount &&
         fileArtifacts.savedFiles.length === fileArtifacts.fileCount,
     });
+    archivedOnComplete = archive.archived;
     runStatus = "complete";
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
@@ -2511,7 +2538,11 @@ async function runBrowserModeInternal(
         runStatus,
         ownsTarget,
         keepBrowser: effectiveKeepBrowser,
-        closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
+        closeOwnedTabOnComplete: resolveCloseOwnedTabOnComplete({
+          requested: options.closeOwnedTabOnComplete,
+          archived: archivedOnComplete,
+          keepBrowser: effectiveKeepBrowser,
+        }),
         closeOwnedTabOnCancel: options.closeOwnedTabOnCancel,
       });
       let keepBrowserOpen =
@@ -2957,6 +2988,7 @@ async function runRemoteBrowserMode(
   let answerHtml = "";
   let connectionClosedUnexpectedly = false;
   let runStatus: "attempted" | "complete" | "cancelled" = "attempted";
+  let archivedOnComplete = false;
   let stopThinkingMonitor: (() => void) | null = null;
   let removeDialogHandler: (() => void) | null = null;
   let connection: Awaited<ReturnType<typeof connectToRemoteChrome>> | null = null;
@@ -3366,12 +3398,16 @@ async function runRemoteBrowserMode(
       );
       const archive = await maybeArchiveCompletedConversation({
         Runtime,
+        Input,
+        Page,
+        Client: client,
         logger,
         config,
         conversationUrl: lastUrl,
         followUpCount: 0,
         requiredArtifactsSaved: Boolean(reportArtifact && transcriptArtifact),
       });
+      archivedOnComplete = archive.archived;
       runStatus = "complete";
       return {
         answerText: researchResult.text,
@@ -3848,6 +3884,9 @@ async function runRemoteBrowserMode(
     const savedArtifacts = appendArtifacts(browserArtifactsWithCapture, [transcriptArtifact]);
     const archive = await maybeArchiveCompletedConversation({
       Runtime,
+      Input,
+      Page,
+      Client: client,
       logger,
       config,
       conversationUrl: lastUrl,
@@ -3857,6 +3896,7 @@ async function runRemoteBrowserMode(
         imageArtifacts.savedImages.length === imageArtifacts.imageCount &&
         fileArtifacts.savedFiles.length === fileArtifacts.fileCount,
     });
+    archivedOnComplete = archive.archived;
     const durationMs = Date.now() - startedAt;
     const answerChars = answerText.length;
     const answerTokens = estimateTokenCount(answerMarkdown);
@@ -3949,7 +3989,11 @@ async function runRemoteBrowserMode(
         runStatus,
         ownsTarget,
         keepBrowser: keepRemoteBrowser,
-        closeOwnedTabOnComplete: options.closeOwnedTabOnComplete,
+        closeOwnedTabOnComplete: resolveCloseOwnedTabOnComplete({
+          requested: options.closeOwnedTabOnComplete,
+          archived: archivedOnComplete,
+          keepBrowser: keepRemoteBrowser,
+        }),
         closeOwnedTabOnCancel: options.closeOwnedTabOnCancel,
       });
       const closeConnection = async () => {
@@ -4015,6 +4059,7 @@ export const __test__ = {
   normalizeAuthenticatedModelSelectionError,
   pollGeneratedImageOrTextAssistantResponse,
   resolveManualLoginWaitMs,
+  resolveCloseOwnedTabOnComplete,
   shouldApplyThinkingTimeSelection,
   shouldCleanupBlankTabsAfterLastLease,
   shouldCloseOwnedRunTargetAfterRun,
