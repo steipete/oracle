@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: wait for ChatGPT's composer file input and repeat a remote (`--remote-chrome`) attachment transfer the page silently dropped while the composer was still mounting, instead of failing with "Unable to locate ChatGPT file attachment input." or "Attachment did not appear in ChatGPT composer."
 - Browser: warn when a configured Chrome executable cannot replace a running shared profile, explain how to switch safely, and share reuse handling with Project Sources; fixes #510, thanks @Sogl.
 
 ## 0.21.3 - 2026-09-24
