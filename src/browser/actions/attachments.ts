@@ -2091,7 +2091,33 @@ export async function waitForAttachmentVisible(
   // Attachments can take a few seconds to render in the composer (headless/remote Chrome is slower),
   // so respect the caller-provided timeout instead of capping at 2s.
   const deadline = Date.now() + timeoutMs;
-  const expression = `(() => {
+  while (Date.now() < deadline) {
+    if (await isAttachmentVisible(Runtime, expectedName, evidenceId)) {
+      return;
+    }
+    await delay(200);
+  }
+  logger?.("Attachment not visible in composer; giving up.");
+  await logDomFailure(Runtime, logger ?? (() => {}), "attachment-visible");
+  throw new Error("Attachment did not appear in ChatGPT composer.");
+}
+
+/** One read of whether the composer shows `expectedName` as attached. Never waits or logs. */
+export async function isAttachmentVisible(
+  Runtime: ChromeClient["Runtime"],
+  expectedName: string,
+  evidenceId?: string,
+): Promise<boolean> {
+  if (evidenceId) await confirmAttachmentEvidence(Runtime, evidenceId);
+  const { result } = await Runtime.evaluate({
+    expression: buildAttachmentVisibleExpression(expectedName),
+    returnByValue: true,
+  });
+  return Boolean((result?.value as { found?: boolean } | undefined)?.found);
+}
+
+function buildAttachmentVisibleExpression(expectedName: string): string {
+  return `(() => {
     if ((${buildAttachmentEvidenceExpression([expectedName])})[0]) return { found: true, source: 'upload-evidence' };
     const namePattern = new RegExp(${JSON.stringify(buildAttachmentNamePattern(expectedName, true)?.source ?? "(?!)")}, 'iu');
     const matchesExpectedFileName = (value) => {
@@ -2185,18 +2211,6 @@ export async function waitForAttachmentVisible(
 
     return { found: false };
   })()`;
-  while (Date.now() < deadline) {
-    if (evidenceId) await confirmAttachmentEvidence(Runtime, evidenceId);
-    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
-    const value = result?.value as { found?: boolean } | undefined;
-    if (value?.found) {
-      return;
-    }
-    await delay(200);
-  }
-  logger?.("Attachment not visible in composer; giving up.");
-  await logDomFailure(Runtime, logger ?? (() => {}), "attachment-visible");
-  throw new Error("Attachment did not appear in ChatGPT composer.");
 }
 
 async function waitForAttachmentAnchored(
