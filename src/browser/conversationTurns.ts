@@ -8,7 +8,7 @@ export function buildConversationTurnListExpression(rootExpression = "document")
     const root = ${rootExpression};
     const containers = Array.from(root.querySelectorAll(${containerSelector}));
     return containers.length > 0
-      ? containers
+      ? containers.filter((node) => !containers.some((other) => other !== node && other.contains?.(node)))
       : Array.from(root.querySelectorAll(${fallbackSelector}));
   })()`;
 }

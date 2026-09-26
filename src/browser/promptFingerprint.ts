@@ -14,7 +14,7 @@ export function readUserMessageIds(
 ): Promise<string[] | undefined> {
   return readDomUntil(
     runtime,
-    `Array.from(document.querySelectorAll('[data-message-author-role="user"]'), user => user.getAttribute('data-message-id'))`,
+    `Array.from(document.querySelectorAll('[data-message-author-role="user"], [data-content-search-unit-key$=":user"]'), user => user.getAttribute('data-message-id') || user.getAttribute('data-content-search-unit-key'))`,
     timeoutMs,
     (value) =>
       Array.isArray(value) && value.every((id) => typeof id === "string" && id.trim())
@@ -36,8 +36,9 @@ export async function readSubmittedPromptFingerprint(
         const turns = ${buildConversationTurnListExpression()};
         for (let index = turns.length - 1; index >= 0; index--) {
           const turn = turns[index];
-          const user = turn.matches('[data-message-author-role="user"]') ? turn : turn.querySelector('[data-message-author-role="user"]');
-          if (user) return { text: user.textContent, messageId: user.getAttribute('data-message-id') };
+          const selector = '[data-message-author-role="user"], [data-content-search-unit-key$=":user"]';
+          const user = turn.matches(selector) ? turn : turn.querySelector(selector);
+          if (user) return { text: user.textContent, messageId: user.getAttribute('data-message-id') || user.getAttribute('data-content-search-unit-key') };
         }
         return null;
       })()`,

@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   __test__ as promptComposer,
   buildAttachmentReadyExpressionForTest,
+  buildChatListRateLimitExpressionForTest,
   clearPromptComposer,
   submitPrompt,
 } from "../../src/browser/actions/promptComposer.js";
@@ -72,6 +73,97 @@ const evaluateAttachmentReady = (expectedName: string, visibleName: string): boo
 };
 
 describe("promptComposer", () => {
+  test("stops before sending when ChatGPT's conversation list is loading after HTTP 429", async () => {
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({ result: { value: { ready: true, composer: true } } })
+        .mockResolvedValueOnce({ result: { value: true } }),
+    };
+    const input = { insertText: vi.fn(), dispatchKeyEvent: vi.fn() };
+    await expect(
+      submitPrompt(
+        { runtime: runtime as never, input: input as never },
+        "do not send during a rate limit",
+        vi.fn() as never,
+      ),
+    ).rejects.toMatchObject({
+      name: "BrowserAutomationError",
+      details: {
+        stage: "submit-prompt",
+        code: "chatgpt-conversation-list-rate-limited",
+      },
+    });
+    expect(input.insertText).not.toHaveBeenCalled();
+    const expression = buildChatListRateLimitExpressionForTest();
+    const pageState = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      {
+        readyState: "complete",
+        querySelector: (selector: string) => (selector === "form" ? {} : null),
+        querySelectorAll: () => [{ textContent: "Loading chats" }],
+      },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations?offset=0", responseStatus: 429 },
+          { name: "https://chatgpt.com/backend-api/conversations?offset=20", responseStatus: 429 },
+          { name: "https://chatgpt.com/backend-api/conversations?offset=40", responseStatus: 200 },
+        ],
+      },
+      { href: "https://chatgpt.com/" },
+    );
+    expect(pageState).toBe(true);
+    const failedHistoryState = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      { querySelectorAll: () => [{ textContent: "Unable to load history Retry" }] },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations", responseStatus: 429 },
+        ],
+      },
+      { href: "https://chatgpt.com/" },
+    );
+    expect(failedHistoryState).toBe(true);
+    const resumedConversation = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      { querySelectorAll: () => [{ textContent: "Loading chats" }] },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations", responseStatus: 429 },
+        ],
+      },
+      { href: "https://chatgpt.com/c/existing", pathname: "/c/existing" },
+    );
+    expect(resumedConversation).toBe(false);
+    const loadedState = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      { querySelectorAll: () => [] },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations", responseStatus: 429 },
+        ],
+      },
+      { href: "https://chatgpt.com/" },
+    );
+    expect(loadedState).toBe(false);
+  });
+
   test.each([
     ["mcp.md", "mcp(7).md", true],
     ["mcp.md", "remove file 1: mcp(7).md", true],
@@ -383,7 +475,7 @@ describe("promptComposer", () => {
           if (expression.includes("return !selectors.some")) {
             return { result: { value: true } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             events.push("focusSendButton");
             return { result: { value: { status: "focused" } } };
           }
@@ -469,7 +561,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             return { result: { value: { status: "focused" } } };
           }
           if (expression.includes("currentUrl: location.href")) {
@@ -542,7 +634,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             return { result: { value: { status: "focused" } } };
           }
           if (expression.includes("currentUrl: location.href")) {
@@ -605,7 +697,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             return { result: { value: { status: "absent" } } };
           }
           if (expression.includes("dispatchClickSequence")) {

@@ -20,6 +20,7 @@ import {
   buildConversationDebugExpression,
 } from "../domDebug.js";
 import { buildClickDispatcher } from "./domEvents.js";
+import { buildReadCompletionAnnouncementExpression } from "./completionAnnouncement.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
@@ -54,6 +55,26 @@ export interface TerminalGateState {
   lastChangeAt: number;
   barStableCycles: number;
   seen: boolean;
+}
+
+export interface CompletionAnnouncementGateState {
+  turnKey: string | null;
+  sawIncomplete: boolean;
+}
+
+export function advanceCompletionAnnouncementGate(
+  state: CompletionAnnouncementGateState,
+  turnKey: string | null,
+  statusComplete: boolean,
+): { state: CompletionAnnouncementGateState; accept: boolean } {
+  if (!turnKey) return { state: { turnKey: null, sawIncomplete: false }, accept: false };
+  const sameTurn = state.turnKey === turnKey;
+  return {
+    state: { turnKey, sawIncomplete: !statusComplete || (sameTurn && state.sawIncomplete) },
+    // A page-wide announcement is useful only after it changed from incomplete
+    // to complete while the sampled assistant turn was already present.
+    accept: statusComplete && sameTurn && state.sawIncomplete,
+  };
 }
 
 export interface TerminalSample {
@@ -698,6 +719,10 @@ async function pollAssistantCompletion(
 } | null> {
   const watchdogDeadline = Date.now() + timeoutMs;
   let gate = createTerminalGateState(Date.now());
+  let announcementGate: CompletionAnnouncementGateState = {
+    turnKey: null,
+    sawIncomplete: false,
+  };
   while (Date.now() < watchdogDeadline) {
     // Check abort signal to stop polling when another path won the race
     if (abortSignal?.aborted) {
@@ -710,9 +735,28 @@ async function pollAssistantCompletion(
       if (isGeneratedImageAssistantAnswer(normalized)) {
         return normalized;
       }
+      const turnIndex = typeof snapshot?.turnIndex === "number" ? snapshot.turnIndex : null;
+      const turnKey =
+        typeof minTurnIndex === "number" && turnIndex !== null && turnIndex >= minTurnIndex
+          ? `${turnIndex}:${normalized.meta.messageId ?? normalized.meta.turnId ?? ""}`
+          : null;
+      const statusComplete = await readPageResponseCompleteStatus(Runtime);
+      const announcement = advanceCompletionAnnouncementGate(
+        announcementGate,
+        turnKey,
+        statusComplete,
+      );
+      announcementGate = announcement.state;
+      const trackedComplete =
+        turnIndex !== null && (await readTrackedCompletionAnnouncement(Runtime, turnIndex));
       const [stopVisible, barVisible, thinkingActivity] = await Promise.all([
         isStopButtonVisible(Runtime),
-        isCompletionVisible(Runtime, normalized.meta, minTurnIndex),
+        isCompletionVisible(
+          Runtime,
+          normalized.meta,
+          minTurnIndex,
+          trackedComplete || announcement.accept,
+        ),
         readThinkingActivity(Runtime),
       ]);
       const decision = classifyTurnTerminal(
@@ -785,6 +829,7 @@ export const buildStopButtonVisibilityExpressionForTest = buildStopButtonVisibil
 function buildCompletionVisibilityExpression(
   meta: { turnId?: string | null; messageId?: string | null },
   minTurnIndex?: number,
+  allowPageStatus = false,
 ): string {
   const expectedMessageId = meta.messageId ? JSON.stringify(meta.messageId) : "null";
   const expectedTurnId = meta.turnId ? JSON.stringify(meta.turnId) : "null";
@@ -801,6 +846,9 @@ function buildCompletionVisibilityExpression(
     const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
+      const searchKey = (node.getAttribute('data-content-search-unit-key') || node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+      if (searchKey.endsWith(':user')) return false;
+      if (searchKey.endsWith(':assistant')) return true;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
@@ -839,6 +887,7 @@ function buildCompletionVisibilityExpression(
       return false;
     }
 
+    if (${allowPageStatus}) return true;
     if (lastAssistantTurn.querySelector('${FINISHED_ACTIONS_SELECTOR}')) return true;
     const markdowns = lastAssistantTurn.querySelectorAll('.markdown');
     return Array.from(markdowns).some((node) => (node.textContent || '').trim() === 'Done');
@@ -853,14 +902,42 @@ async function isCompletionVisible(
     completionVisible?: boolean;
   },
   minTurnIndex?: number,
+  allowPageStatus = false,
 ): Promise<boolean> {
   if (hasScopedCompletionProof(meta)) return true;
   try {
     const { result } = await Runtime.evaluate({
-      expression: buildCompletionVisibilityExpression(meta, minTurnIndex),
+      expression: buildCompletionVisibilityExpression(meta, minTurnIndex, allowPageStatus),
       returnByValue: true,
     });
     return Boolean(result?.value);
+  } catch {
+    return false;
+  }
+}
+
+async function readPageResponseCompleteStatus(Runtime: ChromeClient["Runtime"]): Promise<boolean> {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: `Array.from(document.querySelectorAll('[role="status"][aria-live="polite"]')).some((status) => (status.textContent || '').trim() === 'Response complete')`,
+      returnByValue: true,
+    });
+    return result?.value === true;
+  } catch {
+    return false;
+  }
+}
+
+async function readTrackedCompletionAnnouncement(
+  Runtime: ChromeClient["Runtime"],
+  turnIndex: number,
+): Promise<boolean> {
+  try {
+    const { result } = await Runtime.evaluate({
+      expression: buildReadCompletionAnnouncementExpression(turnIndex),
+      returnByValue: true,
+    });
+    return result?.value === true;
   } catch {
     return false;
   }
@@ -1030,6 +1107,9 @@ function buildResponseObserverExpression(
     // Helper to detect assistant turns - must match buildAssistantExtractor logic for consistency.
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
+      const searchKey = (node.getAttribute('data-content-search-unit-key') || node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+      if (searchKey.endsWith(':user')) return false;
+      if (searchKey.endsWith(':assistant')) return true;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
       const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
@@ -1241,6 +1321,9 @@ function buildAssistantExtractor(functionName: string): string {
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isAssistantTurn = (node) => {
       if (!(node instanceof HTMLElement)) return false;
+      const searchKey = (node.getAttribute('data-content-search-unit-key') || node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+      if (searchKey.endsWith(':user')) return false;
+      if (searchKey.endsWith(':assistant')) return true;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') {
         return true;
@@ -1288,6 +1371,7 @@ function buildAssistantExtractor(functionName: string): string {
         messageRoot.querySelector('[data-testid*="message"]') ||
         messageRoot.querySelector('[data-testid*="assistant"]') ||
         messageRoot.querySelector('.prose') ||
+        messageRoot.querySelector('[class*="MarkdownRoot"]') ||
         messageRoot.querySelector('[class*="markdown"]');
       const contentRoot = preferred ?? messageRoot;
       if (!contentRoot) {
@@ -1348,7 +1432,7 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
       document.querySelector('[role="main"]'),
     ].filter(Boolean);
     if (roots.length === 0) return null;
-    const markdownSelector = '.markdown,[data-message-content],[data-testid*="message"],.prose,[class*="markdown"]';
+    const markdownSelector = '.markdown,[data-message-content],[data-testid*="message"],.prose,[class*="MarkdownRoot"],[class*="markdown"]';
     const isExcluded = (node) =>
       Boolean(
         node?.closest?.(
@@ -1375,13 +1459,19 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
     const turnNodes = ${buildConversationTurnListExpression()};
     const hasTurns = turnNodes.length > 0;
     const resolveTurnIndex = (node) => {
-      const idx = turnNodes.findIndex((turn) => turn === node || turn.contains?.(node));
-      return idx >= 0 ? idx : null;
+      // Current ChatGPT DOM can return nested outer/inner turn containers.
+      // The last containing node is the specific turn; the first is a wrapper
+      // that also contains the user and falsely predates the submit baseline.
+      for (let idx = turnNodes.length - 1; idx >= 0; idx -= 1) {
+        const turn = turnNodes[idx];
+        if (turn === node || turn.contains?.(node)) return idx;
+      }
+      return null;
     };
     const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
     const collectLastUser = (scope) => {
       if (!scope?.querySelectorAll) return null;
-      const userTurns = Array.from(scope.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'));
+      const userTurns = Array.from(scope.querySelectorAll('[data-message-author-role="user"], [data-turn="user"], [data-content-search-unit-key$=":user"]'));
       return userTurns[userTurns.length - 1] ?? null;
     };
     const lastUser = collectLastUser(root) || collectLastUser(document);
@@ -1415,6 +1505,9 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
       });
     if (markdowns.length === 0) return null;
     const actionButtons = Array.from(root.querySelectorAll('${FINISHED_ACTIONS_SELECTOR}'));
+    // ChatGPT's current Pro layout can omit the per-turn action bar. Its live
+    // completion announcement is positive evidence once the sampled answer is
+    // after the current user turn; an empty/working announcement is not.
     const actionMarkdowns = [];
     for (const button of actionButtons) {
       const container =
@@ -1451,7 +1544,7 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
         root.querySelector('[data-message-author-role="assistant"], [data-turn="assistant"], [data-testid*="assistant"]'),
     );
     const allowMarkdownFallback = hasAssistantIndicators || hasTurns || Boolean(userText);
-    const candidates =
+    const rawCandidates =
       actionMarkdowns.length > 0
         ? actionMarkdowns
         : assistantMarkdowns.length > 0
@@ -1459,6 +1552,13 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
           : allowMarkdownFallback
             ? markdowns
             : [];
+    // Inline citation/code spans also have "markdown" in their class name.
+    // Prefer the complete message root, otherwise the last inline span can be
+    // mistaken for the full assistant answer (including during artifact saves).
+    const blockCandidates = rawCandidates.filter((node) =>
+      node.matches?.('.markdown,.prose,[data-message-content],[class*="MarkdownRoot"]'),
+    );
+    const candidates = blockCandidates.length > 0 ? blockCandidates : rawCandidates;
     for (let i = candidates.length - 1; i >= 0; i -= 1) {
       const node = candidates[i];
       if (!node) continue;
@@ -1509,6 +1609,9 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
       const ASSISTANT_SELECTOR = '${ASSISTANT_ROLE_SELECTOR}';
       const isAssistantTurn = (node) => {
         if (!(node instanceof HTMLElement)) return false;
+        const searchKey = (node.getAttribute('data-content-search-unit-key') || node.getAttribute('data-chatgpt-search-unit-key') || '').toLowerCase();
+        if (searchKey.endsWith(':user')) return false;
+        if (searchKey.endsWith(':assistant')) return true;
         const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
         if (turnAttr === 'assistant') return true;
         const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();

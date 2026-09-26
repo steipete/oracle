@@ -55,6 +55,10 @@ export class FakeElement {
     return this.attributes[name] ?? null;
   }
 
+  contains(element: FakeElement): boolean {
+    return this === element || this.children.some((child) => child.contains(element));
+  }
+
   closest(selector: string): FakeElement | null {
     if (matchesSelector(this, selector)) return this;
     return this.parentElement?.closest(selector) ?? null;

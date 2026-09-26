@@ -1,6 +1,7 @@
 import { createContext, Script } from "node:vm";
 import { describe, expect, test } from "vitest";
 import {
+  advanceCompletionAnnouncementGate,
   buildActiveThinkingStatusPredicateJsForTest,
   buildAnswerNowPlaceholderPredicateJs,
   buildAssistantSnapshotExpressionForTest,
@@ -208,16 +209,26 @@ describe("completion action correlation", () => {
     messageId?: string;
     minTurnIndex?: number;
     turns: FakeTurn[];
+    completionStatus?: string;
+    allowPageStatus?: boolean;
   }): boolean {
     const expression = buildCompletionVisibilityExpressionForTest(
       { messageId: args.messageId },
       args.minTurnIndex,
+      args.allowPageStatus,
     );
     const context = createContext({
       Array,
       Boolean,
       HTMLElement: FakeTurn,
-      document: { querySelectorAll: () => args.turns },
+      document: {
+        querySelectorAll: (selector: string) =>
+          selector.includes('[role="status"]')
+            ? args.completionStatus
+              ? [{ textContent: args.completionStatus }]
+              : []
+            : args.turns,
+      },
     });
     return new Script(expression).runInContext(context) as boolean;
   }
@@ -240,6 +251,50 @@ describe("completion action correlation", () => {
     ).toBe(true);
   });
 
+  test("accepts the completed announcement for the current assistant turn", () => {
+    const userTurn = new FakeTurn({ "data-turn": "user" }, false);
+    const currentTurn = new FakeTurn({ "data-turn": "assistant" }, false);
+    expect(
+      evaluateCompletionVisibility({
+        minTurnIndex: 1,
+        turns: [userTurn, currentTurn],
+        completionStatus: "Response complete",
+        allowPageStatus: true,
+      }),
+    ).toBe(true);
+    expect(
+      evaluateCompletionVisibility({
+        minTurnIndex: 2,
+        turns: [userTurn, currentTurn],
+        completionStatus: "Response complete",
+        allowPageStatus: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects a stale page-wide completion announcement for a new turn", () => {
+    const userTurn = new FakeTurn({ "data-turn": "user" }, false);
+    const currentTurn = new FakeTurn({ "data-turn": "assistant" }, false);
+    expect(
+      evaluateCompletionVisibility({
+        minTurnIndex: 1,
+        turns: [userTurn, currentTurn],
+        completionStatus: "Response complete",
+      }),
+    ).toBe(false);
+
+    let gate = { turnKey: null as string | null, sawIncomplete: false };
+    const stale = advanceCompletionAnnouncementGate(gate, "1:current", true);
+    expect(stale.accept).toBe(false);
+    gate = stale.state;
+    const working = advanceCompletionAnnouncementGate(gate, "1:current", false);
+    expect(working.accept).toBe(false);
+    gate = working.state;
+    const complete = advanceCompletionAnnouncementGate(gate, "1:current", true);
+    expect(complete.accept).toBe(true);
+    expect(advanceCompletionAnnouncementGate(complete.state, "2:next", true).accept).toBe(false);
+  });
+
   test("rejects controls whose assistant identity differs from the sample", () => {
     const oldTurn = new FakeTurn(
       { "data-turn": "assistant", "data-message-id": "old-message" },
@@ -260,6 +315,53 @@ describe("completion action correlation", () => {
     expect(expression).toContain("completionVisible: actionMarkdowns.includes(node)");
     expect(expression).toContain("return Boolean(lastUser.compareDocumentPosition(node) & 4)");
     expect(expression).toContain("if (!hasTurns) return isAfterCurrentUser(node)");
+  });
+
+  test("accepts completion after a keyed-only user turn", () => {
+    const answer = {
+      innerText: "Completed answer",
+      textContent: "Completed answer",
+      innerHTML: "<p>Completed answer</p>",
+      closest: () => null,
+      matches: () => true,
+    };
+    const user = {
+      innerText: "Submitted prompt",
+      textContent: "Submitted prompt",
+      compareDocumentPosition: (node: unknown) => (node === answer ? 4 : 0),
+      contains: () => false,
+    };
+    const assistant = { contains: (node: unknown) => node === answer };
+    const status = { textContent: "Response complete" };
+    const root = {
+      querySelectorAll: (selector: string) => {
+        if (selector.includes('key$=":user"')) return [user];
+        if (selector.startsWith(".markdown")) return [answer];
+        return [];
+      },
+      querySelector: () => null,
+    };
+    const document = {
+      body: root,
+      querySelector: (selector: string) => (selector === "main" ? root : null),
+      querySelectorAll: (selector: string) => {
+        if (selector === '[data-testid^="conversation-turn"],[data-content-search-unit-key]') {
+          return [user, assistant];
+        }
+        if (selector.includes('key$=":user"')) return [user];
+        if (selector === '[role="status"][aria-live="polite"]') return [status];
+        return [];
+      },
+    };
+    const snapshot = Function(
+      "document",
+      `return ${buildMarkdownFallbackExtractorForTest("1")};`,
+    )(document)();
+    expect(snapshot).toMatchObject({
+      text: "Completed answer",
+      turnIndex: 1,
+      completionVisible: false,
+    });
   });
 });
 

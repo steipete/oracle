@@ -40,6 +40,39 @@ function makeTab(overrides: Partial<ChatGptTabSummary> = {}): ChatGptTabSummary 
 }
 
 describe("liveTabs helpers", () => {
+  test("pairs current search-unit user and assistant turns", () => {
+    const user = new FakeElement(
+      "div",
+      { "data-content-search-unit-key": "fallback-turn-0:0:user" },
+      [new FakeElement("div", { class: "whitespace-pre-wrap" }, [], "Question")],
+    );
+    const assistant = new FakeElement(
+      "div",
+      { "data-content-search-unit-key": "fallback-turn-0:1:assistant" },
+      [new FakeElement("div", { class: "markdown" }, [], "Answer")],
+    );
+    Object.assign(user, {
+      compareDocumentPosition: (other: FakeElement) => (other === assistant ? 4 : 2),
+    });
+    const observed = new Function(
+      "document",
+      "Element",
+      "window",
+      "location",
+      `return ${buildTabInspectionExpressionForTest()}`,
+    )(
+      new FakeDocument([user, assistant]),
+      FakeElement,
+      { getComputedStyle: () => ({ display: "block", visibility: "visible", opacity: "1" }) },
+      { href: "https://chatgpt.com/c/current" },
+    );
+    expect(observed.lastUserMessageId).toBe("fallback-turn-0:0:user");
+    expect(observed.lastUserTextRaw).toBe("Question");
+    expect(observed.lastUserContentText).toBe("Question");
+    expect(observed.lastAssistantText).toBe("Answer");
+    expect(observed.assistantFollowsLatestUser).toBe(true);
+  });
+
   test("keeps speaker labels and controls out of the raw user fingerprint text", () => {
     const text = "if active:\n  run()";
     const user = new FakeElement(

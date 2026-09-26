@@ -48,6 +48,8 @@ export interface BrowserGeneratedImage {
 
 export interface BrowserDownloadableFile {
   url: string;
+  /** Position within the assistant turn for a linkless browser download button. */
+  candidateId?: string;
   downloadUrl?: string;
   sandboxUrl?: string;
   filename?: string;

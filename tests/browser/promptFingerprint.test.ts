@@ -5,6 +5,7 @@ import {
   readUserMessageIds,
 } from "../../src/browser/promptFingerprint.js";
 import type { ChromeClient } from "../../src/browser/types.js";
+import { FakeDocument, FakeElement } from "./domFixture.js";
 
 test("captures a new message when earlier turns unmount during submission", async () => {
   const user = (text: string, id: string) => ({ textContent: text, getAttribute: () => id });
@@ -15,7 +16,8 @@ test("captures a new message when earlier turns unmount during submission", asyn
       result: {
         value: new Function("document", `return ${expression}`)({
           querySelectorAll: (selector: string) =>
-            selector === '[data-message-author-role="user"]'
+            selector ===
+            '[data-message-author-role="user"], [data-content-search-unit-key$=":user"]'
               ? users
               : users.map((message) => ({ matches: () => false, querySelector: () => message })),
         }),
@@ -30,6 +32,25 @@ test("captures a new message when earlier turns unmount during submission", asyn
     browserPromptFingerprint("Continue", "current-message"),
   );
   expect(await readSubmittedPromptFingerprint(runtime, undefined)).toBeUndefined();
+});
+
+test("uses current ChatGPT search-unit keys as committed user identities", async () => {
+  let document = new FakeDocument([]);
+  const runtime = {
+    evaluate: async ({ expression }: { expression: string }) => ({
+      result: { value: new Function("document", `return ${expression}`)(document) },
+    }),
+  } as unknown as ChromeClient["Runtime"];
+  const previous = await readUserMessageIds(runtime);
+  expect(previous).toEqual([]);
+  document = new FakeDocument([
+    new FakeElement("div", { "data-content-search-unit-key": "fallback-turn-0:0:user" }, [
+      new FakeElement("div", { class: "whitespace-pre-wrap" }, [], "New prompt"),
+    ]),
+  ]);
+  expect(await readSubmittedPromptFingerprint(runtime, previous)).toBe(
+    browserPromptFingerprint("New prompt", "fallback-turn-0:0:user"),
+  );
 });
 
 test("waits for pre-existing user message IDs to hydrate", async () => {

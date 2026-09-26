@@ -206,16 +206,22 @@ function buildTabInspectionExpression(): string {
       const promptNode = firstVisible(INPUT_SELECTORS);
       const promptReady = Boolean(promptNode);
       const turns = ${buildConversationTurnListExpression()};
+      const turnRole = (turn) => {
+        const explicit = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
+        if (explicit === 'user' || explicit === 'assistant') return explicit;
+        const key = turn.getAttribute('data-content-search-unit-key') || turn.getAttribute('data-chatgpt-search-unit-key') || '';
+        return key.match(/:(user|assistant)$/)?.[1] || '';
+      };
       const assistantTurns = turns.filter((turn) => {
-        const role = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
+        const role = turnRole(turn);
         if (role === 'assistant') return true;
         return Boolean(turn.querySelector(ASSISTANT_ROLE_SELECTOR));
       });
       const fallbackUserTurns = Array.from(
-        document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
+        document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"], [data-content-search-unit-key$=":user"]'),
       );
       const userTurns = turns.filter((turn) => {
-        const role = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
+        const role = turnRole(turn);
         if (role === 'user') return true;
         return Boolean(
           turn.querySelector('[data-message-author-role="user"], [data-turn="user"]'),
@@ -271,8 +277,8 @@ function buildTabInspectionExpression(): string {
       const assistantCount = new Set(assistantOwners).size;
       const lastAssistantText = normalize(lastAssistantNode?.textContent);
       const lastUserText = normalize(lastUserTurn?.textContent);
-      const lastUserMessage = lastUserTurn?.matches?.('[data-message-author-role="user"]')
-        ? lastUserTurn : lastUserTurn?.querySelector?.('[data-message-author-role="user"]');
+      const lastUserMessage = lastUserTurn?.matches?.('[data-message-author-role="user"], [data-content-search-unit-key$=":user"]')
+        ? lastUserTurn : lastUserTurn?.querySelector?.('[data-message-author-role="user"], [data-content-search-unit-key$=":user"]');
       const userContent = lastUserMessage?.querySelectorAll?.('[class~="whitespace-pre-wrap"]');
       const authenticated = !loginButtonExists && (promptReady || sendExists || stopExists || assistantCount > 0);
       return {
@@ -292,7 +298,7 @@ function buildTabInspectionExpression(): string {
         lastUserText,
         lastUserTextRaw: lastUserMessage?.textContent,
         lastUserContentText: userContent?.length === 1 ? userContent[0].textContent : undefined,
-        lastUserMessageId: lastUserMessage?.getAttribute?.('data-message-id'),
+        lastUserMessageId: lastUserMessage?.getAttribute?.('data-message-id') || lastUserMessage?.getAttribute?.('data-content-search-unit-key'),
         visibilityState: document.visibilityState,
         focused: Boolean(document.hasFocus?.()),
       };

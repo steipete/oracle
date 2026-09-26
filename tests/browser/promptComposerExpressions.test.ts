@@ -22,6 +22,30 @@ function evaluateAttachmentReadyExpression(
 }
 
 describe("prompt composer attachment expressions", () => {
+  test("recognizes current ChatGPT Remove filename chips beside a submit Send button", () => {
+    const names = ["first-image.jpg", "second-image.png"];
+    const document = new FakeDocument([
+      new FakeElement("form", { "data-testid": "composer" }, [
+        new FakeElement("button", { "aria-label": "Remove first-image.jpg" }),
+        new FakeElement("button", { "aria-label": "Remove second-image.png" }),
+        new FakeElement("div", { contenteditable: "true" }, [], "Read both images."),
+        new FakeElement("button", { type: "submit", "aria-label": "Send" }),
+      ]),
+    ]);
+    expect(evaluateAttachmentReadyExpression(names, document)).toBe(true);
+  });
+
+  test("does not count a filename in prompt text as a Remove chip", () => {
+    const document = new FakeDocument([
+      new FakeElement("form", { "data-testid": "composer" }, [
+        new FakeElement("button", { "aria-label": "Remove unrelated.jpg" }),
+        new FakeElement("div", { contenteditable: "true" }, [], "Review missing.jpg"),
+        new FakeElement("button", { type: "submit", "aria-label": "Send" }),
+      ]),
+    ]);
+    expect(evaluateAttachmentReadyExpression(["missing.jpg"], document)).toBe(false);
+  });
+
   test("attachment ready check does not match prompt text", () => {
     const expression = buildAttachmentReadyExpressionForTest(["oracle-attach-verify.txt"]);
     expect(expression).toContain("closestComposerRoot(sendButton)");
