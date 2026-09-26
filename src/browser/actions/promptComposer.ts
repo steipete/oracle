@@ -140,7 +140,61 @@ export async function submitPrompt(
       throw new Error("Failed to focus prompt textarea");
     }
 
-    await input.insertText({ text: prompt });
+    // ChatGPT's newer contenteditable (ProseMirror) composer treats a typed newline as Enter,
+    // which submits the first paragraph and silently drops the rest (seen 2026-09-26: a
+    // multi-line prompt reached ChatGPT as its first line only). Deliver multi-line text as a
+    // paste, which ProseMirror turns into paragraphs without submitting; fall back to typing.
+    let pastedMultiline = false;
+    if (prompt.includes("\n")) {
+      const pasteResult = await runtime.evaluate({
+        expression: `(() => {
+        const selectors = ${JSON.stringify(INPUT_SELECTORS)};
+        const visible = (node) => { const r = node?.getBoundingClientRect?.(); return Boolean(r && r.width > 0 && r.height > 0); };
+        const editor = selectors.map((s) => document.querySelector(s)).find((n) => n && visible(n));
+        if (!editor || editor instanceof HTMLTextAreaElement || !editor.isContentEditable) return { used: false };
+        const text = ${encodedPrompt};
+        // ChatGPT converts a single large paste (seen above ~10k chars) into a "Pasted text"
+        // file chip and leaves the editor empty, so paste in chunks well under that size.
+        const CHUNK = 4000;
+        const chips = () => document.querySelectorAll('form button[aria-label^="Remove Pasted text"]').length;
+        const chipsBefore = chips();
+        editor.focus();
+        for (let i = 0; i < text.length; i += CHUNK) {
+          const data = new DataTransfer();
+          data.setData('text/plain', text.slice(i, i + CHUNK));
+          editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+        }
+        const squash = (value) => value.replace(/\\s+/g, '');
+        const landed = squash(editor.innerText || '').length;
+        const expected = squash(text).length;
+        const convertedToFile = chips() > chipsBefore;
+        return { used: true, length: landed, expected, convertedToFile };
+      })()`,
+        returnByValue: true,
+      });
+      const pasted = pasteResult.result?.value as
+        | { used?: boolean; length?: number; expected?: number; convertedToFile?: boolean }
+        | undefined;
+      if (pasted?.used) {
+        const complete =
+          !pasted.convertedToFile &&
+          (pasted.length ?? 0) >= Math.floor((pasted.expected ?? 0) * 0.98);
+        if (!complete) {
+          // Never fall back to typing here: a typed newline submits the first line only.
+          throw new BrowserAutomationError(
+            `ChatGPT did not accept the pasted prompt intact (${pasted.length ?? 0}/${pasted.expected ?? 0} chars${pasted.convertedToFile ? ", converted to a file" : ""}); nothing was sent.`,
+            { stage: "submit-prompt", code: "prompt-paste-incomplete" },
+          );
+        }
+      }
+      pastedMultiline = Boolean(pasted?.used && (pasted.length ?? 0) > 0);
+      logger(
+        `Prompt delivery: ${pastedMultiline ? "paste (multi-line, contenteditable)" : "typed"}`,
+      );
+    }
+    if (!pastedMultiline) {
+      await input.insertText({ text: prompt });
+    }
 
     // Some pages (notably ChatGPT when subscriptions/widgets load) need a brief settle
     // before the send button becomes enabled; give it a short breather to avoid races.

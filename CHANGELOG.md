@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: paste multi-line prompts into ChatGPT's contenteditable (ProseMirror) composer instead of typing them; in the newer layout a typed newline submits, so only the first line was sent and the rest (including inlined files) was silently dropped; paste long prompts in 4,000-character chunks, because ChatGPT turns a single paste above roughly 10k characters into a "Pasted text" file, and stop with `prompt-paste-incomplete` rather than typing if the text still does not land intact; refs #517.
 - Browser: warn when a configured Chrome executable cannot replace a running shared profile, explain how to switch safely, and share reuse handling with Project Sources; fixes #510, thanks @Sogl.
 
 ## 0.21.3 - 2026-09-24

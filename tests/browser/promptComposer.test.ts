@@ -316,6 +316,96 @@ describe("promptComposer", () => {
     }
   });
 
+  describe("prompt delivery into a contenteditable composer", () => {
+    // ChatGPT's newer ProseMirror composer treats a typed newline as Enter: a multi-line prompt was
+    // submitted after its first line and the rest silently dropped (#517). Multi-line text is pasted.
+    const run = async (prompt: string) => {
+      const calls: string[] = [];
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("ClipboardEvent('paste'")) {
+            calls.push("paste");
+            return { result: { value: { used: true, length: prompt.replace(/\s+/g, "").length } } };
+          }
+          if (expression.includes("editorText")) throw new Error("stop-after-insert");
+          return { result: { value: { focused: true, ready: true, composer: true } } };
+        }),
+      };
+      const input = {
+        insertText: vi.fn(async () => calls.push("insertText")),
+        dispatchKeyEvent: vi.fn(),
+      };
+      await expect(
+        submitPrompt(
+          { runtime: runtime as never, input: input as never },
+          prompt,
+          Object.assign(vi.fn(), { verbose: false }) as never,
+        ),
+      ).rejects.toThrow("stop-after-insert");
+      return calls;
+    };
+
+    test("pastes a multi-line prompt instead of typing it", async () => {
+      expect(await run("line one\n\nline two\n```\ncode\n```")).toEqual(["paste"]);
+    });
+
+    test("still types a single-line prompt", async () => {
+      expect(await run("Reply with exactly one word: pong")).toEqual(["insertText"]);
+    });
+  });
+
+  describe("chunked paste completeness", () => {
+    const attempt = async (pasteValue: Record<string, unknown>) => {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("ClipboardEvent('paste'"))
+            return { result: { value: pasteValue } };
+          if (expression.includes("editorText")) throw new Error("stop-after-insert");
+          return { result: { value: { focused: true, ready: true, composer: true } } };
+        }),
+      };
+      const input = { insertText: vi.fn(), dispatchKeyEvent: vi.fn() };
+      const outcome = submitPrompt(
+        { runtime: runtime as never, input: input as never },
+        "first line\n" + "x".repeat(30_000),
+        Object.assign(vi.fn(), { verbose: false }) as never,
+      );
+      return { outcome, input };
+    };
+
+    test("stops (never types) when ChatGPT turns the paste into a file", async () => {
+      const { outcome, input } = await attempt({
+        used: true,
+        length: 1,
+        expected: 30_010,
+        convertedToFile: true,
+      });
+      await expect(outcome).rejects.toMatchObject({ details: { code: "prompt-paste-incomplete" } });
+      expect(input.insertText).not.toHaveBeenCalled();
+    });
+
+    test("stops when the pasted prompt landed incomplete", async () => {
+      const { outcome } = await attempt({
+        used: true,
+        length: 12_000,
+        expected: 30_010,
+        convertedToFile: false,
+      });
+      await expect(outcome).rejects.toMatchObject({ details: { code: "prompt-paste-incomplete" } });
+    });
+
+    test("continues when the whole prompt landed", async () => {
+      const { outcome, input } = await attempt({
+        used: true,
+        length: 30_010,
+        expected: 30_010,
+        convertedToFile: false,
+      });
+      await expect(outcome).rejects.toThrow("stop-after-insert");
+      expect(input.insertText).not.toHaveBeenCalled();
+    });
+  });
+
   test("only attachment sends get the longer send-button deadline", () => {
     expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
     expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
