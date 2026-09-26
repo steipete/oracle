@@ -153,15 +153,40 @@ export async function submitPrompt(
         const editor = selectors.map((s) => document.querySelector(s)).find((n) => n && visible(n));
         if (!editor || editor instanceof HTMLTextAreaElement || !editor.isContentEditable) return { used: false };
         const text = ${encodedPrompt};
-        const data = new DataTransfer();
-        data.setData('text/plain', text);
+        // ChatGPT converts a single large paste (seen above ~10k chars) into a "Pasted text"
+        // file chip and leaves the editor empty, so paste in chunks well under that size.
+        const CHUNK = 4000;
+        const chips = () => document.querySelectorAll('form button[aria-label^="Remove Pasted text"]').length;
+        const chipsBefore = chips();
         editor.focus();
-        editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
-        return { used: true, length: (editor.innerText || '').replace(/\\s+/g, '').length };
+        for (let i = 0; i < text.length; i += CHUNK) {
+          const data = new DataTransfer();
+          data.setData('text/plain', text.slice(i, i + CHUNK));
+          editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+        }
+        const squash = (value) => value.replace(/\\s+/g, '');
+        const landed = squash(editor.innerText || '').length;
+        const expected = squash(text).length;
+        const convertedToFile = chips() > chipsBefore;
+        return { used: true, length: landed, expected, convertedToFile };
       })()`,
         returnByValue: true,
       });
-      const pasted = pasteResult.result?.value as { used?: boolean; length?: number } | undefined;
+      const pasted = pasteResult.result?.value as
+        | { used?: boolean; length?: number; expected?: number; convertedToFile?: boolean }
+        | undefined;
+      if (pasted?.used) {
+        const complete =
+          !pasted.convertedToFile &&
+          (pasted.length ?? 0) >= Math.floor((pasted.expected ?? 0) * 0.98);
+        if (!complete) {
+          // Never fall back to typing here: a typed newline submits the first line only.
+          throw new BrowserAutomationError(
+            `ChatGPT did not accept the pasted prompt intact (${pasted.length ?? 0}/${pasted.expected ?? 0} chars${pasted.convertedToFile ? ", converted to a file" : ""}); nothing was sent.`,
+            { stage: "submit-prompt", code: "prompt-paste-incomplete" },
+          );
+        }
+      }
       pastedMultiline = Boolean(pasted?.used && (pasted.length ?? 0) > 0);
       logger(
         `Prompt delivery: ${pastedMultiline ? "paste (multi-line, contenteditable)" : "typed"}`,
