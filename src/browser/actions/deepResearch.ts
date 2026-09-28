@@ -235,7 +235,7 @@ export async function waitForResearchPlanAutoConfirm(
     // ChatGPT projects, attachments, and other tools also render large iframes.
     const { result } = await Runtime.evaluate({
       expression: `(() => {
-        const turns = Array.from(document.querySelectorAll('[data-message-author-role="assistant"]'));
+        const turns = Array.from(document.querySelectorAll(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"])'));
         const assistantText = String(turns.at(-1)?.textContent || '').toLowerCase();
         const hasResearchText = assistantText.includes('researching') ||
           assistantText.includes('research plan') ||
@@ -1179,7 +1179,7 @@ function buildDeepResearchStatusExpression(): string {
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
     });
-    const turns = document.querySelectorAll('[data-message-author-role="assistant"]');
+    const turns = document.querySelectorAll(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"])');
     const lastTurn = turns[turns.length - 1];
     const finished = Boolean(lastTurn?.querySelector?.(${finishedSelector}));
     const text = (lastTurn?.textContent || '').trim();
@@ -1208,14 +1208,14 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
       pageText.includes('secure your account') &&
       pageText.includes('regain access');
     const isAssistantTurn = (node) => {
-      const attr = String(node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      const attr = String(node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       return attr === 'assistant' ||
-        Boolean(node.querySelector('[data-message-author-role="assistant"], [data-turn="assistant"]')) ||
+        Boolean(node.querySelector(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"]), [data-turn="assistant"]')) ||
         String(node.getAttribute('data-testid') || '').toLowerCase().includes('conversation-turn') &&
           /chatgpt\\s+said/i.test(node.innerText || node.textContent || '');
     };
     const conversationTurns = ${buildConversationTurnListExpression()};
-    const allAssistantTurns = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-turn="assistant"]'));
+    const allAssistantTurns = Array.from(document.querySelectorAll(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"]), [data-turn="assistant"]'));
     const scopedTurns = scopedToNewTurns
       ? conversationTurns.slice(MIN_TURN_INDEX).filter(isAssistantTurn)
       : allAssistantTurns;

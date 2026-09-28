@@ -410,7 +410,7 @@ describe("collectChatGptFileArtifacts", () => {
 
     expect(result).toEqual({ files: [], savedFiles: [], fileCount: 0 });
     expect(page.setDownloadBehavior).not.toHaveBeenCalled();
-    expect(runtime.evaluate).toHaveBeenCalledTimes(1);
+    expect(runtime.evaluate).toHaveBeenCalledTimes(2);
     expect(logger).not.toHaveBeenCalledWith(
       expect.stringContaining("Auto-save for downloadable files failed"),
     );

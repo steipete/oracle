@@ -96,15 +96,34 @@ function flattenElements(elements: FakeElement[]): FakeElement[] {
 }
 
 function matchesSelector(element: FakeElement, selector: string): boolean {
-  return selector
-    .split(",")
+  return splitSelector(selector, ",")
     .map((part) => part.trim())
     .filter(Boolean)
     .some((part) => matchesSingleSelector(element, part));
 }
 
 function matchesSingleSelector(element: FakeElement, selector: string): boolean {
-  const normalized = selector.replace(/:not\([^)]*\)/g, "");
+  const compounds = splitSelector(selector, " ");
+  if (compounds.length > 1) {
+    if (!matchesSingleSelector(element, compounds.at(-1)!)) return false;
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      if (matchesSingleSelector(ancestor, compounds.slice(0, -1).join(" "))) return true;
+      ancestor = ancestor.parentElement;
+    }
+    return false;
+  }
+  let rejected = false;
+  const normalized = selector.replace(/:(is|not)\(([^()]*)\)/g, (_match, kind, choices) => {
+    const matches = matchesSelector(element, choices);
+    if ((kind === "is" && !matches) || (kind === "not" && matches)) rejected = true;
+    return "";
+  });
+  if (rejected) return false;
+  if (normalized.includes(":disabled") && !element.hasAttribute("disabled")) return false;
+  for (const match of normalized.replace(/\[[^\]]*\]/g, "").matchAll(/\.([a-z0-9_-]+)/gi)) {
+    if (!(element.getAttribute("class") ?? "").split(/\s+/).includes(match[1]!)) return false;
+  }
   const tag = normalized.match(/^[a-z][a-z0-9-]*/i)?.[0];
   if (tag && element.tagName.toLowerCase() !== tag.toLowerCase()) return false;
 
@@ -127,4 +146,29 @@ function matchesSingleSelector(element: FakeElement, selector: string): boolean 
     if (operator === "$=" && !actual.toLowerCase().endsWith(expected.toLowerCase())) return false;
   }
   return true;
+}
+
+// Browser fixture selectors include commas inside :is() and spaces inside aria labels.
+// Split only at CSS list/descendant boundaries, not inside those scopes.
+function splitSelector(selector: string, separator: string): string[] {
+  let depth = 0;
+  let quote = "";
+  let start = 0;
+  const parts: string[] = [];
+  for (let i = 0; i < selector.length; i++) {
+    const char = selector[i]!;
+    if (quote) {
+      if (char === quote && selector[i - 1] !== "\\") quote = "";
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "[" || char === "(") depth++;
+    else if (char === "]" || char === ")") depth--;
+    else if (char === separator && depth === 0) {
+      const part = selector.slice(start, i).trim();
+      if (part) parts.push(part);
+      start = i + 1;
+    }
+  }
+  const last = selector.slice(start).trim();
+  if (last) parts.push(last);
+  return parts;
 }

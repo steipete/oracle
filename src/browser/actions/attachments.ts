@@ -1983,9 +1983,9 @@ function buildUserTurnAttachmentExpression(options: {
     }
     const turns = ${buildConversationTurnListExpression()};
     const userTurns = turns.map((node, index) => ({ node, index })).filter(({ node }) => {
-      const attr = (node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      const attr = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (attr === 'user') return true;
-      return Boolean(node.querySelector('[data-message-author-role="user"]'));
+      return Boolean(node.querySelector(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"])'));
     });
     const eligibleTurns =
       MIN_TURN_INDEX === null ? userTurns : userTurns.filter(({ index }) => index >= MIN_TURN_INDEX);

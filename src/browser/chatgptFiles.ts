@@ -335,7 +335,7 @@ function buildAssistantDownloadableFilesExpression(minTurnIndex?: number): strin
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
-      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      const role = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
@@ -749,7 +749,7 @@ function buildClickAssistantDownloadButtonsExpression(
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
-      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      const role = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
@@ -1566,6 +1566,17 @@ export async function saveChatGptDownloadableFiles(params: {
   };
 }
 
+function buildAssistantFileCardTurnIndexExpression(): string {
+  return `(() => {
+    const turns = ${buildConversationTurnListExpression()};
+    const turn = turns.at(-1);
+    const assistant = turn?.matches('${ASSISTANT_ROLE_SELECTOR}') ? turn : turn?.querySelector('${ASSISTANT_ROLE_SELECTOR}');
+    const readyCard = assistant?.querySelector('button[aria-label="Download file"]:not(:disabled):not([aria-disabled="true"])') &&
+      assistant.querySelector('button[aria-label^="Open preview of "][aria-busy="false"]');
+    return readyCard ? turns.length - 1 : -1;
+  })()`;
+}
+
 export async function collectChatGptFileArtifacts(params: {
   Browser?: ChromeClient["Browser"];
   Client?: ChromeClient;
@@ -1598,7 +1609,24 @@ export async function collectChatGptFileArtifacts(params: {
   );
   const allFiles = dedupeFiles([...files, ...textFiles]);
   if (allFiles.length === 0) {
-    return { files: [], savedFiles: [], fileCount: 0 };
+    const { result } = await params.Runtime.evaluate({
+      expression: buildAssistantFileCardTurnIndexExpression(),
+      returnByValue: true,
+    });
+    if (
+      typeof result?.value !== "number" ||
+      !Number.isInteger(result.value) ||
+      result.value < Math.max(params.minTurnIndex ?? 0, 0)
+    ) {
+      return { files: [], savedFiles: [], fileCount: 0 };
+    }
+    const savedFiles = await saveAssistantDownloadButtonArtifacts({
+      ...params,
+      files: [],
+      allowGenericDownloadLabels: true,
+      minTurnIndex: Math.max(params.minTurnIndex ?? -1, Number(result?.value ?? -1)),
+    });
+    return { files: [], savedFiles, fileCount: savedFiles.length };
   }
   params.logger?.(`[browser] Found ${allFiles.length} downloadable file candidate(s).`);
   allFiles.forEach((file, index) => {
@@ -1652,6 +1680,7 @@ export async function collectChatGptFileArtifacts(params: {
 }
 
 export const __test__ = {
+  buildAssistantFileCardTurnIndexExpression,
   buildAssistantDownloadableFilesExpression,
   buildClickAssistantDownloadButtonsExpression,
   downloadUrlFromSandboxUrl,

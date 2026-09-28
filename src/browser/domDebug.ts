@@ -9,7 +9,7 @@ export function buildConversationDebugExpression(): string {
     const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
     const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR));
     return turns.map((node) => ({
-      role: node.getAttribute('data-message-author-role'),
+      role: node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1),
       text: node.innerText?.slice(0, 200),
       testid: node.getAttribute('data-testid'),
     }));
@@ -69,7 +69,7 @@ export async function captureBrowserDiagnostics(
   const expression = `(() => {
     const CONVERSATION_SELECTOR = ${JSON.stringify(CONVERSATION_TURN_SELECTOR)};
     const turns = Array.from(document.querySelectorAll(CONVERSATION_SELECTOR)).slice(-6).map((node) => ({
-      role: node.getAttribute('data-message-author-role') || node.getAttribute('data-turn'),
+      role: node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.getAttribute('data-turn'),
       text: (node.innerText || node.textContent || '').slice(0, 2000),
       testid: node.getAttribute('data-testid'),
     }));

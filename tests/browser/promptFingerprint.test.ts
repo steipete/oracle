@@ -7,7 +7,11 @@ import {
 import type { ChromeClient } from "../../src/browser/types.js";
 
 test("captures a new message when earlier turns unmount during submission", async () => {
-  const user = (text: string, id: string) => ({ textContent: text, getAttribute: () => id });
+  const user = (text: string, id: string) => ({
+    textContent: text,
+    getAttribute: () => id,
+    querySelector: () => null,
+  });
   const oldUsers = [user("First", "old-1"), user("Continue", "old-2")];
   let users = oldUsers;
   const runtime = {
@@ -15,7 +19,7 @@ test("captures a new message when earlier turns unmount during submission", asyn
       result: {
         value: new Function("document", `return ${expression}`)({
           querySelectorAll: (selector: string) =>
-            selector === '[data-message-author-role="user"]'
+            selector.includes('[data-message-author-role="user"]')
               ? users
               : users.map((message) => ({ matches: () => false, querySelector: () => message })),
         }),
@@ -72,7 +76,11 @@ test("fingerprints preserve case and meaningful indentation", () => {
 });
 
 test("preserves committed identity when earlier conversation turns are unmounted", async () => {
-  const user = { textContent: "Continue", getAttribute: () => "current-message" };
+  const user = {
+    textContent: "Continue",
+    getAttribute: () => "current-message",
+    querySelector: () => null,
+  };
   const current = { matches: () => false, querySelector: () => user };
   let turns = [
     ...Array.from({ length: 20 }, () => ({ matches: () => false, querySelector: () => null })),
@@ -106,7 +114,11 @@ test("waits for stable message identity instead of fingerprinting text alone", a
 
 test("captures the rendered committed user turn rather than Markdown source", async () => {
   const text = "Heading\nspec\nif active:\n  run()";
-  const user = { textContent: text, getAttribute: () => "current-message" };
+  const user = {
+    textContent: text,
+    getAttribute: () => "current-message",
+    querySelector: () => null,
+  };
   const turn = { matches: () => false, querySelector: () => user };
   const runtime = {
     evaluate: async ({ expression }: { expression: string }) => ({

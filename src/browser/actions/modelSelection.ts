@@ -571,7 +571,7 @@ function buildModelSelectionExpression(
       Boolean(
         menu?.getAttribute?.('data-testid') === 'composer-intelligence-picker-content' ||
           menu?.querySelector?.(INTELLIGENCE_PICKER_SELECTOR) ||
-          menu?.querySelector?.(ADVANCED_VIEW_SELECTOR),
+          menu?.querySelector?.(ADVANCED_VIEW_SELECTOR) || menu?.querySelector?.('[data-model-picker-view-toggle="true"]'),
       );
     const findUnifiedPickerMenu = () =>
       Array.from(document.querySelectorAll(${menuContainerLiteral})).find(isUnifiedPickerMenu) ??
@@ -625,7 +625,7 @@ function buildModelSelectionExpression(
       const scope = menu || findUnifiedPickerMenu() || document;
       return (
         scope?.querySelector?.(
-          '[data-testid="composer-model-picker-slider-advanced-view"] [role="menuitemradio"][aria-checked="true"]',
+          '[data-testid="composer-model-picker-slider-advanced-view"] [role="menuitemradio"][aria-checked="true"], [data-model-selected="true"][role="menuitemradio"][aria-checked="true"]',
         ) ?? null
       );
     };

@@ -701,6 +701,7 @@ function buildThinkingTimeExpression(
       if (!isVisible(menu)) return false;
       if (menu.getAttribute?.('data-testid') === 'composer-intelligence-picker-content') return true;
       if (menu.querySelector?.(INTELLIGENCE_MENU_SELECTOR)) return true;
+      if (menu.querySelector?.('[data-reasoning-slider][role="menuitem"]')) return true;
       const label = menu.querySelector?.('.__menu-label, [class*="menu-label"]');
       const labelText = normalize(label?.textContent ?? '');
       return (
@@ -1101,13 +1102,13 @@ function buildThinkingTimeExpression(
     // the slider's maximum position alone proves that Pro was selected.
     const selectDirectEffortSlider = async (menu) => {
       const view = menu.querySelector?.('[data-model-selection-view="true"]');
-      const simple = view?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
-      if (!simple || simple.getAttribute('data-active') !== 'true' || !isVisible(simple)) return null;
+      const simple = view?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]') || menu.querySelector?.('[data-reasoning-slider]')?.parentElement;
+      if (!simple || (simple.getAttribute('data-active') !== 'true' && !simple.querySelector('[data-reasoning-slider]')) || !isVisible(simple)) return null;
       const resolve = () => {
         const currentView = menu.querySelector?.('[data-model-selection-view="true"]');
-        const currentSimple = currentView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
-        if (currentSimple?.getAttribute('data-active') !== 'true') return null;
-        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]');
+        const currentSimple = currentView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]') || menu.querySelector?.('[data-reasoning-slider]')?.parentElement;
+        if ((!currentSimple || (currentSimple.getAttribute('data-active') !== 'true' && !currentSimple.querySelector('[data-reasoning-slider]')))) return null;
+        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider], [data-reasoning-slider]');
         const control = slider?.closest?.('[role="menuitem"]');
         const thumb = slider?.querySelector?.('[role="slider"]');
         if (!control || !thumb || !isVisible(control)) return null;
@@ -1194,6 +1195,7 @@ function buildThinkingTimeExpression(
     // controlled menu contains the effort levels. Prefer this ownership boundary
     // before probing older model-picker layouts.
     const COMPOSER_EFFORT_PILL_SELECTORS = [
+      'form[data-chatgpt-composer] button[aria-label="Select ChatGPT model"]',
       'form button.__composer-pill',
       '[data-testid="composer-footer-actions"] button.__composer-pill',
       '.__composer-pill-composite button.__composer-pill',
@@ -1204,6 +1206,7 @@ function buildThinkingTimeExpression(
       for (const selector of COMPOSER_EFFORT_PILL_SELECTORS) {
         for (const button of document.querySelectorAll(selector)) {
           if (seen.has(button) || !isVisible(button)) continue;
+          if (button.getAttribute('aria-label') === 'Select ChatGPT model' && button.closest('form[data-chatgpt-composer]')) return button;
           seen.add(button);
           if (button.getAttribute?.('data-testid') === 'model-switcher-dropdown-button') continue;
           // A 5.6 Pro model pill is not Astra Latest's 6-prefixed effort owner.

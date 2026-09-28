@@ -561,8 +561,8 @@ async function readPromptPreviewTurnIndex(
       const turns = ${buildConversationTurnListExpression()};
       let matched = null;
       for (const [index, node] of turns.entries()) {
-        const attr = (node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
-        const isUser = attr === 'user' || Boolean(node.querySelector('[data-message-author-role="user"]'));
+        const attr = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+        const isUser = attr === 'user' || Boolean(node.querySelector(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"])'));
         if (!isUser) continue;
         const text = normalize(node.innerText || node.textContent || '');
         if (text.length > 0 && (text.includes(needle) || needle.includes(text.slice(0, needle.length)))) {

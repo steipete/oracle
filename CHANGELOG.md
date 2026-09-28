@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: recognize ChatGPT's Chat/Work layout while preserving legacy turns, correlate submitted user bubbles and assistant completion controls, recover bound responses after reload, and export generated-file cards; fixes #517.
+
 - Browser: warn when a configured Chrome executable cannot replace a running shared profile, explain how to switch safely, and share reuse handling with Project Sources; fixes #510, thanks @Sogl.
 
 ## 0.21.3 - 2026-09-24

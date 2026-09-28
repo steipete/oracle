@@ -6,7 +6,9 @@ export function buildConversationTurnListExpression(rootExpression = "document")
   const fallbackSelector = JSON.stringify(CONVERSATION_TURN_SELECTOR);
   return `(() => {
     const root = ${rootExpression};
-    const containers = Array.from(root.querySelectorAll(${containerSelector}));
+    const containers = Array.from(root.querySelectorAll(${containerSelector})).filter(
+      node => !node.parentElement?.closest(${containerSelector}),
+    );
     return containers.length > 0
       ? containers
       : Array.from(root.querySelectorAll(${fallbackSelector}));

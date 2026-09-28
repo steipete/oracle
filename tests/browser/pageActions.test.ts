@@ -246,11 +246,13 @@ describe("ensureChatMode", () => {
           return null;
         },
         querySelectorAll: (selector: string) => (selector === "span" ? descendants : []),
+        closest: () => null,
       }),
     );
     const document = {
+      querySelector: () => null,
       querySelectorAll: (selector: string) =>
-        selector === 'a.__menu-item[href*="/c/"]'
+        selector.includes('a.__menu-item[href*="/c/"]')
           ? historyLinks.filter((link) => link.trustedHistory)
           : [],
     };

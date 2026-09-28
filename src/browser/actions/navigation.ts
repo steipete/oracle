@@ -197,6 +197,7 @@ function buildChatModeProbeExpression(): string {
       return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
     };
     const isSelected = (node) =>
+      node?.getAttribute?.('aria-pressed') === 'true' ||
       node?.getAttribute?.('aria-checked') === 'true' ||
       node?.getAttribute?.('data-state') === 'on';
     const conversationIdFromPath = (value) => {
@@ -212,13 +213,24 @@ function buildChatModeProbeExpression(): string {
       node.classList.contains('shrink-0') &&
       node.parentElement?.matches('span.flex.items-center');
 
+    const modeGroup = document.querySelector('[role="group"][aria-label="Composer mode"]');
+    const modeButtons = modeGroup ? Array.from(modeGroup.querySelectorAll('button')).filter(isVisible) : [];
+    const selectedMode = modeButtons.find(isSelected);
+    if (normalize(selectedMode?.textContent) === 'chat') return { status: 'chat-selected' };
+    if (normalize(selectedMode?.textContent) === 'work') {
+      const chatButton = modeButtons.find(node => normalize(node.textContent) === 'chat');
+      if (chatButton) {
+        const rect = chatButton.getBoundingClientRect();
+        return { status: 'work-selected', chatPoint: { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } };
+      }
+    }
     const pathname = typeof location?.pathname === 'string' ? location.pathname : '';
     const conversationId = conversationIdFromPath(pathname);
     if (conversationId) {
       // Conversation messages can contain same-origin links to the current thread. Only sidebar
       // history items use ChatGPT's renderer-owned menu-item anchor class.
       const activeHistoryLinks = Array.from(
-        document.querySelectorAll('a.__menu-item[href*="/c/"]'),
+        document.querySelectorAll('a.__menu-item[href*="/c/"], nav[aria-label="Chat history"] a[href*="/c/"]'),
       ).filter((node) => {
         try {
           const candidateUrl = new URL(node.getAttribute('href') || '', location.origin);
@@ -236,7 +248,7 @@ function buildChatModeProbeExpression(): string {
         const ariaLabels = activeHistoryLinks
           .map((link) => normalize(link.getAttribute('aria-label')))
           .filter(Boolean);
-        if (ariaLabels.length === 0 || ariaLabels.some((aria) => /,\\s*work\\s*$/.test(aria))) {
+        if ((ariaLabels.length === 0 && !activeHistoryLinks.some(link => link.closest('[role="group"][aria-label]'))) || ariaLabels.some((aria) => /,\\s*work\\s*$/.test(aria))) {
           return { status: 'conversation-unresolved' };
         }
         return { status: 'chat-conversation' };
@@ -816,7 +828,7 @@ export function buildCloudflareVerdictExpression(): string {
       title.includes(${JSON.stringify(CLOUDFLARE_TITLE.toLowerCase())}) ||
       (title.includes('attention required') && title.includes('cloudflare'));
     const hasAppShell = Boolean(document.querySelector(
-      '#prompt-textarea, [data-testid="prompt-textarea"], [data-testid^="conversation-turn"], [data-testid="profile-button"], main form[data-type], nav a[href*="/c/"]'
+      'form[data-chatgpt-composer], [data-turn-key], #prompt-textarea, [data-testid="prompt-textarea"], [data-testid^="conversation-turn"], [data-testid="profile-button"], main form[data-type], nav a[href*="/c/"]'
     ));
     const bodyText = String((document.body && document.body.innerText) || '')
       .toLowerCase().replace(/\\s+/g, ' ').trim();

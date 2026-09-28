@@ -465,7 +465,9 @@ export async function captureAssistantMarkdown(
     awaitPromise: true,
   });
   if (result?.value?.success && typeof result.value.markdown === "string") {
-    return result.value.markdown;
+    return result.value.fileCard
+      ? result.value.markdown.replace(/:chatgpt-content-reference\{index="\d+"\}/g, "")
+      : result.value.markdown;
   }
   const status = result?.value?.status;
   if (status && status !== "missing-button") {
@@ -803,7 +805,7 @@ function buildCompletionVisibilityExpression(
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
-      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      const role = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
@@ -826,11 +828,11 @@ function buildCompletionVisibilityExpression(
     if (hasExpectedIdentity) {
       const identityNodes = [
         lastAssistantTurn,
-        ...Array.from(lastAssistantTurn.querySelectorAll('[data-message-id], [data-testid]')),
+        ...Array.from(lastAssistantTurn.querySelectorAll('[data-message-id], [data-testid], [data-content-search-unit-key], [data-turn-key]')),
       ];
       const identityMatches = identityNodes.some((node) =>
-        (EXPECTED_MESSAGE_ID && node.getAttribute?.('data-message-id') === EXPECTED_MESSAGE_ID) ||
-        (EXPECTED_TURN_ID && node.getAttribute?.('data-testid') === EXPECTED_TURN_ID),
+        (EXPECTED_MESSAGE_ID && (node.getAttribute?.('data-message-id') || node.getAttribute?.('data-chatgpt-search-message-ids')?.split(' ')[0] || node.getAttribute?.('data-content-search-unit-key')) === EXPECTED_MESSAGE_ID) ||
+        (EXPECTED_TURN_ID && (node.getAttribute?.('data-turn-key') || node.getAttribute?.('data-testid')) === EXPECTED_TURN_ID),
       );
       if (!identityMatches) return false;
     } else if (MIN_TURN_INDEX < 0 || lastAssistantIndex < MIN_TURN_INDEX) {
@@ -840,6 +842,9 @@ function buildCompletionVisibilityExpression(
     }
 
     if (lastAssistantTurn.querySelector('${FINISHED_ACTIONS_SELECTOR}')) return true;
+    const assistantRoot = lastAssistantTurn.matches(ASSISTANT_SELECTOR) ? lastAssistantTurn : lastAssistantTurn.querySelector(ASSISTANT_SELECTOR);
+    if (assistantRoot?.querySelector('button[aria-label="Download file"]:not(:disabled):not([aria-disabled="true"])') &&
+        assistantRoot.querySelector('button[aria-label^="Open preview of "][aria-busy="false"]')) return true;
     const markdowns = lastAssistantTurn.querySelectorAll('.markdown');
     return Array.from(markdowns).some((node) => (node.textContent || '').trim() === 'Done');
   })()`;
@@ -1032,7 +1037,7 @@ function buildResponseObserverExpression(
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
-      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      const role = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
@@ -1245,7 +1250,7 @@ function buildAssistantExtractor(functionName: string): string {
       if (turnAttr === 'assistant') {
         return true;
       }
-      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      const role = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') {
         return true;
       }
@@ -1283,6 +1288,7 @@ function buildAssistantExtractor(functionName: string): string {
       expandCollapsibles(messageRoot);
       const preferred =
         (messageRoot.matches?.('.markdown') || messageRoot.matches?.('[data-message-content]') ? messageRoot : null) ||
+        messageRoot.querySelector('[data-markdown-text-style="assistant-message"]') ||
         messageRoot.querySelector('.markdown') ||
         messageRoot.querySelector('[data-message-content]') ||
         messageRoot.querySelector('[data-testid*="message"]') ||
@@ -1295,10 +1301,12 @@ function buildAssistantExtractor(functionName: string): string {
       }
       const innerText = contentRoot?.innerText ?? '';
       const textContent = contentRoot?.textContent ?? '';
-      const text = innerText.trim().length > 0 ? innerText : textContent;
-      const html = contentRoot?.innerHTML ?? '';
-      const messageId = messageRoot.getAttribute('data-message-id');
-      const turnId = messageRoot.getAttribute('data-testid');
+      const fileNames = Array.from(messageRoot.querySelectorAll('button[aria-label^="Open preview of "][aria-busy="false"]'))
+        .map(node => node.getAttribute('aria-label').slice('Open preview of '.length));
+      const text = innerText.trim().length > 0 ? innerText : textContent.trim().length > 0 ? textContent : fileNames.join('\\n');
+      const html = fileNames.length > 0 ? messageRoot.innerHTML : contentRoot?.innerHTML ?? '';
+      const messageId = messageRoot.getAttribute('data-message-id') || messageRoot.getAttribute('data-chatgpt-search-message-ids')?.split(' ')[0] || messageRoot.getAttribute('data-content-search-unit-key');
+      const turnId = turn.getAttribute('data-turn-key') || messageRoot.getAttribute('data-testid');
       const generatedImages = Array.from(messageRoot.querySelectorAll('img')).filter((img) =>
         String(img?.src || '').includes('/backend-api/estuary/content?id=file_')
       );
@@ -1357,7 +1365,7 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
       );
     const scoreRoot = (node) => {
       const actions = node.querySelectorAll('${FINISHED_ACTIONS_SELECTOR}').length;
-      const assistants = node.querySelectorAll('[data-message-author-role="assistant"], [data-turn="assistant"]').length;
+      const assistants = node.querySelectorAll(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"]), [data-turn="assistant"]').length;
       const markdowns = node.querySelectorAll(markdownSelector).length;
       return actions * 10 + assistants * 5 + markdowns;
     };
@@ -1381,7 +1389,7 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
     const normalize = (value) => String(value || '').toLowerCase().replace(/\\s+/g, ' ').trim();
     const collectLastUser = (scope) => {
       if (!scope?.querySelectorAll) return null;
-      const userTurns = Array.from(scope.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'));
+      const userTurns = Array.from(scope.querySelectorAll(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"]), [data-turn="user"]'));
       return userTurns[userTurns.length - 1] ?? null;
     };
     const lastUser = collectLastUser(root) || collectLastUser(document);
@@ -1407,10 +1415,10 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
     const markdowns = Array.from(root.querySelectorAll(markdownSelector))
       .filter((node) => !isExcluded(node))
       .filter((node) => {
-        const container = node.closest('[data-message-author-role], [data-turn]');
+        const container = node.closest(':is([data-message-author-role], [data-content-search-unit-key]), [data-turn]');
         if (!container) return true;
         const role =
-          (container.getAttribute('data-message-author-role') || container.getAttribute('data-turn') || '').toLowerCase();
+          (container.getAttribute('data-message-author-role') || container.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || container.getAttribute('data-turn') || '').toLowerCase();
         return role !== 'user';
       });
     if (markdowns.length === 0) return null;
@@ -1419,17 +1427,17 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
     for (const button of actionButtons) {
       const container =
         button.closest('${CONVERSATION_TURN_SELECTOR}') ||
-        button.closest('[data-message-author-role="assistant"], [data-turn="assistant"]') ||
-        button.closest('[data-message-author-role], [data-turn]') ||
+        button.closest(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"]), [data-turn="assistant"]') ||
+        button.closest(':is([data-message-author-role], [data-content-search-unit-key]), [data-turn]') ||
         button.closest('[data-testid*="assistant"]');
       if (!container || container === root || container === document.body) continue;
       const scoped = Array.from(container.querySelectorAll(markdownSelector))
         .filter((node) => !isExcluded(node))
         .filter((node) => {
-          const roleNode = node.closest('[data-message-author-role], [data-turn]');
+          const roleNode = node.closest(':is([data-message-author-role], [data-content-search-unit-key]), [data-turn]');
           if (!roleNode) return true;
           const role =
-            (roleNode.getAttribute('data-message-author-role') || roleNode.getAttribute('data-turn') || '').toLowerCase();
+            (roleNode.getAttribute('data-message-author-role') || roleNode.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || roleNode.getAttribute('data-turn') || '').toLowerCase();
           return role !== 'user';
         });
       if (scoped.length === 0) continue;
@@ -1438,17 +1446,17 @@ function buildMarkdownFallbackExtractor(minTurnLiteral?: string): string {
       }
     }
     const assistantMarkdowns = markdowns.filter((node) => {
-      const container = node.closest('[data-message-author-role], [data-turn], [data-testid*="assistant"]');
+      const container = node.closest(':is([data-message-author-role], [data-content-search-unit-key]), [data-turn], [data-testid*="assistant"]');
       if (!container) return false;
       const role =
-        (container.getAttribute('data-message-author-role') || container.getAttribute('data-turn') || '').toLowerCase();
+        (container.getAttribute('data-message-author-role') || container.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || container.getAttribute('data-turn') || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (container.getAttribute('data-testid') || '').toLowerCase();
       return testId.includes('assistant');
     });
     const hasAssistantIndicators = Boolean(
       root.querySelector('${FINISHED_ACTIONS_SELECTOR}') ||
-        root.querySelector('[data-message-author-role="assistant"], [data-turn="assistant"], [data-testid*="assistant"]'),
+        root.querySelector(':is([data-message-author-role="assistant"], [data-content-search-unit-key$=":assistant"]), [data-turn="assistant"], [data-testid*="assistant"]'),
     );
     const allowMarkdownFallback = hasAssistantIndicators || hasTurns || Boolean(userText);
     const candidates =
@@ -1490,7 +1498,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
     const locateButton = () => {
       const hint = ${JSON.stringify(meta ?? {})};
       if (hint?.messageId) {
-        const node = document.querySelector('[data-message-id="' + hint.messageId + '"]');
+        const node = Array.from(document.querySelectorAll('[data-message-id], [data-content-search-unit-key], [data-chatgpt-search-message-ids]')).find(node => (node.getAttribute('data-message-id') || node.getAttribute('data-chatgpt-search-message-ids')?.split(' ')[0] || node.getAttribute('data-content-search-unit-key')) === hint.messageId)?.closest('[data-turn-key]') || Array.from(document.querySelectorAll('[data-message-id]')).find(node => node.getAttribute('data-message-id') === hint.messageId);
         const buttons = node ? Array.from(node.querySelectorAll('${COPY_BUTTON_SELECTOR}')) : [];
         const button = buttons.at(-1) ?? null;
         if (button) {
@@ -1498,7 +1506,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
         }
       }
       if (hint?.turnId) {
-        const node = document.querySelector('[data-testid="' + hint.turnId + '"]');
+        const node = Array.from(document.querySelectorAll('[data-turn-key], [data-testid]')).find(node => (node.getAttribute('data-turn-key') || node.getAttribute('data-testid')) === hint.turnId);
         const buttons = node ? Array.from(node.querySelectorAll('${COPY_BUTTON_SELECTOR}')) : [];
         const button = buttons.at(-1) ?? null;
         if (button) {
@@ -1511,7 +1519,7 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
         if (!(node instanceof HTMLElement)) return false;
         const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
         if (turnAttr === 'assistant') return true;
-        const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+        const role = (node.getAttribute('data-message-author-role') || node.getAttribute?.('data-content-search-unit-key')?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
         if (role === 'assistant') return true;
         const testId = (node.getAttribute('data-testid') || '').toLowerCase();
         if (testId.includes('assistant')) return true;
@@ -1607,7 +1615,8 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
           const readIntercepted = () => {
             const markdown = interception.state.text ?? '';
             const updatedAt = interception.state.updatedAt ?? 0;
-            return { success: Boolean(markdown.trim()), markdown, updatedAt };
+            return { success: Boolean(markdown.trim()), markdown, updatedAt,
+              fileCard: Boolean(button.closest(${JSON.stringify(CONVERSATION_TURN_SELECTOR)})?.querySelector('${ASSISTANT_ROLE_SELECTOR}')?.querySelector('button[aria-label="Download file"]')) };
           };
 
           let lastText = '';

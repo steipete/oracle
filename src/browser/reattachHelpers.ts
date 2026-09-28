@@ -251,7 +251,7 @@ export async function waitForPromptPreview(
       document.querySelector('main') ||
       document.querySelector('[role="main"]');
     if (!root) return false;
-    const userTurns = Array.from(root.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'));
+    const userTurns = Array.from(root.querySelectorAll(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"]), [data-turn="user"]'));
     const collectText = (nodes) => normalizeText(
       nodes
         .map((node) => (node.innerText || node.textContent || ''))

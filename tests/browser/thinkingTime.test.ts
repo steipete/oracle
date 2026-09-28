@@ -2839,6 +2839,9 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     }
 
     private matchesSelector(selector: string): boolean {
+      if (selector.includes(",")) {
+        return selector.split(",").some((part) => this.matchesSelector(part.trim()));
+      }
       const role = this.attrs.role ?? "";
       const testid = this.attrs["data-testid"] ?? "";
       if (selector === '[data-model-selection-view="true"]') {
@@ -2846,6 +2849,9 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       }
       if (selector === "[data-model-reasoning-effort-slider]") {
         return this.attrs["data-model-reasoning-effort-slider"] !== undefined;
+      }
+      if (selector.includes("[data-reasoning-slider]")) {
+        return this.attrs["data-reasoning-slider"] !== undefined;
       }
       if (selector.includes("composer-model-picker-slider-simple-view")) {
         return testid === "composer-model-picker-slider-simple-view";
@@ -3113,6 +3119,50 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     await expect(run(dom.documentStub, "extra-high", "Latest")).resolves.toEqual({
       status: "already-selected",
       label: "Extra High",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  function useSemanticSlider(dom: ReturnType<typeof buildDirectSlider>) {
+    // The Chat/Work menu owns the slider directly, without the legacy view/test ids.
+    dom.control.setAttribute("data-reasoning-slider", "");
+    dom.control.children.splice(0, dom.control.children.length, dom.thumb);
+    dom.control.closest = () => dom.control;
+    const wrapper = new Node("", {}, [dom.control]);
+    Object.defineProperty(dom.control, "parentElement", { get: () => wrapper });
+    dom.pickerContent.children.splice(0, dom.pickerContent.children.length, wrapper);
+    dom.pill.setAttribute("aria-label", "Select ChatGPT model");
+    dom.pill.closest = () => new Node("", { "data-chatgpt-composer": "" });
+    const querySelectorAll = dom.documentStub.querySelectorAll;
+    dom.documentStub.querySelectorAll = (selector: string) =>
+      selector.includes("Select ChatGPT model") ? [dom.pill] : querySelectorAll(selector);
+    return dom;
+  }
+
+  it("selects Pro on the semantic Chat/Work reasoning slider", async () => {
+    const dom = useSemanticSlider(buildDirectSlider(1));
+    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+      status: "switched",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual(["ArrowRight", "ArrowRight", "ArrowRight"]);
+  });
+
+  it("verifies already-selected Pro on the semantic five-tier slider", async () => {
+    const dom = useSemanticSlider(buildDirectSlider(4));
+    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+      status: "already-selected",
+      label: "Pro",
+    });
+    expect(dom.keys).toEqual([]);
+  });
+
+  it("does not promote semantic four-tier Extra High to Pro", async () => {
+    const dom = useSemanticSlider(buildDirectSlider(3, undefined, 3));
+    dom.announcement.textContent = "Extra High, 4 of 4";
+    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toMatchObject({
+      status: "option-disabled",
+      label: "Pro",
     });
     expect(dom.keys).toEqual([]);
   });
