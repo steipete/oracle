@@ -349,6 +349,7 @@ export interface OracleResponse {
     input_tokens?: number;
     output_tokens?: number;
     reasoning_tokens?: number;
+    output_tokens_details?: { reasoning_tokens?: number };
     total_tokens?: number;
   };
   output_text?: string[];

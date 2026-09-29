@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createGeminiClient, resolveGeminiModelId } from "../src/oracle/gemini.js";
-import type { OracleRequestBody } from "../src/oracle.js";
+import { runOracle, type OracleRequestBody } from "../src/oracle.js";
 import { GoogleGenAI } from "@google/genai";
 
 const { mockGenerateContent, mockGenerateContentStream } = vi.hoisted(() => {
@@ -292,5 +292,40 @@ describe("Gemini Client", () => {
     expect(mockGenerateContent.mock.calls[0]?.[0]).toMatchObject({
       config: { systemInstruction: { role: "system", parts: [{ text: "Sys" }] }, tools: [] },
     });
+  });
+
+  it("bills thinking tokens as output in the run summary", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          text: "Answer",
+          responseId: "resp-thoughts",
+          usageMetadata: {
+            promptTokenCount: 1000,
+            candidatesTokenCount: 50,
+            thoughtsTokenCount: 4000,
+            totalTokenCount: 5050,
+          },
+        };
+      })(),
+    );
+    const logs: string[] = [];
+
+    const result = await runOracle(
+      { prompt: "usage check", model: "gemini-3.1-pro", background: false },
+      {
+        apiKey: "fake-key",
+        client: createGeminiClient("fake-key", "gemini-3.1-pro"),
+        log: (msg: string) => logs.push(msg),
+        write: () => true,
+      },
+    );
+
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: { inputTokens: 1000, outputTokens: 4050, reasoningTokens: 4000, totalTokens: 5050 },
+    });
+    // $2/M input + $12/M output: 1000 * 2e-6 + 4050 * 12e-6
+    expect(logs.join("\n")).toContain("$0.0506");
   });
 });

@@ -194,6 +194,7 @@ function buildOpenRouterCompletionClient(instance: OpenAI): ClientLike {
     const usage = {
       input_tokens: response.usage?.prompt_tokens ?? 0,
       output_tokens: response.usage?.completion_tokens ?? 0,
+      reasoning_tokens: response.usage?.completion_tokens_details?.reasoning_tokens,
       total_tokens: response.usage?.total_tokens ?? 0,
     };
     return {

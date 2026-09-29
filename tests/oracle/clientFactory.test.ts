@@ -237,6 +237,49 @@ describe("createDefaultClientFactory", () => {
     expect(captured[0]).not.toHaveProperty("reasoning_effort");
   });
 
+  test("keeps gateway reasoning tokens from completion_tokens_details", async () => {
+    process.env.ORACLE_CLIENT_FACTORY = "";
+
+    class MockOpenAI {
+      chat = {
+        completions: {
+          create: async () => ({
+            id: "cmpl-test",
+            choices: [{ message: { role: "assistant", content: "ok" } }],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 80,
+              completion_tokens_details: { reasoning_tokens: 60 },
+              total_tokens: 180,
+            },
+            created: 0,
+            model: "m",
+            object: "chat.completion",
+          }),
+        },
+      };
+    }
+
+    vi.doMock("openai", () => ({ __esModule: true, default: MockOpenAI }));
+
+    const { createDefaultClientFactory } = await import("../../src/oracle/client.js");
+    const factory = createDefaultClientFactory();
+    const client = factory("key", { model: "gpt-5.1", baseUrl: "https://litellm.test/v1" });
+
+    const response = await client.responses.create({
+      model: "gpt-5.1",
+      instructions: "sys",
+      input: [{ role: "user", content: [{ type: "input_text", text: "hi" }] }],
+    });
+
+    expect(response.usage).toEqual({
+      input_tokens: 100,
+      output_tokens: 80,
+      reasoning_tokens: 60,
+      total_tokens: 180,
+    });
+  });
+
   test("creates OpenAI clients for default and Azure paths", async () => {
     process.env.ORACLE_CLIENT_FACTORY = "";
     const { createDefaultClientFactory } = await import("../../src/oracle/client.js");
