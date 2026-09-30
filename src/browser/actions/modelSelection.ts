@@ -429,7 +429,13 @@ function buildModelSelectionExpression(
       } catch {}
     };
 
-    const getButtonLabel = () => (findModelButton()?.textContent ?? '').trim();
+    // The current composer trigger contains aria-hidden measurement text ("Thinking effort")
+    // before its visible label. Reading textContent would turn a visible "6 Pro"/"Pro" into
+    // "Thinking effortThinking effortPro" and obscure the actual selection.
+    const getButtonLabel = () => {
+      const button = findModelButton();
+      return (button?.innerText ?? button?.textContent ?? '').trim();
+    };
     // With the picker closed the only evidence for "Latest" is the composer pill, so a version-less
     // "latest" target must be decided on it: the blank composer signal would otherwise pass as
     // "already selected" while GPT-5.6 Sol is active. Defined here, before getResolvedLabel, because
@@ -571,12 +577,16 @@ function buildModelSelectionExpression(
       Boolean(
         menu?.getAttribute?.('data-testid') === 'composer-intelligence-picker-content' ||
           menu?.querySelector?.(INTELLIGENCE_PICKER_SELECTOR) ||
-          menu?.querySelector?.(ADVANCED_VIEW_SELECTOR),
+          menu?.querySelector?.(ADVANCED_VIEW_SELECTOR) ||
+          (menu?.querySelector?.('[data-model-picker-view]') &&
+            menu?.getAttribute?.('aria-labelledby') === findModelButton()?.id),
       );
     const findUnifiedPickerMenu = () =>
       Array.from(document.querySelectorAll(${menuContainerLiteral})).find(isUnifiedPickerMenu) ??
       null;
     const findAdvancedToggle = (menu) => {
+      const semanticToggle = menu?.querySelector?.('[data-model-picker-view-toggle="true"]');
+      if (semanticToggle && isVisibleElement(semanticToggle)) return semanticToggle;
       for (const item of (menu || document).querySelectorAll('[role="menuitem"]')) {
         if (!isVisibleElement(item)) continue;
         if (containsPickerWord(pickerNodeLabel(item), ADVANCED_WORDS)) return item;
@@ -626,7 +636,11 @@ function buildModelSelectionExpression(
       return (
         scope?.querySelector?.(
           '[data-testid="composer-model-picker-slider-advanced-view"] [role="menuitemradio"][aria-checked="true"]',
-        ) ?? null
+        ) ??
+        scope?.querySelector?.(
+          '[data-model-picker-view] [role="menuitemradio"][aria-checked="true"]',
+        ) ??
+        null
       );
     };
     const getAdvancedModelLabel = () => {

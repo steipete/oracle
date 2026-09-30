@@ -1983,9 +1983,9 @@ function buildUserTurnAttachmentExpression(options: {
     }
     const turns = ${buildConversationTurnListExpression()};
     const userTurns = turns.map((node, index) => ({ node, index })).filter(({ node }) => {
-      const attr = (node.getAttribute('data-message-author-role') || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
+      const attr = (node.getAttribute('data-message-author-role') || (node.getAttribute?.('data-content-search-unit-key') || node.getAttribute?.('data-chatgpt-search-unit-key'))?.split(':').at(-1) || node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (attr === 'user') return true;
-      return Boolean(node.querySelector('[data-message-author-role="user"]'));
+      return Boolean(node.querySelector(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"])'));
     });
     const eligibleTurns =
       MIN_TURN_INDEX === null ? userTurns : userTurns.filter(({ index }) => index >= MIN_TURN_INDEX);
@@ -2081,17 +2081,55 @@ export function buildUserTurnAttachmentExpressionForTest(options?: {
   });
 }
 
+export interface AttachmentVisibleOptions {
+  /**
+   * Count a file input that still holds the file (default true). ChatGPT's change handler empties
+   * the input whenever it runs, whether it keeps the file or not, so after Oracle filled that
+   * input itself the FileList shows only that the handler has not run; such callers pass false.
+   */
+  countFileInput?: boolean;
+}
+
 export async function waitForAttachmentVisible(
   Runtime: ChromeClient["Runtime"],
   expectedName: string,
   timeoutMs: number,
   logger?: BrowserLogger,
   evidenceId?: string,
+  options: AttachmentVisibleOptions = {},
 ): Promise<void> {
   // Attachments can take a few seconds to render in the composer (headless/remote Chrome is slower),
   // so respect the caller-provided timeout instead of capping at 2s.
   const deadline = Date.now() + timeoutMs;
-  const expression = `(() => {
+  while (Date.now() < deadline) {
+    if (await isAttachmentVisible(Runtime, expectedName, evidenceId, options)) {
+      return;
+    }
+    await delay(200);
+  }
+  logger?.("Attachment not visible in composer; giving up.");
+  await logDomFailure(Runtime, logger ?? (() => {}), "attachment-visible");
+  throw new Error("Attachment did not appear in ChatGPT composer.");
+}
+
+/** One read of whether the composer shows `expectedName` as attached. Never waits or logs. */
+export async function isAttachmentVisible(
+  Runtime: ChromeClient["Runtime"],
+  expectedName: string,
+  evidenceId?: string,
+  { countFileInput = true }: AttachmentVisibleOptions = {},
+): Promise<boolean> {
+  if (evidenceId) await confirmAttachmentEvidence(Runtime, evidenceId);
+  const { result } = await Runtime.evaluate({
+    expression: buildAttachmentVisibleExpression(expectedName, countFileInput),
+    returnByValue: true,
+  });
+  return Boolean((result?.value as { found?: boolean } | undefined)?.found);
+}
+
+function buildAttachmentVisibleExpression(expectedName: string, countFileInput: boolean): string {
+  return `(() => {
+    const countFileInput = ${JSON.stringify(countFileInput)};
     if ((${buildAttachmentEvidenceExpression([expectedName])})[0]) return { found: true, source: 'upload-evidence' };
     const namePattern = new RegExp(${JSON.stringify(buildAttachmentNamePattern(expectedName, true)?.source ?? "(?!)")}, 'iu');
     const matchesExpectedFileName = (value) => {
@@ -2109,7 +2147,7 @@ export async function waitForAttachmentVisible(
       return candidates.some(matchesExpectedFileName);
     };
 
-    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    const inputs = countFileInput ? Array.from(document.querySelectorAll('input[type="file"]')) : [];
     for (const input of inputs) {
       if (!(input instanceof HTMLInputElement)) continue;
       const files = Array.from(input.files || []);
@@ -2185,18 +2223,6 @@ export async function waitForAttachmentVisible(
 
     return { found: false };
   })()`;
-  while (Date.now() < deadline) {
-    if (evidenceId) await confirmAttachmentEvidence(Runtime, evidenceId);
-    const { result } = await Runtime.evaluate({ expression, returnByValue: true });
-    const value = result?.value as { found?: boolean } | undefined;
-    if (value?.found) {
-      return;
-    }
-    await delay(200);
-  }
-  logger?.("Attachment not visible in composer; giving up.");
-  await logDomFailure(Runtime, logger ?? (() => {}), "attachment-visible");
-  throw new Error("Attachment did not appear in ChatGPT composer.");
 }
 
 async function waitForAttachmentAnchored(

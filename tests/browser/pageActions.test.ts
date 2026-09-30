@@ -24,6 +24,7 @@ import * as attachments from "../../src/browser/actions/attachments.js";
 import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDataTransfer.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 import { BrowserAutomationError } from "../../src/oracle/errors.js";
+import { FakeDocument, FakeElement, FakeInputElement } from "./domFixture.js";
 
 const logger = vi.fn();
 
@@ -170,6 +171,46 @@ describe("ensurePromptReady", () => {
     } as unknown as ChromeClient["Runtime"];
     await expect(ensurePromptReady(runtime, 0, logger)).rejects.toThrow(/textarea did not appear/i);
   });
+
+  const preHydrationShell = () =>
+    new FakeDocument([new FakeElement("textarea", { id: "pending-home-input" })]);
+  const hydratedComposer = () =>
+    new FakeDocument([
+      new FakeElement("form", {}, [
+        new FakeElement("div", { class: "ProseMirror", contenteditable: "true", role: "textbox" }),
+        new FakeInputElement([]),
+      ]),
+    ]);
+  const runtimeOver = (pages: Array<() => FakeDocument>) => {
+    let calls = 0;
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      const document = pages[Math.min(calls, pages.length - 1)]();
+      calls += 1;
+      try {
+        return {
+          result: {
+            value: new Function("document", `return ${expression};`)(document),
+          },
+        };
+      } catch {
+        return { result: { value: undefined } };
+      }
+    });
+    return { evaluate } as unknown as ChromeClient["Runtime"] & { evaluate: typeof evaluate };
+  };
+
+  test("does not accept ChatGPT's pre-hydration placeholder as a composer", async () => {
+    const runtime = runtimeOver([preHydrationShell]);
+    await expect(ensurePromptReady(runtime, 300, logger)).rejects.toThrow(
+      /textarea did not appear/i,
+    );
+  });
+
+  test("waits for the hydrated composer that replaces the placeholder", async () => {
+    const runtime = runtimeOver([preHydrationShell, preHydrationShell, hydratedComposer]);
+    await expect(ensurePromptReady(runtime, 5_000, logger)).resolves.toBeUndefined();
+    expect(runtime.evaluate).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("ensureChatMode", () => {
@@ -186,6 +227,10 @@ describe("ensureChatMode", () => {
     ) {
       const tokens = new Set(classes);
       this.classList = { contains: (value: string) => tokens.has(value) };
+    }
+
+    closest(): null {
+      return null;
     }
 
     hasAttribute(name: string) {
@@ -246,11 +291,14 @@ describe("ensureChatMode", () => {
           return null;
         },
         querySelectorAll: (selector: string) => (selector === "span" ? descendants : []),
+        closest: () => null,
+        querySelector: () => null,
       }),
     );
     const document = {
+      querySelector: () => null,
       querySelectorAll: (selector: string) =>
-        selector === 'a.__menu-item[href*="/c/"]'
+        selector.includes('a.__menu-item[href*="/c/"]')
           ? historyLinks.filter((link) => link.trustedHistory)
           : [],
     };
@@ -701,6 +749,32 @@ describe("waitForResumedConversationHydration", () => {
           actualConversationId: "other-thread",
         },
       });
+      await vi.runAllTimersAsync();
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("counts current search-unit messages as stable prior turns", async () => {
+    const document = new FakeDocument([
+      new FakeElement("div", { "data-content-search-turn-key": "fallback-turn-0" }, [
+        new FakeElement("div", { "data-content-search-unit-key": "fallback-turn-0:0:user" }),
+        new FakeElement("div", { "data-content-search-unit-key": "fallback-turn-0:2:assistant" }),
+      ]),
+    ]);
+    vi.useFakeTimers();
+    try {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+          result: { value: new Function("document", `return ${expression};`)(document) },
+        })),
+      } as unknown as ChromeClient["Runtime"];
+      const promise = waitForResumedConversationHydration(runtime, 5_000, logger, {
+        requirePriorTurns: true,
+        requirePromptReady: false,
+      });
+      const assertion = expect(promise).resolves.toBe(2);
       await vi.runAllTimersAsync();
       await assertion;
     } finally {
@@ -1743,7 +1817,9 @@ describe("waitForAssistantResponse", () => {
     expect(capturedExpression).toContain("characterData: true");
     expect(capturedExpression).toContain("copy-turn-action-button");
     expect(capturedExpression).toContain("isLastAssistantTurnFinished");
-    expect(capturedExpression).toContain("lastAssistantTurn.querySelector(FINISHED_SELECTOR)");
+    expect(capturedExpression).toContain(
+      "findTurnAction(lastAssistantTurn, FINISHED_SELECTOR, FINISHED_SELECTOR)",
+    );
     expect(capturedExpression).not.toContain("document.querySelector(FINISHED_SELECTOR)");
     expect(capturedExpression).toContain("lastAssistantTurn.querySelectorAll('.markdown')");
     expect(capturedExpression).not.toContain("document.querySelectorAll('.markdown')");

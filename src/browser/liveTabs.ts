@@ -207,18 +207,18 @@ function buildTabInspectionExpression(): string {
       const promptReady = Boolean(promptNode);
       const turns = ${buildConversationTurnListExpression()};
       const assistantTurns = turns.filter((turn) => {
-        const role = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
+        const role = normalize(turn.getAttribute('data-message-author-role') || (turn.getAttribute?.('data-content-search-unit-key') || turn.getAttribute?.('data-chatgpt-search-unit-key'))?.split(':').at(-1) || turn.getAttribute('data-turn')).toLowerCase();
         if (role === 'assistant') return true;
         return Boolean(turn.querySelector(ASSISTANT_ROLE_SELECTOR));
       });
       const fallbackUserTurns = Array.from(
-        document.querySelectorAll('[data-message-author-role="user"], [data-turn="user"]'),
+        document.querySelectorAll(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"]), [data-turn="user"]'),
       );
       const userTurns = turns.filter((turn) => {
-        const role = normalize(turn.getAttribute('data-message-author-role') || turn.getAttribute('data-turn')).toLowerCase();
+        const role = normalize(turn.getAttribute('data-message-author-role') || (turn.getAttribute?.('data-content-search-unit-key') || turn.getAttribute?.('data-chatgpt-search-unit-key'))?.split(':').at(-1) || turn.getAttribute('data-turn')).toLowerCase();
         if (role === 'user') return true;
         return Boolean(
-          turn.querySelector('[data-message-author-role="user"], [data-turn="user"]'),
+          turn.querySelector(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"]), [data-turn="user"]'),
         );
       });
       const answerNode = ANSWER_SELECTORS
@@ -271,9 +271,9 @@ function buildTabInspectionExpression(): string {
       const assistantCount = new Set(assistantOwners).size;
       const lastAssistantText = normalize(lastAssistantNode?.textContent);
       const lastUserText = normalize(lastUserTurn?.textContent);
-      const lastUserMessage = lastUserTurn?.matches?.('[data-message-author-role="user"]')
-        ? lastUserTurn : lastUserTurn?.querySelector?.('[data-message-author-role="user"]');
-      const userContent = lastUserMessage?.querySelectorAll?.('[class~="whitespace-pre-wrap"]');
+      const lastUserMessage = lastUserTurn?.matches?.(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"])')
+        ? lastUserTurn : lastUserTurn?.querySelector?.(':is([data-message-author-role="user"], [data-content-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":user"])');
+      const userContent = lastUserMessage?.querySelectorAll?.('[data-user-message-bubble="true"], [class~="whitespace-pre-wrap"]');
       const authenticated = !loginButtonExists && (promptReady || sendExists || stopExists || assistantCount > 0);
       return {
         title: normalize(document.title),
@@ -290,9 +290,9 @@ function buildTabInspectionExpression(): string {
         lastAssistantTurnIndex,
         lastUserTurnIndex,
         lastUserText,
-        lastUserTextRaw: lastUserMessage?.textContent,
+        lastUserTextRaw: (lastUserMessage?.querySelector?.('[data-user-message-bubble="true"]') || lastUserMessage)?.textContent,
         lastUserContentText: userContent?.length === 1 ? userContent[0].textContent : undefined,
-        lastUserMessageId: lastUserMessage?.getAttribute?.('data-message-id'),
+        lastUserMessageId: lastUserMessage?.getAttribute?.('data-message-id') || lastUserMessage?.getAttribute?.('data-chatgpt-selection-message-id') || lastUserMessage?.getAttribute?.('data-chatgpt-search-message-ids')?.split(' ')[0] || lastUserMessage?.closest?.('[data-turn-key]')?.getAttribute?.('data-turn-key') || lastUserMessage?.getAttribute?.('data-content-search-unit-key') || lastUserMessage?.getAttribute?.('data-chatgpt-search-unit-key'),
         visibilityState: document.visibilityState,
         focused: Boolean(document.hasFocus?.()),
       };

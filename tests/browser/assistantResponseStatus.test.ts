@@ -1,10 +1,12 @@
 import { createContext, Script } from "node:vm";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
+  advanceCompletionAnnouncementGate,
   buildActiveThinkingStatusPredicateJsForTest,
   buildAnswerNowPlaceholderPredicateJs,
   buildAssistantSnapshotExpressionForTest,
   buildCompletionVisibilityExpressionForTest,
+  buildCopyExpressionForTest,
   buildMarkdownFallbackExtractorForTest,
   buildResponseObserverExpressionForTest,
   buildStopButtonVisibilityExpressionForTest,
@@ -21,6 +23,7 @@ import {
   buildThinkingActivityDetailsPredicateJsForTest,
 } from "../../src/browser/actions/thinkingStatus.js";
 import { STOP_BUTTON_SELECTORS } from "../../src/browser/constants.js";
+import { FakeDocument, FakeElement } from "./domFixture.js";
 
 // Completed-summary shapes the veto must treat as NOT active: bare, heading-prefixed
 // (the GPT-5.6 DOM renders "Reasoning Thought for 12s"), worded non-numeric durations,
@@ -196,11 +199,19 @@ describe("completion action correlation", () => {
     getAttribute(name: string): string | null {
       return this.attrs[name] ?? null;
     }
-    querySelector(): object | null {
-      return this.finished ? {} : null;
+    matches(selector: string): boolean {
+      return (
+        this.attrs["data-turn"] === "assistant" && selector.includes('[data-turn="assistant"]')
+      );
     }
-    querySelectorAll(): FakeTurn[] {
-      return [];
+    closest(): null {
+      return null;
+    }
+    querySelector(selector: string): object | null {
+      return this.querySelectorAll(selector)[0] ?? null;
+    }
+    querySelectorAll(selector: string): Array<{ closest: () => null }> {
+      return this.finished && selector.includes("button") ? [{ closest: () => null }] : [];
     }
   }
 
@@ -208,16 +219,26 @@ describe("completion action correlation", () => {
     messageId?: string;
     minTurnIndex?: number;
     turns: FakeTurn[];
+    completionStatus?: string;
+    allowPageStatus?: boolean;
   }): boolean {
     const expression = buildCompletionVisibilityExpressionForTest(
       { messageId: args.messageId },
       args.minTurnIndex,
+      args.allowPageStatus,
     );
     const context = createContext({
       Array,
       Boolean,
       HTMLElement: FakeTurn,
-      document: { querySelectorAll: () => args.turns },
+      document: {
+        querySelectorAll: (selector: string) =>
+          selector.includes('[role="status"]')
+            ? args.completionStatus
+              ? [{ textContent: args.completionStatus }]
+              : []
+            : args.turns,
+      },
     });
     return new Script(expression).runInContext(context) as boolean;
   }
@@ -240,6 +261,50 @@ describe("completion action correlation", () => {
     ).toBe(true);
   });
 
+  test("accepts the completed announcement for the current assistant turn", () => {
+    const userTurn = new FakeTurn({ "data-turn": "user" }, false);
+    const currentTurn = new FakeTurn({ "data-turn": "assistant" }, false);
+    expect(
+      evaluateCompletionVisibility({
+        minTurnIndex: 1,
+        turns: [userTurn, currentTurn],
+        completionStatus: "Response complete",
+        allowPageStatus: true,
+      }),
+    ).toBe(true);
+    expect(
+      evaluateCompletionVisibility({
+        minTurnIndex: 2,
+        turns: [userTurn, currentTurn],
+        completionStatus: "Response complete",
+        allowPageStatus: true,
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects a stale page-wide completion announcement for a new turn", () => {
+    const userTurn = new FakeTurn({ "data-turn": "user" }, false);
+    const currentTurn = new FakeTurn({ "data-turn": "assistant" }, false);
+    expect(
+      evaluateCompletionVisibility({
+        minTurnIndex: 1,
+        turns: [userTurn, currentTurn],
+        completionStatus: "Response complete",
+      }),
+    ).toBe(false);
+
+    let gate = { turnKey: null as string | null, sawIncomplete: false };
+    const stale = advanceCompletionAnnouncementGate(gate, "1:current", true);
+    expect(stale.accept).toBe(false);
+    gate = stale.state;
+    const working = advanceCompletionAnnouncementGate(gate, "1:current", false);
+    expect(working.accept).toBe(false);
+    gate = working.state;
+    const complete = advanceCompletionAnnouncementGate(gate, "1:current", true);
+    expect(complete.accept).toBe(true);
+    expect(advanceCompletionAnnouncementGate(complete.state, "2:next", true).accept).toBe(false);
+  });
+
   test("rejects controls whose assistant identity differs from the sample", () => {
     const oldTurn = new FakeTurn(
       { "data-turn": "assistant", "data-message-id": "old-message" },
@@ -260,6 +325,200 @@ describe("completion action correlation", () => {
     expect(expression).toContain("completionVisible: actionMarkdowns.includes(node)");
     expect(expression).toContain("return Boolean(lastUser.compareDocumentPosition(node) & 4)");
     expect(expression).toContain("if (!hasTurns) return isAfterCurrentUser(node)");
+  });
+
+  test("accepts completion after a keyed-only user turn", () => {
+    const answer = {
+      innerText: "Completed answer",
+      textContent: "Completed answer",
+      innerHTML: "<p>Completed answer</p>",
+      closest: () => null,
+      matches: () => true,
+    };
+    const user = {
+      innerText: "Submitted prompt",
+      textContent: "Submitted prompt",
+      compareDocumentPosition: (node: unknown) => (node === answer ? 4 : 0),
+      contains: () => false,
+    };
+    const assistant = { contains: (node: unknown) => node === answer };
+    const status = { textContent: "Response complete" };
+    const root = {
+      querySelectorAll: (selector: string) => {
+        if (selector.includes('key$=":user"')) return [user];
+        if (selector.startsWith(".markdown")) return [answer];
+        return [];
+      },
+      querySelector: () => null,
+    };
+    const document = {
+      body: root,
+      querySelector: (selector: string) => (selector === "main" ? root : null),
+      querySelectorAll: (selector: string) => {
+        if (selector.includes('[data-testid^="conversation-turn"]')) {
+          return [user, assistant];
+        }
+        if (selector.includes('key$=":user"')) return [user];
+        if (selector === '[role="status"][aria-live="polite"]') return [status];
+        return [];
+      },
+    };
+    const snapshot = Function(
+      "document",
+      `return ${buildMarkdownFallbackExtractorForTest("1")};`,
+    )(document)();
+    expect(snapshot).toMatchObject({
+      text: "Completed answer",
+      turnIndex: 1,
+      completionVisible: false,
+    });
+  });
+});
+
+describe("current ChatGPT search-unit action bars", () => {
+  class FakeButton extends FakeElement {
+    constructor(
+      label: string,
+      private readonly copiedText?: string,
+      attributes: Record<string, string> = {},
+    ) {
+      super("button", { "aria-label": label, ...attributes });
+    }
+    addEventListener() {}
+    removeEventListener() {}
+    scrollIntoView() {}
+    dispatchEvent(event: {
+      type: string;
+      view: { navigator: { clipboard: { writeText(text: string): Promise<void> } } };
+    }) {
+      if (event.type === "click" && this.copiedText !== undefined) {
+        void event.view.navigator.clipboard.writeText(this.copiedText);
+      }
+      return true;
+    }
+  }
+
+  function exchange(index: number, answer: string, finished: boolean): FakeElement {
+    const user = new FakeElement("div", {
+      "data-content-search-unit-key": `fallback-turn-${index}:0:user`,
+    });
+    const assistant = new FakeElement(
+      "div",
+      { "data-content-search-unit-key": `fallback-turn-${index}:2:assistant` },
+      [
+        new FakeElement("div", { class: "MarkdownRoot" }, [
+          new FakeElement("p", {}, [], answer),
+          new FakeButton("Copy", "code block only"),
+        ]),
+      ],
+    );
+    const actions = new FakeElement("div", { class: "turn-action-controls" }, [
+      new FakeButton("Copy", `## ${answer}`),
+      new FakeButton("Share"),
+    ]);
+    return new FakeElement("div", { "data-content-search-turn-key": `fallback-turn-${index}` }, [
+      user,
+      assistant,
+      ...(finished ? [actions] : []),
+    ]);
+  }
+
+  const page = (...turns: FakeElement[]) =>
+    new FakeDocument([
+      new FakeElement("main", {}, [
+        new FakeElement("div", { "data-testid": "app-shell-header" }, [new FakeButton("Share")]),
+        ...turns,
+      ]),
+    ]);
+
+  const completion = (document: FakeDocument, minTurnIndex: number) =>
+    new Script(buildCompletionVisibilityExpressionForTest({}, minTurnIndex)).runInContext(
+      createContext({ Array, Boolean, String, HTMLElement: FakeElement, document }),
+    );
+
+  async function copyMarkdown(document: FakeDocument): Promise<unknown> {
+    vi.useFakeTimers();
+    try {
+      const navigator = {
+        clipboard: { writeText: async (_text: string) => {}, write: async () => {} },
+      };
+      const context = createContext({
+        Array,
+        Boolean,
+        Date,
+        Number,
+        Promise,
+        String,
+        setTimeout,
+        clearTimeout,
+        setInterval,
+        clearInterval,
+        HTMLElement: FakeElement,
+        EventTarget: FakeElement,
+        MouseEvent: class {
+          readonly view: unknown;
+          constructor(
+            readonly type: string,
+            init: { view?: unknown },
+          ) {
+            this.view = init.view;
+          }
+        },
+        navigator,
+        window: { navigator },
+        document,
+      });
+      const result = new Script(buildCopyExpressionForTest({})).runInContext(context);
+      await vi.advanceTimersByTimeAsync(11_000);
+      return await result;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  test("proves completion only from the current assistant's finished action bar", () => {
+    expect(completion(page(exchange(0, "Finished answer", true)), 0)).toBe(true);
+    expect(completion(page(exchange(0, "Streaming answer", false)), 0)).toBe(false);
+    expect(
+      completion(page(exchange(0, "Old answer", true), exchange(1, "New answer", false)), 2),
+    ).toBe(false);
+    expect(
+      completion(page(exchange(0, "Old answer", true), exchange(1, "New answer", true)), 2),
+    ).toBe(true);
+  });
+
+  test("copies markdown from the current assistant action bar, not a code block", async () => {
+    await expect(copyMarkdown(page(exchange(0, "Finished answer", true)))).resolves.toMatchObject({
+      success: true,
+      markdown: "## Finished answer",
+    });
+  });
+
+  test("does not copy an earlier answer when the new assistant has no action bar", async () => {
+    await expect(
+      copyMarkdown(page(exchange(0, "Old answer", true), exchange(1, "New answer", false))),
+    ).resolves.toMatchObject({ success: false, status: "missing-button" });
+  });
+
+  test("keeps older role/testid completion and copy controls working", async () => {
+    const legacyTurn = new FakeElement(
+      "article",
+      { "data-testid": "conversation-turn-2", "data-turn": "assistant" },
+      [
+        new FakeElement("div", { "data-message-author-role": "assistant" }, [
+          new FakeElement("div", { class: "markdown" }, [], "Legacy answer"),
+        ]),
+        new FakeButton("Copy", "Legacy **answer**", {
+          "data-testid": "copy-turn-action-button",
+        }),
+      ],
+    );
+    const document = page(legacyTurn);
+    expect(completion(document, 0)).toBe(true);
+    await expect(copyMarkdown(document)).resolves.toMatchObject({
+      success: true,
+      markdown: "Legacy **answer**",
+    });
   });
 });
 

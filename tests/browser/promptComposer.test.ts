@@ -2,8 +2,10 @@ import { describe, expect, test, vi } from "vitest";
 import {
   __test__ as promptComposer,
   buildAttachmentReadyExpressionForTest,
+  buildChatListRateLimitExpressionForTest,
   clearPromptComposer,
   submitPrompt,
+  warnIfChatListRateLimited,
 } from "../../src/browser/actions/promptComposer.js";
 import {
   CONVERSATION_TURN_CONTAINER_SELECTOR,
@@ -72,6 +74,86 @@ const evaluateAttachmentReady = (expectedName: string, visibleName: string): boo
 };
 
 describe("promptComposer", () => {
+  test("warns without blocking when ChatGPT's conversation list is loading after HTTP 429", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({ result: { value: true } }),
+    };
+    const logger = vi.fn();
+    await expect(
+      warnIfChatListRateLimited(runtime as never, logger as never),
+    ).resolves.toBeUndefined();
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("attempting the composer send anyway"),
+    );
+    const expression = buildChatListRateLimitExpressionForTest();
+    const pageState = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      {
+        readyState: "complete",
+        querySelector: (selector: string) => (selector === "form" ? {} : null),
+        querySelectorAll: () => [{ textContent: "Loading chats" }],
+      },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations?offset=0", responseStatus: 429 },
+          { name: "https://chatgpt.com/backend-api/conversations?offset=20", responseStatus: 429 },
+          { name: "https://chatgpt.com/backend-api/conversations?offset=40", responseStatus: 200 },
+        ],
+      },
+      { href: "https://chatgpt.com/" },
+    );
+    expect(pageState).toBe(true);
+    const failedHistoryState = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      { querySelectorAll: () => [{ textContent: "Unable to load history Retry" }] },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations", responseStatus: 429 },
+        ],
+      },
+      { href: "https://chatgpt.com/" },
+    );
+    expect(failedHistoryState).toBe(true);
+    const resumedConversation = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      { querySelectorAll: () => [{ textContent: "Loading chats" }] },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations", responseStatus: 429 },
+        ],
+      },
+      { href: "https://chatgpt.com/c/existing", pathname: "/c/existing" },
+    );
+    expect(resumedConversation).toBe(false);
+    const loadedState = Function(
+      "document",
+      "performance",
+      "location",
+      `return ${expression};`,
+    )(
+      { querySelectorAll: () => [] },
+      {
+        getEntriesByType: () => [
+          { name: "https://chatgpt.com/backend-api/conversations", responseStatus: 429 },
+        ],
+      },
+      { href: "https://chatgpt.com/" },
+    );
+    expect(loadedState).toBe(false);
+  });
+
   test.each([
     ["mcp.md", "mcp(7).md", true],
     ["mcp.md", "remove file 1: mcp(7).md", true],
@@ -316,6 +398,101 @@ describe("promptComposer", () => {
     }
   });
 
+  describe("prompt delivery into a contenteditable composer", () => {
+    // ChatGPT's newer ProseMirror composer treats a typed newline as Enter: a multi-line prompt was
+    // submitted after its first line and the rest silently dropped (#517). Multi-line text is pasted.
+    const run = async (prompt: string) => {
+      const calls: string[] = [];
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("ClipboardEvent('paste'")) {
+            calls.push("paste");
+            return {
+              result: {
+                value: { used: true, complete: true, length: prompt.replace(/\s+/g, "").length },
+              },
+            };
+          }
+          if (expression.includes("editorText")) throw new Error("stop-after-insert");
+          return { result: { value: { focused: true, ready: true, composer: true } } };
+        }),
+      };
+      const input = {
+        insertText: vi.fn(async () => calls.push("insertText")),
+        dispatchKeyEvent: vi.fn(),
+      };
+      await expect(
+        submitPrompt(
+          { runtime: runtime as never, input: input as never },
+          prompt,
+          Object.assign(vi.fn(), { verbose: false }) as never,
+        ),
+      ).rejects.toThrow("stop-after-insert");
+      return calls;
+    };
+
+    test("pastes a multi-line prompt instead of typing it", async () => {
+      expect(await run("line one\n\nline two\n```\ncode\n```")).toEqual(["paste"]);
+    });
+
+    test("still types a single-line prompt", async () => {
+      expect(await run("Reply with exactly one word: pong")).toEqual(["insertText"]);
+    });
+  });
+
+  describe("chunked paste completeness", () => {
+    const attempt = async (pasteValue: Record<string, unknown>) => {
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+          if (expression.includes("ClipboardEvent('paste'"))
+            return { result: { value: pasteValue } };
+          if (expression.includes("editorText")) throw new Error("stop-after-insert");
+          return { result: { value: { focused: true, ready: true, composer: true } } };
+        }),
+      };
+      const input = { insertText: vi.fn(), dispatchKeyEvent: vi.fn() };
+      const outcome = submitPrompt(
+        { runtime: runtime as never, input: input as never },
+        "first line\n" + "x".repeat(30_000),
+        Object.assign(vi.fn(), { verbose: false }) as never,
+      );
+      return { outcome, input };
+    };
+
+    test("stops (never types) when ChatGPT turns the paste into a file", async () => {
+      const { outcome, input } = await attempt({
+        used: true,
+        length: 1,
+        expected: 30_010,
+        convertedToFile: true,
+      });
+      await expect(outcome).rejects.toMatchObject({ details: { code: "prompt-paste-incomplete" } });
+      expect(input.insertText).not.toHaveBeenCalled();
+    });
+
+    test("stops when the pasted prompt landed incomplete", async () => {
+      const { outcome } = await attempt({
+        used: true,
+        length: 12_000,
+        expected: 30_010,
+        convertedToFile: false,
+      });
+      await expect(outcome).rejects.toMatchObject({ details: { code: "prompt-paste-incomplete" } });
+    });
+
+    test("continues when the whole prompt landed", async () => {
+      const { outcome, input } = await attempt({
+        used: true,
+        length: 30_010,
+        complete: true,
+        expected: 30_010,
+        convertedToFile: false,
+      });
+      await expect(outcome).rejects.toThrow("stop-after-insert");
+      expect(input.insertText).not.toHaveBeenCalled();
+    });
+  });
+
   test("only attachment sends get the longer send-button deadline", () => {
     expect(promptComposer.sendButtonTimeoutMs()).toBe(20_000);
     expect(promptComposer.sendButtonTimeoutMs([])).toBe(20_000);
@@ -383,7 +560,7 @@ describe("promptComposer", () => {
           if (expression.includes("return !selectors.some")) {
             return { result: { value: true } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             events.push("focusSendButton");
             return { result: { value: { status: "focused" } } };
           }
@@ -469,7 +646,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             return { result: { value: { status: "focused" } } };
           }
           if (expression.includes("currentUrl: location.href")) {
@@ -542,7 +719,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             return { result: { value: { status: "focused" } } };
           }
           if (expression.includes("currentUrl: location.href")) {
@@ -605,7 +782,7 @@ describe("promptComposer", () => {
           if (expression.includes("composer-plus-btn")) {
             return { result: { value: { status: "closed" } } };
           }
-          if (expression.includes('button[data-testid="send-button"]')) {
+          if (expression.includes("send-button") && expression.includes("const selectors")) {
             return { result: { value: { status: "absent" } } };
           }
           if (expression.includes("dispatchClickSequence")) {
@@ -663,7 +840,7 @@ describe("promptComposer", () => {
     });
   });
 
-  test("marks prompt submitted before commit verification finishes", async () => {
+  test("sends despite a rate-limited sidebar and marks prompt submitted", async () => {
     const onPromptSubmitted = vi.fn();
     const runtime = {
       evaluate: vi.fn(async ({ expression }: { expression: string }) => {
@@ -677,6 +854,9 @@ describe("promptComposer", () => {
           return {
             result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
           };
+        }
+        if (expression.includes("chatListUnavailable")) {
+          return { result: { value: true } };
         }
         if (expression.includes("button.scrollIntoView")) {
           return { result: { value: { status: "clicked" } } };
@@ -715,6 +895,9 @@ describe("promptComposer", () => {
 
     expect(onPromptSubmitted).toHaveBeenCalledTimes(1);
     expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("attempting the composer send anyway"),
+    );
   });
 
   test("does not send Enter while a trusted click commits after the old fallback deadline", async () => {

@@ -701,6 +701,14 @@ function buildThinkingTimeExpression(
       if (!isVisible(menu)) return false;
       if (menu.getAttribute?.('data-testid') === 'composer-intelligence-picker-content') return true;
       if (menu.querySelector?.(INTELLIGENCE_MENU_SELECTOR)) return true;
+      // The current picker owns both its model radios and its power slider in one
+      // Radix menu. Tie it to the actual composer trigger before treating it as
+      // an effort control, so another open menu cannot satisfy a Pro request.
+      if (
+        Boolean(findModelButton()?.id) &&
+        menu.getAttribute?.('aria-labelledby') === findModelButton()?.id &&
+        menu.querySelector?.('[data-reasoning-slider]')
+      ) return true;
       const label = menu.querySelector?.('.__menu-label, [class*="menu-label"]');
       const labelText = normalize(label?.textContent ?? '');
       return (
@@ -1100,14 +1108,27 @@ function buildThinkingTimeExpression(
     // owner announces the actual tier via aria-describedby; neither the pill nor
     // the slider's maximum position alone proves that Pro was selected.
     const selectDirectEffortSlider = async (menu) => {
-      const view = menu.querySelector?.('[data-model-selection-view="true"]');
-      const simple = view?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
-      if (!simple || simple.getAttribute('data-active') !== 'true' || !isVisible(simple)) return null;
+      const simpleView = () => {
+        const legacyView = menu.querySelector?.('[data-model-selection-view="true"]');
+        return legacyView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]') ??
+          menu.querySelector?.('[data-model-picker-view="simple"]') ?? menu.querySelector?.('[data-reasoning-slider]');
+      };
+      const isActiveSimple = (node) =>
+        node?.getAttribute('data-active') === 'true' ||
+        node?.getAttribute('data-model-picker-view') === 'simple' || node?.getAttribute('data-reasoning-slider') != null;
+      const simple = simpleView();
+      if (!simple || !isActiveSimple(simple) || !isVisible(simple)) return null;
+      if (TARGET_IS_ASTRA_LATEST && simple.getAttribute('data-model-picker-view') === 'simple') {
+        const checked = menu.querySelector?.('[data-model-picker-view] [role="menuitemradio"][aria-checked="true"]');
+        if (!['Latest', '最新', '최신'].includes((checked?.textContent ?? '').trim())) {
+          return failure('selection-unverified');
+        }
+      }
       const resolve = () => {
-        const currentView = menu.querySelector?.('[data-model-selection-view="true"]');
-        const currentSimple = currentView?.querySelector?.('[data-testid="composer-model-picker-slider-simple-view"]');
-        if (currentSimple?.getAttribute('data-active') !== 'true') return null;
-        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]');
+        const currentSimple = simpleView();
+        if (!isActiveSimple(currentSimple)) return null;
+        const slider = currentSimple.querySelector('[data-model-reasoning-effort-slider]') ??
+          currentSimple.querySelector('[data-model-picker-power-slider]') ?? (currentSimple.getAttribute('data-reasoning-slider') != null ? currentSimple : null);
         const control = slider?.closest?.('[role="menuitem"]');
         const thumb = slider?.querySelector?.('[role="slider"]');
         if (!control || !thumb || !isVisible(control)) return null;
@@ -1139,13 +1160,18 @@ function buildThinkingTimeExpression(
           .map((id) => readLeadingLevel(document.getElementById?.(id)?.textContent ?? ''))
           .filter(Boolean);
         if (selections.length !== 1) return null;
-        const { label, index, level } = selections[0];
-        // Quota-limited accounts expose four tiers; the fourth remains Extra High.
-        // Require an observed range and matching label/index before trusting either.
+        const { label, level } = selections[0];
+        // Current pickers expose three, four, or five tiers. Require an observed
+        // range and matching label/index before trusting either.
         const maximum = thumb.getAttribute('aria-valuemax');
-        if (thumb.getAttribute('aria-valuemin') !== '0' || !['3', '4'].includes(maximum) ||
-            index > Number(maximum) || thumb.getAttribute('aria-valuenow') !== String(index)) return null;
-        return { control, label, index, level, maximum: Number(maximum) };
+        if (thumb.getAttribute('aria-valuemin') !== '0' || !['2', '3', '4'].includes(maximum)) return null;
+        const maximumNumber = Number(maximum);
+        const levelOrder = maximumNumber === 2
+          ? ['light', 'standard', 'extended']
+          : ['light', 'standard', 'extended', 'extra-high', 'pro'].slice(0, maximumNumber + 1);
+        const position = levelOrder.indexOf(level);
+        if (position < 0 || thumb.getAttribute('aria-valuenow') !== String(position)) return null;
+        return { control, label, index: position, level, maximum: maximumNumber, levelOrder };
       };
       let current = resolve();
       const finish = (result) => { closeOpenMenus(); return result; };
@@ -1158,16 +1184,24 @@ function buildThinkingTimeExpression(
       if (!current) return finish(failure('selection-unverified'));
       // Preserve the legacy Pro-model + extended contract on unified pickers.
       const target = TARGET_MODEL_KIND === 'pro' && TARGET_LEVEL === 'extended' ? 'pro' : TARGET_LEVEL;
-      const targetIndex = ['light', 'standard', 'extended', 'extra-high', 'pro'].indexOf(target);
+      const targetIndex = current.levelOrder.indexOf(target);
+      const targetLabel = target === 'extra-high'
+        ? 'Extra High'
+        : target.slice(0, 1).toUpperCase() + target.slice(1);
+      const unavailable = () => finish(failure('option-disabled', {
+        label: targetLabel,
+        notice: current.maximum === 3
+          ? 'the available four-tier effort slider does not include Pro'
+          : 'the available effort slider does not include ' + targetLabel,
+      }));
       if (targetIndex < 0) {
+        const knownIndex = ['light', 'standard', 'extended', 'extra-high', 'pro'].indexOf(target);
+        if (knownIndex > current.maximum) return unavailable();
         if (TARGET_IS_GPT56_MODEL && TARGET_LEVEL === 'heavy' && current.level === 'pro') {
           return finish({ status: 'already-selected', label: current.label });
         }
         return finish(failure('option-not-found'));
       }
-      const unavailable = () => finish(failure('option-disabled', {
-        label: 'Pro', notice: 'the available four-tier effort slider does not include Pro',
-      }));
       if (targetIndex > current.maximum) return unavailable();
       if (current.level === target) return finish({ status: 'already-selected', label: current.label });
       const deadline = performance.now() + MAX_WAIT_MS;
@@ -1194,16 +1228,24 @@ function buildThinkingTimeExpression(
     // controlled menu contains the effort levels. Prefer this ownership boundary
     // before probing older model-picker layouts.
     const COMPOSER_EFFORT_PILL_SELECTORS = [
+      'form[data-chatgpt-composer] button[aria-label="Select ChatGPT model"]',
       'form button.__composer-pill',
       '[data-testid="composer-footer-actions"] button.__composer-pill',
       '.__composer-pill-composite button.__composer-pill',
     ];
     const findComposerEffortPill = () => {
+      const currentAstraTrigger = findModelButton();
+      if (
+        TARGET_IS_ASTRA_LATEST &&
+        currentAstraTrigger?.matches?.('button[data-codex-intelligence-trigger="true"]') &&
+        isVisible(currentAstraTrigger)
+      ) return currentAstraTrigger;
       const seen = new Set();
       let gpt56Fallback = null;
       for (const selector of COMPOSER_EFFORT_PILL_SELECTORS) {
         for (const button of document.querySelectorAll(selector)) {
           if (seen.has(button) || !isVisible(button)) continue;
+          if (button.getAttribute('aria-label') === 'Select ChatGPT model' && button.closest('form[data-chatgpt-composer]')) return button;
           seen.add(button);
           if (button.getAttribute?.('data-testid') === 'model-switcher-dropdown-button') continue;
           // A 5.6 Pro model pill is not Astra Latest's 6-prefixed effort owner.

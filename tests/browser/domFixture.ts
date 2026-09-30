@@ -16,6 +16,20 @@ export class FakeElement {
     }
   }
 
+  get childElementCount(): number {
+    return this.children.length;
+  }
+
+  get classList() {
+    return {
+      contains: (value: string) => (this.getAttribute("class") ?? "").split(/\s+/).includes(value),
+    };
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes[name] = value;
+  }
+
   get isConnected(): boolean {
     return this.tagName === "BODY" || this.parentElement?.isConnected === true;
   }
@@ -55,9 +69,24 @@ export class FakeElement {
     return this.attributes[name] ?? null;
   }
 
+  contains(element: FakeElement): boolean {
+    return this === element || this.children.some((child) => child.contains(element));
+  }
+
   closest(selector: string): FakeElement | null {
     if (matchesSelector(this, selector)) return this;
     return this.parentElement?.closest(selector) ?? null;
+  }
+
+  compareDocumentPosition(other: FakeElement): number {
+    if (other === this) return 0;
+    const a = treePath(this);
+    const b = treePath(other);
+    if (a.root !== b.root) return 1;
+    if (b.path.length > a.path.length && a.path.every((step, i) => step === b.path[i])) return 20;
+    if (a.path.length > b.path.length && b.path.every((step, i) => step === a.path[i])) return 10;
+    const i = a.path.findIndex((step, index) => step !== b.path[index]);
+    return b.path[i] > a.path[i] ? 4 : 2;
   }
 
   querySelector(selector: string): FakeElement | null {
@@ -95,21 +124,55 @@ function flattenElements(elements: FakeElement[]): FakeElement[] {
   return elements.flatMap((element) => [element, ...flattenElements(element.children)]);
 }
 
+function treePath(element: FakeElement): { root: FakeElement; path: number[] } {
+  const path: number[] = [];
+  let node = element;
+  while (node.parentElement) {
+    path.unshift(node.parentElement.children.indexOf(node));
+    node = node.parentElement;
+  }
+  return { root: node, path };
+}
+
 function matchesSelector(element: FakeElement, selector: string): boolean {
-  return selector
-    .split(",")
+  return splitSelector(selector, ",")
     .map((part) => part.trim())
     .filter(Boolean)
     .some((part) => matchesSingleSelector(element, part));
 }
 
 function matchesSingleSelector(element: FakeElement, selector: string): boolean {
-  const normalized = selector.replace(/:not\([^)]*\)/g, "");
+  const compounds = splitSelector(selector, " ");
+  if (compounds.length > 1) {
+    if (!matchesSingleSelector(element, compounds.at(-1)!)) return false;
+    let ancestor = element.parentElement;
+    while (ancestor) {
+      if (matchesSingleSelector(ancestor, compounds.slice(0, -1).join(" "))) return true;
+      ancestor = ancestor.parentElement;
+    }
+    return false;
+  }
+  let rejected = false;
+  const normalized = selector.replace(/:(is|not)\(([^()]*)\)/g, (_match, kind, choices) => {
+    const matches = matchesSelector(element, choices);
+    if ((kind === "is" && !matches) || (kind === "not" && matches)) rejected = true;
+    return "";
+  });
+  if (rejected) return false;
+  if (normalized.includes(":disabled") && !element.hasAttribute("disabled")) return false;
+  for (const match of normalized.replace(/\[[^\]]*\]/g, "").matchAll(/\.([a-z0-9_-]+)/gi)) {
+    if (!(element.getAttribute("class") ?? "").split(/\s+/).includes(match[1]!)) return false;
+  }
   const tag = normalized.match(/^[a-z][a-z0-9-]*/i)?.[0];
   if (tag && element.tagName.toLowerCase() !== tag.toLowerCase()) return false;
 
   const id = normalized.match(/#([a-z0-9_-]+)/i)?.[1];
   if (id && element.getAttribute("id") !== id) return false;
+
+  const classes = (element.getAttribute("class") ?? "").split(/\s+/);
+  for (const match of normalized.replace(/\[[^\]]*\]/g, "").matchAll(/\.([a-z0-9_-]+)/gi)) {
+    if (!classes.includes(match[1])) return false;
+  }
 
   const attrPattern = /\[([^\]\s~|^$*!=]+)([*^$~]?=)?(?:"([^"]*)"|'([^']*)')?\s*(i)?\]/g;
   for (const match of normalized.matchAll(attrPattern)) {
@@ -127,4 +190,29 @@ function matchesSingleSelector(element: FakeElement, selector: string): boolean 
     if (operator === "$=" && !actual.toLowerCase().endsWith(expected.toLowerCase())) return false;
   }
   return true;
+}
+
+// Browser fixture selectors include commas inside :is() and spaces inside aria labels.
+// Split only at CSS list/descendant boundaries, not inside those scopes.
+function splitSelector(selector: string, separator: string): string[] {
+  let depth = 0;
+  let quote = "";
+  let start = 0;
+  const parts: string[] = [];
+  for (let i = 0; i < selector.length; i++) {
+    const char = selector[i]!;
+    if (quote) {
+      if (char === quote && selector[i - 1] !== "\\") quote = "";
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === "[" || char === "(") depth++;
+    else if (char === "]" || char === ")") depth--;
+    else if (char === separator && depth === 0) {
+      const part = selector.slice(start, i).trim();
+      if (part) parts.push(part);
+      start = i + 1;
+    }
+  }
+  const last = selector.slice(start).trim();
+  if (last) parts.push(last);
+  return parts;
 }

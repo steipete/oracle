@@ -96,6 +96,12 @@ Notes:
 3. **Session integration** – browser sessions use the normal log writer, add `mode: "browser"` plus `browser.config/runtime` metadata, and persist Chrome pid/port or websocket attach metadata plus the Oracle-owned target/tab URL for reattach.
 4. **Usage accounting** – we estimate input tokens with the same tokenizer used for API runs and estimate output tokens via `estimateTokenCount`. `oracle status` therefore shows comparable cost/timing info even though the call ran through the browser.
 
+### Current ChatGPT layouts
+
+Browser mode recognizes the Chat/Work layout as well as the older conversation markup. New chats switch to Chat when necessary; an existing Work conversation is still rejected during follow-up. Submitted prompt identity and Markdown capture use the same conversation markers across initial capture and recovery.
+
+Multiline prompts are pasted into contenteditable composers in small chunks and checked for complete content before Send. If a paste is truncated or converted into a file, Oracle stops with `prompt-paste-incomplete`. Remote attachments wait for the file input to mount and require a visible attachment or acceptance receipt; a missing chip fails without automatically repeating an upload that might still be processing.
+
 ### CLI Options
 
 - `--engine browser`: enables browser mode (legacy `--browser` remains as an alias for now). Without `--engine`, Oracle chooses API when `OPENAI_API_KEY` exists, otherwise browser.
@@ -302,6 +308,7 @@ oracle --engine browser \
 - Oracle launches Chrome headful with a persistent automation profile at `~/.oracle/browser-profile` (override with `ORACLE_BROWSER_PROFILE_DIR` or `browser.manualLoginProfileDir` in `~/.oracle/config.json`).
 - Log into chatgpt.com in that window the first time; Oracle polls until the session is active, then proceeds.
 - Reuse the same profile on subsequent runs (no re-login unless the session expires).
+- On macOS, newly created manual-login profiles use the native Keychain so a fresh sign-in can survive a Chrome restart. Existing profiles keep their previous cookie-encryption mode and saved login. To switch an existing profile, close its Chrome after active runs finish, choose a new directory with `--browser-manual-login-profile-dir <new-dir>`, and sign in once there. Keep the old directory until the new login has survived a restart; Oracle never deletes it during this transition.
 - Add `--browser-keep-browser` (or config `browser.keepBrowser=true`) when doing the initial login/setup or debugging so the Chrome window stays open after the run. When omitted, Oracle closes Chrome but preserves the profile on disk.
 - Cookie copy is skipped by default in this mode. To seed the persistent profile from your existing Chrome cookies despite the token-rotation risk, set `browser.manualLoginCookieSync=true` in `~/.oracle/config.json`; explicit inline cookies can also seed it without reading live Chrome.
 - If Chrome is already running with that profile and DevTools remote debugging enabled (see `DevToolsActivePort` in the profile dir), you can reuse it instead of relaunching by pointing Oracle at it with `--remote-chrome <host:port>`.

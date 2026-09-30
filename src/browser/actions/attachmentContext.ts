@@ -42,7 +42,7 @@ export function buildComposerNavigationProbeExpression(): string {
       const controlLabel = node => normalize(node.textContent || node.getAttribute('aria-label'));
       const modeValue = node => normalize(node.getAttribute('data-mode') || node.getAttribute('data-value') || node.getAttribute('value'));
       const visible = node => {
-        if (node.closest?.('[data-message-author-role], [data-testid^="conversation-turn-"], article[data-turn]')) return false;
+        if (node.closest?.(':is([data-message-author-role], [data-content-search-unit-key], [data-chatgpt-search-unit-key]), [data-testid^="conversation-turn-"], [data-turn-key], article[data-turn]')) return false;
         const rect = node.getBoundingClientRect();
         if (rect.width <= 0 || rect.height <= 0) return false;
         for (let current = node; current && typeof current.getBoundingClientRect === 'function'; current = current.parentElement) {
@@ -57,7 +57,7 @@ export function buildComposerNavigationProbeExpression(): string {
         node?.getAttribute?.('aria-pressed') === 'true' ||
         node?.getAttribute?.('data-state') === 'on' ||
         node?.getAttribute?.('data-state') === 'active';
-      const prompt = document.querySelector('#prompt-textarea');
+      const prompt = document.querySelector('#prompt-textarea, form[data-chatgpt-composer] [contenteditable="true"][role="textbox"]');
       const fallbackPrompt = document.querySelector('textarea[name="prompt-textarea"]');
       const composer = (prompt ?? fallbackPrompt)?.closest('form, [data-testid="composer"]');
       const selectedControls = Array.from(

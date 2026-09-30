@@ -3,6 +3,7 @@ node_modules
 .env
 coverage
 .vitest/
+/.crabbox/
 npm-debug.log*
 .bun-check/
 dist/

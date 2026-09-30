@@ -159,6 +159,38 @@ describe("copied-profile launch flags", () => {
     expect(options.chromeFlags).not.toContain("--password-store=basic");
     expect(options.chromeFlags).toContain("--remote-debugging-address=0.0.0.0");
   });
+
+  test("uses the native Keychain for a persistent macOS manual-login profile", async () => {
+    const { resolveChromeLaunchOptionsForTest } =
+      await import("../../src/browser/chromeLifecycle.js");
+    const flags = ["--use-mock-keychain", "--password-store=basic", "--no-first-run"];
+    const options = resolveChromeLaunchOptionsForTest(flags, false, true, "darwin");
+    expect(options.ignoreDefaultFlags).toBe(true);
+    expect(options.chromeFlags).not.toContain("--use-mock-keychain");
+    expect(options.chromeFlags).not.toContain("--password-store=basic");
+    expect(options.chromeFlags).toContain("--no-first-run");
+    expect(resolveChromeLaunchOptionsForTest(flags, false, true, "linux").ignoreDefaultFlags).toBe(
+      false,
+    );
+  });
+
+  test("keeps the old cookie mode for existing macOS profiles", async () => {
+    const { resolveChromeLaunchOptionsForTest, shouldUseNativeManualLoginKeychain } =
+      await import("../../src/browser/chromeLifecycle.js");
+    const profile = await mkdtemp(path.join(os.tmpdir(), "oracle-keychain-mode-"));
+    try {
+      expect(await shouldUseNativeManualLoginKeychain(profile, "darwin")).toBe(true);
+      await writeFile(path.join(profile, "Local State"), "{}");
+      expect(await shouldUseNativeManualLoginKeychain(profile, "darwin")).toBe(false);
+      const legacy = resolveChromeLaunchOptionsForTest([], false, false, "darwin");
+      expect(legacy.ignoreDefaultFlags).toBe(false);
+      await writeFile(path.join(profile, ".oracle-native-keychain-v1"), "native-keychain\n");
+      expect(await shouldUseNativeManualLoginKeychain(profile, "darwin")).toBe(true);
+      expect(await shouldUseNativeManualLoginKeychain(profile, "linux")).toBe(false);
+    } finally {
+      await rm(profile, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("hidden-window launch flags", () => {

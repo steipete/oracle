@@ -11,6 +11,7 @@
   "bracketSameLine": false,
   "bracketSpacing": true,
   "ignorePatterns": [
+    "tests/fixtures/chatgpt-dom-2026-09/*.html",
     "scripts/browser-tools.ts",
     "node_modules/**/*",
     ".pnpm-store/**/*",

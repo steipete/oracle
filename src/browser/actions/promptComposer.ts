@@ -27,6 +27,7 @@ import { stageAttachmentPrompt } from "./attachmentPrompt.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 import { buildAttachmentEvidenceExpression } from "./attachmentEvidence.js";
 import { buildAttachmentProgressExpression } from "./attachmentProgress.js";
+import { buildInstallCompletionAnnouncementExpression } from "./completionAnnouncement.js";
 import { activateWebSearch } from "./webSearch.js";
 
 const ENTER_KEY_EVENT = {
@@ -140,7 +141,85 @@ export async function submitPrompt(
       throw new Error("Failed to focus prompt textarea");
     }
 
-    await input.insertText({ text: prompt });
+    // ProseMirror can treat typed newlines as submission; paste without pressing Enter.
+    let pastedMultiline = false;
+    if (prompt.includes("\n")) {
+      const pasteResult = await runtime.evaluate({
+        expression: `(() => {
+        const selectors = ${JSON.stringify(INPUT_SELECTORS)};
+        const visible = (node) => { const r = node?.getBoundingClientRect?.(); return Boolean(r && r.width > 0 && r.height > 0); };
+        const editor = selectors.map((s) => document.querySelector(s)).find((n) => n && visible(n));
+        if (editor instanceof HTMLTextAreaElement) return { used: false };
+        if (!editor?.isContentEditable) return { used: true, complete: false };
+        const text = ${encodedPrompt};
+        // ChatGPT converts a single large paste (seen above ~10k chars) into a "Pasted text"
+        // file chip and leaves the editor empty, so paste in chunks well under that size.
+        const CHUNK = 4000;
+        const chips = () => document.querySelectorAll('form button[aria-label^="Remove Pasted text"]').length;
+        const chipsBefore = chips();
+        editor.focus();
+        for (let i = 0; i < text.length;) {
+          let end = Math.min(i + CHUNK, text.length);
+          if (end < text.length && /[\\uD800-\\uDBFF]/.test(text[end - 1])) end--;
+          if (text[end - 1] === '\\r' && text[end] === '\\n') end--;
+          const data = new DataTransfer();
+          const chunk = text.slice(i, end).replace(/\\r\\n?/g, '\\n');
+          data.setData('text/plain', chunk);
+          // Explicit hard breaks preserve blank lines that a plain-text paragraph parser can collapse.
+          const paragraph = document.createElement('p');
+          paragraph.style.whiteSpace = 'pre-wrap';
+          paragraph.textContent = chunk;
+          data.setData('text/html', paragraph.outerHTML.replace(/\\n/g, '<br>'));
+          editor.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+          i = end;
+        }
+        // innerText adds layout spacing between paragraphs. Read actual hard breaks and block
+        // boundaries instead, ignoring only ProseMirror's decorative trailing break.
+        const readText = node => {
+          if (node.nodeType === 3) return node.nodeValue || '';
+          if (node.nodeName === 'BR') return node.classList.contains('ProseMirror-trailingBreak') ? '' : '\\n';
+          const children = Array.from(node.childNodes || []);
+          return children.map((child, index) => {
+            const previous = children[index - 1];
+            const block = value => /^(P|DIV|PRE|LI)$/.test(value?.nodeName || '');
+            return (index > 0 && (block(child) || block(previous)) ? '\\n' : '') + readText(child);
+          }).join('');
+        };
+        const normalize = value => value.replace(/\\r\\n?/g, '\\n');
+        const landed = normalize(readText(editor));
+        const expected = normalize(text);
+        const convertedToFile = chips() > chipsBefore;
+        return { used: true, length: landed.length, expected: expected.length, complete: landed === expected, convertedToFile };
+      })()`,
+        returnByValue: true,
+      });
+      const pasted = pasteResult.result?.value as
+        | {
+            used?: boolean;
+            length?: number;
+            expected?: number;
+            complete?: boolean;
+            convertedToFile?: boolean;
+          }
+        | undefined;
+      if (pasted?.used !== false) {
+        const complete = pasted?.complete === true && !pasted.convertedToFile;
+        if (!complete) {
+          // Never fall back to typing here: a typed newline submits the first line only.
+          throw new BrowserAutomationError(
+            `ChatGPT did not accept the pasted prompt intact (${pasted?.length ?? 0}/${pasted?.expected ?? 0} chars${pasted?.convertedToFile ? ", converted to a file" : ""}); nothing was sent.`,
+            { stage: "submit-prompt", code: "prompt-paste-incomplete" },
+          );
+        }
+      }
+      pastedMultiline = Boolean(pasted?.used && (pasted.length ?? 0) > 0);
+      logger(
+        `Prompt delivery: ${pastedMultiline ? "paste (multi-line, contenteditable)" : "typed"}`,
+      );
+    }
+    if (!pastedMultiline) {
+      await input.insertText({ text: prompt });
+    }
 
     // Some pages (notably ChatGPT when subscriptions/widgets load) need a brief settle
     // before the send button becomes enabled; give it a short breather to avoid races.
@@ -254,6 +333,15 @@ export async function submitPrompt(
   }
 
   if (deps.webSearch) await activateWebSearch(runtime, input, prompt, logger);
+  await warnIfChatListRateLimited(runtime, logger);
+
+  // Install before the click: a short answer can complete while commit verification runs.
+  await runtime
+    .evaluate({
+      expression: buildInstallCompletionAnnouncementExpression(deps.baselineTurns),
+      returnByValue: true,
+    })
+    .catch(() => undefined);
 
   const clicked = await attemptSendButton(
     runtime,
@@ -398,6 +486,40 @@ async function waitForDomReady(
   logger?.(`Page did not reach ready/composer state within ${timeoutMs}ms; continuing cautiously.`);
 }
 
+export function buildChatListRateLimitExpressionForTest(): string {
+  return `(() => {
+    // A resumed conversation may still be usable while the unrelated sidebar list is limited.
+    if (/\\/c\\/[^/]+/.test(location.pathname || '')) return false;
+    const chatListUnavailable = Array.from(document.querySelectorAll('[role="status"]')).some((node) =>
+      /loading chats|unable to load history|チャット.*読み込|履歴.*読み込/i.test((node.textContent || '').trim())
+    );
+    if (!chatListUnavailable) return false;
+    if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') return false;
+    return performance.getEntriesByType('resource')
+      .filter((entry) => {
+        try { return new URL(entry.name, location.href).pathname === '/backend-api/conversations'; }
+        catch { return false; }
+      })
+      .slice(-5)
+      .some((entry) => entry.responseStatus === 429);
+  })()`;
+}
+
+export async function warnIfChatListRateLimited(
+  Runtime: ChromeClient["Runtime"],
+  logger: BrowserLogger,
+): Promise<void> {
+  const response = await Runtime.evaluate({
+    expression: buildChatListRateLimitExpressionForTest(),
+    returnByValue: true,
+  }).catch(() => null);
+  if (response?.result?.value === true) {
+    logger(
+      "[browser] ChatGPT is rate-limiting its conversation list (HTTP 429); attempting the composer send anyway.",
+    );
+  }
+}
+
 function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[]): string {
   const attachmentExpectations = attachmentNames.map((attachment) => {
     const name = typeof attachment === "string" ? attachment : attachment.name;
@@ -467,6 +589,8 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       'button[aria-label*="Remove attachment"]',
       '[aria-label*="remove attachment"]',
       'button[aria-label*="remove attachment"]',
+      // ChatGPT also renders uploaded tiles as a bare "Remove <filename>" button.
+      'button[aria-label^="Remove "]',
     ];
     const sendButton = sendSelectors
       .map((selector) => document.querySelector(selector))
@@ -526,6 +650,7 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       if (!node) return '';
       const pieces = [collectOwnLabelHaystack(node)];
       const push = (el) => {
+        if (!el || el === composer || el.querySelector?.('textarea,[contenteditable="true"]')) return;
         const text = collectOwnLabelHaystack(el);
         if (text) pieces.push(text);
       };
@@ -553,7 +678,15 @@ function buildAttachmentReadyExpression(attachmentNames: AttachmentReadyInput[])
       return collected;
     };
     const chipNodes = collectChipNodes();
-    const chipLabels = chipNodes.map((node) => collectLabelHaystack(node));
+    const chipLabels = chipNodes.map((node) => {
+      // Bare filename labels stand alone; generic controls need the adjacent chip's text.
+      const removeLabel = node.tagName?.toLowerCase() === 'button'
+        ? node.getAttribute('aria-label') || ''
+        : '';
+      return /^remove /i.test(removeLabel) && !/^remove (?:attachment|file|image|photo)$/i.test(removeLabel)
+        ? removeLabel.toLowerCase()
+        : collectLabelHaystack(node);
+    });
     const uploadEvidence = ${buildAttachmentEvidenceExpression(attachmentExpectations.map((item) => item.name))};
     const chipsReady = (() => {
       const used = new Set();
@@ -764,9 +897,14 @@ async function activateExactAttachmentSendButton(
   attachmentNavigationUrl?: string,
   attachmentNames: AttachmentReadyInput[] = [],
 ): Promise<boolean> {
+  const exactSendSelectors = [
+    'button[data-testid="send-button"]',
+    'form button[type="submit"][aria-label="Send"]',
+  ];
   const probe = await Runtime.evaluate({
     expression: `(() => {
-      const button = document.querySelector('button[data-testid="send-button"]');
+      const selectors = ${JSON.stringify(exactSendSelectors)};
+      const button = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
       if (!(button instanceof HTMLElement)) return { status: 'absent' };
       const rect = button.getBoundingClientRect();
       const style = window.getComputedStyle(button);
@@ -808,7 +946,8 @@ async function activateExactAttachmentSendButton(
   try {
     const boundary = await Runtime.evaluate({
       expression: `(() => {
-        const button = document.querySelector('button[data-testid="send-button"]');
+        const selectors = ${JSON.stringify(exactSendSelectors)};
+        const button = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
         const check = () => {
           const navigation = ${buildComposerNavigationValidationExpression(attachmentNavigationUrl)};
           const rect = button?.getBoundingClientRect();
@@ -816,7 +955,7 @@ async function activateExactAttachmentSendButton(
           return {
             ...navigation,
             focused: button instanceof HTMLElement && document.activeElement === button &&
-              document.querySelector('button[data-testid="send-button"]') === button &&
+              selectors.map((selector) => document.querySelector(selector)).find(Boolean) === button &&
               !button.hasAttribute('disabled') && button.getAttribute('aria-disabled') !== 'true' &&
               button.getAttribute('data-disabled') !== 'true' && rect.width > 0 && rect.height > 0 &&
               style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none',
@@ -852,7 +991,8 @@ async function activateExactAttachmentSendButton(
         };
         const onClick = event => {
           if (!guard.sawKeyDown || !(event.target instanceof Node) ||
-              !(button.contains(event.target) || event.target instanceof Element && event.target.closest('button[data-testid="send-button"]'))) return;
+              !(button.contains(event.target) || event.target instanceof Element &&
+                selectors.some((selector) => event.target.closest(selector) === button))) return;
           const state = safeCheck();
           if (guard.blocked || !state.contextMatches || !state.focused || !state.attachmentsReady) cancel(event, guard.blocked ?? state);
           detach();

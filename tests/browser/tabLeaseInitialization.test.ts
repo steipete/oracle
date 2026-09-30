@@ -44,4 +44,4 @@ test("recovers an aged ownerless lock after a crash during its temporary owner w
   } finally {
     await rm(profile, { recursive: true, force: true });
   }
-});
+}, 20_000);

@@ -16,9 +16,27 @@ const evaluateImmediateModelSelectionExpression = (
   buttonLabel: string,
   composerLabel = "",
   proPillLabel = "",
+  modernCheckedModel?: string,
 ): unknown => {
   const expression = buildModelSelectionExpressionForTest(targetModel);
-  const modelButton = { textContent: buttonLabel };
+  const modelButton = {
+    textContent: modernCheckedModel ? `Thinking effortThinking effort${buttonLabel}` : buttonLabel,
+    innerText: buttonLabel,
+    id: modernCheckedModel ? "current-model-trigger" : "",
+  };
+  const currentRadio = modernCheckedModel ? { textContent: modernCheckedModel } : null;
+  const currentMenu = modernCheckedModel
+    ? {
+        getAttribute: (name: string) => (name === "aria-labelledby" ? modelButton.id : null),
+        querySelector: (selector: string) => {
+          if (selector === "[data-model-picker-view]") return {};
+          if (selector.includes('[data-model-picker-view] [role="menuitemradio"]')) {
+            return currentRadio;
+          }
+          return null;
+        },
+      }
+    : null;
   const composerSignal = composerLabel ? { textContent: composerLabel } : null;
   const proPill = proPillLabel
     ? {
@@ -40,7 +58,8 @@ const evaluateImmediateModelSelectionExpression = (
       }
       return null;
     },
-    querySelectorAll: () => (proPill ? [proPill] : []),
+    querySelectorAll: (selector: string) =>
+      currentMenu && selector.includes('[role="menu"]') ? [currentMenu] : proPill ? [proPill] : [],
     title: "",
     body: { innerText: "" },
   };
@@ -1338,6 +1357,13 @@ describe("browser model selection matchers", () => {
     });
   });
 
+  it("verifies the current hidden-measurement picker from its checked Latest radio", () => {
+    expect(evaluateImmediateModelSelectionExpression("Latest", "Pro", "", "", "Latest")).toEqual({
+      status: "already-selected",
+      label: "Latest",
+    });
+  });
+
   it("does not report Latest as selected while GPT-5.6 Sol is the active model", () => {
     expect(evaluateImmediateModelSelectionExpression("Latest", "5.6 Pro")).toBeInstanceOf(Promise);
     expect(evaluateImmediateModelSelectionExpression("Latest", "GPT-5.6 Sol")).toBeInstanceOf(
@@ -1889,6 +1915,7 @@ describe("browser model selection matchers", () => {
     const expression = buildModelSelectionExpressionForTest("gpt-5.5-pro");
     expect(expression).toContain('data-testid="model-switcher-dropdown-button"');
     expect(expression).toContain("button.__composer-pill[aria-haspopup=");
+    expect(expression).toContain('button[data-codex-intelligence-trigger="true"]');
     expect(expression).toContain("const findModelButton = () =>");
     expect(expression).toContain("button.__composer-pill')).find(looksLikeModelPill)");
   });

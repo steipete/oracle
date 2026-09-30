@@ -5,9 +5,14 @@ import {
   readUserMessageIds,
 } from "../../src/browser/promptFingerprint.js";
 import type { ChromeClient } from "../../src/browser/types.js";
+import { FakeDocument, FakeElement } from "./domFixture.js";
 
 test("captures a new message when earlier turns unmount during submission", async () => {
-  const user = (text: string, id: string) => ({ textContent: text, getAttribute: () => id });
+  const user = (text: string, id: string) => ({
+    textContent: text,
+    getAttribute: () => id,
+    querySelector: () => null,
+  });
   const oldUsers = [user("First", "old-1"), user("Continue", "old-2")];
   let users = oldUsers;
   const runtime = {
@@ -15,7 +20,7 @@ test("captures a new message when earlier turns unmount during submission", asyn
       result: {
         value: new Function("document", `return ${expression}`)({
           querySelectorAll: (selector: string) =>
-            selector === '[data-message-author-role="user"]'
+            selector.includes('[data-message-author-role="user"]')
               ? users
               : users.map((message) => ({ matches: () => false, querySelector: () => message })),
         }),
@@ -30,6 +35,25 @@ test("captures a new message when earlier turns unmount during submission", asyn
     browserPromptFingerprint("Continue", "current-message"),
   );
   expect(await readSubmittedPromptFingerprint(runtime, undefined)).toBeUndefined();
+});
+
+test("uses current ChatGPT search-unit keys as committed user identities", async () => {
+  let document = new FakeDocument([]);
+  const runtime = {
+    evaluate: async ({ expression }: { expression: string }) => ({
+      result: { value: new Function("document", `return ${expression}`)(document) },
+    }),
+  } as unknown as ChromeClient["Runtime"];
+  const previous = await readUserMessageIds(runtime);
+  expect(previous).toEqual([]);
+  document = new FakeDocument([
+    new FakeElement("div", { "data-content-search-unit-key": "fallback-turn-0:0:user" }, [
+      new FakeElement("div", { class: "whitespace-pre-wrap" }, [], "New prompt"),
+    ]),
+  ]);
+  expect(await readSubmittedPromptFingerprint(runtime, previous)).toBe(
+    browserPromptFingerprint("New prompt", "fallback-turn-0:0:user"),
+  );
 });
 
 test("waits for pre-existing user message IDs to hydrate", async () => {
@@ -72,7 +96,11 @@ test("fingerprints preserve case and meaningful indentation", () => {
 });
 
 test("preserves committed identity when earlier conversation turns are unmounted", async () => {
-  const user = { textContent: "Continue", getAttribute: () => "current-message" };
+  const user = {
+    textContent: "Continue",
+    getAttribute: () => "current-message",
+    querySelector: () => null,
+  };
   const current = { matches: () => false, querySelector: () => user };
   let turns = [
     ...Array.from({ length: 20 }, () => ({ matches: () => false, querySelector: () => null })),
@@ -106,7 +134,11 @@ test("waits for stable message identity instead of fingerprinting text alone", a
 
 test("captures the rendered committed user turn rather than Markdown source", async () => {
   const text = "Heading\nspec\nif active:\n  run()";
-  const user = { textContent: text, getAttribute: () => "current-message" };
+  const user = {
+    textContent: text,
+    getAttribute: () => "current-message",
+    querySelector: () => null,
+  };
   const turn = { matches: () => false, querySelector: () => user };
   const runtime = {
     evaluate: async ({ expression }: { expression: string }) => ({

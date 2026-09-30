@@ -8,7 +8,10 @@ import type {
   SavedBrowserImage,
 } from "./types.js";
 import { ASSISTANT_ROLE_SELECTOR } from "./constants.js";
-import { buildConversationTurnListExpression } from "./conversationTurns.js";
+import {
+  buildConversationTurnListExpression,
+  buildLastAssistantMessageExpression,
+} from "./conversationTurns.js";
 import { delay } from "./utils.js";
 import { readAssistantSnapshot } from "./pageActions.js";
 import { throwIfAssistantUiError } from "./actions/assistantResponse.js";
@@ -105,7 +108,7 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
       if (!(node instanceof HTMLElement)) return false;
       const turnAttr = (node.getAttribute('data-turn') || node.dataset?.turn || '').toLowerCase();
       if (turnAttr === 'assistant') return true;
-      const role = (node.getAttribute('data-message-author-role') || node.dataset?.messageAuthorRole || '').toLowerCase();
+      const role = (node.getAttribute('data-message-author-role') || (node.getAttribute?.('data-content-search-unit-key') || node.getAttribute?.('data-chatgpt-search-unit-key'))?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
@@ -116,7 +119,7 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
       const turn = turns[index];
       if (!isAssistantTurn(turn)) continue;
       if (MIN_TURN_INDEX >= 0 && index < MIN_TURN_INDEX) continue;
-      const messageRoot = turn.querySelector(ASSISTANT_SELECTOR) || turn;
+      const messageRoot = ${buildLastAssistantMessageExpression("turn")} || turn;
       const images = serializeImages(messageRoot);
       if (images.length > 0) return images;
     }
