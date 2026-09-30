@@ -362,7 +362,8 @@ try {
       }
     },
     "final Chrome exit",
-    5000,
+    // Windows profile flushing can outlast five seconds; retain the bounded lifecycle deadline.
+    30000,
   );
   await assert.rejects(
     fetch(`http://127.0.0.1:${chromePort}/json/version`, { signal: AbortSignal.timeout(1000) }),
