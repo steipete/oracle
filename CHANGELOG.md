@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Dependencies: refresh provider/MCP SDKs, cookie and browser tooling, test tooling, and pnpm within the two-day release-age policy; update dotenv's compatible preload entrypoint, retain Node >=24, and keep Undici on v7 for native-fetch compatibility; thanks @dependabot.
 - Browser: support ChatGPT's Chat/Work composer, model and effort controls, turn identity, Markdown and file capture; preserve Work-conversation guards, paste multiline prompts intact, wait for attachment hydration without duplicate uploads, and persist new macOS manual-login profiles with the native Keychain; fixes #517, thanks @Cjschmi2, @moeuu, @hongho55, @StartupBros, @lifeofgurpreet, @rugnasyab, @cafeSowoo, and @Gerry9000.
 
 - Browser: warn when a configured Chrome executable cannot replace a running shared profile, explain how to switch safely, and share reuse handling with Project Sources; fixes #510, thanks @Sogl.
