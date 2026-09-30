@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import http from "node:http";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -1193,6 +1193,7 @@ describe("bridge concurrency end to end", () => {
       let active = 0;
       let peakActive = 0;
       const finish: (() => void)[] = [];
+      const controller = new AbortController();
       const server = await createRemoteServer(
         {
           host: "127.0.0.1",
@@ -1203,10 +1204,14 @@ describe("bridge concurrency end to end", () => {
           maxQueuedRuns: 4,
         },
         {
-          runBrowser: async () => {
+          runBrowser: async (options) => {
             active += 1;
             peakActive = Math.max(peakActive, active);
-            await new Promise<void>((resolve) => finish.push(resolve));
+            await new Promise<void>((resolve) => {
+              finish.push(resolve);
+              if (options.signal?.aborted) resolve();
+              else options.signal?.addEventListener("abort", () => resolve(), { once: true });
+            });
             active -= 1;
             return {
               answerText: "ok",
@@ -1224,25 +1229,42 @@ describe("bridge concurrency end to end", () => {
           host: `127.0.0.1:${server.port}`,
           token: "secret",
         });
-        return executor({ prompt: "x", config: {} });
+        return executor({ prompt: "x", config: {}, signal: controller.signal });
       };
 
       const runs = [call(), call(), call()];
-      // Give all three time to arrive; only two may be inside runBrowser.
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(active).toBe(2);
-      expect(peakActive).toBe(2);
+      const settled = Promise.allSettled(runs);
+      try {
+        await vi.waitFor(
+          async () => {
+            expect(finish).toHaveLength(2);
+            const response = await fetch(`http://127.0.0.1:${server.port}/health`, {
+              headers: { Authorization: "Bearer secret" },
+              signal: controller.signal,
+            });
+            expect(await response.json()).toMatchObject({ activeRuns: 2, queuedRuns: 1 });
+          },
+          { timeout: 10_000 },
+        );
+        expect(active).toBe(2);
+        expect(peakActive).toBe(2);
 
-      while (finish.length > 0) {
         finish.shift()?.();
-        await new Promise((resolve) => setTimeout(resolve, 150));
+        // Admission can follow slow session writes; a fixed sleep can leave the third run held forever.
+        await vi.waitFor(() => expect(finish).toHaveLength(2), { timeout: 10_000 });
+        expect(active).toBe(2);
+        finish.splice(0).forEach((release) => release());
+        const results = await Promise.all(runs);
+        expect(results.map((r) => r.answerText)).toEqual(["ok", "ok", "ok"]);
+        expect(peakActive).toBe(2);
+      } finally {
+        controller.abort();
+        finish.splice(0).forEach((release) => release());
+        await settled;
+        await server.close();
       }
-      const results = await Promise.all(runs);
-      expect(results.map((r) => r.answerText)).toEqual(["ok", "ok", "ok"]);
-      expect(peakActive).toBe(2);
-
-      await server.close();
     },
+    30_000,
   );
 });
 
