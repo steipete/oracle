@@ -742,11 +742,22 @@ export async function runOracle(
     }
   }
 
-  const usage = response.usage ?? {};
+  const rawUsage = response.usage ?? {};
+  // The Responses API nests reasoning under output_tokens_details.
+  const usage = {
+    ...rawUsage,
+    reasoning_tokens: rawUsage.reasoning_tokens ?? rawUsage.output_tokens_details?.reasoning_tokens,
+  };
   const inputTokens = usage.input_tokens ?? estimatedInputTokens;
-  const outputTokens = usage.output_tokens ?? 0;
   const reasoningTokens = usage.reasoning_tokens ?? 0;
-  const totalTokens = usage.total_tokens ?? inputTokens + outputTokens + reasoningTokens;
+  // OpenAI counts reasoning inside output_tokens. xAI reports it outside output_tokens, so its
+  // total is input plus output plus reasoning, and bills it at the output rate. Gateways that
+  // fold reasoning into output_tokens break that sum.
+  const reasoningOutsideOutput =
+    modelConfig.provider === "xai" &&
+    usage.total_tokens === (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) + reasoningTokens;
+  const outputTokens = (usage.output_tokens ?? 0) + (reasoningOutsideOutput ? reasoningTokens : 0);
+  const totalTokens = usage.total_tokens ?? inputTokens + outputTokens;
   const pricing = modelConfig.pricing ?? undefined;
   const cost = pricing
     ? estimateUsdCost({

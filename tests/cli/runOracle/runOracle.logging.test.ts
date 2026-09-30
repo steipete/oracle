@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import { runOracle, type ClientLike, type OracleResponse } from "@src/oracle.ts";
-import { MockClient, MockStream, buildResponse } from "./helpers.ts";
+import { MockClient, MockStream, buildResponse, type MockResponse } from "./helpers.ts";
 
 describe("runOracle no-file tip", () => {
   test("logs guidance when no files are attached", async () => {
@@ -526,5 +526,182 @@ describe("api key logging", () => {
     const statusIndex = logs.findIndex((line) => line.includes("Response status:"));
     expect(statusIndex).toBeGreaterThan(0);
     expect(logs[statusIndex - 1]).toBe("");
+  });
+});
+
+describe("runOracle usage summary", () => {
+  test("reads Responses API reasoning tokens from output_tokens_details", async () => {
+    const response: OracleResponse = {
+      id: "resp-reasoning",
+      status: "completed",
+      usage: {
+        input_tokens: 12000,
+        output_tokens: 800,
+        output_tokens_details: { reasoning_tokens: 700 },
+        total_tokens: 12800,
+      },
+      output: [{ type: "message", content: [{ type: "text", text: "ok" }] }],
+    };
+    const client = new MockClient(new MockStream([], response as MockResponse));
+    const logs: string[] = [];
+
+    const result = await runOracle(
+      { prompt: "usage check", model: "gpt-5.1", background: false },
+      {
+        apiKey: "sk-test",
+        client,
+        log: (msg: string) => logs.push(msg),
+        write: () => true,
+      },
+    );
+
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: { inputTokens: 12000, outputTokens: 800, reasoningTokens: 700, totalTokens: 12800 },
+    });
+    // output_tokens already includes reasoning: 12000 * 1.25e-6 + 800 * 10e-6
+    expect(logs.join("\n")).toContain("$0.0230");
+  });
+
+  test("bills xAI reasoning tokens as output", async () => {
+    // Usage example from the xAI Responses API reference: 32 + 9 + 110 = 151.
+    const response: OracleResponse = {
+      id: "resp-xai",
+      status: "completed",
+      usage: {
+        input_tokens: 32,
+        output_tokens: 9,
+        output_tokens_details: { reasoning_tokens: 110 },
+        total_tokens: 151,
+      },
+      output: [{ type: "message", content: [{ type: "text", text: "ok" }] }],
+    };
+    const client = new MockClient(new MockStream([], response as MockResponse));
+
+    const result = await runOracle(
+      { prompt: "usage check", model: "grok-4.1", background: false },
+      { apiKey: "xai-test", client, log: () => {}, write: () => true },
+    );
+
+    // 32 * 0.2e-6 + (9 + 110) * 0.5e-6
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: {
+        inputTokens: 32,
+        outputTokens: 119,
+        reasoningTokens: 110,
+        totalTokens: 151,
+        cost: expect.closeTo(0.0000659, 10),
+      },
+    });
+  });
+
+  test("bills xAI reasoning tokens as output when a gateway forwards xAI usage unchanged", async () => {
+    // 32 + 9 + 94 = 135: reasoning sits outside output_tokens, as on the native API.
+    const response: OracleResponse = {
+      id: "resp-xai-gateway",
+      status: "completed",
+      usage: { input_tokens: 32, output_tokens: 9, reasoning_tokens: 94, total_tokens: 135 },
+      output: [{ type: "message", content: [{ type: "text", text: "ok" }] }],
+    };
+    const client = new MockClient(new MockStream([], response as MockResponse));
+
+    const result = await runOracle(
+      {
+        prompt: "usage check",
+        model: "grok-4.1",
+        baseUrl: "https://litellm.test/v1",
+        background: false,
+      },
+      { apiKey: "xai-test", client, log: () => {}, write: () => true },
+    );
+
+    // 32 * 0.2e-6 + (9 + 94) * 0.5e-6
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: {
+        inputTokens: 32,
+        outputTokens: 103,
+        reasoningTokens: 94,
+        totalTokens: 135,
+        cost: expect.closeTo(0.0000579, 10),
+      },
+    });
+  });
+
+  test("does not add xAI reasoning again when a gateway already counts it as output", async () => {
+    // 32 + 119 = 151: the gateway already folded the 110 reasoning tokens into output_tokens.
+    const response: OracleResponse = {
+      id: "resp-xai-normalized",
+      status: "completed",
+      usage: { input_tokens: 32, output_tokens: 119, reasoning_tokens: 110, total_tokens: 151 },
+      output: [{ type: "message", content: [{ type: "text", text: "ok" }] }],
+    };
+    const client = new MockClient(new MockStream([], response as MockResponse));
+
+    const result = await runOracle(
+      {
+        prompt: "usage check",
+        model: "grok-4.1",
+        baseUrl: "https://litellm.test/v1",
+        background: false,
+      },
+      { apiKey: "xai-test", client, log: () => {}, write: () => true },
+    );
+
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: { inputTokens: 32, outputTokens: 119, reasoningTokens: 110, totalTokens: 151 },
+    });
+  });
+
+  test("adds reasoning to output only for xAI models", async () => {
+    // The xAI usage shape on an OpenAI model: OpenAI already counts reasoning in output_tokens.
+    const response: OracleResponse = {
+      id: "resp-openai-xai-shape",
+      status: "completed",
+      usage: {
+        input_tokens: 32,
+        output_tokens: 9,
+        output_tokens_details: { reasoning_tokens: 110 },
+        total_tokens: 151,
+      },
+      output: [{ type: "message", content: [{ type: "text", text: "ok" }] }],
+    };
+    const client = new MockClient(new MockStream([], response as MockResponse));
+
+    const result = await runOracle(
+      { prompt: "usage check", model: "gpt-5.1", background: false },
+      { apiKey: "sk-test", client, log: () => {}, write: () => true },
+    );
+
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: { inputTokens: 32, outputTokens: 9, reasoningTokens: 110, totalTokens: 151 },
+    });
+  });
+
+  test("falls back to input plus output when total_tokens is missing", async () => {
+    const response: OracleResponse = {
+      id: "resp-no-total",
+      status: "completed",
+      usage: {
+        input_tokens: 12000,
+        output_tokens: 800,
+        output_tokens_details: { reasoning_tokens: 700 },
+      },
+      output: [{ type: "message", content: [{ type: "text", text: "ok" }] }],
+    };
+    const client = new MockClient(new MockStream([], response as MockResponse));
+
+    const result = await runOracle(
+      { prompt: "usage check", model: "gpt-5.1", background: false },
+      { apiKey: "sk-test", client, log: () => {}, write: () => true },
+    );
+
+    expect(result).toMatchObject({
+      mode: "live",
+      usage: { inputTokens: 12000, outputTokens: 800, reasoningTokens: 700, totalTokens: 12800 },
+    });
   });
 });

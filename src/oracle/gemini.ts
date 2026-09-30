@@ -17,6 +17,21 @@ import type {
 import { resolveGeminiModelId } from "./geminiModels.js";
 export { resolveGeminiModelId } from "./geminiModels.js";
 
+// Gemini reports thinking tokens outside candidatesTokenCount but bills them at the output rate.
+function adaptGeminiUsage(
+  usageMetadata?: GenerateContentResponseUsageMetadata,
+): NonNullable<OracleResponse["usage"]> {
+  const inputTokens = usageMetadata?.promptTokenCount ?? 0;
+  const thoughtsTokens = usageMetadata?.thoughtsTokenCount;
+  const outputTokens = (usageMetadata?.candidatesTokenCount ?? 0) + (thoughtsTokens ?? 0);
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    reasoning_tokens: thoughtsTokens,
+    total_tokens: inputTokens + outputTokens,
+  };
+}
+
 export function createGeminiClient(
   apiKey: string,
   modelName: ModelName = "gemini-3-pro",
@@ -96,20 +111,12 @@ export function createGeminiClient(
       });
     });
 
-    const usage = {
-      input_tokens: geminiResponse.usageMetadata?.promptTokenCount || 0,
-      output_tokens: geminiResponse.usageMetadata?.candidatesTokenCount || 0,
-      total_tokens:
-        (geminiResponse.usageMetadata?.promptTokenCount || 0) +
-        (geminiResponse.usageMetadata?.candidatesTokenCount || 0),
-    };
-
     return {
       id: geminiResponse.responseId ?? `gemini-${Date.now()}`,
       status: "completed",
       output_text: outputText,
       output,
-      usage,
+      usage: adaptGeminiUsage(geminiResponse.usageMetadata),
     };
   };
 
@@ -118,19 +125,12 @@ export function createGeminiClient(
     usageMetadata?: GenerateContentResponseUsageMetadata,
     responseId?: string,
   ): OracleResponse => {
-    const usage = {
-      input_tokens: usageMetadata?.promptTokenCount ?? 0,
-      output_tokens: usageMetadata?.candidatesTokenCount ?? 0,
-      total_tokens:
-        (usageMetadata?.promptTokenCount ?? 0) + (usageMetadata?.candidatesTokenCount ?? 0),
-    };
-
     return {
       id: responseId ?? `gemini-${Date.now()}`,
       status: "completed",
       output_text: [text],
       output: [{ type: "text", text }],
-      usage,
+      usage: adaptGeminiUsage(usageMetadata),
     };
   };
 

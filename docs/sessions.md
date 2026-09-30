@@ -36,6 +36,10 @@ running   gpt-5.2-pro   api     03/01 09:22 AM      1400        -  │  └─ i
 pending   gpt-5.2-pro   api     03/01 09:25 AM       900        -  └─ risk-check
 ```
 
+## Token usage and cost
+
+API usage summaries and saved sessions include reported reasoning tokens. Gemini's thought tokens are included in output usage; OpenAI reasoning is already part of output, and xAI reasoning is added only when the reported total identifies it as separate. Reasoning is a breakdown of output, not an additional amount to add to the total. Costs are estimates based on these counts and Oracle's configured rates.
+
 ## Replaying
 
 ```bash
