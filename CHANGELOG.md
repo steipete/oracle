@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Dependencies: update pinned Hono to 4.13.11, its Node adapter to 2.1.3, and pnpm to 11.28.2 while retaining the two-day release-age policy and Node >=24.
+
 - Dependencies: update MCP server/client to 2.2.0, the legacy MCP SDK to 1.31.0, oxfmt to 0.71.0, and oxlint to 1.86.0 within the two-day release-age policy; retain Node >=24.
 
 - Dependencies: refresh provider/MCP SDKs, cookie and browser tooling, test tooling, and pnpm within the two-day release-age policy; update dotenv's compatible preload entrypoint, retain Node >=24, and keep Undici on v7 for native-fetch compatibility; thanks @dependabot.
