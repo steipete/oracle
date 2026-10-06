@@ -154,6 +154,80 @@ describe("navigateToPromptReadyWithFallback", () => {
     expect(ensurePromptReadyMock).toHaveBeenNthCalledWith(1, runtime, 5_000, logger);
     expect(ensurePromptReadyMock).toHaveBeenNthCalledWith(2, runtime, 120_000, logger);
   });
+
+  class ClickableElement extends FakeElement {
+    clicks = 0;
+    click(): void {
+      this.clicks += 1;
+    }
+  }
+
+  // Runs the real dismissal expression against a fake DOM on both the initial and fallback navigation.
+  const navigateWithDom = async (children: FakeElement[]) => {
+    const document = new FakeDocument(children);
+    const window = {
+      getComputedStyle: (el: FakeElement) => ({
+        display: "block",
+        visibility: "visible",
+        opacity: el.getAttribute("data-state") === "closed" ? "0" : "1",
+      }),
+    };
+    const runtime = {
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+        result: {
+          value: new Function("document", "window", "HTMLElement", `return ${expression};`)(
+            document,
+            window,
+            FakeElement,
+          ),
+        },
+      })),
+    } as unknown as ChromeClient["Runtime"];
+    await navigateToPromptReadyWithFallback(
+      {} as unknown as ChromeClient["Page"],
+      runtime,
+      {
+        url: "https://chatgpt.com/g/g-p-target/project",
+        fallbackUrl: "https://chatgpt.com/",
+        timeoutMs: 5_000,
+        headless: false,
+        logger,
+      },
+      {
+        navigateToChatGPT: vi.fn().mockResolvedValue(undefined),
+        ensureNotBlocked: vi.fn().mockResolvedValue(undefined),
+        ensurePromptReady: vi
+          .fn()
+          .mockRejectedValueOnce(new Error("Prompt textarea did not appear before timeout"))
+          .mockResolvedValueOnce(undefined),
+      },
+    );
+  };
+
+  test("does not click sidebar conversations whose titles look like dismiss controls", async () => {
+    const closeChat = new ClickableElement("a", { href: "/c/abc" }, [], "Close test task");
+    const returnChat = new ClickableElement("a", { href: "/c/def" }, [], "Return policy draft");
+
+    await navigateWithDom([new FakeElement("nav", {}, [closeChat, returnChat])]);
+
+    expect(closeChat.clicks).toBe(0);
+    expect(returnChat.clicks).toBe(0);
+    expect(logger).not.toHaveBeenCalledWith(expect.stringContaining("dismissed blocking UI"));
+  });
+
+  test("dismisses a visible dialog but not a hidden one", async () => {
+    const hiddenOk = new ClickableElement("button", {}, [], "Got it");
+    const close = new ClickableElement("button", { "aria-label": "Close" });
+
+    await navigateWithDom([
+      new FakeElement("div", { role: "dialog", "data-state": "closed" }, [hiddenOk]),
+      new FakeElement("div", { role: "dialog" }, [close]),
+    ]);
+
+    expect(close.clicks).toBe(2);
+    expect(hiddenOk.clicks).toBe(0);
+    expect(logger).toHaveBeenCalledWith("[nav] dismissed blocking UI (close)");
+  });
 });
 
 describe("ensurePromptReady", () => {

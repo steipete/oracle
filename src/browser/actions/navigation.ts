@@ -98,10 +98,10 @@ async function dismissBlockingUi(
       const buttonCandidates = (root) =>
         Array.from(root.querySelectorAll('button,[role="button"],a')).filter((el) => isVisible(el));
 
-      const roots = [
-        ...Array.from(document.querySelectorAll('[role="dialog"],dialog')),
-        document.body,
-      ].filter(Boolean);
+      // Only visible dialogs: a page-wide scan clicks sidebar chats titled like dismiss controls.
+      const roots = Array.from(document.querySelectorAll('[role="dialog"],dialog')).filter((el) =>
+        isVisible(el),
+      );
       for (const root of roots) {
         const buttons = buttonCandidates(root);
         const close = buttons.find((el) => labelFor(el).includes('close'));
