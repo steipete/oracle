@@ -26,6 +26,7 @@ Future Windows gotchas belong here. Update this doc when you learn something new
 - `scripts/browser-tools.ts` may attach its "active page" command to an `about:blank` target when several DevTools targets exist. For signed-in evidence, select the exact target id recorded by the Oracle session and verify its URL and composer state directly.
 
 - Shared manual-login Chrome is detached from its native Windows controller and launched with `windowsHide`; temporary and copied profiles retain their existing process lifecycle. The final verified lease owner terminates the matching Chrome PID/profile.
+- Unit tests that mock only chrome-launcher's `launch()` must explicitly disable the Windows default `manualLogin` mode. Shared profiles use `new Launcher()`; cover that path with the dedicated lifecycle proof instead of accidentally launching Chrome from an option-construction test.
 - After upgrading this lease protocol, restart all Oracle browser controllers before sharing a profile. Older live controllers can forcibly remove a registry lock after their timeout; stored legacy records remain readable, but simultaneous mixed-version controllers are not a safe upgrade path.
 - Run `node scripts/shared-chrome-lifecycle-proof.mjs` after building for the native two-controller check. It uses a freshly initialized, signed-out profile and locally supplied pages, verifies peer CDP access after the owner exits, then checks final registry/process/endpoint cleanup. It does not prove signed-in ChatGPT concurrency or backend model identity.
 

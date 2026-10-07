@@ -48,6 +48,8 @@ describe("cold Chrome startup", () => {
       await writeFile(path.join(dir, "chrome-err.log"), stale);
       vi.stubEnv("ORACLE_BROWSER_PORT", environment);
       vi.stubEnv("ORACLE_BROWSER_DEBUG_PORT", "");
+      vi.stubEnv("ORACLE_BROWSER_REMOTE_DEBUG_HOST", "");
+      vi.stubEnv("WSL_HOST_IP", "");
       chromeLaunchMock.mockReset();
       chromeLaunchMock.mockImplementation(async (options: { port?: number }) => ({
         pid: 1234,
@@ -56,10 +58,11 @@ describe("cold Chrome startup", () => {
       }));
       try {
         await launchChrome(
-          resolveBrowserConfig({ debugPort: configured }),
+          resolveBrowserConfig({ debugPort: configured, manualLogin: false }),
           dir,
           vi.fn<(message: string) => void>(),
         );
+        expect(chromeLaunchMock).toHaveBeenCalledOnce();
         const port = chromeLaunchMock.mock.calls[0]?.[0].port;
         expect(Number.isInteger(port)).toBe(true);
         expect(port).toBeGreaterThan(1);
