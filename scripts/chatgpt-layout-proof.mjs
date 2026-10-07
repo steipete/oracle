@@ -194,6 +194,7 @@ try {
     "ChatGPT layout proof passed: recorded completed/streaming DOM, both role markers, prompt identity, scoped Markdown copy, Work safety, model switching, intact multiline paste and fail-closed corruption.",
   );
 } finally {
+  navigationServer?.closeAllConnections();
   await new Promise((resolve) => (navigationServer ? navigationServer.close(resolve) : resolve()));
   await client?.close().catch(() => {});
   try {
