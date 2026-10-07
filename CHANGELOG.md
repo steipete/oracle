@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Browser: use fresh cold-launch ports and live attach endpoints, wait for HTTP 404 approval responses, exclude volatile copied-profile session state while preserving auth storage, and report partial cookie transfers safely; fixes #535, #537, #538, and #540, improves #541; thanks @webkitvn and @Sogl.
-- Browser: dismiss blocking UI only inside visible dialogs, so a sidebar conversation whose title contains a word like "close" is no longer clicked after opening a ChatGPT project URL; fixes #534, thanks @webkitvn.
+- Browser: dismiss blocking UI only inside visible dialogs, so a sidebar conversation whose title contains a word like "close" is no longer clicked after opening a ChatGPT project URL; fixes #534, thanks @tlq5l and @webkitvn.
 - Files: apply default-ignored directory names only below the directory or glob base passed to `--file`, so a bundle under `/tmp` or a `build/` folder is no longer dropped when oracle runs from elsewhere; fixes #531, thanks @postoso.
 
 ## 0.21.4 - 2026-10-01

@@ -2,6 +2,7 @@
 // Recorded, sanitized ChatGPT DOM and synthetic input; no account or external requests.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,7 +19,10 @@ import {
   captureAssistantMarkdown,
   buildCompletionVisibilityExpressionForTest,
 } from "../dist/src/browser/actions/assistantResponse.js";
-import { buildChatModeProbeExpressionForTest } from "../dist/src/browser/actions/navigation.js";
+import {
+  buildChatModeProbeExpressionForTest,
+  navigateToPromptReadyWithFallback,
+} from "../dist/src/browser/actions/navigation.js";
 import { ensureModelSelection } from "../dist/src/browser/actions/modelSelection.js";
 import { submitPrompt } from "../dist/src/browser/actions/promptComposer.js";
 
@@ -43,6 +47,7 @@ const chrome = new Launcher({
 });
 const logger = Object.assign(() => {}, { verbose: false });
 let client;
+let navigationServer;
 try {
   await chrome.launch();
   client = await connectToChrome(chrome.port, logger);
@@ -144,10 +149,52 @@ try {
       assert.deepEqual(await evaluate("submissions"), [prompt]);
     }
   }
+  // Exercise dismissal through real navigation, including an inaccessible-project fallback.
+  navigationServer = createServer((request, response) => {
+    response.setHeader("Content-Type", "text/html");
+    const missing = request.url === "/missing";
+    response.end(`<!doctype html><html><body>
+      <nav><a href="/wrong">Close test task</a><a href="/wrong">Return policy draft</a></nav>
+      <div role="dialog" style="opacity:0"><button onclick="window.hiddenClicks++">Got it</button></div>
+      <dialog open><button aria-label="Close" onclick="window.dialogClicks++;this.closest('dialog').close()">Close</button></dialog>
+      ${missing ? "<p>Project unavailable</p>" : '<textarea id="prompt-textarea" placeholder="Ask anything"></textarea>'}
+      <script>window.hiddenClicks=0;window.dialogClicks=0;</script>
+    </body></html>`);
+  });
+  await new Promise((resolve) => navigationServer.listen(0, "127.0.0.1", resolve));
+  const navigationOrigin = `http://127.0.0.1:${navigationServer.address().port}`;
+  await Network.setBlockedURLs({ urls: [] });
+  for (const missing of [false, true]) {
+    const target = `${navigationOrigin}/${missing ? "missing" : "project"}`;
+    const fallback = `${navigationOrigin}/`;
+    const result = await navigateToPromptReadyWithFallback(Page, Runtime, {
+      url: target,
+      fallbackUrl: fallback,
+      timeoutMs: 200,
+      fallbackTimeoutMs: 2_000,
+      headless: true,
+      logger,
+    });
+    assert.equal(result.usedFallback, missing);
+    assert.deepEqual(
+      await evaluate(
+        "({url:location.href,hidden:window.hiddenClicks,visible:window.dialogClicks})",
+      ),
+      {
+        url: missing ? fallback : target,
+        hidden: 0,
+        visible: 1,
+      },
+    );
+  }
+  console.log(
+    "Navigation proof passed: sidebar Close/Return links untouched, hidden dialog untouched, visible dialog dismissed, missing project recovered through homepage fallback.",
+  );
   console.log(
     "ChatGPT layout proof passed: recorded completed/streaming DOM, both role markers, prompt identity, scoped Markdown copy, Work safety, model switching, intact multiline paste and fail-closed corruption.",
   );
 } finally {
+  await new Promise((resolve) => (navigationServer ? navigationServer.close(resolve) : resolve()));
   await client?.close().catch(() => {});
   try {
     await chrome.kill();

@@ -100,6 +100,8 @@ Notes:
 
 Browser mode recognizes the Chat/Work layout as well as the older conversation markup. New chats switch to Chat when necessary; an existing Work conversation is still rejected during follow-up. Submitted prompt identity and Markdown capture use the same conversation markers across initial capture and recovery.
 
+Project navigation dismisses controls only inside visible dialogs. Sidebar conversation titles are never treated as dismiss buttons; if a project has no usable composer, Oracle retries at the configured ChatGPT homepage.
+
 Multiline prompts are pasted into contenteditable composers in small chunks and checked for complete content before Send. If a paste is truncated or converted into a file, Oracle stops with `prompt-paste-incomplete`. Remote attachments wait for the file input to mount and require a visible attachment or acceptance receipt; a missing chip fails without automatically repeating an upload that might still be processing.
 
 ### CLI Options
