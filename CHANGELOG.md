@@ -6,6 +6,7 @@
 - Browser: dismiss blocking UI only inside visible dialogs, so a sidebar conversation whose title contains a word like "close" is no longer clicked after opening a ChatGPT project URL; fixes #534, thanks @tlq5l and @webkitvn.
 - Files: look for `.gitignore` files only in the directories and glob bases passed to `--file` and their parents under the working directory, instead of walking the whole working directory, so a small bundle no longer takes seconds to minutes when oracle runs from a home directory, and stop a `.gitignore` in `foo/` from applying to files in a sibling `foobar/`; fixes #532, thanks @postoso.
 - Browser: recognize Japanese Chat/Work effort controls and assistant completion/copy signals while preserving current-turn verification; thanks @kiyo-e.
+- Dependencies: refresh provider and MCP SDKs, Chrome tooling, terminal dependencies, Vitest/coverage, Hono, and Vite within the two-day cooldown; retain Node >=24 and Undici 7 compatibility; thanks @dependabot.
 - Files: apply default-ignored directory names only below the directory or glob base passed to `--file`, so a bundle under `/tmp` or a `build/` folder is no longer dropped when oracle runs from elsewhere; fixes #531, thanks @postoso.
 
 ## 0.21.4 - 2026-10-01
