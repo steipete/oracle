@@ -304,7 +304,10 @@ async function expandWithNativeGlob(partitioned: PartitionedFiles, cwd: string):
 
   const dotfileOptIn = patterns.some((pattern) => includesDotfileSegment(pattern));
 
-  const gitignoreSets = await loadGitignoreSets(cwd);
+  const gitignoreSets = await loadGitignoreSets(
+    cwd,
+    getExpansionRoots(partitioned, cwd).map(({ root }) => root),
+  );
 
   const matches = (await fg(patterns, {
     cwd,
@@ -325,15 +328,64 @@ async function expandWithNativeGlob(partitioned: PartitionedFiles, cwd: string):
 
 type GitignoreSet = { dir: string; patterns: string[] };
 
-async function loadGitignoreSets(cwd: string): Promise<GitignoreSet[]> {
-  const gitignorePaths = await fg("**/.gitignore", {
-    cwd,
-    dot: true,
-    absolute: true,
-    onlyFiles: true,
-    followSymbolicLinks: false,
-    suppressErrors: true,
-  });
+// Only .gitignore files under cwd that sit on the way to, or inside, a requested path can
+// apply to a match, so read those instead of walking the whole cwd tree. Like that walk,
+// never look past a symlinked directory.
+async function loadGitignoreSets(requestCwd: string, roots: string[]): Promise<GitignoreSet[]> {
+  // Absolute, like the paths fast-glob returns, so the sets match absolute candidates.
+  const cwd = path.resolve(requestCwd);
+  const gitignorePaths = new Set<string>();
+  const addIfFile = async (dir: string) => {
+    const candidate = path.join(dir, ".gitignore");
+    try {
+      if ((await fs.lstat(candidate)).isFile()) {
+        gitignorePaths.add(toPosix(candidate)); // same form fast-glob returns below
+      }
+    } catch {
+      // no .gitignore at this level
+    }
+  };
+  const scanDirs: string[] = [];
+  for (const root of roots) {
+    if (isWithin(cwd, root)) {
+      scanDirs.push(cwd);
+      continue;
+    }
+    if (!isWithin(root, cwd)) {
+      continue;
+    }
+    await addIfFile(cwd);
+    const segments = path.relative(cwd, root).split(path.sep);
+    let dir = cwd;
+    for (let index = 0; index < segments.length; index += 1) {
+      dir = path.join(dir, segments[index]);
+      const stats = await fs.lstat(dir).catch(() => null);
+      if (!stats?.isDirectory()) {
+        break; // a file, a symlink, or missing: nothing further down was ever walked
+      }
+      if (index === segments.length - 1) {
+        scanDirs.push(dir);
+      } else {
+        await addIfFile(dir);
+      }
+    }
+  }
+  const outermostDirs = scanDirs
+    .sort((a, b) => a.length - b.length)
+    .filter((dir, index, dirs) => !dirs.slice(0, index).some((outer) => isWithin(dir, outer)));
+  for (const dir of outermostDirs) {
+    const found = await fg("**/.gitignore", {
+      cwd: dir,
+      dot: true,
+      absolute: true,
+      onlyFiles: true,
+      followSymbolicLinks: false,
+      suppressErrors: true,
+    });
+    for (const filePath of found) {
+      gitignorePaths.add(filePath);
+    }
+  }
   const sets: GitignoreSet[] = [];
   for (const filePath of gitignorePaths) {
     try {
@@ -355,10 +407,11 @@ async function loadGitignoreSets(cwd: string): Promise<GitignoreSet[]> {
 
 function isGitignored(filePath: string, sets: GitignoreSet[]): boolean {
   for (const { dir, patterns } of sets) {
-    if (!filePath.startsWith(dir)) {
+    // Native path comparison also handles fast-glob's forward slashes on Windows.
+    if (!isWithin(filePath, dir)) {
       continue;
     }
-    const relative = path.relative(dir, filePath) || path.basename(filePath);
+    const relative = toPosix(path.relative(dir, filePath) || path.basename(filePath));
     if (matchesAny(relative, patterns)) {
       return true;
     }

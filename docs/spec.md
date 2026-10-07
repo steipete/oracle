@@ -26,7 +26,7 @@ This page captures the design constraints. The README and the rest of the docs d
 The bundle Oracle ships is deterministic given the same args and same files. That means:
 
 - Files are read in glob expansion order, then de-duplicated.
-- `.gitignore` is honored.
+- `.gitignore` is honored. Discovery is limited to the requested roots and their ancestors under the working directory; rules never leak into sibling directories with a shared name prefix.
 - Default-ignored dirs: `node_modules`, `dist`, `coverage`, `.git`, `.turbo`, `.next`, `build`, `tmp`. They apply below the directory or glob base you pass, not to its parents. Pass them explicitly to override.
 - Symlinks are not followed.
 - Dotfiles are filtered unless the glob has a dot-segment (`--file ".github/**"`).

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -229,6 +229,130 @@ describe("oracle utility helpers", () => {
       const basenames = files.map((file) => path.basename(file.path));
       expect(basenames).toContain("bundle.js");
       expect(basenames).not.toContain("bundle.js.map");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  testNonWindows(
+    "readFiles only reads .gitignore files that can apply to the request",
+    async () => {
+      const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-readfiles-gitignore-scope-"));
+      try {
+        const pack = path.join(dir, "work", "pack");
+        await mkdir(pack, { recursive: true });
+        await mkdir(path.join(dir, "unrelated"), { recursive: true });
+        await writeFile(path.join(dir, ".gitignore"), "**/*.log\n", "utf8");
+        await writeFile(path.join(dir, "unrelated", ".gitignore"), "*.md\n", "utf8");
+        await writeFile(path.join(pack, ".gitignore"), "skip.md\n", "utf8");
+        await writeFile(path.join(pack, "a.md"), "alpha", "utf8");
+        await writeFile(path.join(pack, "b.log"), "log", "utf8");
+        await writeFile(path.join(pack, "skip.md"), "skip", "utf8");
+
+        const { vi } = await import("vitest");
+        const fsPromises = (await import("node:fs/promises")).default;
+        const readSpy = vi.spyOn(fsPromises, "readFile");
+        try {
+          for (const input of [pack, path.join(pack, "*")]) {
+            const files = await readFiles([input], { cwd: dir });
+            expect(files.map((file) => path.basename(file.path))).toEqual(["a.md"]);
+          }
+          const readPaths = readSpy.mock.calls.map(([target]) => path.resolve(String(target)));
+          expect(readPaths).toContain(path.join(dir, ".gitignore"));
+          expect(readPaths).toContain(path.join(pack, ".gitignore"));
+          expect(readPaths).not.toContain(path.join(dir, "unrelated", ".gitignore"));
+        } finally {
+          readSpy.mockRestore();
+        }
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test("readFiles combines bounded ignores with matching expansion roots", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-readfiles-combined-roots-"));
+    try {
+      const pack = path.join(dir, "pack");
+      const build = path.join(pack, "build");
+      const unrelatedIgnore = path.join(dir, "unrelated", ".gitignore");
+      await mkdir(build, { recursive: true });
+      await mkdir(path.dirname(unrelatedIgnore), { recursive: true });
+      await writeFile(path.join(pack, ".gitignore"), "build/blocked.ts\n", "utf8");
+      await writeFile(unrelatedIgnore, "*.md\n", "utf8");
+      await writeFile(path.join(pack, "a.md"), "alpha", "utf8");
+      await writeFile(path.join(build, "tool.ts"), "tool", "utf8");
+      await writeFile(path.join(build, "blocked.ts"), "blocked", "utf8");
+      await writeFile(path.join(build, "notes.md"), "ignored descendant", "utf8");
+
+      const { vi } = await import("vitest");
+      const fsPromises = (await import("node:fs/promises")).default;
+      const readSpy = vi.spyOn(fsPromises, "readFile");
+      try {
+        const files = await readFiles(["pack/**/*.md", "pack/build/*.ts"], { cwd: dir });
+        expect(files.map((file) => path.basename(file.path)).sort()).toEqual(["a.md", "tool.ts"]);
+        const readPaths = readSpy.mock.calls.map(([target]) => path.resolve(String(target)));
+        expect(readPaths).toContain(path.join(pack, ".gitignore"));
+        expect(readPaths).not.toContain(unrelatedIgnore);
+      } finally {
+        readSpy.mockRestore();
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("readFiles applies a .gitignore only inside its own directory", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-readfiles-gitignore-prefix-"));
+    try {
+      await mkdir(path.join(dir, "foo"), { recursive: true });
+      await mkdir(path.join(dir, "foobar"), { recursive: true });
+      await writeFile(path.join(dir, "foo", ".gitignore"), "**/*.md\n", "utf8");
+      await writeFile(path.join(dir, "foobar", "x.md"), "x", "utf8");
+      await writeFile(path.join(dir, "foobar", "keep.txt"), "keep", "utf8");
+
+      // `.` loads foo/.gitignore, so it exercises the matcher's path-boundary check.
+      for (const input of ["foobar/*", "."]) {
+        const files = await readFiles([input], { cwd: dir });
+        expect(files.map((file) => path.basename(file.path)).sort()).toEqual(["keep.txt", "x.md"]);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  testNonWindows("readFiles applies ancestor .gitignore files with a relative cwd", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-readfiles-gitignore-relative-"));
+    try {
+      const work = path.join(dir, "work");
+      await mkdir(path.join(work, "pack"), { recursive: true });
+      await writeFile(path.join(work, ".gitignore"), "**/*.log\n", "utf8");
+      await writeFile(path.join(work, "pack", "a.md"), "alpha", "utf8");
+      await writeFile(path.join(work, "pack", "private.log"), "private", "utf8");
+
+      const cwd = path.relative(process.cwd(), work);
+      for (const input of ["pack", "pack/*"]) {
+        const files = await readFiles([input], { cwd });
+        expect(files.map((file) => path.basename(file.path))).toEqual(["a.md"]);
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  testNonWindows("readFiles does not read .gitignore files behind a symlinked dir", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-readfiles-gitignore-symlink-"));
+    try {
+      const real = path.join(dir, "real");
+      await mkdir(real, { recursive: true });
+      await writeFile(path.join(real, ".gitignore"), "skip.md\n", "utf8");
+      await writeFile(path.join(real, "skip.md"), "skip", "utf8");
+      await writeFile(path.join(real, "keep.txt"), "keep", "utf8");
+      await symlink(real, path.join(dir, "link"), "dir");
+
+      // Matches the cwd-wide walk, which never followed the link to real/.gitignore.
+      const files = await readFiles(["link/*"], { cwd: dir });
+      expect(files.map((file) => path.basename(file.path)).sort()).toEqual(["keep.txt", "skip.md"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
