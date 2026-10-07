@@ -3250,6 +3250,43 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     expect(dom.keys).toEqual([]);
   });
 
+  function useLocalizedSemanticTrigger(dom: ReturnType<typeof buildDirectSlider>) {
+    // ja-JP Chat/Work layout observed 2026-10-03: the composer trigger keeps
+    // data-codex-intelligence-trigger but localizes its aria-label and has no
+    // __composer-pill class, so only the stable data attribute identifies it.
+    useSemanticSlider(dom);
+    dom.pill.setAttribute("aria-label", "ChatGPT モデルを選択");
+    dom.pill.setAttribute("data-codex-intelligence-trigger", "true");
+    dom.pill.setAttribute("class", "");
+    dom.pill.textContent = "思考量思考量";
+    const querySelectorAll = dom.documentStub.querySelectorAll;
+    dom.documentStub.querySelectorAll = (selector: string) => {
+      // Only the locale-independent attribute matches; the English aria-label does not.
+      if (selector.includes("data-codex-intelligence-trigger")) return [dom.pill];
+      if (selector.includes("Select ChatGPT model")) return [];
+      if (selector.includes("__composer-pill")) return [];
+      return querySelectorAll(selector);
+    };
+    return dom;
+  }
+
+  it.each([
+    [1, ["ArrowRight", "ArrowRight", "ArrowRight"], "switched"],
+    [4, [], "already-selected"],
+  ] as const)(
+    "selects Pro on the ja-JP Chat/Work slider from index %s",
+    async (index, expectedKeys, status) => {
+      const dom = useLocalizedSemanticTrigger(buildDirectSlider(index));
+      const labels = ["Instant", "Medium", "High", "Extra High", "Pro"];
+      dom.announcement.textContent = `${labels[index]}、5 件中 ${index + 1} 番目。`;
+      await expect(run(dom.documentStub, "pro", "gpt-5.6-sol")).resolves.toEqual({
+        status,
+        label: "Pro",
+      });
+      expect(dom.keys).toEqual(expectedKeys);
+    },
+  );
+
   it("does not promote semantic four-tier Extra High to Pro", async () => {
     const dom = useSemanticSlider(buildDirectSlider(3, undefined, 3));
     dom.announcement.textContent = "Extra High, 4 of 4";

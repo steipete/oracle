@@ -98,7 +98,7 @@ Notes:
 
 ### Current ChatGPT layouts
 
-Browser mode recognizes the Chat/Work layout as well as the older conversation markup. New chats switch to Chat when necessary; an existing Work conversation is still rejected during follow-up. Submitted prompt identity and Markdown capture use the same conversation markers across initial capture and recovery.
+Browser mode recognizes the Chat/Work layout as well as the older conversation markup, including Japanese effort triggers, assistant copy/regenerate controls, and completion announcements. New chats switch to Chat when necessary; an existing Work conversation is still rejected during follow-up. Submitted prompt identity and Markdown capture use the same conversation markers across initial capture and recovery.
 
 Project navigation dismisses controls only inside visible dialogs. Sidebar conversation titles are never treated as dismiss buttons; if a project has no usable composer, Oracle retries at the configured ChatGPT homepage.
 

@@ -1,4 +1,5 @@
 import { buildConversationTurnListExpression } from "../conversationTurns.js";
+import { RESPONSE_COMPLETE_ANNOUNCEMENTS } from "../constants.js";
 
 const TRACKER_KEY = "__oracleCurrentTurnCompletionV1";
 
@@ -17,7 +18,7 @@ export function buildInstallCompletionAnnouncementExpression(
     const baseline = ${baselineLiteral} ?? turns().length;
     const completeNode = () => Array.from(
       document.querySelectorAll('[role="status"][aria-live="polite"]'),
-    ).find((node) => (node.textContent || '').trim() === 'Response complete') ?? null;
+    ).find((node) => ${JSON.stringify(RESPONSE_COMPLETE_ANNOUNCEMENTS)}.includes((node.textContent || '').trim())) ?? null;
     const isAssistant = (node) => {
       const key = (node.getAttribute?.('data-content-search-unit-key') || node.getAttribute?.('data-chatgpt-search-unit-key') || '').toLowerCase();
       if (key.endsWith(':user')) return false;

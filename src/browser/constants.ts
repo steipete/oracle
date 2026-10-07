@@ -104,7 +104,8 @@ export const MODEL_BUTTON_SELECTOR =
   '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"]';
 export const COMPOSER_MODEL_SIGNAL_SELECTOR = '[data-testid="composer-footer-actions"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
-export const ACTION_BAR_COPY_BUTTON_SELECTOR = '.turn-action-controls button[aria-label="Copy"]';
+export const ACTION_BAR_COPY_BUTTON_SELECTOR =
+  '.turn-action-controls button[aria-label="Copy"], .turn-action-controls button[aria-label="コピーする"]';
 // Action buttons that only appear once a turn has finished rendering.
 export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
 export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";
@@ -112,5 +113,10 @@ export const DEEP_RESEARCH_PILL_LABEL = "Deep research";
 export const DEEP_RESEARCH_POLL_INTERVAL_MS = 5_000;
 export const DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS = 70_000;
 export const DEEP_RESEARCH_DEFAULT_TIMEOUT_MS = 2_400_000;
+// Turn action labels are localized and have no data-testid in the Chat/Work layout.
+// ja-JP observed 2026-10-03: Copy -> コピーする, Regenerate response -> 回答を再生成.
+// The user bubble's copy control reads メッセージをコピーする, so exact matches stay assistant-only.
 export const FINISHED_ACTIONS_SELECTOR =
-  '.turn-action-controls button[aria-label="Copy"], .turn-action-controls button[aria-label="Rate response"], .turn-action-controls button[aria-label="Regenerate response"], button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';
+  '.turn-action-controls button[aria-label="Copy"], .turn-action-controls button[aria-label="Rate response"], .turn-action-controls button[aria-label="Regenerate response"], .turn-action-controls button[aria-label="コピーする"], .turn-action-controls button[aria-label="回答を再生成"], button[data-testid="copy-turn-action-button"], button[data-testid="good-response-turn-action-button"], button[data-testid="bad-response-turn-action-button"], button[aria-label="Share"]';
+// Text of ChatGPT's polite live region once a turn finishes, per UI language.
+export const RESPONSE_COMPLETE_ANNOUNCEMENTS = ["Response complete", "回答が完了しました"];
