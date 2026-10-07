@@ -124,19 +124,36 @@ describe("ChatGPT Chat/Work semantic layout", () => {
       messageId: "assistant-uuid",
     });
   });
-  test("correlates sibling completion controls and rejects the wrong message", () => {
-    const { document, turn } = fixture();
-    turn.append(
-      node("div", { class: "turn-action-controls" }, [node("button", { "aria-label": "Copy" })]),
+  test.each(["Copy", "コピーする", "回答を再生成"])(
+    "correlates %s completion controls and rejects the wrong message",
+    (label) => {
+      const { document, turn } = fixture();
+      turn.append(
+        node("div", { class: "turn-action-controls" }, [node("button", { "aria-label": label })]),
+      );
+      expect(
+        evaluate(
+          buildCompletionVisibilityExpressionForTest({ messageId: "assistant-uuid" }, 0),
+          document,
+        ),
+      ).toBe(true);
+      expect(
+        evaluate(buildCompletionVisibilityExpressionForTest({ messageId: "wrong" }, 0), document),
+      ).toBe(false);
+    },
+  );
+  test("does not treat the Japanese user-copy control as assistant completion", () => {
+    const { document, user } = fixture();
+    user.append(
+      node("div", { class: "turn-action-controls" }, [
+        node("button", { "aria-label": "メッセージをコピーする" }),
+      ]),
     );
     expect(
       evaluate(
         buildCompletionVisibilityExpressionForTest({ messageId: "assistant-uuid" }, 0),
         document,
       ),
-    ).toBe(true);
-    expect(
-      evaluate(buildCompletionVisibilityExpressionForTest({ messageId: "wrong" }, 0), document),
     ).toBe(false);
   });
   test("does not accept a streaming turn without scoped finished controls", () => {
@@ -177,20 +194,23 @@ describe("ChatGPT Chat/Work semantic layout", () => {
       ).toBe(probe === "completion" ? true : 0);
     },
   );
-  test("earlier assistant action bars cannot complete a later message in the same exchange", () => {
-    const { document, turn } = fixture();
-    const actions = node("div", { class: "turn-action-controls" }, [
-      node("button", { "aria-label": "Copy" }),
-    ]);
-    actions.parentElement = turn;
-    turn.children.unshift(actions);
-    expect(
-      evaluate(
-        buildCompletionVisibilityExpressionForTest({ messageId: "assistant-uuid" }, 0),
-        document,
-      ),
-    ).toBe(false);
-  });
+  test.each(["Copy", "コピーする"])(
+    "earlier %s action bars cannot complete a later message in the same exchange",
+    (label) => {
+      const { document, turn } = fixture();
+      const actions = node("div", { class: "turn-action-controls" }, [
+        node("button", { "aria-label": label }),
+      ]);
+      actions.parentElement = turn;
+      turn.children.unshift(actions);
+      expect(
+        evaluate(
+          buildCompletionVisibilityExpressionForTest({ messageId: "assistant-uuid" }, 0),
+          document,
+        ),
+      ).toBe(false);
+    },
+  );
   test("starts the file-button fallback only for a ready card in the latest turn", () => {
     const expression = fileExpressions.buildAssistantFileCardTurnIndexExpression();
     const ready = fixture(true);

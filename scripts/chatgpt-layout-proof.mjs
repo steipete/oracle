@@ -72,8 +72,16 @@ try {
     new URL("../tests/fixtures/chatgpt-dom-2026-09/completed.html", import.meta.url),
     "utf8",
   );
-  for (const omitted of [null, "data-content-search-unit-key", "data-chatgpt-search-unit-key"]) {
+  for (const [omitted, copyLabel] of [
+    [null, "Copy"],
+    ["data-content-search-unit-key", "Copy"],
+    ["data-chatgpt-search-unit-key", "Copy"],
+    [null, "コピーする"],
+  ]) {
     await setHtml(completed);
+    await evaluate(
+      `document.querySelector('.turn-action-controls button[aria-label="Copy"]').setAttribute('aria-label', ${JSON.stringify(copyLabel)})`,
+    );
     if (omitted)
       await evaluate(
         `document.querySelectorAll('[${omitted}]').forEach(node => node.removeAttribute('${omitted}'))`,
@@ -89,11 +97,11 @@ try {
     assert.equal(snapshot.messageId, "22222222-2222-4222-8222-222222222222");
     assert.equal(await evaluate(buildCompletionVisibilityExpressionForTest(snapshot, 0)), true);
     await evaluate(
-      `Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } }); document.querySelector('.turn-action-controls button[aria-label="Copy"]').onclick = () => navigator.clipboard.writeText('**OK**')`,
+      `Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } }); document.querySelector(${JSON.stringify(`.turn-action-controls button[aria-label="${copyLabel}"]`)}).onclick = () => navigator.clipboard.writeText('**OK**')`,
     );
     assert.equal(await captureAssistantMarkdown(Runtime, snapshot, logger), "**OK**");
     await evaluate(
-      `document.querySelectorAll('.turn-action-controls').forEach(n => n.remove()); document.querySelector('[data-user-message-bubble]').insertAdjacentHTML('beforeend', '<button aria-label="Copy">Copy</button>'); document.querySelector('[data-markdown-text-style="assistant-message"]').insertAdjacentHTML('beforeend', '<pre><button aria-label="Copy">Copy</button></pre>'); document.body.insertAdjacentHTML('afterbegin', '<button aria-label="Share">Share</button>')`,
+      `document.querySelectorAll('.turn-action-controls').forEach(n => n.remove()); document.querySelector('[data-user-message-bubble]').insertAdjacentHTML('beforeend', '<button aria-label="メッセージをコピーする">Copy</button>'); document.querySelector('[data-markdown-text-style="assistant-message"]').insertAdjacentHTML('beforeend', '<pre><button aria-label="Copy">Copy</button></pre>'); document.body.insertAdjacentHTML('afterbegin', '<button aria-label="Share">Share</button>')`,
     );
     assert.equal(await evaluate(buildCompletionVisibilityExpressionForTest(snapshot, 0)), false);
   }

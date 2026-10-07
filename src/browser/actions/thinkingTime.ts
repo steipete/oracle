@@ -1229,6 +1229,9 @@ function buildThinkingTimeExpression(
     // before probing older model-picker layouts.
     const COMPOSER_EFFORT_PILL_SELECTORS = [
       'form[data-chatgpt-composer] button[aria-label="Select ChatGPT model"]',
+      // The aria-label is localized ("ChatGPT モデルを選択" in ja-JP); the trigger
+      // attribute is not, so it identifies the Chat/Work composer owner in any locale.
+      'form[data-chatgpt-composer] button[data-codex-intelligence-trigger="true"]',
       'form button.__composer-pill',
       '[data-testid="composer-footer-actions"] button.__composer-pill',
       '.__composer-pill-composite button.__composer-pill',
@@ -1245,7 +1248,11 @@ function buildThinkingTimeExpression(
       for (const selector of COMPOSER_EFFORT_PILL_SELECTORS) {
         for (const button of document.querySelectorAll(selector)) {
           if (seen.has(button) || !isVisible(button)) continue;
-          if (button.getAttribute('aria-label') === 'Select ChatGPT model' && button.closest('form[data-chatgpt-composer]')) return button;
+          if (
+            (button.getAttribute('aria-label') === 'Select ChatGPT model' ||
+              button.getAttribute('data-codex-intelligence-trigger') === 'true') &&
+            button.closest('form[data-chatgpt-composer]')
+          ) return button;
           seen.add(button);
           if (button.getAttribute?.('data-testid') === 'model-switcher-dropdown-button') continue;
           // A 5.6 Pro model pill is not Astra Latest's 6-prefixed effort owner.
