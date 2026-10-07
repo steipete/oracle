@@ -17,6 +17,9 @@ const RSYNC_EXCLUDES = [
   "Service Worker/CacheStorage/",
   "Service Worker/ScriptCache/",
   "Service Worker/Database/",
+  "Sessions/",
+  "Sessions_Encrypted/",
+  "Session Storage/",
 ];
 
 /**

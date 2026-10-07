@@ -25,7 +25,8 @@ export async function launchChrome(
   logger: BrowserLogger,
 ) {
   const { connectHost, debugBindAddress, usePatchedLauncher } = resolveWslChromeLaunchRoute();
-  const debugPort = config.debugPort ?? parseDebugPortEnv();
+  // Persistent stderr logs can contain an older browser's dynamically assigned port.
+  const debugPort = (config.debugPort ?? parseDebugPortEnv()) || (await findEphemeralPort());
   const usingCopiedProfile = Boolean(config.copyProfileSource);
   const detachSharedChrome = shouldDetachSharedChrome(config);
   const nativeKeychainMarker = path.join(userDataDir, ".oracle-native-keychain-v1");
@@ -797,7 +798,7 @@ async function connectToBrowserWebSocket(
 
 function isRemoteDebuggingApprovalError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return /unexpected server response:\s*403|remote debugging|forbidden/i.test(message);
+  return /unexpected server response:\s*(?:403|404)\b|remote debugging|forbidden/i.test(message);
 }
 
 function formatApprovalWait(waitMs: number): string {
@@ -1261,6 +1262,21 @@ function parseDebugPortEnv(): number | null {
     return null;
   }
   return value;
+}
+
+export async function findEphemeralPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      server.close((error) => {
+        if (error) reject(error);
+        else if (address && typeof address === "object") resolve(address.port);
+        else reject(new Error("Failed to acquire ephemeral port"));
+      });
+    });
+  });
 }
 
 async function launchWithCustomHost({

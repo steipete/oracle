@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { describe, expect, test, vi } from "vitest";
 import { resolveAttachRunningConnection } from "../../src/browser/attachRunning.js";
+import { discoverDevToolsActivePortCandidates } from "../../src/browser/detect.js";
 
 vi.mock("../../src/browser/detect.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/browser/detect.js")>()),
@@ -9,6 +10,55 @@ vi.mock("../../src/browser/detect.js", async (importOriginal) => ({
 }));
 
 describe("attach-running HTTP body deadlines", () => {
+  test.each([false, true])(
+    "prefers live discovery over stale metadata (matching profile: %s) (#538)",
+    async (matchingProfile) => {
+      let endpoint = "";
+      let requests = 0;
+      const server = createServer((_request, response) => {
+        requests++;
+        response.end(JSON.stringify({ webSocketDebuggerUrl: endpoint }));
+      });
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening");
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing test port");
+      endpoint = `ws://127.0.0.1:${address.port}/devtools/browser/live`;
+      const stale = {
+        port: address.port,
+        browserWSEndpoint: endpoint.replace("/live", "/stale"),
+        path: "/profiles/stale/DevToolsActivePort",
+        profileRoot: "/profiles/stale",
+        mtimeMs: 20,
+      };
+      const live = {
+        ...stale,
+        browserWSEndpoint: endpoint,
+        path: "/profiles/live/DevToolsActivePort",
+        profileRoot: "/profiles/live",
+        mtimeMs: 10,
+      };
+      vi.mocked(discoverDevToolsActivePortCandidates).mockResolvedValueOnce(
+        matchingProfile ? [stale, live] : [stale],
+      );
+      try {
+        await expect(
+          resolveAttachRunningConnection(
+            { chromePath: null, remoteChrome: { host: "127.0.0.1", port: address.port } },
+            () => {},
+          ),
+        ).resolves.toMatchObject({
+          browserWSEndpoint: endpoint,
+          profileRoot: matchingProfile ? "/profiles/live" : null,
+        });
+        expect(requests).toBe(1);
+      } finally {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
+
   test.each([false, true])(
     "aborts a stalled response body and bounds the retry (second body stalls: %s)",
     async (stallRetry) => {

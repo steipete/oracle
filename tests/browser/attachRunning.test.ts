@@ -4,6 +4,7 @@ import type { BrowserLogger } from "../../src/browser/types.js";
 describe("resolveAttachRunningConnection", () => {
   beforeEach(() => {
     vi.resetModules();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("HTTP discovery unavailable")));
   });
 
   afterEach(() => {
@@ -11,7 +12,8 @@ describe("resolveAttachRunningConnection", () => {
   });
 
   test("defaults attach-running discovery to 127.0.0.1:9222", async () => {
-    vi.doMock("../../src/browser/detect.js", () => ({
+    vi.doMock("../../src/browser/detect.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/browser/detect.js")>()),
       discoverDevToolsActivePortCandidates: vi.fn(async () => [
         {
           port: 9222,
@@ -45,11 +47,12 @@ describe("resolveAttachRunningConnection", () => {
     expect(logger).toHaveBeenCalledWith(
       "Selected attach-running browser metadata from /profiles/default/DevToolsActivePort",
     );
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   test("uses remote-chrome as the attach-running hint and prefers the newest candidate", async () => {
-    vi.doMock("../../src/browser/detect.js", () => ({
+    vi.doMock("../../src/browser/detect.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/browser/detect.js")>()),
       discoverDevToolsActivePortCandidates: vi.fn(async () => [
         {
           port: 63332,

@@ -96,9 +96,6 @@ export async function syncCookies(
           waitMs,
           logger,
         );
-    if (!cookies.length) {
-      return 0;
-    }
     let applied = 0;
     for (const cookie of cookies) {
       const cookieWithUrl = attachUrl(cookie, url);
@@ -110,10 +107,18 @@ export async function syncCookies(
         if (result?.success) {
           applied += 1;
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger(`Failed to set cookie ${cookie.name}: ${message}`);
+      } catch {
+        // CDP errors can include the submitted cookie value; report only aggregate results.
       }
+    }
+    const rejected = cookies.length - applied;
+    logger(
+      `[cookies] Applied ${applied}/${cookies.length} cookies for ${new URL(url).hostname}${rejected ? ` (${rejected} rejected)` : ""}.`,
+    );
+    if (rejected) {
+      logger(
+        "[cookies] Cookie sync was partial. Use --browser-manual-login if copied cookies do not sign you in.",
+      );
     }
     return applied;
   } catch (error) {
@@ -135,12 +140,12 @@ async function readChromeCookiesWithWait(
   logger: BrowserLogger,
 ): Promise<CookieParam[]> {
   if (waitMs <= 0) {
-    return readChromeCookies(url, profile, filterNames, cookiePath);
+    return readChromeCookies(url, profile, filterNames, cookiePath, logger);
   }
   let cookies: CookieParam[] = [];
   let firstError: unknown;
   try {
-    cookies = await readChromeCookies(url, profile, filterNames, cookiePath);
+    cookies = await readChromeCookies(url, profile, filterNames, cookiePath, logger);
   } catch (error) {
     firstError = error;
   }
@@ -157,7 +162,7 @@ async function readChromeCookiesWithWait(
     logger(`[cookies] No cookies found; waiting ${waitLabel} then retrying once.`);
   }
   await delay(waitMs);
-  return readChromeCookies(url, profile, filterNames, cookiePath);
+  return readChromeCookies(url, profile, filterNames, cookiePath, logger);
 }
 
 async function readChromeCookies(
@@ -165,6 +170,7 @@ async function readChromeCookies(
   profile?: string | null,
   filterNames?: string[],
   cookiePath?: string | null,
+  logger?: BrowserLogger,
 ): Promise<CookieParam[]> {
   const origins = Array.from(new Set([stripQuery(url), ...COOKIE_URLS]));
   const chromeProfile = cookiePath ?? profile ?? undefined;
@@ -181,6 +187,11 @@ async function readChromeCookies(
     timeoutMs,
   });
 
+  if (warnings.length) {
+    logger?.(
+      `[cookies] Cookie reader reported ${warnings.length} warning(s); copied cookies may be incomplete. Use --browser-manual-login if authentication fails.`,
+    );
+  }
   if (process.env.ORACLE_DEBUG_COOKIES === "1" && warnings.length) {
     // eslint-disable-next-line no-console
     console.log(`[cookies] sweet-cookie warnings:\n- ${warnings.join("\n- ")}`);

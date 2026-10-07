@@ -33,21 +33,28 @@ export async function resolveAttachRunningConnection(
     .filter((candidate) => candidate.port === port)
     .sort(compareDevToolsCandidates);
 
-  if (candidates.length === 0) {
-    const probe = await probeDevToolsBrowserWSEndpoint({ host, port });
-    if (probe.ok) {
-      return {
-        host,
-        port,
-        browserWSEndpoint: probe.browserWSEndpoint,
-        profileRoot: null,
-      };
+  const probe = await probeDevToolsBrowserWSEndpoint({ host, port });
+  if (probe.ok) {
+    const matching = candidates.find(
+      (candidate) => candidate.browserWSEndpoint === probe.browserWSEndpoint,
+    );
+    if (candidates.length > 0 && candidates[0].browserWSEndpoint !== probe.browserWSEndpoint) {
+      logger("Ignoring stale attach-running metadata; using the live browser endpoint.");
     }
+    return {
+      host,
+      port,
+      browserWSEndpoint: probe.browserWSEndpoint,
+      profileRoot: matching?.profileRoot ?? null,
+    };
+  }
+  if (candidates.length === 0) {
     const discoveryRoots = resolveDevToolsActivePortDiscoveryRoots();
     throw new Error(
       `No running browser matched ${host}:${port}. DevToolsActivePort discovery searched ${discoveryRoots.join(", ") || "no roots"}, and endpoint probe http://${formatWebSocketHost(host)}:${port}/json/version failed: ${probe.error}.`,
     );
   }
+  // Chrome's remote-debugging toggle can expose metadata without classic HTTP discovery.
   const candidate = candidates[0];
   logger(`Selected attach-running browser metadata from ${candidate.path}`);
   return {

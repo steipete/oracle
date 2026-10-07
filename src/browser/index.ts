@@ -22,6 +22,7 @@ import type {
 } from "./types.js";
 import {
   launchChrome,
+  findEphemeralPort,
   registerTerminationHooks,
   positionChromeWindowOffscreen,
   positionChromeWindowOnscreen,
@@ -2692,25 +2693,6 @@ async function isPortAvailable(port: number): Promise<boolean> {
       server.close(() => resolve(true));
     });
     server.listen(port, "127.0.0.1");
-  });
-}
-
-async function findEphemeralPort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", (error) => {
-      server.close();
-      reject(error);
-    });
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address && typeof address === "object") {
-        const port = address.port;
-        server.close(() => resolve(port));
-      } else {
-        server.close(() => reject(new Error("Failed to acquire ephemeral port")));
-      }
-    });
   });
 }
 

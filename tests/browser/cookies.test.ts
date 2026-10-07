@@ -151,6 +151,61 @@ describe("clearStaleChatGptConversationCookies", () => {
 });
 
 describe("syncCookies", () => {
+  test("reports partial transfer and reader warnings without exposing cookie values (#541)", async () => {
+    vi.stubEnv("ORACLE_DEBUG_COOKIES", "");
+    getCookies.mockResolvedValue({
+      cookies: ["first", "second", "third"].map((name) => ({
+        name,
+        value: "synthetic-private-value",
+        domain: "chatgpt.com",
+        path: "/",
+      })),
+      warnings: ["partitioned Chromium cookie(s) excluded: synthetic-private-value"],
+    });
+    const setCookie = vi
+      .fn()
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false })
+      .mockRejectedValueOnce(new Error("synthetic-private-value"));
+    try {
+      await expect(
+        syncCookies(
+          { setCookie } as unknown as ChromeClient["Network"],
+          "https://chatgpt.com",
+          null,
+          logger,
+        ),
+      ).resolves.toBe(1);
+      expect(logger).toHaveBeenCalledWith(
+        expect.stringContaining("Cookie reader reported 1 warning"),
+      );
+      expect(logger).toHaveBeenCalledWith(
+        expect.stringContaining("Applied 1/3 cookies for chatgpt.com"),
+      );
+      expect(logger).toHaveBeenCalledWith(expect.stringContaining("2 rejected"));
+      expect(JSON.stringify(logger.mock.calls)).not.toContain("synthetic-private-value");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  test("reports an empty cookie transfer explicitly (#541)", async () => {
+    getCookies.mockResolvedValue({ cookies: [], warnings: [] });
+    const setCookie = vi.fn();
+    await expect(
+      syncCookies(
+        { setCookie } as unknown as ChromeClient["Network"],
+        "https://chatgpt.com",
+        null,
+        logger,
+      ),
+    ).resolves.toBe(0);
+    expect(setCookie).not.toHaveBeenCalled();
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("Applied 0/0 cookies for chatgpt.com"),
+    );
+  });
+
   test("replays cookies via DevTools Network.setCookie", async () => {
     getCookies.mockResolvedValue({
       cookies: [
