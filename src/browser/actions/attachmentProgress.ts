@@ -7,6 +7,9 @@ export function buildAttachmentProgressExpression(composerExpression: string): s
     const selectors = ['[data-state="loading"]', '[data-state="uploading"]', '[data-state="pending"]', '[aria-busy="true"]', '[role~="progressbar"]', 'progress'];
     const candidates = new Set(selectors.flatMap(selector => Array.from(root.querySelectorAll(selector))));
     if (selectors.some(selector => root.matches?.(selector))) candidates.add(root);
+    // ChatGPT can mark an uploading tile only with aria-label "Uploading <name>"; count it as upload state.
+    const uploadingLabel = node => /^uploading\s+\S/i.test(node.getAttribute('aria-label') || '');
+    for (const node of Array.from(root.querySelectorAll('[aria-label]'))) if (uploadingLabel(node)) candidates.add(node);
     return Array.from(candidates).some(node => {
       if (typeof node.getBoundingClientRect !== 'function') return false;
       // Non-editable widgets inside rich-text editors own their upload controls.
@@ -14,7 +17,7 @@ export function buildAttachmentProgressExpression(composerExpression: string): s
       const editor = boundary?.matches('[contenteditable="false" i]') ? null : boundary;
       if (editor && editor !== node) return false;
       const state = node.getAttribute('data-state');
-      const pending = node.getAttribute('aria-busy') === 'true' || ['loading', 'uploading', 'pending'].includes(state);
+      const pending = node.getAttribute('aria-busy') === 'true' || ['loading', 'uploading', 'pending'].includes(state) || uploadingLabel(node);
       // File inputs and backing editors may be hidden behind the visible composer.
       if (pending && (node.matches('input[type="file"]') || editor === node)) return true;
       const rect = node.getBoundingClientRect();

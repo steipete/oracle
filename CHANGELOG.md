@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: keep waiting before send while an attachment tile is labelled "Uploading <name>", which ChatGPT now uses instead of `data-state` or `aria-busy`; English label only; related #446.
+
 - CI: use Xcode 27 runners for macOS tests and release packaging while retaining the notifier's explicit macOS 13 deployment target.
 
 - Browser: add opt-in `--browser-no-focus` / `browser.noFocus` for background ChatGPT runs, attachment submission, and recovery; preserve foreground defaults, retain shared browser transports, and bring Chrome forward when sign-in or a challenge requires input; thanks @postoso and @Eotel.

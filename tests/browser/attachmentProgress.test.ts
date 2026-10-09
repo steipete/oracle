@@ -319,3 +319,28 @@ test("explicit upload state remains blocking when the attachment is below the vi
   await vi.advanceTimersByTimeAsync(6_000);
   expect(await outcome).toBe("timed-out");
 });
+
+test("ChatGPT's 'Uploading <name>' tile label blocks completion and send", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const { evaluate, runtime } = fixture(
+    new FakeElement("div", { "aria-label": "Uploading a.txt" }),
+  );
+  expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(false);
+  const outcome = waitForAttachmentCompletion(runtime, 5_000, ["a.txt", "b.txt"]).then(
+    () => "resolved",
+    () => "timed-out",
+  );
+  await vi.advanceTimersByTimeAsync(6_000);
+  expect(await outcome).toBe("timed-out");
+});
+
+test("a settled tile labelled with only the file name does not block send", () => {
+  const { evaluate } = fixture(new FakeElement("div", { "aria-label": "a.txt" }));
+  expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(true);
+});
+
+test("a label that merely contains 'uploading' mid-string is not upload state", () => {
+  const { evaluate } = fixture(new FakeElement("div", { "aria-label": "Re-uploading a.txt" }));
+  expect(evaluate(buildAttachmentReadyExpressionForTest(["a.txt", "b.txt"]))).toBe(true);
+});
