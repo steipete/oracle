@@ -1,4 +1,10 @@
 import { readSubmittedPromptFingerprint, readUserMessageIds } from "./promptFingerprint.js";
+import {
+  createAttemptAssistantRecheck,
+  createBlockingUiWarningCheck,
+  normalizeForComparison,
+  waitForFreshAssistantResponse,
+} from "./assistantResponseRuntime.js";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -68,7 +74,6 @@ import {
   classifyChatGptUiWarningText,
   collectChatGptUiWarnings,
   createAssistantTimeoutError,
-  throwChatGptUiWarningIfPresent,
 } from "./uiWarnings.js";
 import {
   activateDeepResearch,
@@ -77,7 +82,6 @@ import {
   waitForResearchPlanAutoConfirm,
 } from "./actions/deepResearch.js";
 import { estimateTokenCount, withRetries, delay } from "./utils.js";
-import { formatElapsed } from "../oracle/format.js";
 import type {
   BrowserModelSelectionEvidence,
   BrowserThinkingSelectionEvidence,
@@ -904,6 +908,19 @@ async function runBrowserModeInternal(
   let researchPlan: BrowserResearchPlanMetadata | undefined;
   let tabLease: BrowserTabLease | null = null;
   let conversationUrlMonitor: ConversationUrlMonitor | null = null;
+  const buildRuntimeDiagnostics = () => ({
+    chromePid: chrome.pid,
+    chromePort: chrome.port,
+    chromeHost,
+    userDataDir,
+    chromeTargetId: lastTargetId,
+    tabUrl: lastUrl,
+    conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+    promptSubmitted,
+    submittedPromptHash,
+    ownedRecoveryTarget,
+    controllerPid: process.pid,
+  });
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
       return;
@@ -1837,45 +1854,8 @@ async function runBrowserModeInternal(
         researchPlan,
       };
     }
-    // Helper to normalize text for echo detection (collapse whitespace, lowercase)
-    const normalizeForComparison = (text: string): string =>
-      text.toLowerCase().replace(/\s+/g, " ").trim();
     const expectedConversationId = () =>
       lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
-    const waitForFreshAssistantResponse = async (baselineNormalized: string, timeoutMs: number) => {
-      const baselinePrefix =
-        baselineNormalized.length >= 80
-          ? baselineNormalized.slice(0, Math.min(200, baselineNormalized.length))
-          : "";
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(
-          Runtime,
-          baselineTurns ?? undefined,
-          expectedConversationId(),
-        ).catch(() => null);
-        throwIfAssistantUiError(snapshot);
-        const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
-        if (text) {
-          const normalized = normalizeForComparison(text);
-          const isBaseline =
-            normalized === baselineNormalized ||
-            (baselinePrefix.length > 0 && normalized.startsWith(baselinePrefix));
-          if (!isBaseline) {
-            return {
-              text,
-              html: snapshot?.html ?? undefined,
-              meta: {
-                turnId: snapshot?.turnId ?? undefined,
-                messageId: snapshot?.messageId ?? undefined,
-              },
-            };
-          }
-        }
-        await delay(350);
-      }
-      return null;
-    };
     const waitWithThinkingMonitor = async <T>(operation: () => Promise<T>): Promise<T> => {
       stopThinkingMonitor?.();
       stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, {
@@ -1890,61 +1870,15 @@ async function runBrowserModeInternal(
     };
     const recheckDelayMs = Math.max(0, config.assistantRecheckDelayMs ?? 0);
     const recheckTimeoutMs = Math.max(0, config.assistantRecheckTimeoutMs ?? 0);
-    const attemptAssistantRecheck = async () => {
-      if (!recheckDelayMs) return null;
-      logger(
-        `[browser] Assistant response timed out; waiting ${formatElapsed(recheckDelayMs)} before rechecking conversation.`,
-      );
-      await raceWithDisconnect(delay(recheckDelayMs));
-      await updateConversationHint("assistant-recheck", 15_000).catch(() => false);
-      await captureRuntimeSnapshot().catch(() => undefined);
-      const conversationUrl = await readConversationUrl(Runtime);
-      if (conversationUrl && isConversationUrl(conversationUrl)) {
-        logger(`[browser] Rechecking assistant response at ${conversationUrl}`);
-        await raceWithDisconnect(Page.navigate({ url: conversationUrl }));
-        await raceWithDisconnect(
-          waitForResumedConversationHydration(Runtime, recheckTimeoutMs || 30_000, logger, {
-            requirePriorTurns: true,
-            requirePromptReady: false,
-            expectedConversationUrl: conversationUrl,
-          }),
-        );
-      }
-      // Validate session before attempting recheck - sessions can expire during the delay
-      const sessionValid = await validateChatGPTSession(Runtime, logger);
-      if (!sessionValid.valid) {
-        logger(`[browser] Session validation failed: ${sessionValid.reason}`);
-        // Update session metadata to indicate login is needed
-        await emitRuntimeHint();
-        throw new BrowserAutomationError(
-          `ChatGPT session expired during recheck: ${sessionValid.reason}. ` +
-            `Conversation URL: ${conversationUrl || lastUrl || "unknown"}. ` +
-            `Please sign in and retry.`,
-          {
-            stage: "assistant-recheck",
-            details: {
-              conversationUrl: conversationUrl || lastUrl || null,
-              sessionStatus: "needs_login",
-              validationReason: sessionValid.reason,
-            },
-            runtime: {
-              chromePid: chrome.pid,
-              chromePort: chrome.port,
-              chromeHost,
-              userDataDir,
-              chromeTargetId: lastTargetId,
-              tabUrl: lastUrl,
-              conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-              promptSubmitted,
-              submittedPromptHash,
-              ownedRecoveryTarget,
-              controllerPid: process.pid,
-            },
-          },
-        );
-      }
-      const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
-      const rechecked = await waitWithThinkingMonitor(() =>
+    const attemptAssistantRecheck = createAttemptAssistantRecheck({
+      Runtime,
+      Page,
+      logger,
+      recheckDelayMs,
+      recheckTimeoutMs,
+      fallbackTimeoutMs: config.timeoutMs,
+      raceWithDisconnect,
+      waitResponse: (timeoutMs) =>
         raceWithDisconnect(
           waitForAssistantOrGeneratedImageResponse({
             Runtime,
@@ -1964,10 +1898,17 @@ async function runBrowserModeInternal(
             imageOutputRequested,
           }),
         ),
-      );
-      logger("Recovered assistant response after delayed recheck");
-      return rechecked;
-    };
+      waitWithThinkingMonitor,
+      onRecheckDelayElapsed: async () => {
+        await updateConversationHint("assistant-recheck", 15_000).catch(() => false);
+        await captureRuntimeSnapshot().catch(() => undefined);
+      },
+      onSessionInvalid: emitRuntimeHint,
+      lastUrl: () => lastUrl,
+      buildRuntimeDiagnostics,
+      readConversationUrl,
+      validateChatGPTSession,
+    });
     const imageOutputRequested = Boolean(
       options.generateImagePath ||
       options.outputPath ||
@@ -2018,19 +1959,7 @@ async function runBrowserModeInternal(
                 sessionId: options.sessionId,
               },
             ).catch(() => undefined);
-            const runtime = {
-              chromePid: chrome.pid,
-              chromePort: chrome.port,
-              chromeHost,
-              userDataDir,
-              chromeTargetId: lastTargetId,
-              tabUrl: lastUrl,
-              conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-              promptSubmitted,
-              submittedPromptHash,
-              ownedRecoveryTarget,
-              controllerPid: process.pid,
-            };
+            const runtime = buildRuntimeDiagnostics();
             throw await createAssistantTimeoutError({
               Runtime,
               logger,
@@ -2059,7 +1988,12 @@ async function runBrowserModeInternal(
           (baselinePrefix.length > 0 && normalizedAnswer.startsWith(baselinePrefix));
         if (isBaseline) {
           logger("Detected stale assistant response; waiting for new response...");
-          const refreshed = await waitForFreshAssistantResponse(baselineNormalized, 15_000);
+          const refreshed = await waitForFreshAssistantResponse(Runtime, {
+            baselineTurns: baselineTurns ?? undefined,
+            expectedConversationId,
+            baselineNormalized,
+            timeoutMs: 15_000,
+          });
           if (refreshed) {
             turnAnswer = refreshed;
           }
@@ -2272,26 +2206,13 @@ async function runBrowserModeInternal(
       outputPath: options.outputPath,
       answerText,
       waitTimeoutMs: options.config?.timeoutMs,
-      checkBlockingUiWarning: () =>
-        throwChatGptUiWarningIfPresent({
-          Runtime,
-          logger,
-          stage: "image-artifact-wait",
-          waitTarget: "generated image artifacts",
-          runtime: {
-            chromePid: chrome.pid,
-            chromePort: chrome.port,
-            chromeHost,
-            userDataDir,
-            chromeTargetId: lastTargetId,
-            tabUrl: lastUrl,
-            conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-            promptSubmitted,
-            submittedPromptHash,
-            ownedRecoveryTarget,
-            controllerPid: process.pid,
-          },
-        }),
+      checkBlockingUiWarning: createBlockingUiWarningCheck({
+        Runtime,
+        logger,
+        stage: "image-artifact-wait",
+        waitTarget: "generated image artifacts",
+        buildRuntimeDiagnostics,
+      }),
     });
     answerText = imageArtifacts.answerText || answerText;
     if (imageArtifacts.markdownSuffix) {
@@ -2944,6 +2865,19 @@ async function runRemoteBrowserMode(
   let connection: Awaited<ReturnType<typeof connectToRemoteChrome>> | null = null;
   const browserWSEndpoint = config.remoteChromeBrowserWSEndpoint ?? undefined;
   const chromeProfileRoot = config.remoteChromeProfileRoot ?? undefined;
+  const buildRuntimeDiagnostics = () => ({
+    chromeHost: host,
+    chromePort: port,
+    chromeBrowserWSEndpoint: browserWSEndpoint,
+    chromeProfileRoot,
+    chromeTargetId: remoteTargetId ?? undefined,
+    tabUrl: lastUrl,
+    conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
+    promptSubmitted,
+    submittedPromptHash,
+    ownedRecoveryTarget,
+    controllerPid: process.pid,
+  });
 
   try {
     const remoteLeaseProfileDir = config.browserTabRef
@@ -3379,45 +3313,8 @@ async function runRemoteBrowserMode(
         researchPlan,
       };
     }
-    // Helper to normalize text for echo detection (collapse whitespace, lowercase)
-    const normalizeForComparison = (text: string): string =>
-      text.toLowerCase().replace(/\s+/g, " ").trim();
     const expectedConversationId = () =>
       lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined;
-    const waitForFreshAssistantResponse = async (baselineNormalized: string, timeoutMs: number) => {
-      const baselinePrefix =
-        baselineNormalized.length >= 80
-          ? baselineNormalized.slice(0, Math.min(200, baselineNormalized.length))
-          : "";
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        const snapshot = await readAssistantSnapshot(
-          Runtime,
-          baselineTurns ?? undefined,
-          expectedConversationId(),
-        ).catch(() => null);
-        throwIfAssistantUiError(snapshot);
-        const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
-        if (text) {
-          const normalized = normalizeForComparison(text);
-          const isBaseline =
-            normalized === baselineNormalized ||
-            (baselinePrefix.length > 0 && normalized.startsWith(baselinePrefix));
-          if (!isBaseline) {
-            return {
-              text,
-              html: snapshot?.html ?? undefined,
-              meta: {
-                turnId: snapshot?.turnId ?? undefined,
-                messageId: snapshot?.messageId ?? undefined,
-              },
-            };
-          }
-        }
-        await delay(350);
-      }
-      return null;
-    };
     const waitWithThinkingMonitor = async <T>(operation: () => Promise<T>): Promise<T> => {
       stopThinkingMonitor?.();
       stopThinkingMonitor = startThinkingStatusMonitor(Runtime, logger, {
@@ -3432,59 +3329,15 @@ async function runRemoteBrowserMode(
     };
     const recheckDelayMs = Math.max(0, config.assistantRecheckDelayMs ?? 0);
     const recheckTimeoutMs = Math.max(0, config.assistantRecheckTimeoutMs ?? 0);
-    const attemptAssistantRecheck = async () => {
-      if (!recheckDelayMs) return null;
-      logger(
-        `[browser] Assistant response timed out; waiting ${formatElapsed(recheckDelayMs)} before rechecking conversation.`,
-      );
-      await delay(recheckDelayMs);
-      const conversationUrl = await readConversationUrl(Runtime);
-      if (conversationUrl && isConversationUrl(conversationUrl)) {
-        lastUrl = conversationUrl;
-        logger(`[browser] Rechecking assistant response at ${conversationUrl}`);
-        await Page.navigate({ url: conversationUrl });
-        await waitForResumedConversationHydration(Runtime, recheckTimeoutMs || 30_000, logger, {
-          requirePriorTurns: true,
-          requirePromptReady: false,
-          expectedConversationUrl: conversationUrl,
-        });
-      }
-      // Validate session before attempting recheck - sessions can expire during the delay
-      const sessionValid = await validateChatGPTSession(Runtime, logger);
-      if (!sessionValid.valid) {
-        logger(`[browser] Session validation failed: ${sessionValid.reason}`);
-        // Update session metadata to indicate login is needed
-        await emitRuntimeHint();
-        throw new BrowserAutomationError(
-          `ChatGPT session expired during recheck: ${sessionValid.reason}. ` +
-            `Conversation URL: ${conversationUrl || lastUrl || "unknown"}. ` +
-            `Please sign in and retry.`,
-          {
-            stage: "assistant-recheck",
-            details: {
-              conversationUrl: conversationUrl || lastUrl || null,
-              sessionStatus: "needs_login",
-              validationReason: sessionValid.reason,
-            },
-            runtime: {
-              chromeHost: host,
-              chromePort: port,
-              chromeBrowserWSEndpoint: browserWSEndpoint,
-              chromeProfileRoot,
-              chromeTargetId: remoteTargetId ?? undefined,
-              tabUrl: lastUrl,
-              conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-              promptSubmitted,
-              submittedPromptHash,
-              ownedRecoveryTarget,
-              controllerPid: process.pid,
-            },
-          },
-        );
-      }
-      await emitRuntimeHint();
-      const timeoutMs = recheckTimeoutMs > 0 ? recheckTimeoutMs : config.timeoutMs;
-      const rechecked = await waitWithThinkingMonitor(() =>
+    const attemptAssistantRecheck = createAttemptAssistantRecheck({
+      Runtime,
+      Page,
+      logger,
+      recheckDelayMs,
+      recheckTimeoutMs,
+      fallbackTimeoutMs: config.timeoutMs,
+      raceWithDisconnect: <T>(operation: Promise<T>) => operation,
+      waitResponse: (timeoutMs) =>
         waitForAssistantOrGeneratedImageResponse({
           Runtime,
           waitForText: () =>
@@ -3502,10 +3355,17 @@ async function runRemoteBrowserMode(
           expectedConversationId: expectedConversationId(),
           imageOutputRequested,
         }),
-      );
-      logger("Recovered assistant response after delayed recheck");
-      return rechecked;
-    };
+      waitWithThinkingMonitor,
+      onSessionInvalid: emitRuntimeHint,
+      onRecheckReady: emitRuntimeHint,
+      onConversationUrlResolved: (url) => {
+        lastUrl = url;
+      },
+      lastUrl: () => lastUrl,
+      buildRuntimeDiagnostics,
+      readConversationUrl,
+      validateChatGPTSession,
+    });
     const imageOutputRequested = Boolean(
       options.generateImagePath ||
       options.outputPath ||
@@ -3555,19 +3415,7 @@ async function runRemoteBrowserMode(
                 sessionId: options.sessionId,
               },
             ).catch(() => undefined);
-            const runtime = {
-              chromePort: port,
-              chromeHost: host,
-              chromeBrowserWSEndpoint: browserWSEndpoint,
-              chromeProfileRoot,
-              chromeTargetId: remoteTargetId ?? undefined,
-              tabUrl: lastUrl,
-              conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-              promptSubmitted,
-              submittedPromptHash,
-              ownedRecoveryTarget,
-              controllerPid: process.pid,
-            };
+            const runtime = buildRuntimeDiagnostics();
             throw await createAssistantTimeoutError({
               Runtime,
               logger,
@@ -3595,7 +3443,12 @@ async function runRemoteBrowserMode(
           (baselinePrefix.length > 0 && normalizedAnswer.startsWith(baselinePrefix));
         if (isBaseline) {
           logger("Detected stale assistant response; waiting for new response...");
-          const refreshed = await waitForFreshAssistantResponse(baselineNormalized, 15_000);
+          const refreshed = await waitForFreshAssistantResponse(Runtime, {
+            baselineTurns: baselineTurns ?? undefined,
+            expectedConversationId,
+            baselineNormalized,
+            timeoutMs: 15_000,
+          });
           if (refreshed) {
             turnAnswer = refreshed;
           }
@@ -3764,26 +3617,13 @@ async function runRemoteBrowserMode(
       outputPath: options.outputPath,
       answerText,
       waitTimeoutMs: options.config?.timeoutMs,
-      checkBlockingUiWarning: () =>
-        throwChatGptUiWarningIfPresent({
-          Runtime,
-          logger,
-          stage: "image-artifact-wait",
-          waitTarget: "generated image artifacts",
-          runtime: {
-            chromePort: port,
-            chromeHost: host,
-            chromeBrowserWSEndpoint: browserWSEndpoint,
-            chromeProfileRoot,
-            chromeTargetId: remoteTargetId ?? undefined,
-            tabUrl: lastUrl,
-            conversationId: lastUrl ? extractConversationIdFromUrl(lastUrl) : undefined,
-            promptSubmitted,
-            submittedPromptHash,
-            ownedRecoveryTarget,
-            controllerPid: process.pid,
-          },
-        }),
+      checkBlockingUiWarning: createBlockingUiWarningCheck({
+        Runtime,
+        logger,
+        stage: "image-artifact-wait",
+        waitTarget: "generated image artifacts",
+        buildRuntimeDiagnostics,
+      }),
     });
     answerText = imageArtifacts.answerText || answerText;
     if (imageArtifacts.markdownSuffix) {
