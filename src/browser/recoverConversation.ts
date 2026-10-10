@@ -1,4 +1,10 @@
 import type { LaunchedChrome } from "chrome-launcher";
+import { acquireBrowserTabLease, type BrowserTabLease } from "./tabLeaseRegistry.js";
+import {
+  preserveRecoveryChrome,
+  recordRecoveryChromeOwnership,
+  terminateRecoveryChrome,
+} from "./recoveryChromeLifecycle.js";
 import type { SessionMetadata } from "../sessionStore.js";
 import type { BrowserLogger } from "./types.js";
 import { isAnswerNowPlaceholderText } from "./actions/assistantResponse.js";
@@ -16,6 +22,7 @@ export interface RecoveredConversation extends RecoveryEndpoint {
   url: string;
   ref: string;
   chrome: LaunchedChrome | null;
+  release: (closeAfterRecover?: boolean) => Promise<void>;
 }
 
 export interface RecoveryEndpoint extends LiveChromeEndpoint {
@@ -147,49 +154,96 @@ export async function recoverConversationTab(
   }
   const readyTimeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;
   const waitForReady = options.waitForReady !== false;
-  if (options.existingEndpoint) {
-    try {
-      logger(
-        `[browser] Recovery: opening saved conversation in existing Chrome at ` +
-          `${options.existingEndpoint.host}:${options.existingEndpoint.port}`,
-      );
-      const targetId = await openChatGptTarget({ ...options.existingEndpoint, url });
-      if (waitForReady) {
-        await waitForRecoveredConversationReady(options.existingEndpoint, targetId, readyTimeoutMs);
-      }
-      return { ...options.existingEndpoint, url, ref: targetId, chrome: null };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger(`[browser] Recovery: existing Chrome could not reopen the conversation (${message}).`);
-    }
-  }
-
-  const userDataDir = resolveRecoveryProfileDir(meta);
   const config = resolveBrowserConfig(meta.browser?.config);
-
-  logger(
-    `[browser] Recovery: relaunching Chrome with profile ${userDataDir} and navigating to ${url}`,
-  );
-
-  const { chrome } = await acquireManualLoginChromeForRun(userDataDir, config, logger, meta.id, {});
-  const host = chrome.host ?? "127.0.0.1";
-  const port = chrome.port;
-
+  let lease: BrowserTabLease | undefined;
+  let profileDir: string | undefined;
+  let chrome: Awaited<ReturnType<typeof acquireManualLoginChromeForRun>>["chrome"] | undefined;
+  let reused = false;
+  const acquireLease = async () => {
+    profileDir ??= resolveRecoveryProfileDir(meta);
+    lease ??= await acquireBrowserTabLease(profileDir, {
+      maxConcurrentTabs: config.maxConcurrentTabs,
+      timeoutMs: config.timeoutMs,
+      logger,
+      sessionId: meta.id,
+    });
+  };
+  const release = async (closeAfterRecover = !config.keepBrowser) => {
+    try {
+      await lease?.release({
+        onRelease: async ({ isLastLease }) => {
+          if (!profileDir) return;
+          if (!closeAfterRecover) {
+            await preserveRecoveryChrome(profileDir);
+          } else if (isLastLease) {
+            await terminateRecoveryChrome(profileDir, logger);
+          }
+        },
+      });
+    } finally {
+      chrome?.process?.unref();
+    }
+  };
   try {
+    if (options.existingEndpoint) {
+      const localEndpoint = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(
+        options.existingEndpoint.host,
+      );
+      if (config.manualLogin && localEndpoint && !config.remoteChrome) await acquireLease();
+      try {
+        logger(
+          `[browser] Recovery: opening saved conversation in existing Chrome at ` +
+            `${options.existingEndpoint.host}:${options.existingEndpoint.port}`,
+        );
+        const targetId = await openChatGptTarget({ ...options.existingEndpoint, url });
+        await lease?.update({
+          chromeHost: options.existingEndpoint.host,
+          chromePort: options.existingEndpoint.port,
+          chromeTargetId: targetId,
+          tabUrl: url,
+        });
+        if (waitForReady) {
+          await waitForRecoveredConversationReady(
+            options.existingEndpoint,
+            targetId,
+            readyTimeoutMs,
+          );
+        }
+        return { ...options.existingEndpoint, url, ref: targetId, chrome: null, release };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger(
+          `[browser] Recovery: existing Chrome could not reopen the conversation (${message}).`,
+        );
+      }
+    }
+    await acquireLease();
+    const userDataDir = profileDir!;
+    logger(
+      `[browser] Recovery: relaunching Chrome with profile ${userDataDir} and navigating to ${url}`,
+    );
+    const launchStartedAt = Date.now();
+    const acquired = await acquireManualLoginChromeForRun(userDataDir, config, logger, meta.id, {});
+    chrome = acquired.chrome;
+    reused = Boolean(acquired.reusedChrome);
+    if (!reused && chrome.pid)
+      await recordRecoveryChromeOwnership(userDataDir, chrome.pid, launchStartedAt);
+    const host = chrome.host ?? "127.0.0.1";
+    const port = chrome.port;
     const targetId = await openChatGptTarget({ host, port, url });
     if (waitForReady) {
       await waitForRecoveredConversationReady({ host, port }, targetId, readyTimeoutMs);
     }
-
     logger(`[browser] Recovery: Chrome listening on ${host}:${port}; tab loaded.`);
-
-    return { host, port, url, ref: targetId, chrome };
+    await lease!.update({
+      chromeHost: host,
+      chromePort: port,
+      chromeTargetId: targetId,
+      tabUrl: url,
+    });
+    return { host, port, url, ref: targetId, chrome, release };
   } catch (error) {
-    try {
-      chrome.kill();
-    } catch {
-      // best-effort cleanup
-    }
+    await release().catch(() => undefined);
     throw error;
   }
 }

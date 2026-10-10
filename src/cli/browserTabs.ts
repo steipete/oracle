@@ -38,24 +38,6 @@ function isRecoverableMissingTabError(message: string): boolean {
   );
 }
 
-function finishRecoveredChrome(
-  recoveredChrome: { kill: () => void; process?: { unref?: () => void } } | null,
-  closeAfterRecover: boolean | undefined,
-): void {
-  if (!recoveredChrome) {
-    return;
-  }
-  try {
-    if (closeAfterRecover) {
-      recoveredChrome.kill();
-    } else {
-      recoveredChrome.process?.unref?.();
-    }
-  } catch {
-    // best-effort cleanup
-  }
-}
-
 function harvestMatchesSessionPrompt(
   harvested: ChatGptTabSummary,
   fingerprint: string | undefined,
@@ -120,7 +102,7 @@ export interface BrowserHarvestOptions {
   recoverIfMissing?: boolean;
   /**
    * After a successful recovery harvest, close the relaunched Chrome.
-   * Default: false (leave the recovered tab visible for the user).
+   * Defaults to the saved keepBrowser setting; borrowed Chrome is never closed.
    */
   closeAfterRecover?: boolean;
 }
@@ -137,7 +119,7 @@ export interface BrowserLiveTailOptions {
   recoverIfMissing?: boolean;
   /**
    * After completion, close the relaunched Chrome.
-   * Default: false (leave the recovered tab visible).
+   * Defaults to the saved keepBrowser setting; borrowed Chrome is never closed.
    */
   closeAfterRecover?: boolean;
 }
@@ -364,7 +346,7 @@ export async function harvestSessionBrowserOutput(
   const ref = options.browserTabRef ?? resolveSessionTabRef(meta);
   const recoverIfMissing = options.recoverIfMissing !== false && !options.browserTabRef;
 
-  let recoveredChrome: { kill: () => void; process?: { unref?: () => void } } | null = null;
+  let releaseRecoveredChrome: ((close?: boolean) => Promise<void>) | null = null;
   try {
     let harvested: ChatGptTabSummary;
     try {
@@ -390,7 +372,7 @@ export async function harvestSessionBrowserOutput(
       const recovered = await recoverConversationTab(meta, (line) => console.log(line), {
         existingEndpoint: recordedEndpoint ?? undefined,
       });
-      recoveredChrome = recovered.chrome;
+      releaseRecoveredChrome = recovered.release;
       harvested = await harvestSessionPrompt(meta, {
         host: recovered.host,
         port: recovered.port,
@@ -417,7 +399,7 @@ export async function harvestSessionBrowserOutput(
     await completeOwnedBrowserHarvest(sessionId, harvested, integrity, (line) => console.log(line));
     return harvested;
   } finally {
-    finishRecoveredChrome(recoveredChrome, options.closeAfterRecover);
+    await releaseRecoveredChrome?.(options.closeAfterRecover).catch(() => undefined);
   }
 }
 
@@ -436,7 +418,7 @@ export async function liveTailSessionBrowserOutput(
   };
   let browserTabRef = options.browserTabRef ?? resolveSessionTabRef(meta);
   const recoverIfMissing = options.recoverIfMissing !== false && !options.browserTabRef;
-  let recoveredChrome: { kill: () => void; process?: { unref?: () => void } } | null = null;
+  let releaseRecoveredChrome: ((close?: boolean) => Promise<void>) | null = null;
   const stallThresholdMs = options.stallThresholdMs ?? DEFAULT_STALL_THRESHOLD_MS;
   let lastHash: string | null = null;
   let unchangedSince = Date.now();
@@ -464,7 +446,7 @@ export async function liveTailSessionBrowserOutput(
         existingEndpoint: recordedEndpoint ?? undefined,
         waitForReady: false,
       });
-      recoveredChrome = recovered.chrome;
+      releaseRecoveredChrome = recovered.release;
       endpoint = {
         host: recovered.host,
         port: recovered.port,
@@ -541,6 +523,6 @@ export async function liveTailSessionBrowserOutput(
       await new Promise((resolve) => setTimeout(resolve, LIVE_POLL_MS));
     }
   } finally {
-    finishRecoveredChrome(recoveredChrome, options.closeAfterRecover);
+    await releaseRecoveredChrome?.(options.closeAfterRecover).catch(() => undefined);
   }
 }

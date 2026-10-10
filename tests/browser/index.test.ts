@@ -385,6 +385,27 @@ describe("browser run target cleanup", () => {
 });
 
 describe("manual-login profile setup gate", () => {
+  test("announces missing login and reveals the window before retrying", async () => {
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce({ result: { value: { ok: false, domLoginCta: true } } })
+      .mockResolvedValueOnce({ result: { value: { clicked: false, reason: "not-found" } } })
+      .mockResolvedValue({ result: { value: { ok: true } } });
+    const logger = vi.fn();
+    const onLoginRequired = vi.fn(async () => {});
+    await __test__.waitForLogin({
+      runtime: { evaluate } as never,
+      logger,
+      appliedCookies: 0,
+      manualLogin: true,
+      timeoutMs: 5000,
+      keepBrowser: false,
+      onLoginRequired,
+    });
+    expect(onLoginRequired).toHaveBeenCalledOnce();
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("[browser] Manual login required"));
+  });
+
   test("fails fast for an uninitialized manual-login profile unless setup keeps Chrome open", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-empty-profile-"));
     try {

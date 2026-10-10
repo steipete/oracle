@@ -742,6 +742,46 @@ describe("runBrowserSessionExecution", () => {
     ).toBe(true);
   });
 
+  test("prints manual login guidance even when not verbose", async () => {
+    const log = vi.fn();
+    await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async ({ log: automationLog }) => {
+          automationLog?.(
+            "[browser] Manual login required: sign into chatgpt.com in the Chrome window.",
+          );
+          return {
+            answerText: "text",
+            answerMarkdown: "markdown",
+            tookMs: 1,
+            answerTokens: 1,
+            answerChars: 4,
+          };
+        },
+      },
+    );
+    expect(log.mock.calls.some((call) => String(call[0]).includes("Manual login required"))).toBe(
+      true,
+    );
+  });
+
   test("prints browser thinking heartbeat logs even when not verbose", async () => {
     const log = vi.fn();
     await runBrowserSessionExecution(

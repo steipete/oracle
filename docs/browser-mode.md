@@ -517,3 +517,4 @@ logs and failure summaries contain fixed reasons rather than response bodies or
 exception details. The raw artifact is unchanged provider data, not a redacted transcript.
 
 When `--copy-profile` copies a running Chrome profile, vanished temporary files are tolerated with GNU rsync and macOS openrsync. Other transfer errors and missing authentication files stop the copy and remove the incomplete temporary profile.
+If a persistent manual-login profile is signed out, Oracle always prints login guidance and restores a hidden macOS window so you can sign in. The existing login wait limit still applies.
