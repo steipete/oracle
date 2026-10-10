@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
+  classifyRsyncExitForTest,
   copyChromeProfile,
   resolveChromeProfileDirectoryForTest,
 } from "../../src/browser/profileCopy.js";
@@ -104,4 +105,118 @@ describe("copyChromeProfile", () => {
       await expect(stat(dest)).rejects.toThrow();
     },
   );
+
+  const fakeRsync = async (dir: string, body: string): Promise<() => void> => {
+    const script = path.join(dir, "rsync");
+    await writeFile(script, `#!/usr/bin/env node\n${body}\n`);
+    await chmod(script, 0o755);
+    const previous = process.env.PATH;
+    process.env.PATH = `${dir}${path.delimiter}${previous}`;
+    return () => {
+      process.env.PATH = previous;
+    };
+  };
+
+  test.skipIf(process.platform === "win32")(
+    "tolerates a vanished-file exit 23 (openrsync) and keeps the copied profile (#550)",
+    async () => {
+      const fakeBin = await mkdtemp(path.join(os.tmpdir(), "oracle-fakersync-"));
+      const src = await mkdtemp(path.join(os.tmpdir(), "oracle-copyprofile-src-"));
+      const dest = await mkdtemp(path.join(os.tmpdir(), "oracle-copyprofile-dest-"));
+      tmpDirs.push(fakeBin, src, dest);
+      // Emits openrsync's vanished-file diagnostic and exits 23 after copying.
+      const restorePath = await fakeRsync(
+        fakeBin,
+        `const fs=require('fs'),a=process.argv.slice(2),dst=a[a.length-1],src=a[a.length-2];
+        fs.cpSync(src,dst,{recursive:true});
+        console.error('rsync(1): error: '+src+'volatile.tmp: open (2) in '+src+': No such file or directory');
+        process.exit(23);`,
+      );
+      await writeFile(path.join(src, "Local State"), "{}");
+      await mkdir(path.join(src, "Default"));
+      await writeFile(path.join(src, "Default", "Cookies"), "synthetic cookies");
+      try {
+        await expect(copyChromeProfile(src, dest)).resolves.toBe("Default");
+        await expect(readFile(path.join(dest, "Default", "Cookies"), "utf8")).resolves.toMatch(
+          /synthetic cookies/,
+        );
+      } finally {
+        restorePath();
+      }
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "rejects a vanished-file exit 23 when auth storage did not survive (#550)",
+    async () => {
+      const fakeBin = await mkdtemp(path.join(os.tmpdir(), "oracle-fakersync-"));
+      const src = await mkdtemp(path.join(os.tmpdir(), "oracle-copyprofile-src-"));
+      const dest = await mkdtemp(path.join(os.tmpdir(), "oracle-copyprofile-dest-"));
+      tmpDirs.push(fakeBin, src, dest);
+      // Copies nothing but reports a vanished file: the Cookies that existed in
+      // the source cannot land in the destination, so the copy must be refused.
+      const restorePath = await fakeRsync(
+        fakeBin,
+        `const a=process.argv.slice(2),src=a[a.length-2];
+        console.error('rsync(1): error: '+src+'Default/Cookies: open (2) in '+src+': No such file or directory');
+        process.exit(23);`,
+      );
+      await writeFile(path.join(src, "Local State"), "{}");
+      await mkdir(path.join(src, "Default"));
+      await writeFile(path.join(src, "Default", "Cookies"), "synthetic cookies");
+      try {
+        await expect(copyChromeProfile(src, dest)).rejects.toThrow(/missing "Cookies"/);
+        await expect(stat(dest)).rejects.toThrow();
+      } finally {
+        restorePath();
+      }
+    },
+  );
+
+  test("classifies rsync exits: 23 is tolerated only for vanished-only stderr (#550)", () => {
+    expect(classifyRsyncExitForTest(0, "")).toBe("ok");
+    expect(classifyRsyncExitForTest(24, "")).toBe("ok");
+    expect(
+      classifyRsyncExitForTest(
+        23,
+        "rsync(1): error: /p/f.tmp: open (2) in /p: No such file or directory\n",
+      ),
+    ).toBe("ok");
+    expect(
+      classifyRsyncExitForTest(
+        23,
+        'rsync: link_stat "/p/f.tmp" failed: No such file or directory (2)\n' +
+          "rsync error: some files/attrs were not transferred (see previous errors) (code 23)\n",
+      ),
+    ).toBe("ok");
+    expect(
+      classifyRsyncExitForTest(
+        23,
+        "rsync(1): error: /p/Cookies: open (2) in /p: Permission denied\n",
+      ),
+    ).toBe("fatal");
+    expect(classifyRsyncExitForTest(23, "")).toBe("fatal");
+    expect(
+      classifyRsyncExitForTest(
+        23,
+        "rsync(1): error: /p/a: open (2) in /p: No such file or directory\n" +
+          "rsync(1): error: /p/b: open (2) in /p: Permission denied\n",
+      ),
+    ).toBe("fatal");
+    for (const name of ["vanished.txt", "partial transfer", "No such file or directory"]) {
+      expect(
+        classifyRsyncExitForTest(
+          23,
+          `rsync(1): error: /p/${name}: open (2) in /p: Permission denied`,
+        ),
+      ).toBe("fatal");
+      expect(
+        classifyRsyncExitForTest(
+          23,
+          `rsync(1): error: /p/volatile: open (2) in /p: No such file or directory\nrsync(1): error: /p/${name}: open (2) in /p: Permission denied`,
+        ),
+      ).toBe("fatal");
+    }
+    expect(classifyRsyncExitForTest(1, "anything")).toBe("fatal");
+  });
 });

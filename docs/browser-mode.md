@@ -515,3 +515,5 @@ disconnects, and write failures record a typed reason. Fetching/draining has a
 30-second total budget and an 8 MiB limit per document. Tokens stay in the page;
 logs and failure summaries contain fixed reasons rather than response bodies or
 exception details. The raw artifact is unchanged provider data, not a redacted transcript.
+
+When `--copy-profile` copies a running Chrome profile, vanished temporary files are tolerated with GNU rsync and macOS openrsync. Other transfer errors and missing authentication files stop the copy and remove the incomplete temporary profile.
