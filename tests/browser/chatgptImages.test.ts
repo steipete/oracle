@@ -302,18 +302,16 @@ describe("saveChatGptGeneratedImages", () => {
     const blobUrl = "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000001";
     const network = { getCookies: vi.fn() } as unknown as ChromeClient["Network"];
     const runtime = {
-      evaluate: vi
-        .fn()
-        .mockResolvedValue({
-          result: {
-            value: {
-              ok: true,
-              b64: png.toString("base64"),
-              contentType: "image/png",
-              finalUrl: blobUrl,
-            },
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: true,
+            b64: png.toString("base64"),
+            contentType: "image/png",
+            finalUrl: blobUrl,
           },
-        }),
+        },
+      }),
     } as unknown as ChromeClient["Runtime"];
     globalThis.fetch = vi.fn();
     try {
