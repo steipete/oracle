@@ -30,7 +30,26 @@ const readyHarvest = {
 const logger = (_message: string) => {};
 
 describe("recoverConversationTab flow", () => {
+  let otherLeasesRemain = false;
+  const terminateRecorded = vi.fn(async () => false);
   beforeEach(() => {
+    otherLeasesRemain = false;
+    terminateRecorded.mockReset().mockResolvedValue(false);
+    vi.doMock("../../src/browser/recoveryChromeLifecycle.js", () => ({
+      recordRecoveryChromeOwnership: vi.fn(async () => {}),
+      preserveRecoveryChrome: vi.fn(async () => {}),
+      terminateRecoveryChrome: terminateRecorded,
+    }));
+    vi.doMock("../../src/browser/tabLeaseRegistry.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../../src/browser/tabLeaseRegistry.js")>()),
+      acquireBrowserTabLease: vi.fn(async () => ({
+        update: vi.fn(),
+        release: async ({
+          onRelease,
+        }: { onRelease?: (context: { isLastLease: boolean }) => Promise<void> } = {}) =>
+          onRelease?.({ isLastLease: !otherLeasesRemain }),
+      })),
+    }));
     vi.resetModules();
     // These one-millisecond budgets exercise branches, not scheduler performance.
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -75,49 +94,72 @@ describe("recoverConversationTab flow", () => {
     expect(acquireManualLoginChromeForRun).not.toHaveBeenCalled();
     expect(recovered.ref).toBe("target-1");
     expect(recovered.chrome).toBeNull();
+    await recovered.release();
+    expect(terminateRecorded).toHaveBeenCalledOnce();
   });
 
-  test("launches the stored manual-login profile when the existing endpoint is gone", async () => {
-    const openChatGptTarget = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("ECONNREFUSED"))
-      .mockResolvedValueOnce("target-2");
-    const harvestChatGptTab = vi.fn(async () => readyHarvest);
-    const chrome = { port: 53999, kill: vi.fn(), process: { unref: vi.fn() } };
-    const acquireManualLoginChromeForRun = vi.fn(async () => ({ chrome }));
+  test.each([
+    { keepBrowser: false, reused: false, others: false, recorded: true, kills: 0 },
+    { keepBrowser: true, reused: false, others: false, recorded: false, kills: 0 },
+    { keepBrowser: false, reused: true, others: false, recorded: false, kills: 0 },
+    { keepBrowser: false, reused: true, others: false, recorded: true, kills: 0 },
+    { keepBrowser: false, reused: false, others: true, recorded: false, kills: 0 },
+  ])(
+    "releases recovery Chrome with ownership policy %j",
+    async ({ keepBrowser, reused, others, recorded, kills }) => {
+      otherLeasesRemain = others;
+      terminateRecorded.mockResolvedValue(recorded);
+      const openChatGptTarget = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"))
+        .mockResolvedValueOnce("target-2");
+      const harvestChatGptTab = vi.fn(async () => readyHarvest);
+      const chrome = { port: 53999, kill: vi.fn(), process: { unref: vi.fn() } };
+      const acquireManualLoginChromeForRun = vi.fn(async () => ({
+        chrome,
+        reusedChrome: reused ? chrome : null,
+      }));
 
-    vi.doMock("../../src/browser/liveTabs.js", () => ({
-      extractConversationIdFromUrl: (url: string) =>
-        url.includes("/c/") ? url.split("/c/")[1] : null,
-      openChatGptTarget,
-      harvestChatGptTab,
-    }));
-    vi.doMock("../../src/browser/index.js", () => ({
-      acquireManualLoginChromeForRun,
-      isImageOnlyUiChromeText: () => false,
-    }));
+      vi.doMock("../../src/browser/liveTabs.js", () => ({
+        extractConversationIdFromUrl: (url: string) =>
+          url.includes("/c/") ? url.split("/c/")[1] : null,
+        openChatGptTarget,
+        harvestChatGptTab,
+      }));
+      vi.doMock("../../src/browser/index.js", () => ({
+        acquireManualLoginChromeForRun,
+        isImageOnlyUiChromeText: () => false,
+      }));
 
-    const { recoverConversationTab } = await import("../../src/browser/recoverConversation.js");
-    const recovered = await recoverConversationTab(meta, logger, {
-      existingEndpoint: { host: "127.0.0.1", port: 9222 },
-      readyTimeoutMs: 1,
-    });
+      const { recoverConversationTab } = await import("../../src/browser/recoverConversation.js");
+      const recovered = await recoverConversationTab(
+        { ...meta, browser: { ...meta.browser, config: { ...meta.browser?.config, keepBrowser } } },
+        logger,
+        {
+          existingEndpoint: { host: "127.0.0.1", port: 9222 },
+          readyTimeoutMs: 1,
+        },
+      );
 
-    expect(acquireManualLoginChromeForRun).toHaveBeenCalledWith(
-      "/tmp/recover-profile",
-      expect.objectContaining({ manualLogin: true }),
-      logger,
-      "sess-recover",
-      {},
-    );
-    expect(harvestChatGptTab).toHaveBeenLastCalledWith({
-      host: "127.0.0.1",
-      port: 53999,
-      ref: "target-2",
-    });
-    expect(recovered.ref).toBe("target-2");
-    expect(recovered.chrome).toBe(chrome);
-  });
+      expect(acquireManualLoginChromeForRun).toHaveBeenCalledWith(
+        "/tmp/recover-profile",
+        expect.objectContaining({ manualLogin: true }),
+        logger,
+        "sess-recover",
+        {},
+      );
+      expect(harvestChatGptTab).toHaveBeenLastCalledWith({
+        host: "127.0.0.1",
+        port: 53999,
+        ref: "target-2",
+      });
+      expect(recovered.ref).toBe("target-2");
+      expect(recovered.chrome).toBe(chrome);
+      await recovered.release();
+      expect(chrome.kill).toHaveBeenCalledTimes(kills);
+      expect(terminateRecorded).toHaveBeenCalledTimes(!keepBrowser && !others ? 1 : 0);
+    },
+  );
 
   test("does not require a local profile when reopening through a recorded endpoint", async () => {
     const openChatGptTarget = vi.fn(async () => "target-1");
@@ -184,7 +226,8 @@ describe("recoverConversationTab flow", () => {
       }),
     ).rejects.toThrow(/did not become ready/);
 
-    expect(chrome.kill).toHaveBeenCalledTimes(1);
+    expect(terminateRecorded).toHaveBeenCalledOnce();
+    expect(chrome.kill).not.toHaveBeenCalled();
   });
 
   test("kills launched Chrome when opening the recovery target fails", async () => {
@@ -212,6 +255,7 @@ describe("recoverConversationTab flow", () => {
       }),
     ).rejects.toThrow(/CDP.New failed/);
 
-    expect(chrome.kill).toHaveBeenCalledTimes(1);
+    expect(terminateRecorded).toHaveBeenCalledOnce();
+    expect(chrome.kill).not.toHaveBeenCalled();
   });
 });

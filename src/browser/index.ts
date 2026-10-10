@@ -1240,6 +1240,7 @@ async function runBrowserModeInternal(
     const raceWithDisconnect = <T>(promise: Promise<T>): Promise<T> =>
       cancellation.race(Promise.race([promise, disconnectPromise]));
     const { Network, Page, Runtime, Input, DOM, Target } = client;
+    const loginClient = client;
 
     const domainEnablers = [Network.enable({}), Page.enable(), Runtime.enable()];
     if (DOM && typeof DOM.enable === "function") {
@@ -1368,6 +1369,10 @@ async function runBrowserModeInternal(
           timeoutMs: config.timeoutMs,
           profileDir: userDataDir,
           keepBrowser: effectiveKeepBrowser,
+          onLoginRequired:
+            !config.headless && config.hideWindow
+              ? () => positionChromeWindowOnscreen(loginClient, userDataDir, logger)
+              : undefined,
         }),
       );
 
@@ -2704,6 +2709,7 @@ async function waitForLogin({
   timeoutMs,
   profileDir,
   keepBrowser,
+  onLoginRequired,
 }: {
   runtime: ChromeClient["Runtime"];
   logger: BrowserLogger;
@@ -2712,6 +2718,7 @@ async function waitForLogin({
   timeoutMs: number;
   profileDir?: string;
   keepBrowser?: boolean;
+  onLoginRequired?: () => Promise<void>;
 }): Promise<void> {
   if (!manualLogin) {
     await ensureLoggedIn(runtime, logger, { appliedCookies });
@@ -2720,6 +2727,7 @@ async function waitForLogin({
   const waitMs = resolveManualLoginWaitMs(timeoutMs, Boolean(keepBrowser));
   const deadline = Date.now() + waitMs;
   let lastNotice = 0;
+  let loginWindowShown = false;
   while (Date.now() < deadline) {
     try {
       await ensureLoggedIn(runtime, logger, { appliedCookies });
@@ -2731,10 +2739,14 @@ async function waitForLogin({
       if (!loginDetected && !sessionMissing) {
         throw error;
       }
+      if (!loginWindowShown) {
+        loginWindowShown = true;
+        await onLoginRequired?.();
+      }
       const now = Date.now();
       if (now - lastNotice > 5000) {
         logger(
-          "Manual login mode: please sign into chatgpt.com in the opened Chrome window; waiting for session to appear...",
+          "[browser] Manual login required: sign into chatgpt.com in the Chrome window; waiting for the session. If it is not visible, rerun without --browser-hide-window.",
         );
         lastNotice = now;
       }
@@ -4003,6 +4015,7 @@ export const __test__ = {
   shouldKeepLocalBrowserOpen,
   releaseLocalBrowserTabLease,
   waitForAssistantResponseWithReload,
+  waitForLogin,
 };
 export { syncCookies } from "./cookies.js";
 export {

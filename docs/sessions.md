@@ -190,3 +190,5 @@ Pair `--slug` with conventional prefixes for browseability:
 - `dr-…` — Deep Research run
 
 Then `oracle status --hours 720 | grep arch-` shows your last month of architecture work.
+
+Recovery honors the saved `keepBrowser` setting for Chrome it launches. With `keepBrowser: false`, recovery releases its browser when finished; borrowed browsers and browsers with another active Oracle session stay open.
