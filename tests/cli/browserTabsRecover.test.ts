@@ -73,7 +73,7 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
       url: meta.browser?.runtime?.tabUrl ?? "",
       ref: "saved-conversation",
       chrome: fakeChrome,
-      release: vi.fn(async (close?: boolean) => {
+      release: vi.fn(async (close = true) => {
         if (close) fakeChrome.kill();
         else fakeChrome.process.unref();
       }),
@@ -118,8 +118,8 @@ describe("harvestSessionBrowserOutput recovery fallback", () => {
     expect(result.lastAssistantMarkdown).toBe(completedHarvest.lastAssistantMarkdown);
     expect(updateSession).toHaveBeenCalled();
     // The recovery owner applies saved keepBrowser policy when no override is supplied.
-    expect(fakeChrome.kill).not.toHaveBeenCalled();
-    expect(fakeChrome.process.unref).toHaveBeenCalledTimes(1);
+    expect(fakeChrome.kill).toHaveBeenCalledOnce();
+    expect(fakeChrome.process.unref).not.toHaveBeenCalled();
   });
 
   test("retains saved browser transport during harvest and missing-tab recovery", async () => {
