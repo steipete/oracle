@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -34,7 +34,12 @@ const RSYNC_EXCLUDES = [
  * launched by the real Chrome binary (the one on the Keychain ACL).
  *
  * Uses rsync (present on macOS/Linux) so a live, in-use source profile copies
- * cleanly — rsync exit 24 ("source files vanished") is tolerated.
+ * cleanly — rsync exit 24 ("source files vanished") is tolerated. macOS ships
+ * openrsync, which reports the same vanished-source condition as exit 23
+ * ("partial transfer") where GNU rsync uses 24, so exit 23 is tolerated only
+ * when every reported error is a vanished-file error; genuine read failures
+ * (EACCES and friends) stay fatal, and a tolerated partial copy must still
+ * contain the auth storage present in the source.
  */
 export async function copyChromeProfile(
   srcUserDataDir: string,
@@ -62,13 +67,16 @@ export async function copyChromeProfile(
     // `Local State` is required (holds the Keychain-wrapped key that decrypts the
     // cookies), so a copy failure must fail fast — otherwise the run continues with
     // a profile that silently looks logged-out.
+    const authStorage = await srcAuthFiles(srcProfile);
     const args = ["-a"];
     for (const exclude of RSYNC_EXCLUDES) {
       args.push("--exclude", exclude);
     }
     args.push(`${srcProfile}/`, `${destProfile}/`);
+    const stderrChunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
-      const child = spawn("rsync", args, { stdio: "ignore" });
+      const child = spawn("rsync", args, { stdio: ["ignore", "ignore", "pipe"] });
+      child.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
       child.on("error", (err) =>
         reject(
           new Error(
@@ -76,12 +84,29 @@ export async function copyChromeProfile(
           ),
         ),
       );
-      child.on("close", (code) =>
-        code === 0 || code === 24
-          ? resolve()
-          : reject(new Error(`rsync failed copying Chrome profile (exit ${code})`)),
-      );
+      child.on("close", (code) => {
+        const stderr = Buffer.concat(stderrChunks).toString("utf8");
+        if (classifyRsyncExit(code, stderr) === "ok") {
+          resolve();
+        } else {
+          reject(
+            new Error(
+              `rsync failed copying Chrome profile (exit ${code})${stderr.trim() ? `: ${stderr.trim().split("\n")[0]}` : ""}`,
+            ),
+          );
+        }
+      });
     });
+    // A tolerated partial copy may have skipped a file that vanished mid-copy.
+    // If that file carried the session, continuing would produce a profile that
+    // silently looks logged-out — verify auth storage survived the copy.
+    for (const name of authStorage) {
+      await stat(path.join(destProfile, name)).catch(() => {
+        throw new Error(
+          `--copy-profile: copied profile is missing ${JSON.stringify(name)} present in the source (partial transfer); refusing a logged-out copy.`,
+        );
+      });
+    }
     return profileDirectory;
   } catch (error) {
     // The destination is always a newly-created throwaway profile. Remove partial
@@ -89,6 +114,54 @@ export async function copyChromeProfile(
     await rm(destDir, { recursive: true, force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+/** Files that carry the signed-in session inside a Chrome profile directory. */
+const AUTH_STORAGE_NAMES = ["Cookies", "Network/Cookies", "Login Data", "Web Data"];
+
+async function srcAuthFiles(srcProfile: string): Promise<string[]> {
+  const present: string[] = [];
+  for (const name of AUTH_STORAGE_NAMES) {
+    if (
+      await stat(path.join(srcProfile, name)).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      present.push(name);
+    }
+  }
+  return present;
+}
+
+// Vanished-source diagnostics emitted by GNU rsync and macOS openrsync. Only
+// lines carrying a vanished-file reason may be ignored; any other error —
+// including "Permission denied" — must keep exit 23 fatal (#540).
+const VANISHED_LINE = /: No such file or directory(?: \(2\))?$/;
+const GNU_VANISHED_LINE = /^file has vanished: "/;
+const SUMMARY_LINE =
+  /^rsync (?:error: some files\/attrs were not transferred|warning: some files vanished before they could be transferred) \(see previous errors\) \(code (?:23|24)\)(?: at .*)?$/;
+
+/**
+ * Whether an rsync exit code may be treated as a successful-enough copy:
+ * 0 and 24 always; 23 only when stderr is non-empty and every non-summary line
+ * reports a vanished source file (openrsync maps that condition onto 23).
+ */
+function classifyRsyncExit(code: number | null, stderr: string): "ok" | "fatal" {
+  if (code === 0 || code === 24) return "ok";
+  if (code !== 23) return "fatal";
+  const errors = stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !SUMMARY_LINE.test(line));
+  return errors.length > 0 &&
+    errors.every((line) => VANISHED_LINE.test(line) || GNU_VANISHED_LINE.test(line))
+    ? "ok"
+    : "fatal";
+}
+
+export function classifyRsyncExitForTest(code: number | null, stderr: string): "ok" | "fatal" {
+  return classifyRsyncExit(code, stderr);
 }
 
 function resolveChromeProfileDirectory(
