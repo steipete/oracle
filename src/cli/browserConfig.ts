@@ -34,10 +34,10 @@ const CURRENT_CHATGPT_PRO_ALIASES = new Set([
 // The browser label is passed to the model picker which fuzzy-matches against ChatGPT's UI.
 const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   // Most specific first (e.g., "gpt-5.2-thinking" before "gpt-5.2")
-  // GPT-6 (Astra) has no entry of its own in the ChatGPT picker: it is the "Latest" radio of the
-  // advanced view, and "GPT-6 Pro" is that radio with the power slider at Pro (composer pill "6 Pro").
-  ["gpt-6-pro", "Latest"],
-  ["gpt-6-astra", "Latest"],
+  // GPT-6 (Astra) is a model radio; GPT-6 Pro selects that radio with Pro power.
+  // The picker also recognizes the legacy Latest labels for older layouts.
+  ["gpt-6-pro", "GPT-6"],
+  ["gpt-6-astra", "GPT-6"],
   ["gpt-5.6-sol", "GPT-5.6 Sol"],
   ["gpt-5.6", "GPT-5.6 Sol"],
   ["gpt-5.5-pro", "GPT-5.5"],
@@ -113,7 +113,7 @@ export interface BrowserFlagOptions {
 
 export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
   const normalized = model.toLowerCase() as ModelName;
-  // Browser-only alias: gpt-6-pro keeps its name so the Pro tier default survives (label "Latest").
+  // Browser-only alias: gpt-6-pro keeps its name so the Pro tier default survives (label "GPT-6").
   if (isGpt6ProAlias(normalized)) {
     return "gpt-6-pro" as ModelName;
   }
@@ -154,7 +154,7 @@ export function normalizeChatGptModelForBrowser(model: ModelName): ModelName {
 }
 
 // Documented spellings only: gpt-6, gpt-6-astra, gpt-6-pro (plus their label forms such as
-// "GPT-6 Pro") and "latest" map to ChatGPT's "Latest" model. Any other gpt-6-* id (gpt-6-codex,
+// "GPT-6 Pro") and "latest" map to ChatGPT's "GPT-6" model. Any other gpt-6-* id (gpt-6-codex,
 // gpt-6-custom, ...) is not an alias and must pass through unchanged for custom/OpenRouter use.
 const GPT6_ALIAS_PATTERN = /^gpt[-_ ]?6(?:[-_ ](?:astra|pro))?$/;
 const GPT6_PRO_ALIAS_PATTERN = /^gpt[-_ ]?6[-_ ]pro$/;

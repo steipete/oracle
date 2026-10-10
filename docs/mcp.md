@@ -145,3 +145,5 @@ single provider submission. The standard test suite also runs this matrix.
 For a real OpenAI run, add `--live-key-file <private-key-file>`; the harness uses
 an authenticated upstream request and delays its reply until the lifecycle
 assertions finish. This does not exercise signed-in browser execution.
+
+For recognized GPT model IDs, Oracle chooses the corresponding ChatGPT model label automatically; `browserModelLabel` supplies a label for custom model IDs and does not override a recognized GPT model. GPT-6 selection accepts both the GPT-6 radio and legacy Latest labels. Model selection and thinking effort are verified separately: `heavy` does not request the Pro tier.

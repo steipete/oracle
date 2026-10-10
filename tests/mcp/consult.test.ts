@@ -263,10 +263,10 @@ describe("summarizeModelRunsForConsult", () => {
     },
   );
 
-  test("selects Latest through MCP including explicit strategy overrides", () => {
+  test("selects GPT-6 through MCP including explicit strategy overrides", () => {
     expect(
       buildConsultBrowserConfig({ userConfig: {}, env: {}, runModel: "gpt-6-astra" }),
-    ).toMatchObject({ desiredModel: "Latest" });
+    ).toMatchObject({ desiredModel: "GPT-6" });
     expect(
       buildConsultBrowserConfig({
         userConfig: { browser: { modelStrategy: "current" } },
@@ -274,8 +274,25 @@ describe("summarizeModelRunsForConsult", () => {
         runModel: "gpt-6-astra",
         browserModelStrategy: "select",
       }),
-    ).toMatchObject({ desiredModel: "Latest", modelStrategy: "select" });
+    ).toMatchObject({ desiredModel: "GPT-6", modelStrategy: "select" });
   });
+
+  test.each(["GPT-6", "GPT-6 Pro"])(
+    "resolves explicit MCP GPT-6 Pro independently of label %s",
+    (browserModelLabel) => {
+      expect(
+        buildConsultBrowserConfig({
+          userConfig: {},
+          env: {},
+          runModel: "gpt-6-pro",
+          inputModel: "gpt-6-pro",
+          browserModelLabel,
+          browserThinkingTime: "heavy",
+          browserModelStrategy: "select",
+        }),
+      ).toMatchObject({ desiredModel: "GPT-6", thinkingTime: "heavy", modelStrategy: "select" });
+    },
+  );
 
   test("marks only omitted MCP models as implicit defaults", () => {
     const base = { userConfig: {}, env: {}, runModel: "gpt-5.5-pro" };
@@ -392,7 +409,7 @@ describe("summarizeModelRunsForConsult", () => {
     });
 
     expect(config).toMatchObject({
-      desiredModel: "Latest",
+      desiredModel: "GPT-6",
       thinkingTime: "pro",
     });
   });

@@ -343,7 +343,7 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   if (normalized.includes("/")) {
     return normalized as ModelName;
   }
-  // gpt-6 / gpt-6-pro / latest: ChatGPT's "Latest" model (GPT-6 Astra). The browser-only -pro alias
+  // gpt-6 / gpt-6-pro / latest: ChatGPT's GPT-6 Astra model. The browser-only -pro alias
   // is passed through so its Pro tier default survives (resolveDefaultBrowserThinkingTime).
   if (isGpt6ProAlias(normalized)) {
     return "gpt-6-pro" as ModelName;

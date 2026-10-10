@@ -33,7 +33,12 @@ const chatGptImageInputShape = {
     })
     .optional()
     .describe("Optional ChatGPT/browser model label or alias. Defaults follow Oracle config."),
-  browserModelLabel: z.string().optional().describe("Explicit ChatGPT UI model label to select."),
+  browserModelLabel: z
+    .string()
+    .optional()
+    .describe(
+      "ChatGPT UI label for custom model IDs; recognized GPT models use their verified mapping.",
+    ),
   browserAttachments: z
     .enum(["auto", "never", "always"])
     .optional()
