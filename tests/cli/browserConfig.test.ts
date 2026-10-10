@@ -77,25 +77,31 @@ describe("buildBrowserConfig", () => {
     expect(sol.desiredModel).toBe("GPT-5.6 Sol");
   });
   test.each(["gpt-6", "gpt-6-astra", "latest"])(
-    "maps GPT-6 alias %s to the Latest picker target without a Pro default",
+    "maps GPT-6 alias %s to the GPT-6 picker target without a Pro default",
     async (model) => {
       const config = await buildBrowserConfig({ model });
-      expect(config.desiredModel).toBe("Latest");
+      expect(config.desiredModel).toBe("GPT-6");
       expect(config.thinkingTime).toBeUndefined();
     },
   );
 
-  test("maps gpt-6-pro to the Latest picker target with Pro effort", async () => {
+  test("maps gpt-6-pro to the GPT-6 picker target with Pro effort", async () => {
     await expect(buildBrowserConfig({ model: "gpt-6-pro" })).resolves.toMatchObject({
-      desiredModel: "Latest",
+      desiredModel: "GPT-6",
       thinkingTime: "pro",
     });
     await expect(
       buildBrowserConfig({ model: "gpt-6-astra", browserRequestedModel: "gpt-6-pro" }),
     ).resolves.toMatchObject({
-      desiredModel: "Latest",
+      desiredModel: "GPT-6",
       thinkingTime: "pro",
     });
+  });
+
+  test("resolves a saved Latest browser label to GPT-6 without losing Pro effort", async () => {
+    await expect(
+      buildBrowserConfig({ model: "gpt-6-pro", browserModelLabel: "Latest" }),
+    ).resolves.toMatchObject({ desiredModel: "GPT-6", thinkingTime: "pro" });
   });
 
   test("keeps version signal for gpt-5.5 Instant browser runs", async () => {
@@ -667,8 +673,8 @@ describe("GPT-6 aliases", () => {
     expect(normalizeChatGptModelForBrowser("gpt-6-astra")).toBe("gpt-6-astra");
     expect(normalizeChatGptModelForBrowser("latest" as never)).toBe("gpt-6-astra");
     expect(normalizeChatGptModelForBrowser("gpt-6-pro" as never)).toBe("gpt-6-pro");
-    expect(mapModelToBrowserLabel("gpt-6-astra")).toBe("Latest");
-    expect(mapModelToBrowserLabel("gpt-6-pro" as never)).toBe("Latest");
+    expect(mapModelToBrowserLabel("gpt-6-astra")).toBe("GPT-6");
+    expect(mapModelToBrowserLabel("gpt-6-pro" as never)).toBe("GPT-6");
   });
 
   test("defaults the Pro tier only for gpt-6-pro", () => {

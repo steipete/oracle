@@ -30,7 +30,7 @@ test("CLI engine discovery preserves the browser Pro alias but rejects API dispa
   ];
   try {
     const browser = await exec(process.execPath, [...command, "--engine", "browser"], { env });
-    expect(browser.stdout).toContain("Latest");
+    expect(browser.stdout).toContain("GPT-6");
     await expect(
       exec(process.execPath, [...command, "--engine", "api"], { env }),
     ).rejects.toMatchObject({ stderr: expect.stringContaining("not a model slug") });

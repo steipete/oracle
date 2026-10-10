@@ -9,9 +9,9 @@ import {
 } from "../../src/cli/browserConfig.js";
 
 describe("Astra API model resolution", () => {
-  test("maps explicit browser selection to Latest", async () => {
+  test("maps explicit browser selection to GPT-6", async () => {
     await expect(buildBrowserConfig({ model: "gpt-6-astra" })).resolves.toMatchObject({
-      desiredModel: "Latest",
+      desiredModel: "GPT-6",
       modelStrategy: "select",
     });
   });

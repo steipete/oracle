@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { ensureModelSelection } from "../../src/browser/actions/modelSelection.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
-test.each(["GPT-5.6 Sol", "6 Pro", "Latest", "最新", "최신"])(
+test.each(["GPT-5.6 Sol", "GPT-6", "6 Pro", "Latest", "最新", "최신"])(
   "warns before an implicit switch from %s without changing the target",
   async (label) => {
     const events: string[] = [];
@@ -44,6 +44,25 @@ test.each(["GPT-5.5", "5.5Pro", "Thinking 5.4", "Pro", "Extra High", null])(
     await ensureModelSelection(
       { evaluate } as unknown as ChromeClient["Runtime"],
       "GPT-5.5",
+      log,
+      "select",
+      { implicitDefault: true, buttonWaitMs: 0 },
+    );
+    expect(log.mock.calls.flat().some((line) => line.includes("warning"))).toBe(false);
+  },
+);
+
+test.each(["Latest", "最新", "최신"])(
+  "does not warn about a downgrade from %s to its canonical GPT-6 target",
+  async (label) => {
+    const evaluate = vi
+      .fn()
+      .mockResolvedValueOnce({ result: { value: { status: "already-selected", label } } })
+      .mockResolvedValue({ result: { value: { status: "already-selected", label } } });
+    const log = vi.fn();
+    await ensureModelSelection(
+      { evaluate } as unknown as ChromeClient["Runtime"],
+      "GPT-6",
       log,
       "select",
       { implicitDefault: true, buttonWaitMs: 0 },

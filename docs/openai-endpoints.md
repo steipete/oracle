@@ -111,8 +111,9 @@ Oracle supports Astra's `low`, `medium`, `high`, `xhigh`, and `max` efforts and
 rejects `none` before inference. The default effort is `xhigh`; Pro is enabled
 only with `--reasoning-mode pro` and retains the long-running behavior above.
 The default model is unchanged. Browser selection maps this model to ChatGPT's
-`Latest` radio; `gpt-6-pro` additionally requests verified Pro effort. That Pro
-alias is browser-only: API calls use the exact model ID and reasoning mode above.
+`GPT-6` radio and also accepts legacy `Latest`, Japanese `最新`, and Korean `최신`
+labels on older layouts. `gpt-6-pro` additionally requests verified Pro effort.
+That Pro alias is browser-only: API calls use the exact model ID and reasoning mode above.
 The existing `current` and `ignore` strategies remain available: they retain the
 active ChatGPT model without verifying that it is Astra. CLI and MCP both honor
 these strategies, including saved MCP browser configuration.

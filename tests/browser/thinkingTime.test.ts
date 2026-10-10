@@ -3142,7 +3142,11 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     return { ...dom, thumb, announcement, control, simple, keys };
   }
 
-  function buildCurrentAstraPicker(currentIndex: number, checkedModel = "Latest") {
+  function buildCurrentAstraPicker(
+    currentIndex: number,
+    checkedModel = "GPT-6",
+    modelLabel = "GPT-6",
+  ) {
     const dom = buildDirectSlider(currentIndex);
     const trigger = new Node("Thinking effortThinking effort", {
       id: "current-model-trigger",
@@ -3151,9 +3155,9 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       "aria-expanded": "true",
     });
     const simple = new Node("", { "data-model-picker-view": "simple" }, [dom.control]);
-    const latest = new Node("Latest", {
+    const astra = new Node(modelLabel, {
       role: "menuitemradio",
-      "aria-checked": checkedModel === "Latest" ? "true" : "false",
+      "aria-checked": checkedModel === modelLabel ? "true" : "false",
     });
     const sol = new Node("GPT-5.6 Sol", {
       role: "menuitemradio",
@@ -3161,7 +3165,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     });
     const menu = new Node("6 Pro", { role: "menu", "aria-labelledby": trigger.id }, [
       simple,
-      latest,
+      astra,
       sol,
     ]);
     const documentStub = {
@@ -3183,33 +3187,56 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     return { ...dom, documentStub, trigger, menu };
   }
 
-  it("verifies the current GPT-6 Pro picker from Latest radio and Pro slider", async () => {
+  it("verifies the current GPT-6 Pro picker from GPT-6 radio and Pro slider", async () => {
     const dom = buildCurrentAstraPicker(4);
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "already-selected",
       label: "Pro",
     });
+    expect(dom.thumb.getAttribute("aria-valuenow")).toBe("4");
     expect(dom.keys).toHaveLength(0);
   });
 
   it("moves the current GPT-6 slider to Pro and rejects a checked Sol radio", async () => {
     const medium = buildCurrentAstraPicker(1);
-    await expect(run(medium.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(medium.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "switched",
       label: "Pro",
     });
+    expect(medium.thumb.getAttribute("aria-valuenow")).toBe("4");
     expect(medium.keys).toContain("ArrowRight");
 
     const wrongModel = buildCurrentAstraPicker(4, "GPT-5.6 Sol");
-    await expect(run(wrongModel.documentStub, "pro", "Latest")).resolves.toMatchObject({
+    await expect(run(wrongModel.documentStub, "pro", "GPT-6")).resolves.toMatchObject({
       status: "selection-unverified",
+    });
+    expect(wrongModel.keys).toHaveLength(0);
+  });
+
+  it.each(["Latest", "最新", "최신", "최신".normalize("NFD")])(
+    "verifies Pro with the legacy %s radio",
+    async (label) => {
+      const dom = buildCurrentAstraPicker(4, label, label);
+      await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
+        status: "already-selected",
+        label: "Pro",
+      });
+      expect(dom.keys).toHaveLength(0);
+    },
+  );
+
+  it("preserves a saved Latest target with the GPT-6 radio", async () => {
+    const dom = buildCurrentAstraPicker(4);
+    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+      status: "already-selected",
+      label: "Pro",
     });
   });
 
   it("verifies Extra High already selected on the four-tier slider", async () => {
     const dom = buildDirectSlider(3, undefined, 3);
     dom.announcement.textContent = "Extra High, 4 of 4";
-    await expect(run(dom.documentStub, "extra-high", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "extra-high", "GPT-6")).resolves.toEqual({
       status: "already-selected",
       label: "Extra High",
     });
@@ -3234,7 +3261,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
 
   it("selects Pro on the semantic Chat/Work reasoning slider", async () => {
     const dom = useSemanticSlider(buildDirectSlider(1));
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "switched",
       label: "Pro",
     });
@@ -3243,7 +3270,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
 
   it("verifies already-selected Pro on the semantic five-tier slider", async () => {
     const dom = useSemanticSlider(buildDirectSlider(4));
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "already-selected",
       label: "Pro",
     });
@@ -3290,7 +3317,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
   it("does not promote semantic four-tier Extra High to Pro", async () => {
     const dom = useSemanticSlider(buildDirectSlider(3, undefined, 3));
     dom.announcement.textContent = "Extra High, 4 of 4";
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toMatchObject({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toMatchObject({
       status: "option-disabled",
       label: "Pro",
     });
@@ -3299,7 +3326,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
 
   it("moves to Extra High on the four-tier slider", async () => {
     const dom = buildDirectSlider(1, undefined, 3);
-    await expect(run(dom.documentStub, "extra-high", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "extra-high", "GPT-6")).resolves.toEqual({
       status: "switched",
       label: "Extra High",
     });
@@ -3331,7 +3358,7 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
 
   it("rejects unavailable Pro without input on the four-tier slider", async () => {
     const dom = buildDirectSlider(3, undefined, 3);
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toMatchObject({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toMatchObject({
       status: "option-disabled",
       label: "Pro",
       notice: expect.stringContaining("four-tier"),
@@ -3353,17 +3380,17 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
       dom.thumb.setAttribute("aria-valuemax", max);
       dom.thumb.setAttribute("aria-valuenow", now);
       dom.announcement.textContent = label;
-      expect((await run(dom.documentStub, "extra-high", "Latest")).status).toBe(
+      expect((await run(dom.documentStub, "extra-high", "GPT-6")).status).toBe(
         "selection-unverified",
       );
       expect(dom.keys).toEqual([]);
     },
   );
 
-  it("selects Pro from the observed Japanese 極高 tier for Astra Latest", async () => {
+  it("selects Pro from the observed Japanese 極高 tier for Astra GPT-6", async () => {
     const dom = buildDirectSlider(3, ["Instant", "Medium", "High", "極高", "Pro"]);
     dom.announcement.textContent = "極高、5件中4件目。";
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "switched",
       label: "Pro",
     });
@@ -3389,22 +3416,22 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     expect(dom.keys).toEqual([]);
   });
 
-  it("recognizes Astra Latest's exact 6-prefixed effort owner and selects Pro through the direct slider", async () => {
+  it("recognizes Astra GPT-6's exact 6-prefixed effort owner and selects Pro through the direct slider", async () => {
     const dom = buildDirectSlider(2);
     dom.pill.textContent = "6 High";
 
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "switched",
       label: "Pro",
     });
     expect(dom.keys).toEqual(["ArrowRight", "ArrowRight"]);
   });
 
-  it("recognizes Astra Latest's Japanese 6-prefixed effort owner", async () => {
+  it("recognizes Astra GPT-6's Japanese 6-prefixed effort owner", async () => {
     const dom = buildDirectSlider(3, ["最速", "中程度", "高い", "非常に高い", "Pro"]);
     dom.pill.textContent = "6\n非常に高い";
 
-    await expect(run(dom.documentStub, "pro", "Latest")).resolves.toEqual({
+    await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
       status: "switched",
       label: "Pro",
     });
@@ -3412,12 +3439,12 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
   });
 
   it.each(["6未知", "5.6 Pro"])(
-    "does not claim %s as Astra Latest's effort owner",
+    "does not claim %s as Astra GPT-6's effort owner",
     async (pillText) => {
       const dom = buildDirectSlider(2);
       dom.pill.textContent = pillText;
 
-      expect((await run(dom.documentStub, "pro", "Latest")).status).toBe("chip-not-found");
+      expect((await run(dom.documentStub, "pro", "GPT-6")).status).toBe("chip-not-found");
       expect(dom.keys).toEqual([]);
     },
   );
