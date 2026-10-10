@@ -119,6 +119,71 @@ describe("readAssistantGeneratedImages", () => {
     );
   }
 
+  test.each([
+    { order: 5, minTurn: 0, expected: 1 },
+    { order: 0, minTurn: 0, expected: 0 },
+    { order: 5, minTurn: 2, expected: 0 },
+  ])(
+    "scopes detached blob galleries to the current prompt: %j",
+    async ({ order, minTurn, expected }) => {
+      const img = new FakeElement(
+        "img",
+        {
+          src: "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000001",
+          alt: "Generated image 1",
+          width: "1024",
+          height: "1024",
+        },
+        order,
+      );
+      const user = new FakeElement(
+        "article",
+        { "data-testid": "conversation-turn-0", "data-message-author-role": "user" },
+        1,
+      );
+      const gallery = new FakeElement("div", { "data-testid": "generated-image-gallery" }, order, [
+        img,
+      ]);
+      const runtime = {
+        evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+          result: { value: evaluateImageExpression(expression, [user, gallery]) },
+        })),
+      } as unknown as ChromeClient["Runtime"];
+      expect(await readAssistantGeneratedImages(runtime, minTurn)).toHaveLength(expected);
+    },
+  );
+
+  test("rejects blob images from other origins or outside a generated gallery", async () => {
+    const user = new FakeElement(
+      "article",
+      { "data-testid": "conversation-turn-0", "data-message-author-role": "user" },
+      1,
+    );
+    const unmarked = new FakeElement(
+      "img",
+      {
+        src: "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000001",
+        alt: "Generated image 1",
+        width: "10",
+      },
+      5,
+    );
+    const foreign = new FakeElement("div", { "data-testid": "generated-image-gallery" }, 6, [
+      new FakeElement(
+        "img",
+        { src: "blob:https://example.com/00000000-0000-4000-8000-000000000001", width: "10" },
+        7,
+      ),
+    ]);
+    const runtime = {
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+        result: { value: evaluateImageExpression(expression, [user, unmarked, foreign]) },
+      })),
+    } as unknown as ChromeClient["Runtime"];
+    expect(await readAssistantGeneratedImages(runtime, 0)).toEqual([]);
+    expect(await readAssistantGeneratedImages(runtime, 0, "another-conversation")).toEqual([]);
+  });
+
   test("dedupes duplicate image urls by file id and keeps the largest candidate", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({
@@ -229,6 +294,42 @@ describe("saveChatGptGeneratedImages", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
+  });
+
+  test("saves generated blob bytes through the page without cookies or Node fetch", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "oracle-blob-image-"));
+    const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
+    const blobUrl = "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000001";
+    const network = { getCookies: vi.fn() } as unknown as ChromeClient["Network"];
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValue({
+          result: {
+            value: {
+              ok: true,
+              b64: png.toString("base64"),
+              contentType: "image/png",
+              finalUrl: blobUrl,
+            },
+          },
+        }),
+    } as unknown as ChromeClient["Runtime"];
+    globalThis.fetch = vi.fn();
+    try {
+      const result = await saveChatGptGeneratedImages({
+        Network: network,
+        Runtime: runtime,
+        images: [{ url: blobUrl }],
+        outputPath: path.join(tmpDir, "out.png"),
+      });
+      expect(result.saved).toBe(true);
+      expect(await fs.readFile(path.join(tmpDir, "out.png"))).toEqual(png);
+      expect(network.getCookies).not.toHaveBeenCalled();
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test("saves multiple generated images as real files with ChatGPT cookies", async () => {
