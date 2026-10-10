@@ -14,6 +14,7 @@ import {
   terminateRecoveryChrome,
 } from "../../src/browser/recoveryChromeLifecycle.js";
 const dirs: string[] = [];
+const logger = (_message: string) => {};
 afterEach(async () => {
   vi.resetAllMocks();
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -25,10 +26,10 @@ describe("recovery Chrome ownership", () => {
     state.readChromePid.mockResolvedValue(123);
     state.readProcessStartTimeMs.mockResolvedValue(456);
     state.terminateRecordedChromeForProfile.mockResolvedValue(true);
-    expect(await terminateRecoveryChrome(dir, vi.fn())).toBe(false);
+    expect(await terminateRecoveryChrome(dir, logger)).toBe(false);
     expect(state.terminateRecordedChromeForProfile).not.toHaveBeenCalled();
     await recordRecoveryChromeOwnership(dir, 123, 0);
-    expect(await terminateRecoveryChrome(dir, vi.fn())).toBe(true);
+    expect(await terminateRecoveryChrome(dir, logger)).toBe(true);
     expect(state.terminateRecordedChromeForProfile).toHaveBeenCalledOnce();
     await expect(readFile(path.join(dir, "oracle-recovery-chrome.json"))).rejects.toThrow();
   });
@@ -39,7 +40,7 @@ describe("recovery Chrome ownership", () => {
     state.readProcessStartTimeMs.mockResolvedValue(456);
     await recordRecoveryChromeOwnership(dir, 123);
     await preserveRecoveryChrome(dir);
-    expect(await terminateRecoveryChrome(dir, vi.fn())).toBe(false);
+    expect(await terminateRecoveryChrome(dir, logger)).toBe(false);
     expect(state.terminateRecordedChromeForProfile).not.toHaveBeenCalled();
   });
   test("keeps a browser when preservation precedes delayed ownership publication", async () => {
@@ -57,7 +58,7 @@ describe("recovery Chrome ownership", () => {
     finish(456);
     await recording;
     state.readProcessStartTimeMs.mockResolvedValue(456);
-    expect(await terminateRecoveryChrome(dir, vi.fn())).toBe(false);
+    expect(await terminateRecoveryChrome(dir, logger)).toBe(false);
     expect(state.terminateRecordedChromeForProfile).not.toHaveBeenCalled();
   });
   test.each(["pid", "startedAt", "malformed"])(
@@ -72,7 +73,7 @@ describe("recovery Chrome ownership", () => {
       if (changed === "startedAt") state.readProcessStartTimeMs.mockResolvedValue(457);
       if (changed === "malformed")
         await writeFile(path.join(dir, "oracle-recovery-chrome.json"), "null");
-      expect(await terminateRecoveryChrome(dir, vi.fn())).toBe(false);
+      expect(await terminateRecoveryChrome(dir, logger)).toBe(false);
       expect(state.terminateRecordedChromeForProfile).not.toHaveBeenCalled();
     },
   );
