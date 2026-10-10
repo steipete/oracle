@@ -4,6 +4,7 @@
 
 - Browser: tolerate macOS openrsync vanished-file transfers when copying live Chrome profiles, while rejecting real read errors and missing authentication storage; fixes #550, thanks @Sogl.
 - Browser: release Chrome launched by session recovery according to `keepBrowser`, preserve borrowed browsers and concurrent leases, and show manual-login guidance with hidden-window recovery; fixes #548 and #547, thanks @HidakaKoyo.
+- Browser: capture generated images from current-prompt ChatGPT blob galleries and download their bytes inside the page, preventing image-generation timeouts on the new layout; fixes #549, thanks @HidakaKoyo.
 
 - Browser: recognize GPT-6 picker labels, preserve the latest CLI alias and legacy localized radios, and verify model and Pro effort separately; fixes #553, thanks @felipekrgb.
 - Browser: use fresh cold-launch ports and live attach endpoints, wait for HTTP 404 approval responses, exclude volatile copied-profile session state while preserving auth storage, and report partial cookie transfers safely; fixes #535, #537, #538, and #540, improves #541; thanks @webkitvn and @Sogl.

@@ -113,7 +113,7 @@ import {
   saveBrowserTranscriptArtifact,
   saveDeepResearchReportArtifact,
 } from "./artifacts.js";
-import { collectGeneratedImageArtifacts } from "./chatgptImages.js";
+import { collectGeneratedImageArtifacts, readAssistantGeneratedImages } from "./chatgptImages.js";
 import { collectChatGptFileArtifacts } from "./chatgptFiles.js";
 import { runProviderSubmissionFlow } from "./providerDomFlow.js";
 import { chatgptDomProvider } from "./providers/index.js";
@@ -379,6 +379,20 @@ async function pollGeneratedImageOrTextAssistantResponse(
     const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
     const html = typeof snapshot?.html === "string" ? snapshot.html : "";
     const hasGeneratedImage = html.includes("/backend-api/estuary/content?id=file_");
+    if (!text || isImageOnlyUiChromeText(text)) {
+      const images = await readAssistantGeneratedImages(
+        Runtime,
+        minTurnIndex,
+        expectedConversationId,
+      ).catch(() => []);
+      if (images.length > 0) {
+        return {
+          text: "Generated image",
+          html,
+          meta: { turnId: snapshot?.turnId, messageId: snapshot?.messageId },
+        };
+      }
+    }
     if (text && (hasGeneratedImage || !isImageOnlyUiChromeText(text))) {
       return {
         text,

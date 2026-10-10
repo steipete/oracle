@@ -37,6 +37,16 @@ function normalizeGeneratedImageUrl(value?: string | null): string | undefined {
   } catch {
     return undefined;
   }
+  if (url.protocol === "blob:") {
+    try {
+      const origin = new URL(url.pathname);
+      return origin.protocol === "https:" && !origin.port && isAllowedChatGptHost(origin.hostname)
+        ? url.href
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
   if (url.protocol !== "https:" || url.port || !isAllowedChatGptHost(url.hostname)) {
     return undefined;
   }
@@ -71,7 +81,10 @@ function dedupeImages(images: BrowserGeneratedImage[]): BrowserGeneratedImage[] 
   return [...best.values()];
 }
 
-function buildAssistantImageExpression(minTurnIndex?: number): string {
+function buildAssistantImageExpression(
+  minTurnIndex?: number,
+  expectedConversationId?: string,
+): string {
   const minTurnLiteral =
     typeof minTurnIndex === "number" && Number.isFinite(minTurnIndex) && minTurnIndex >= 0
       ? Math.floor(minTurnIndex)
@@ -79,10 +92,24 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
   const assistantLiteral = JSON.stringify(ASSISTANT_ROLE_SELECTOR);
   return `(() => {
     const MIN_TURN_INDEX = ${minTurnLiteral};
+    const expectedConversationId = ${JSON.stringify(expectedConversationId ?? null)};
+    if (expectedConversationId && !String(location.pathname || '').endsWith('/c/' + expectedConversationId)) return [];
     const ASSISTANT_SELECTOR = ${assistantLiteral};
     const isGeneratedImage = (img) => {
       const url = new URL(img?.src || '', location.origin || 'https://chatgpt.com');
       const host = url.hostname.toLowerCase();
+      if (url.protocol === 'blob:') {
+        let origin;
+        try { origin = new URL(url.pathname); } catch { return false; }
+        if (origin.protocol !== 'https:' || origin.port || !['chatgpt.com', 'chat.openai.com'].includes(origin.hostname)) return false;
+        if (img.complete === false || !img.naturalWidth) return false;
+        let parent = img.parentElement;
+        while (parent instanceof HTMLElement) {
+          if (['generated-image-preview', 'generated-image-gallery'].includes(parent.getAttribute('data-testid'))) return true;
+          parent = parent.parentElement;
+        }
+        return false;
+      }
       if (url.protocol !== 'https:' || url.port) return false;
       if (host !== 'chatgpt.com' && host !== 'chat.openai.com') return false;
       if (url.pathname !== '/backend-api/estuary/content') return false;
@@ -127,9 +154,19 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
       MIN_TURN_INDEX > 0 && turns.length > 0
         ? turns[Math.min(MIN_TURN_INDEX - 1, turns.length - 1)]
         : null;
+    const latestUser = turns.findLast((turn, index) => {
+      if (MIN_TURN_INDEX >= 0 && index < MIN_TURN_INDEX) return false;
+      return turn.getAttribute('data-message-author-role') === 'user' ||
+        turn.getAttribute('data-turn') === 'user' ||
+        /:user$/.test(turn.getAttribute('data-content-search-unit-key') || turn.getAttribute('data-chatgpt-search-unit-key') || '') ||
+        Boolean(turn.querySelector('[data-message-author-role="user"]'));
+    });
     return Array.from(document.querySelectorAll('img'))
       .filter(isGeneratedImage)
       .filter((img) => {
+        if (img.src.startsWith('blob:')) {
+          return Boolean(latestUser && (latestUser.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING));
+        }
         if (!boundary) return true;
         return Boolean(boundary.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING);
       })
@@ -145,9 +182,10 @@ function buildAssistantImageExpression(minTurnIndex?: number): string {
 export async function readAssistantGeneratedImages(
   Runtime: ChromeClient["Runtime"],
   minTurnIndex?: number,
+  expectedConversationId?: string,
 ): Promise<BrowserGeneratedImage[]> {
   const { result } = await Runtime.evaluate({
-    expression: buildAssistantImageExpression(minTurnIndex),
+    expression: buildAssistantImageExpression(minTurnIndex, expectedConversationId),
     returnByValue: true,
   });
   const raw = Array.isArray(result?.value) ? result.value : [];
@@ -362,8 +400,11 @@ export async function saveChatGptGeneratedImages(params: {
   const { Network, Runtime, images, outputPath, logger } = params;
   if (!images.length) return { saved: false, imageCount: 0, savedImages: [], errors: [] };
 
-  const cookieHeader = await buildCookieHeader(Network);
-  if (!cookieHeader) {
+  const needsCookies = images.some((image) =>
+    normalizeGeneratedImageUrl(image.url)?.startsWith("https:"),
+  );
+  const cookieHeader = needsCookies ? await buildCookieHeader(Network) : "";
+  if (needsCookies && !cookieHeader) {
     return {
       saved: false,
       imageCount: images.length,
@@ -387,34 +428,44 @@ export async function saveChatGptGeneratedImages(params: {
       let finalUrl = imageUrl;
       let buffer: Buffer;
 
-      try {
-        const response = await fetch(imageUrl, {
-          headers: {
-            cookie: cookieHeader,
-            "user-agent": "Mozilla/5.0",
-          },
-          redirect: "follow",
-        });
-        if (!response.ok) {
-          throw new Error(`download failed: ${response.status} ${response.statusText}`);
-        }
-        contentType = response.headers.get("content-type");
-        finalUrl = response.url;
-        buffer = Buffer.from(await response.arrayBuffer());
-      } catch (downloadError) {
-        if (!Runtime) {
-          throw downloadError;
-        }
-        const message =
-          downloadError instanceof Error ? downloadError.message : String(downloadError);
-        logger?.(
-          `[browser] ChatGPT generated image download failed via Node fetch; retrying in browser context (${image.fileId ?? imageUrl}: ${message}).`,
-        );
+      if (imageUrl.startsWith("blob:")) {
+        if (!Runtime)
+          throw new Error("Browser context is required to download a generated blob image.");
         const browserFetch = await fetchGeneratedImageInBrowserContext(Runtime, imageUrl);
-        contentType = browserFetch.contentType;
-        finalUrl = browserFetch.finalUrl;
         buffer = browserFetch.buffer;
-      }
+        const detected = detectImageFile(buffer);
+        if (!detected) throw new Error("Generated blob did not contain an image.");
+        contentType = detected.mimeType;
+        finalUrl = browserFetch.finalUrl;
+      } else
+        try {
+          const response = await fetch(imageUrl, {
+            headers: {
+              cookie: cookieHeader,
+              "user-agent": "Mozilla/5.0",
+            },
+            redirect: "follow",
+          });
+          if (!response.ok) {
+            throw new Error(`download failed: ${response.status} ${response.statusText}`);
+          }
+          contentType = response.headers.get("content-type");
+          finalUrl = response.url;
+          buffer = Buffer.from(await response.arrayBuffer());
+        } catch (downloadError) {
+          if (!Runtime) {
+            throw downloadError;
+          }
+          const message =
+            downloadError instanceof Error ? downloadError.message : String(downloadError);
+          logger?.(
+            `[browser] ChatGPT generated image download failed via Node fetch; retrying in browser context (${image.fileId ?? imageUrl}: ${message}).`,
+          );
+          const browserFetch = await fetchGeneratedImageInBrowserContext(Runtime, imageUrl);
+          contentType = browserFetch.contentType;
+          finalUrl = browserFetch.finalUrl;
+          buffer = browserFetch.buffer;
+        }
 
       const extension = contentTypeToExtension(contentType);
       const targetPath = resolveSiblingImagePath(path.resolve(outputPath), index, extension);

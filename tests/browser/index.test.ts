@@ -19,6 +19,19 @@ import { redactBrowserConfigForDebugLog } from "../../src/browser/configLogging.
 import { BrowserAutomationError } from "../../src/oracle/errors.js";
 
 describe("generated image response failures", () => {
+  test("completes image generation when a detached gallery appears without answer text", async () => {
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => ({
+      result: {
+        value: expression.includes("const isGeneratedImage")
+          ? [{ url: "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000001", width: 1024 }]
+          : { text: "Edit", turnIndex: 2 },
+      },
+    }));
+    await expect(
+      __test__.pollGeneratedImageOrTextAssistantResponse({ evaluate } as never, 100, 2),
+    ).resolves.toMatchObject({ text: "Generated image" });
+  });
+
   test("rejects a current Retry failure instead of accepting its text as an image answer", async () => {
     const evaluate = vi.fn().mockResolvedValue({
       result: {
