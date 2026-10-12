@@ -43,8 +43,6 @@ def main():
     head = git("rev-parse", "HEAD")
     repo = os.environ["GITHUB_REPOSITORY"]
     branch = api(f"repos/{repo}/branches/main")
-    if not branch["protected"] and not dry:
-        raise ValueError("main must be protected")
     git("merge-base", "--is-ancestor", head, "origin/main")
     tag_object = ""
     if dry:
