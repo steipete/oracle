@@ -91,6 +91,7 @@ jobs:
           if-no-files-found: error
 
   npm:
+    timeout-minutes: 45
     if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
@@ -134,7 +135,15 @@ jobs:
           echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
           env -u NPM_TOKEN -u NODE_AUTH_TOKEN npm publish "oracle-$version.tgz" --access public --provenance --tag "$dist_tag"
           expected="sha512-$(openssl dgst -sha512 -binary "oracle-$version.tgz" | base64 -w0)"
-          actual=$(npm view "$PACKAGE_NAME@$version" dist.integrity)
+          actual=
+          for attempt in {1..120}; do
+            if actual=$(npm view "$PACKAGE_NAME@$version" dist.integrity 2>"$RUNNER_TEMP/npm-propagation.err"); then
+              [[ -z "$actual" ]] || break
+            else
+              grep -q E404 "$RUNNER_TEMP/npm-propagation.err" || { cat "$RUNNER_TEMP/npm-propagation.err" >&2; exit 1; }
+            fi
+            sleep 15
+          done
           test "$actual" = "$expected"
           npm view "$PACKAGE_NAME@$version" dist.tarball dist.integrity dist.attestations --json
 
