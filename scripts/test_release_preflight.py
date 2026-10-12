@@ -23,7 +23,7 @@ class ReleasePreflightTests(unittest.TestCase):
                 Path('CHANGELOG.md').write_text('## 1.2.3 - 2026-10-12\n- Fix\n')
                 Path('package.json').write_text('{"name":"fixture","version":"1.2.3"}')
                 def api(path):
-                    if '/branches/' in path: return {'protected': True}
+                    if '/branches/' in path: return {'protected': True, 'commit': {'sha': 'a'*40}}
                     return {'workflow_runs': [{'head_sha':'a'*40,'event':'pull_request','conclusion':'success'}]}
                 with patch.dict(os.environ, {'DRY_RUN':'true','VERSION':'1.2.3','GITHUB_REPOSITORY':'owner/repo','GITHUB_REF':'refs/heads/main','CI_WORKFLOWS':'ci.yml','PACKAGE_NAME':'fixture'}, clear=True), patch.object(release,'git',return_value='a'*40), patch.object(release,'api',side_effect=api):
                     with self.assertRaisesRegex(ValueError,'no green push'): release.main()

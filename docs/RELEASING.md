@@ -19,3 +19,5 @@ SHA-1/SHA-256 sidecars and SHA256SUMS. The explicit Homebrew handoff runs only
 after npm and GitHub publication, using `HOMEBREW_TAP_TOKEN`.
 
 Oracle also builds the Developer ID signed and notarized notifier on macOS before packing it. CI requires `MACOS_SIGNING_P12`, `MACOS_SIGNING_P12_PASSWORD`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_P8`. Signing and Gatekeeper verification failures stop publication. The notifier does not ship a Sparkle feed.
+
+Live publication requires branch protection on main. Rehearsals may run from the current main commit while protection is being configured; they still require exact-commit push CI and cannot publish.
