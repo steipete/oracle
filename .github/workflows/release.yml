@@ -1,0 +1,186 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validate and build without publishing
+        type: boolean
+        default: true
+      version:
+        description: Dated changelog version to verify (blank uses the latest dated section)
+        type: string
+        required: false
+
+permissions: {}
+concurrency:
+  group: release-${{ github.event.inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+      tag_object: ${{ steps.release.outputs.tag_object }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test release guard
+        run: python3 -B scripts/test_release_preflight.py
+      - name: Validate source, changelog, signature, and exact-commit push CI
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version || github.ref_name }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          CI_WORKFLOWS: ci.yml
+          PACKAGE_NAME: '@steipete/oracle'
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$VERSION" = main ]; then export VERSION=; fi
+          python3 scripts/release-preflight.py
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26.5.1'
+      - name: Install and build
+        run: |
+          corepack enable
+          corepack install
+          pnpm install --frozen-lockfile
+      - name: Build signed and notarized notifier
+        env:
+          MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: bash scripts/ci-build-notifier.sh
+      - name: Build package with verified notifier
+        run: pnpm build
+      - name: Freeze and smoke the exact npm tarball
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          PACKAGE_NAME: '@steipete/oracle'
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets "$RUNNER_TEMP/npm-pack" "$RUNNER_TEMP/npm-smoke" "$RUNNER_TEMP/smoke-home"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-pack"
+          cp "$RUNNER_TEMP/npm-pack/"*.tgz "release-assets/oracle-${VERSION}.tgz"
+          npm install --prefix "$RUNNER_TEMP/npm-smoke" --ignore-scripts --no-audit --no-fund "$PWD/release-assets/oracle-${VERSION}.tgz"
+          HOME="$RUNNER_TEMP/smoke-home" "$RUNNER_TEMP/npm-smoke/node_modules/.bin/oracle" --version
+          HOME="$RUNNER_TEMP/smoke-home" "$RUNNER_TEMP/npm-smoke/node_modules/.bin/oracle" --help
+          cd release-assets
+          shasum -a 1 "oracle-${VERSION}.tgz" > "oracle-${VERSION}.tgz.sha1"
+          shasum -a 256 "oracle-${VERSION}.tgz" > "oracle-${VERSION}.tgz.sha256"
+          shasum -a 256 *.tgz > SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ github.sha }}
+          path: |
+            release-assets/
+            release-notes.md
+          if-no-files-found: error
+
+  npm:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      dist_tag: ${{ steps.publish.outputs.dist_tag }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26.5.1'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-${{ github.sha }}
+          path: payload
+      - name: Publish immutable tarball through npm OIDC
+        id: publish
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          PACKAGE_NAME: '@steipete/oracle'
+          NPM_CONFIG_USERCONFIG: ${{ runner.temp }}/release.npmrc
+        run: |
+          set -euo pipefail
+          npm install --global npm@11.20.0
+          version=${TAG#v}
+          existing=$(npm view "$PACKAGE_NAME@$version" version --json 2>"$RUNNER_TEMP/npm-view.err") && {
+            echo "Version already exists; refusing to publish" >&2; exit 1;
+          }
+          grep -q E404 "$RUNNER_TEMP/npm-view.err"
+          cd payload/release-assets
+          sha256sum -c SHA256SUMS
+          latest=$(npm view "$PACKAGE_NAME@latest" version)
+          dist_tag=$(node -e '
+            const [version, latest] = process.argv.slice(1);
+            if (version.includes("-")) { console.log("next"); process.exit(); }
+            const a=version.split(".").map(Number), b=latest.split(".").map(Number);
+            const first=a.findIndex((n,i)=>n!==b[i]);
+            console.log(first>=0 && a[first]<b[first] ? "legacy" : "latest");
+          ' "$version" "$latest")
+          echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
+          env -u NPM_TOKEN -u NODE_AUTH_TOKEN npm publish "oracle-$version.tgz" --access public --provenance --tag "$dist_tag"
+          expected="sha512-$(openssl dgst -sha512 -binary "oracle-$version.tgz" | base64 -w0)"
+          actual=$(npm view "$PACKAGE_NAME@$version" dist.integrity)
+          test "$actual" = "$expected"
+          npm view "$PACKAGE_NAME@$version" dist.tarball dist.integrity dist.attestations --json
+
+  publish:
+    if: github.event_name == 'push'
+    needs: [build, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ needs.build.outputs.sha }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-${{ github.sha }}
+          path: payload
+      - name: Reverify immutable tag and publish exact archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          TARGET_SHA: ${{ needs.build.outputs.sha }}
+          TAG_OBJECT: ${{ needs.build.outputs.tag_object }}
+          DIST_TAG: ${{ needs.npm.outputs.dist_tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/tags/$TAG:refs/audit/tag"
+          test "$(git rev-parse refs/audit/tag)" = "$TAG_OBJECT"
+          test "$(git rev-parse refs/audit/tag^{})" = "$TARGET_SHA"
+          git -c gpg.format=ssh -c gpg.ssh.allowedSignersFile=.github/release-allowed-signers verify-tag refs/audit/tag
+          (cd payload/release-assets && sha256sum -c SHA256SUMS)
+          flags=()
+          [[ "$TAG" != *-* ]] || flags+=(--prerelease)
+          [[ "$DIST_TAG" = latest ]] || flags+=(--latest=false)
+          gh release create "$TAG" payload/release-assets/* --verify-tag --title "$TAG" --notes-file payload/release-notes.md "${flags[@]}"
+
+  homebrew:
+    if: github.event_name == 'push' && needs.npm.outputs.dist_tag == 'latest'
+    needs: [build, publish, npm]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-homebrew-tap.yml
+    with:
+      tag: ${{ needs.build.outputs.tag }}
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

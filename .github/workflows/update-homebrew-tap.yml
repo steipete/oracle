@@ -1,14 +1,14 @@
 name: Update Homebrew Tap
 
 on:
-  release:
-    types: [published]
-  workflow_dispatch:
+  workflow_call:
     inputs:
       tag:
-        description: "Release tag to publish to the tap (for example, v0.11.0)"
         required: true
         type: string
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: true
 
 permissions:
   contents: read
