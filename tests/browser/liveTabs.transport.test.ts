@@ -120,6 +120,7 @@ describe("live tab transport", () => {
     );
     expect(browser.Target.createTarget).toHaveBeenCalledWith({
       url: "https://chatgpt.com/c/saved",
+      background: true,
     });
     expect(cdp.New).not.toHaveBeenCalled();
     expect(browser.Target.detachFromTarget).toHaveBeenCalledWith({ sessionId: "session" });

@@ -810,7 +810,10 @@ describe("closeBlankChromeTabs", () => {
       target: "ws://127.0.0.1:9222/devtools/browser/abc",
       local: true,
     });
-    expect(browserClient.Target.createTarget).toHaveBeenCalledWith({ url: "https://chatgpt.com/" });
+    expect(browserClient.Target.createTarget).toHaveBeenCalledWith({
+      url: "https://chatgpt.com/",
+      background: true,
+    });
     expect(browserClient.Target.attachToTarget).toHaveBeenCalledWith({
       targetId: "target-9",
       flatten: true,

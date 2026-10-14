@@ -723,7 +723,7 @@ async function attemptSendButton(
   logger?: BrowserLogger,
   attachmentNames?: AttachmentReadyInput[],
   attachmentTimeoutMs?: number | null,
-  Page?: ChromeClient["Page"],
+  _Page?: ChromeClient["Page"],
   attachmentNavigationUrl?: string,
 ): Promise<boolean> {
   const needAttachment = Array.isArray(attachmentNames) && attachmentNames.length > 0;
@@ -789,7 +789,6 @@ async function attemptSendButton(
   const timeoutMs = sendButtonTimeoutMs(attachmentNames, attachmentTimeoutMs);
   const deadline = Date.now() + timeoutMs;
   let previousPoint: { x: number; y: number } | undefined;
-  let activated = false;
   let foundButton = false;
   let attachmentMenuChecked = !needAttachment;
   while (Date.now() < deadline) {
@@ -804,8 +803,6 @@ async function attemptSendButton(
       }
     }
     if (!attachmentMenuChecked) {
-      await activatePageForTrustedInput(Page, logger);
-      activated = true;
       await dismissOpenComposerPlusMenu(Runtime, Input, logger);
       attachmentMenuChecked = true;
       previousPoint = undefined;
@@ -828,12 +825,8 @@ async function attemptSendButton(
       await delay(100);
       continue;
     }
-    // Activating the target can trigger a final compositor/layout pass. Do it before
-    // measuring the button so the trusted click never uses stale coordinates.
-    if (!activated) {
-      await activatePageForTrustedInput(Page, logger);
-      activated = true;
-    }
+    // CDP input stays bound to this target. Wait for stable coordinates without
+    // activating the browser window or interrupting the user's selected tab.
     const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
     const value = result.value as
       | { status?: "clicked" | "missing" | "point" | "settling"; x?: number; y?: number }
@@ -1113,20 +1106,6 @@ async function dismissOpenComposerPlusMenu(
       code: "attachment-menu-stuck-open",
     },
   );
-}
-
-async function activatePageForTrustedInput(
-  Page: ChromeClient["Page"] | undefined,
-  logger?: BrowserLogger,
-): Promise<void> {
-  if (!Page || typeof Page.bringToFront !== "function") {
-    return;
-  }
-  await Page.bringToFront().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    logger?.(`[browser] Could not bring ChatGPT target to front before trusted click: ${message}`);
-  });
-  await delay(150);
 }
 
 async function clickTrustedPoint(

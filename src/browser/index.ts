@@ -3810,7 +3810,10 @@ async function runRemoteBrowserMode(
                 (target) => target.type === "page" && target.targetId !== remoteTargetId,
               )
             ) {
-              const replacement = await client.Target.createTarget({ url: "about:blank" });
+              const replacement = await client.Target.createTarget({
+                url: "about:blank",
+                background: true,
+              });
               if (!replacement.targetId) preserveTarget = true;
             }
           } catch {

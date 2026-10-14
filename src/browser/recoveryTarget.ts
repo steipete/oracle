@@ -179,7 +179,7 @@ async function retireOwnedBrowserTarget(
     if (
       !targetInfos.some((target) => target.type === "page" && target.targetId !== capture.targetId)
     ) {
-      const replacement = await Target.createTarget({ url: "about:blank" });
+      const replacement = await Target.createTarget({ url: "about:blank", background: true });
       if (!replacement.targetId) return;
     }
     if (await targetHasActiveController(metadata, capture)) return;

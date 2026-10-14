@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: create session and cleanup replacement tabs in the background, preserve target-specific CDP input, and send prompts or attachments without `Page.bringToFront` so Oracle does not take focus from the user's work.
+
 ## 0.21.5 - 2026-10-11
 
 **Highlights:** Reliable Chrome recovery and cleanup, faster file bundles, and the source-map-js security fix (CVE-2026-93749).

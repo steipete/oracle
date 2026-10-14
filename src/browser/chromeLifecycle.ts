@@ -693,6 +693,7 @@ export async function connectToRemoteChromeTarget(
     if (!targetId) {
       const created = await browser.Target.createTarget({
         url: options.targetUrl ?? "about:blank",
+        background: true,
       });
       targetId = created.targetId;
       createdTargetId = targetId;

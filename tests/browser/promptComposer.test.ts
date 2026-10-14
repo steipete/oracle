@@ -607,7 +607,6 @@ describe("promptComposer", () => {
 
       await expect(result).resolves.toBe(true);
       expect(events).toEqual([
-        "bringToFront",
         "keyDown:Escape",
         "keyUp:Escape",
         "focusSendButton",
@@ -615,6 +614,7 @@ describe("promptComposer", () => {
         "keyDown:Enter",
         "keyUp:Enter",
       ]);
+      expect(page.bringToFront).not.toHaveBeenCalled();
       expect(logger).toHaveBeenCalledWith("Closed attachment menu before send");
       expect(logger).toHaveBeenCalledWith("Activated exact attachment send button via keyboard");
       expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
@@ -1081,19 +1081,21 @@ describe("promptComposer", () => {
     }
   });
 
-  test("activates the target before measuring fresh trusted-click coordinates", async () => {
+  test("waits for stable trusted-click coordinates without activating the browser", async () => {
     vi.useFakeTimers();
     try {
       const events: string[] = [];
-      let activated = false;
+      let measurements = 0;
       const runtime = {
         evaluate: vi.fn(async () => {
+          measurements += 1;
           events.push("measurePoint");
           return {
             result: {
-              value: activated
-                ? { status: "point", x: 30, y: 40 }
-                : { status: "point", x: 10, y: 20 },
+              value:
+                measurements > 1
+                  ? { status: "point", x: 30, y: 40 }
+                  : { status: "point", x: 10, y: 20 },
             },
           };
         }),
@@ -1105,7 +1107,6 @@ describe("promptComposer", () => {
       };
       const page = {
         bringToFront: vi.fn(async () => {
-          activated = true;
           events.push("bringToFront");
         }),
       };
@@ -1122,14 +1123,14 @@ describe("promptComposer", () => {
 
       await expect(result).resolves.toBe(true);
       expect(events).toEqual([
-        "bringToFront",
+        "measurePoint",
         "measurePoint",
         "measurePoint",
         "mouseMoved",
         "mousePressed",
         "mouseReleased",
       ]);
-      expect(page.bringToFront).toHaveBeenCalledTimes(1);
+      expect(page.bringToFront).not.toHaveBeenCalled();
       expect(input.dispatchMouseEvent).toHaveBeenNthCalledWith(1, {
         type: "mouseMoved",
         x: 30,

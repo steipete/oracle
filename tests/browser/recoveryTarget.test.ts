@@ -166,6 +166,16 @@ describe("owned recovery target retirement", () => {
     expect(closeTarget).toHaveBeenCalledExactlyOnceWith({ targetId: "owned" });
     expect(createTarget).not.toHaveBeenCalled();
   });
+  test("opens a background replacement before closing the only owned page", async () => {
+    const mocked = await connectToRemoteChromeTarget(capture.host, capture.port, () => {}, {});
+    vi.mocked(mocked.client.Target.getTargets).mockResolvedValue({
+      targetInfos: [{ type: "page", targetId: "owned" }],
+    } as never);
+    vi.mocked(connectToRemoteChromeTarget).mockClear();
+    await completeOwnedBrowserHarvest(metadata.id, harvested(), integrity, () => {});
+    expect(createTarget).toHaveBeenCalledExactlyOnceWith({ url: "about:blank", background: true });
+    expect(closeTarget).toHaveBeenCalledExactlyOnceWith({ targetId: "owned" });
+  });
   test.each([
     "legacy",
     "borrowed",
