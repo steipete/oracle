@@ -4,6 +4,7 @@
 
 - Dependencies: refresh provider and MCP SDKs, validation and terminal helpers, lint/test tooling, DevTools protocol, and the Hono adapter, URI parser, protobuf and Vite overrides within the two-day cooldown; retain Node >=24 and Undici 7.
 
+- Browser: re-verify the thinking-effort picker immediately before sending instead of trusting the snapshot taken before the prompt was pasted, so a large prompt or inline file attachment that takes real time to paste — during which ChatGPT can silently demote an expensive tier like Pro — no longer gets submitted, and reported, at the wrong effort.
 - Browser: reject terminal “Thinking failed” turns with or without Retry instead of saving them as successful answers, while preserving ordinary prose and active-generation safeguards; fixes #565, thanks @postoso.
 - CLI: keep session listings newest-first when legacy metadata lacks a creation time, point truncation hints at supported flags, and list the missing browser controls in advanced help; thanks @postoso.
 - CLI: skip stale Deep Research tool-call wrappers after automatic reattachment so completed sessions display the recovered report without reopening Chrome; thanks @devYRPauli.

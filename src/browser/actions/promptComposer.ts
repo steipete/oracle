@@ -63,6 +63,16 @@ export async function submitPrompt(
     attachmentTimeoutMs?: number | null;
     onPromptSubmitted?: () => Promise<void> | void;
     webSearch?: boolean;
+    /**
+     * Invoked immediately before the send button/Enter key is dispatched, after the
+     * full prompt (including any inline-pasted file content) has landed in the
+     * composer. Large prompts are pasted in chunks over real wall-clock time, during
+     * which ChatGPT can silently demote an expensive picker selection (e.g. Pro
+     * thinking effort) made before pasting started. Callers use this hook to
+     * re-verify that selection right before submission and fail closed if it no
+     * longer holds, instead of trusting a stale pre-paste verification.
+     */
+    beforeSend?: () => Promise<void> | void;
   },
   prompt: string,
   logger: BrowserLogger,
@@ -342,6 +352,8 @@ export async function submitPrompt(
       returnByValue: true,
     })
     .catch(() => undefined);
+
+  await deps.beforeSend?.();
 
   const clicked = await attemptSendButton(
     runtime,

@@ -1051,6 +1051,126 @@ describe("promptComposer", () => {
     }
   });
 
+  test("calls beforeSend after the prompt lands and before the send dispatch", async () => {
+    const runtime = {
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+        if (expression.includes("document.readyState")) {
+          return { result: { value: { ready: true, composer: true, fileInput: false } } };
+        }
+        if (expression.includes("focused: true")) {
+          return { result: { value: { focused: true } } };
+        }
+        if (expression.includes("editorText")) {
+          return {
+            result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
+          };
+        }
+        if (expression.includes("chatListUnavailable")) {
+          return { result: { value: false } };
+        }
+        if (expression.includes("button.scrollIntoView")) {
+          return { result: { value: { status: "missing" } } };
+        }
+        return {
+          result: {
+            value: {
+              baseline: 0,
+              turnsCount: 1,
+              userMatched: true,
+              prefixMatched: false,
+              lastMatched: true,
+              hasNewTurn: true,
+              stopVisible: true,
+              assistantVisible: false,
+              composerCleared: true,
+              inConversation: true,
+            },
+          },
+        };
+      }),
+    };
+    const input = {
+      insertText: vi.fn(),
+      dispatchKeyEvent: vi.fn(),
+      dispatchMouseEvent: vi.fn(),
+    };
+    const logger = Object.assign(vi.fn(), { verbose: false });
+    const beforeSend = vi.fn(async () => undefined);
+
+    const result = await submitPrompt(
+      {
+        runtime: runtime as never,
+        input: input as never,
+        baselineTurns: 0,
+        beforeSend,
+      },
+      "hello",
+      logger as never,
+    );
+
+    expect(result).toBe(1);
+    expect(beforeSend).toHaveBeenCalledTimes(1);
+    // beforeSend must complete before Enter is dispatched — otherwise a
+    // re-verification made here can't catch a tier that ChatGPT silently
+    // demoted while the (possibly large) prompt was being pasted.
+    const beforeSendOrder = beforeSend.mock.invocationCallOrder[0];
+    const enterKeyDownCall = input.dispatchKeyEvent.mock.calls.findIndex(
+      ([event]) => event?.type === "keyDown",
+    );
+    expect(enterKeyDownCall).toBeGreaterThanOrEqual(0);
+    const enterKeyDownOrder = input.dispatchKeyEvent.mock.invocationCallOrder[enterKeyDownCall];
+    expect(beforeSendOrder).toBeLessThan(enterKeyDownOrder);
+  });
+
+  test("aborts submission without sending when beforeSend rejects", async () => {
+    const runtime = {
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+        if (expression.includes("document.readyState")) {
+          return { result: { value: { ready: true, composer: true, fileInput: false } } };
+        }
+        if (expression.includes("focused: true")) {
+          return { result: { value: { focused: true } } };
+        }
+        if (expression.includes("editorText")) {
+          return {
+            result: { value: { editorText: "hello", fallbackValue: "", activeValue: "hello" } },
+          };
+        }
+        if (expression.includes("chatListUnavailable")) {
+          return { result: { value: false } };
+        }
+        return { result: { value: { status: "missing" } } };
+      }),
+    };
+    const input = {
+      insertText: vi.fn(),
+      dispatchKeyEvent: vi.fn(),
+      dispatchMouseEvent: vi.fn(),
+    };
+    const logger = Object.assign(vi.fn(), { verbose: false });
+    const beforeSendError = new Error(
+      "Thinking time: Pro is unavailable on this account; refusing to submit without confirmed Pro.",
+    );
+    const beforeSend = vi.fn(async () => {
+      throw beforeSendError;
+    });
+
+    await expect(
+      submitPrompt(
+        {
+          runtime: runtime as never,
+          input: input as never,
+          baselineTurns: 0,
+          beforeSend,
+        },
+        "hello",
+        logger as never,
+      ),
+    ).rejects.toBe(beforeSendError);
+    expect(input.dispatchKeyEvent).not.toHaveBeenCalled();
+    expect(input.dispatchMouseEvent).not.toHaveBeenCalled();
+  });
+
   test("waits for a delayed trusted click without issuing a second send", async () => {
     vi.useFakeTimers();
     try {

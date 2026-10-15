@@ -1677,6 +1677,24 @@ async function runBrowserModeInternal(
         attachmentNavigationUrl,
         onPromptSubmitted: markPromptSubmitted,
         webSearch: config.researchMode === "search",
+        beforeSend: shouldApplyThinkingTimeSelection(config)
+          ? async () => {
+              // Re-verify right before send: a large prompt (or inline-pasted file
+              // content) can take real wall-clock time to paste into the composer,
+              // during which ChatGPT can silently demote the effort tier selected
+              // before pasting started. Trusting the earlier verification alone
+              // would report "Pro" evidence for a request that actually ran at a
+              // cheaper tier.
+              thinkingSelectionEvidence = await raceWithDisconnect(
+                ensureThinkingTime(
+                  Runtime,
+                  config.thinkingTime,
+                  logger,
+                  modelStrategy === "select" ? config.desiredModel : null,
+                ),
+              );
+            }
+          : undefined,
       };
       const deepResearchTargetBaseline =
         deepResearch && client
@@ -3181,6 +3199,22 @@ async function runRemoteBrowserMode(
         attachmentNavigationUrl,
         onPromptSubmitted: markPromptSubmitted,
         webSearch: config.researchMode === "search",
+        beforeSend: shouldApplyThinkingTimeSelection(config)
+          ? async () => {
+              // Re-verify right before send: a large prompt (or inline-pasted file
+              // content) can take real wall-clock time to paste into the composer,
+              // during which ChatGPT can silently demote the effort tier selected
+              // before pasting started. Trusting the earlier verification alone
+              // would report "Pro" evidence for a request that actually ran at a
+              // cheaper tier.
+              thinkingSelectionEvidence = await ensureThinkingTime(
+                Runtime,
+                config.thinkingTime,
+                logger,
+                modelStrategy === "select" ? config.desiredModel : null,
+              );
+            }
+          : undefined,
       };
       const deepResearchTargetBaseline =
         deepResearch && client

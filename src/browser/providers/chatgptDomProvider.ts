@@ -18,6 +18,7 @@ interface ChatgptDomProviderState {
   committedTurns?: number | null;
   onPromptSubmitted?: () => Promise<void> | void;
   webSearch?: boolean;
+  beforeSend?: () => Promise<void> | void;
 }
 
 function requireState(ctx: ProviderDomFlowContext): ChatgptDomProviderState {
@@ -51,6 +52,7 @@ async function submitPromptViaAdapter(ctx: ProviderDomFlowContext): Promise<void
       attachmentTimeoutMs: state.attachmentTimeoutMs ?? undefined,
       onPromptSubmitted: state.onPromptSubmitted,
       webSearch: state.webSearch,
+      beforeSend: state.beforeSend,
     },
     ctx.prompt,
     state.logger,
