@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Dependencies: refresh the OpenAI SDK, dotenv, qs, Puppeteer and DevTools types within the two-day cooldown, plus CI and release action pins; retain Node >=24 and Undici 7.
+
 ## 0.21.6 - 2026-10-16
 
 **Highlights:** Report failed browser answers correctly and recover completed Deep Research reports without reopening Chrome.
