@@ -124,7 +124,7 @@ export async function persistBrowserHarvest(
         url: harvested.url,
         conversationId: observedConversationId,
         harvestedAt: new Date().toISOString(),
-        assistantHash: createHash("sha256")
+        assistantHash: createHash("sha1")
           .update(harvested.lastAssistantMarkdown ?? harvested.lastAssistantText ?? "")
           .digest("hex"),
         state: harvested.state,

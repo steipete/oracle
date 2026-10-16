@@ -472,7 +472,7 @@ export async function liveTailSessionBrowserOutput(
         throw new Error("Recovered ChatGPT conversation did not become ready in time.");
       }
       requireRecoveredContent = false;
-      const hash = createHash("sha256").update(fullText).digest("hex");
+      const hash = createHash("sha1").update(fullText).digest("hex");
       if (hash !== lastHash) {
         lastHash = hash;
         unchangedSince = Date.now();

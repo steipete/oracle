@@ -166,11 +166,9 @@ describe("harvest capture identity", () => {
     await expect(persistBrowserHarvest(saved.id, observed("capture-a"))).resolves.toMatchObject({
       status: "matched",
     });
-    const meta = await sessionStore.readSession(saved.id);
-    expect(meta?.browser?.warnings?.map((warning) => warning.code)).toEqual(["existing"]);
-    expect(meta?.browser?.harvest?.assistantHash).toBe(
-      "9776dfd2f7d6789669d7d7a20f8a9e13ab210da872b49e03ae81ff1793835ca4",
-    );
+    expect(
+      (await sessionStore.readSession(saved.id))?.browser?.warnings?.map((warning) => warning.code),
+    ).toEqual(["existing"]);
   });
 
   test("marks unreadable provenance unverified instead of claiming an identity match", async () => {

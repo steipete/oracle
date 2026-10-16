@@ -8,18 +8,6 @@ export const currentBrowserAbortSignal = (): AbortSignal | undefined => context.
 export const withoutBrowserCancellation = <T>(task: () => T): T =>
   cleanupContext.run(true, () => context.run(undefined, task));
 
-function createAbortDeferred(): {
-  aborted: Promise<never>;
-  rejectAbort: (reason: Error) => void;
-} {
-  let rejectAbort!: (reason: Error) => void;
-  const aborted = new Promise<never>((_, reject) => {
-    rejectAbort = reject;
-  });
-  aborted.catch(() => undefined);
-  return { aborted, rejectAbort };
-}
-
 /** Per-run cancellation, including polling and resources that arrive after their caller left. */
 export class BrowserCancellation {
   private readonly aborted: Promise<never> | undefined;
@@ -31,8 +19,11 @@ export class BrowserCancellation {
     private readonly log: (message: string) => void = () => {},
   ) {
     if (signal) {
-      const { aborted, rejectAbort } = createAbortDeferred();
-      this.aborted = aborted;
+      let rejectAbort!: (reason: Error) => void;
+      this.aborted = new Promise<never>((_, reject) => {
+        rejectAbort = reject;
+      });
+      this.aborted.catch(() => undefined);
       this.onAbort = () => rejectAbort(new BrowserRunCancelledError());
       if (signal.aborted) this.onAbort();
       else signal.addEventListener("abort", this.onAbort, { once: true });

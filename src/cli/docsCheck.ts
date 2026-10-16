@@ -61,7 +61,7 @@ export async function checkDocsFlags({
 
   return {
     checkedFiles: docPaths,
-    checkedFlags: [...checkedFlags].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+    checkedFlags: [...checkedFlags].sort(),
     issues: issues.sort((a, b) => a.file.localeCompare(b.file) || a.flag.localeCompare(b.flag)),
   };
 }
@@ -121,7 +121,7 @@ function collectCommandFlags(command: Command, pathParts = ["oracle"]): Map<stri
 export function extractMarkdownFlags(markdown: string): string[] {
   return [
     ...new Set(extractMarkdownFlagReferences(markdown).map((reference) => reference.flag)),
-  ].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  ].sort();
 }
 
 interface MarkdownFlagReference {
