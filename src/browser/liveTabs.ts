@@ -140,10 +140,17 @@ function buildTargetFingerprint(
 }
 
 function isChatGptUrl(url: string): boolean {
-  const normalized = normalizeUrl(url).toLowerCase();
-  return (
-    normalized.startsWith("https://chatgpt.com") || normalized.startsWith("https://chat.openai.com")
-  );
+  const normalized = normalizeUrl(url);
+  if (!normalized) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === "chatgpt.com" || host === "chat.openai.com";
 }
 
 function isChatGptConversationUrl(url: string): boolean {
@@ -154,7 +161,7 @@ function isChatGptTarget(target: ChromeTarget): boolean {
   if (!target || target.type !== "page") {
     return false;
   }
-  return isChatGptUrl(target.url ?? "") || /chatgpt/i.test(target.title ?? "");
+  return isChatGptUrl(target.url ?? "");
 }
 
 function extractTargetId(target: ChromeTarget | undefined | null): string | null {

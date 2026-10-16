@@ -68,6 +68,72 @@ describe("live tab transport", () => {
     expect(browser.Target.getTargets).toHaveBeenCalledOnce();
   });
 
+  test("keeps only https tabs on chatgpt.com or chat.openai.com", async () => {
+    cdp.List.mockRejectedValue(new Error());
+    const browser = browserClient();
+    browser.Target.getTargets.mockResolvedValue({
+      targetInfos: [
+        {
+          targetId: "real",
+          type: "page",
+          title: "Saved answer",
+          url: "https://chatgpt.com/c/saved",
+        },
+        {
+          targetId: "legacy",
+          type: "page",
+          title: "Old chat",
+          url: "https://chat.openai.com/c/legacy",
+        },
+        {
+          targetId: "lookalike",
+          type: "page",
+          title: "ChatGPT",
+          url: "https://chatgpt.com.evil.example/c/1",
+        },
+        {
+          targetId: "title-only",
+          type: "page",
+          title: "ChatGPT",
+          url: "https://example.com/inbox",
+        },
+        {
+          targetId: "cleartext",
+          type: "page",
+          title: "ChatGPT",
+          url: "http://chatgpt.com/c/1",
+        },
+        {
+          targetId: "userinfo",
+          type: "page",
+          title: "ChatGPT",
+          url: "https://chatgpt.com@evil.example/",
+        },
+        {
+          targetId: "blank",
+          type: "page",
+          title: "ChatGPT",
+          url: "about:blank",
+        },
+      ],
+    });
+    cdp.mockResolvedValue(browser);
+    expect(await listChatGptTargets(endpoint)).toEqual([
+      {
+        targetId: "real",
+        type: "page",
+        title: "Saved answer",
+        url: "https://chatgpt.com/c/saved",
+      },
+      {
+        targetId: "legacy",
+        type: "page",
+        title: "Old chat",
+        url: "https://chat.openai.com/c/legacy",
+      },
+    ]);
+  });
+
   test("reports endpoint and recovery guidance for an empty discovery error", async () => {
     cdp.List.mockRejectedValue(new Error());
     await expect(listChatGptTargets({ host: "127.0.0.1", port: 9222 })).rejects.toThrow(

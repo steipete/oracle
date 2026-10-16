@@ -55,7 +55,7 @@ ${mode === "localized-chat" ? '<button type="button" aria-pressed="true">Work</b
 <input id="upload" type="file"><div id="chips"></div><div id="progress" style="display:none" data-state="uploading">Uploading</div>
 <button type="button" ${mode === "missing-send" ? 'aria-label="Send prompt"' : 'data-testid="send-button"'} id="send">Send</button></form></main>
 <script>
-const mode=${JSON.stringify(mode)};const state={mode,assignments:[],sends:0,editorEnters:0,genericClicks:0,sendKeys:[],busy:false,focusRecoveries:0};
+const mode=${JSON.stringify(mode).replace(/</g, "\\u003c")};const state={mode,assignments:[],sends:0,editorEnters:0,genericClicks:0,sendKeys:[],busy:false,focusRecoveries:0};
 const report=()=>fetch('/events/'+mode,{method:'POST',body:JSON.stringify(state)});
 const editor=document.querySelector('#prompt-textarea'), send=document.querySelector('#send'), progress=document.querySelector('#progress');
 if(mode.startsWith('contenteditable'))Object.defineProperty(editor,'value',{get(){return this.innerText;},set(value){this.textContent=value;}});

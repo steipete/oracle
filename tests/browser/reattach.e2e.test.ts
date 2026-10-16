@@ -425,7 +425,9 @@ describe("browser reattach end-to-end (simulated)", () => {
       await once(deadController, "exit");
       const deadControllerPid = deadController.pid ?? undefined;
 
-      const emitRuntimeHint = async () => {
+      const emitRuntimeHint = vi.fn(async () => {
+        // Exercise persistence that outlasts the old timer-based polling loop.
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
         await sessionStore.updateSession(sessionMeta.id, {
           browser: {
             config: {},
@@ -438,7 +440,7 @@ describe("browser reattach end-to-end (simulated)", () => {
             },
           },
         });
-      };
+      });
 
       const chrome = {
         pid: 4242,
@@ -454,17 +456,14 @@ describe("browser reattach end-to-end (simulated)", () => {
         { isInFlight: () => true, emitRuntimeHint },
       );
 
-      process.emit("SIGINT");
-      for (let i = 0; i < 20; i += 1) {
-        const refreshed = await sessionStore.readSession(sessionMeta.id);
-        if (refreshed?.browser?.runtime?.chromePort) {
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
+      try {
+        process.emit("SIGINT");
+        expect(emitRuntimeHint).toHaveBeenCalledOnce();
+        await emitRuntimeHint.mock.results[0]?.value;
+      } finally {
+        removeHooks();
+        exitSpy.mockRestore();
       }
-
-      removeHooks();
-      exitSpy.mockRestore();
 
       expect(chrome.kill).not.toHaveBeenCalled();
 

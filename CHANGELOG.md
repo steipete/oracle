@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.
 - Dependencies: refresh the OpenAI SDK, dotenv, qs, Puppeteer and DevTools types within the two-day cooldown, plus CI and release action pins; retain Node >=24 and Undici 7.
 - Serve: reject oversized remote run bodies with HTTP 413 before starting a browser run, including unfinished chunked uploads; thanks @SebTardif.
 
