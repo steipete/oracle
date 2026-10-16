@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Serve: stop reading a remote run body once it passes the fixed limit (two base64 attachment sets at the 512 MiB artifact cap, plus a 1 MiB envelope) and answer HTTP 413, including when a chunked upload is still open, before the browser run starts.
+- Serve: reject oversized remote run bodies with HTTP 413 before starting a browser run, including unfinished chunked uploads; thanks @SebTardif.
 
 ## 0.21.6 - 2026-10-16
 

@@ -29,6 +29,7 @@ Operational notes:
 - Run the same patched Oracle version on both Windows host and Linux client before relying on automatic file transfer. Mixed versions remain backward compatible for text-only runs.
 - `oracle bridge doctor` reports `Artifact transfer: bridge v1` when the host supports the protocol, including the advertised maximum artifact size.
 - The default bridge transfer size limit is 512 MiB. Larger files stay on the browser host and require manual copy.
+- Incoming `POST /runs` bodies are capped at 1,432,704,342 bytes (two base64 attachment sets at the 512 MiB artifact cap, plus a 1 MiB JSON envelope). Oversized bodies receive HTTP 413 with `payload_too_large` before a browser run starts, including chunked uploads without a declared length.
 - Session inspection prints artifact path, size, SHA-256 prefix, validation status, and transfer status so agents can verify whether the returned path is local to the Linux client.
 
 ## 1) Windows: start the host service (recommended)
