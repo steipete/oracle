@@ -47,7 +47,7 @@ const page = (
 <button type="button" data-testid="send-button">Send</button></form></main>
 <div id="menu" role="menu" style="display:none"><div data-testid="composer-intelligence-picker-content" role="group"><div data-model-selection-view="true"><div id="simple" data-testid="composer-model-picker-slider-simple-view" data-active="true"></div></div></div></div>
 <script>
-const mode=${JSON.stringify(mode)}, labels=${JSON.stringify(fourTier ? ["Instant", "Medium", "High", "Extra High"] : ["Instant", "Medium", "High", "Extra High", "Pro"])};
+const mode=${JSON.stringify(mode).replace(/</g, "\\u003c")}, labels=${JSON.stringify(fourTier ? ["Instant", "Medium", "High", "Extra High"] : ["Instant", "Medium", "High", "Extra High", "Pro"])};
 let index=${mode === "four-move" ? 1 : mode === "already" ? 4 : 3}, opened=false; const state={mode,keys:[],sends:0,ready:false,tier:labels[index]};
 const report=()=>fetch('/events/'+mode,{method:'POST',body:JSON.stringify(state)});
 const close=()=>{document.querySelector('#menu').style.display='none';document.querySelector('#pill').setAttribute('aria-expanded','false');};
