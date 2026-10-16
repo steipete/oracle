@@ -71,12 +71,12 @@ export interface RemoteServerOptions {
   maxConcurrentRuns?: number;
   /** Callers that may wait for a slot before the service starts refusing. */
   maxQueuedRuns?: number;
-  /** Wire size cap for POST /runs. Defaults to the documented attachment envelope. */
-  maxRequestBodyBytes?: number;
 }
 
 interface RemoteServerDeps {
   runBrowser?: typeof runBrowserMode;
+  /** Test-only cap. Operators always use the fixed request-body constant. */
+  maxRequestBodyBytes?: number;
 }
 
 interface RemoteServerInstance {
@@ -158,7 +158,7 @@ export async function createRemoteServer(
     ? (formatter: (msg: string) => string, msg: string) => formatter(msg)
     : (_formatter: (msg: string) => string, msg: string) => msg;
   validateAdmissionOptions(options);
-  const maxRequestBodyBytes = resolveMaxRequestBodyBytes(options.maxRequestBodyBytes);
+  const maxRequestBodyBytes = resolveMaxRequestBodyBytes(deps.maxRequestBodyBytes);
   const admissionEnabled = options.maxConcurrentRuns !== undefined;
   const hostConfig = admissionEnabled ? (await loadUserConfig()).config.browser : undefined;
   const browserTabCap = admissionEnabled
@@ -1009,7 +1009,8 @@ async function readRequestBody(
   try {
     const chunks: Buffer[] = [];
     let received = 0;
-    for await (const chunk of req) {
+    // Leaving the iterator early must not destroy the socket before HTTP 413 is flushed.
+    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
       const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
       received += buffer.length;
       if (received > maxBytes) {

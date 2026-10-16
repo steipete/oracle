@@ -1614,9 +1614,9 @@ describe("remote run body limit", () => {
           port: 0,
           token: "secret",
           logger: () => {},
-          maxRequestBodyBytes: 32,
         },
         {
+          maxRequestBodyBytes: 32,
           runBrowser: async () => {
             runs += 1;
             return {
@@ -1645,6 +1645,15 @@ describe("remote run body limit", () => {
         expect(chunked.json).toEqual({ error: "payload_too_large" });
         expect(runs).toBe(0);
 
+        const unfinished = await postRunBody(
+          server.port,
+          JSON.stringify({ prompt: "z".repeat(64) }),
+          { chunked: true, unfinished: true },
+        );
+        expect(unfinished.statusCode).toBe(413);
+        expect(unfinished.json).toEqual({ error: "payload_too_large" });
+        expect(runs).toBe(0);
+
         const accepted = await postRunBody(server.port, JSON.stringify({ prompt: "ok" }));
         expect(accepted.statusCode).toBe(200);
         expect(runs).toBe(1);
@@ -1666,9 +1675,15 @@ describe("remote run body limit", () => {
 function postRunBody(
   port: number,
   body: string,
-  options: { chunked?: boolean } = {},
+  options: { chunked?: boolean; unfinished?: boolean } = {},
 ): Promise<{ statusCode: number; json: Record<string, unknown> | null }> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (value: { statusCode: number; json: Record<string, unknown> | null }) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     const headers: Record<string, string> = {
       authorization: "Bearer secret",
       "content-type": "application/json",
@@ -1697,17 +1712,20 @@ function postRunBody(
           } catch {
             json = null;
           }
-          resolve({ statusCode: res.statusCode ?? 0, json });
+          finish({ statusCode: res.statusCode ?? 0, json });
         });
       },
     );
     req.on("error", (error: NodeJS.ErrnoException) => {
-      reject(error);
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
     });
     if (options.chunked) {
       req.write(body.slice(0, 8));
       req.write(body.slice(8));
-      req.end();
+      if (!options.unfinished) req.end();
       return;
     }
     req.end(body);
