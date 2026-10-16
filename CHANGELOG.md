@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Browser: treat a live Chrome tab as ChatGPT only when its URL is https and the host is chatgpt.com or chat.openai.com, so a lookalike host or a page title that mentions ChatGPT is not attached or harvested.
+- Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.
 
 ## 0.21.6 - 2026-10-16
 

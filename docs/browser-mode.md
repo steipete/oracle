@@ -54,6 +54,8 @@ to retain ChatGPT's selection. Explicit models, saved model preferences, and
 
 Use this when you already have a signed-in Chrome session running with DevTools access enabled and want Oracle to reuse that browser instead of launching its own copy.
 
+Existing-tab selection and harvesting accept only HTTPS URLs on `chatgpt.com` or `chat.openai.com`. A page title mentioning ChatGPT or a hostname that only begins with a ChatGPT hostname does not qualify.
+
 ```bash
 oracle --engine browser \
   --browser-attach-running \
