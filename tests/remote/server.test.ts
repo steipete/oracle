@@ -1603,6 +1603,117 @@ describe("client browser-config allowlist", () => {
   });
 });
 
+describe("remote run body limit", () => {
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "returns 413 and does not start the browser once the body passes the cap",
+    async () => {
+      let runs = 0;
+      const server = await createRemoteServer(
+        {
+          host: "127.0.0.1",
+          port: 0,
+          token: "secret",
+          logger: () => {},
+          maxRequestBodyBytes: 32,
+        },
+        {
+          runBrowser: async () => {
+            runs += 1;
+            return {
+              answerText: "hi",
+              answerMarkdown: "hi",
+              tookMs: 1,
+              answerTokens: 1,
+              answerChars: 2,
+            };
+          },
+        },
+      );
+      try {
+        const oversized = await postRunBody(
+          server.port,
+          JSON.stringify({ prompt: "x".repeat(64) }),
+        );
+        expect(oversized.statusCode).toBe(413);
+        expect(oversized.json).toEqual({ error: "payload_too_large" });
+        expect(runs).toBe(0);
+
+        const chunked = await postRunBody(server.port, JSON.stringify({ prompt: "y".repeat(64) }), {
+          chunked: true,
+        });
+        expect(chunked.statusCode).toBe(413);
+        expect(chunked.json).toEqual({ error: "payload_too_large" });
+        expect(runs).toBe(0);
+
+        const accepted = await postRunBody(server.port, JSON.stringify({ prompt: "ok" }));
+        expect(accepted.statusCode).toBe(200);
+        expect(runs).toBe(1);
+
+        const health = await httpGetJson({
+          hostname: "127.0.0.1",
+          port: server.port,
+          path: "/health",
+          token: "secret",
+        });
+        expect(health.statusCode).toBe(200);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+function postRunBody(
+  port: number,
+  body: string,
+  options: { chunked?: boolean } = {},
+): Promise<{ statusCode: number; json: Record<string, unknown> | null }> {
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = {
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+    };
+    if (options.chunked) headers["transfer-encoding"] = "chunked";
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: "/runs",
+        method: "POST",
+        headers,
+      },
+      (res) => {
+        res.setEncoding("utf8");
+        let raw = "";
+        res.on("data", (chunk: string) => {
+          raw += chunk;
+        });
+        res.on("end", () => {
+          let json: Record<string, unknown> | null = null;
+          try {
+            const parsed = raw.length ? JSON.parse(raw) : null;
+            json =
+              parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+          } catch {
+            json = null;
+          }
+          resolve({ statusCode: res.statusCode ?? 0, json });
+        });
+      },
+    );
+    req.on("error", (error: NodeJS.ErrnoException) => {
+      reject(error);
+    });
+    if (options.chunked) {
+      req.write(body.slice(0, 8));
+      req.write(body.slice(8));
+      req.end();
+      return;
+    }
+    req.end(body);
+  });
+}
+
 describe("advertised addresses", () => {
   test.skipIf(!CAN_LISTEN_LOCALHOST)("a loopback bind advertises only loopback", async () => {
     // The banner is how an operator decides whether this port needs a tunnel or

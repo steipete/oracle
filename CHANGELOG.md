@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Serve: stop reading a remote run body once it passes the documented limit (two base64 attachment sets at the 512 MiB artifact cap, plus a 1 MiB envelope) and answer HTTP 413 before the browser run starts.
+
 ## 0.21.6 - 2026-10-16
 
 **Highlights:** Report failed browser answers correctly and recover completed Deep Research reports without reopening Chrome.

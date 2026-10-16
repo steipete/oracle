@@ -5,6 +5,11 @@ import type { SessionArtifactValidation } from "../sessionManager.js";
 
 export const MAX_REMOTE_ARTIFACT_BYTES = 512 * 1024 * 1024;
 
+// The run body carries base64 for the primary set and the fallback set.
+// 4/3 is that encoding, and the extra 1 MiB is the JSON envelope.
+export const MAX_REMOTE_REQUEST_BODY_BYTES =
+  2 * Math.ceil((MAX_REMOTE_ARTIFACT_BYTES * 4) / 3) + 1024 * 1024;
+
 export interface RemoteAttachmentPayload {
   fileName: string;
   displayPath: string;
