@@ -675,7 +675,7 @@ async function waitForCompletedDownloadFiles(
   while (Date.now() < deadline) {
     latest = await listCompletedDownloadFiles(dir, before);
     if (latest.length >= expectedCount) {
-      const signature = [...latest].sort().join("\n");
+      const signature = [...latest].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join("\n");
       if (signature !== stableSignature) {
         stableSignature = signature;
         stableSince = Date.now();

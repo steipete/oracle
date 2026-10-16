@@ -1128,7 +1128,7 @@ export async function closeBlankChromeTabs(
         .filter(isBlankPageTarget)
         .map((target) => target.targetId ?? target.id)
         .filter((targetId): targetId is string => Boolean(targetId))
-        .sort()[0]
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0]
     : undefined;
   let closed = 0;
   for (const target of targets) {

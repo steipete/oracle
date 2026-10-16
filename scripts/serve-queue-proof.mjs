@@ -670,8 +670,8 @@ try {
       );
       assert.equal(submitted.has("lease-wait"), false);
       assert.deepEqual(
-        (await registry()).map((l) => l.id).sort(),
-        [leaseOne.id, leaseTwo.id].sort(),
+        (await registry()).map((l) => l.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+        [leaseOne.id, leaseTwo.id].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
       );
     } finally {
       await leaseOne.release();

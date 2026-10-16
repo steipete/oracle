@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: use SHA-256 for assistant and tab fingerprints; saved assistant hashes now contain 64 hexadecimal characters. Escape proof-page mode values and preserve cancellation and deterministic string ordering.
+
 ## 0.21.6 - 2026-10-16
 
 **Highlights:** Report failed browser answers correctly and recover completed Deep Research reports without reopening Chrome.

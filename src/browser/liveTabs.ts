@@ -134,7 +134,7 @@ function normalizeTitle(value: unknown): string {
 function buildTargetFingerprint(
   summary: Pick<ChatGptTabSummary, "targetId" | "url" | "lastAssistantText">,
 ): string {
-  return createHash("sha1")
+  return createHash("sha256")
     .update(`${summary.targetId ?? ""}|${summary.url ?? ""}|${summary.lastAssistantText ?? ""}`)
     .digest("hex");
 }

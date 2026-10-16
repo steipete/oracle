@@ -1508,7 +1508,10 @@ export async function waitForAttachmentCompletion(
     .map((name) => name.split("/").pop()?.split("\\").pop() ?? name)
     .map((name) => name.toLowerCase().replace(/\s+/g, " ").trim())
     .filter(Boolean);
-  const expectedInputSignature = expectedInputBasenames.slice().sort().join("\0");
+  const expectedInputSignature = expectedInputBasenames
+    .slice()
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .join("\0");
   let inputMatchSince: number | null = null;
   let inputOnlyReadySince: number | null = null;
   let inputOnlySignature = "";
@@ -1815,7 +1818,10 @@ export async function waitForAttachmentCompletion(
         attachmentMatchSince = null;
       }
 
-      const inputOnlySignatureNow = inputNames.slice().sort().join("\0");
+      const inputOnlySignatureNow = inputNames
+        .slice()
+        .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+        .join("\0");
       const inputOnlyNamesSatisfied =
         expectedInputBasenames.length > 0 && inputOnlySignatureNow === expectedInputSignature;
       const inputOnlyReady =
