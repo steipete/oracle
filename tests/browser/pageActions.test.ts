@@ -1932,6 +1932,44 @@ describe("waitForAssistantResponse", () => {
     expect(result.text).toBe("Recovered assistant response.");
     expect(evaluate).toHaveBeenCalled();
   });
+
+  test("does not spend a second full timeout after the response observer times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const evaluate = vi.fn().mockImplementation((params: { awaitPromise?: boolean }) => {
+        if (params?.awaitPromise) {
+          return new Promise((_resolve, reject) => {
+            setTimeout(() => reject(new Error("Response timeout")), 1_500);
+          });
+        }
+        return Promise.resolve({ result: { value: null } });
+      });
+      let outcome:
+        | { status: "pending" }
+        | { status: "rejected"; message: string }
+        | { status: "resolved" } = { status: "pending" };
+      const tracked = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        2_000,
+        logger,
+      ).then(
+        () => {
+          outcome = { status: "resolved" };
+        },
+        (error: unknown) => {
+          outcome = {
+            status: "rejected",
+            message: error instanceof Error ? error.message : String(error),
+          };
+        },
+      );
+      await vi.advanceTimersByTimeAsync(2_600);
+      expect(outcome).toEqual({ status: "rejected", message: "Response timeout" });
+      await tracked;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("composer attachment menu safety", () => {

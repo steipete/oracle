@@ -364,9 +364,12 @@ export async function waitForAssistantResponse(
         await terminateRuntimeExecution(Runtime);
         throw error;
       } else if (source === "evaluation") {
+        // The in-page observer already spent part of timeoutMs. Passing it
+        // again starts a second full wait.
+        const remainingMs = Math.max(0, timeoutMs - (Date.now() - start));
         const recovered = await recoverAssistantResponse(
           Runtime,
-          timeoutMs,
+          remainingMs,
           logger,
           minTurnIndex,
           expectedConversationId,
