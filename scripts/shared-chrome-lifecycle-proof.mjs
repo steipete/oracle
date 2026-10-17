@@ -256,6 +256,7 @@ const waitUntil = async (predicate, label, timeout = 30000) => {
     assert.ok(!failure, failure?.output);
     await pause(100);
   }
+  for (const run of runs) console.error(`[${run.name} controller]\n${run.output}`);
   throw new Error(`Timed out: ${label}`);
 };
 const readRegistry = async () =>

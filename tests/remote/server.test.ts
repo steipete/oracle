@@ -1613,6 +1613,8 @@ describe("remote run body limit", () => {
           host: "127.0.0.1",
           port: 0,
           token: "secret",
+          maxConcurrentRuns: 1,
+          maxQueuedRuns: 0,
           logger: () => {},
         },
         {
@@ -1654,7 +1656,7 @@ describe("remote run body limit", () => {
         expect(unfinished.json).toEqual({ error: "payload_too_large" });
         expect(runs).toBe(0);
 
-        const accepted = await postRunBody(server.port, JSON.stringify({ prompt: "ok" }));
+        const accepted = await postRunBody(server.port, JSON.stringify({ prompt: "x".repeat(19) }));
         expect(accepted.statusCode).toBe(200);
         expect(runs).toBe(1);
 
@@ -1689,6 +1691,7 @@ function postRunBody(
       "content-type": "application/json",
     };
     if (options.chunked) headers["transfer-encoding"] = "chunked";
+    else headers["content-length"] = String(Buffer.byteLength(body));
     const req = http.request(
       {
         hostname: "127.0.0.1",
