@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: keep the completion check when an answer quotes a ChatGPT file URL, and skip that check only for an image-only generated image; thanks @SebTardif.
 - Browser: add opt-in `--browser-no-focus` / `browser.noFocus` for background ChatGPT runs, attachment submission, and recovery; preserve foreground defaults, retain shared browser transports, and bring Chrome forward when sign-in or a challenge requires input; thanks @postoso and @Eotel.
 
 - Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.

@@ -1041,8 +1041,17 @@ export function throwIfAssistantUiError(snapshot: AssistantSnapshot | null): voi
   });
 }
 
-function isGeneratedImageAssistantAnswer(answer: { html?: string } | null): boolean {
-  return Boolean(answer?.html?.includes("/backend-api/estuary/content?id=file_"));
+export function isGeneratedImageAssistantAnswer(
+  answer: { text?: string | null; html?: string | null } | null | undefined,
+): boolean {
+  // Only the extractor's synthesized label is an image-only answer. Other text
+  // can quote this file URL while the turn is still streaming.
+  const text = typeof answer?.text === "string" ? answer.text.trim() : "";
+  if (text !== "Generated image." && !/^Generated \d+ images\.$/.test(text)) {
+    return false;
+  }
+  const html = typeof answer?.html === "string" ? answer.html : "";
+  return html.includes("/backend-api/estuary/content?id=file_");
 }
 
 async function waitForCondition<T>(
@@ -1265,7 +1274,13 @@ function buildResponseObserverExpression(
     };
 
     const waitForSettle = async (snapshot) => {
-      if (String(snapshot?.html ?? '').includes('/backend-api/estuary/content?id=file_')) {
+      const imageOnlyText = String(snapshot?.text ?? '').trim();
+      const imageOnlyLabel =
+        imageOnlyText === 'Generated image.' || /^Generated \\d+ images\\.$/.test(imageOnlyText);
+      if (
+        imageOnlyLabel &&
+        String(snapshot?.html ?? '').includes('/backend-api/estuary/content?id=file_')
+      ) {
         return snapshot;
       }
       // Learned: short answers can be 1-2 tokens; enforce longer settle windows to avoid truncation.

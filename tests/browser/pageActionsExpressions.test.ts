@@ -8,6 +8,7 @@ import {
   buildUserTurnAttachmentExpressionForTest,
   isAssistantTurnUiErrorText,
 } from "../../src/browser/pageActions.ts";
+import { buildResponseObserverExpressionForTest } from "../../src/browser/actions/assistantResponse.ts";
 import {
   CONVERSATION_TURN_CONTAINER_SELECTOR,
   CONVERSATION_TURN_SELECTOR,
@@ -49,6 +50,17 @@ describe("browser automation expressions", () => {
     expect(expression).toContain("Generated image.");
     expect(expression).toContain("stopped thinking edit");
     expect(expression).toContain("thought for");
+  });
+
+  test("response observer settles an estuary file URL only for an image-only label", () => {
+    const expression = buildResponseObserverExpressionForTest(1_000);
+    expect(expression).toContain("Generated image.");
+    expect(expression).toContain("/backend-api/estuary/content?id=file_");
+    expect(expression).toContain("/^Generated \\d+ images\\.$/");
+    expect(expression).toContain("imageOnlyLabel");
+    expect(expression).not.toContain(
+      "if (String(snapshot?.html ?? '').includes('/backend-api/estuary/content?id=file_')) {\n        return snapshot;",
+    );
   });
 
   test("assistant extractor indexes top-level turns instead of nested role nodes", () => {

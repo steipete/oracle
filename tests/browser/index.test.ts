@@ -55,6 +55,23 @@ describe("generated image response failures", () => {
     });
     expect(evaluate).toHaveBeenCalledOnce();
   });
+
+  test("does not accept chrome text just because the html quotes an estuary file URL", async () => {
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => ({
+      result: {
+        value: expression.includes("const isGeneratedImage")
+          ? []
+          : {
+              text: "Edit",
+              html: "<p>See /backend-api/estuary/content?id=file_quoted</p>",
+              turnIndex: 2,
+            },
+      },
+    }));
+    await expect(
+      __test__.pollGeneratedImageOrTextAssistantResponse({ evaluate } as never, 100, 2),
+    ).resolves.toBeNull();
+  });
 });
 
 describe("shouldPreserveBrowserOnErrorForTest", () => {

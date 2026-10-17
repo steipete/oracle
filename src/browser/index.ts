@@ -64,7 +64,10 @@ import {
 import { INPUT_SELECTORS } from "./constants.js";
 import { uploadAttachmentViaDataTransfer } from "./actions/remoteFileTransfer.js";
 import { ensureThinkingTime } from "./actions/thinkingTime.js";
-import { throwIfAssistantUiError } from "./actions/assistantResponse.js";
+import {
+  isGeneratedImageAssistantAnswer,
+  throwIfAssistantUiError,
+} from "./actions/assistantResponse.js";
 import {
   finalizeProviderNativeCapture,
   type ProviderNativeCaptureSummary,
@@ -315,7 +318,7 @@ async function waitForAssistantOrGeneratedImageResponse(params: {
     params.expectedConversationId,
   );
   if (response) {
-    if (response.html?.includes("/backend-api/estuary/content?id=file_")) {
+    if (response.text.trim() === "Generated image" || isGeneratedImageAssistantAnswer(response)) {
       params.logger("[browser] Captured generated image response before text appeared.");
     }
     return response;
@@ -355,17 +358,12 @@ async function pollGeneratedImageOrTextAssistantResponse(
         undefined,
         expectedConversationId,
       ).catch(() => null);
-      const relaxedHtml = typeof relaxedSnapshot?.html === "string" ? relaxedSnapshot.html : "";
-      if (
-        !relaxedSnapshot?.uiError &&
-        relaxedHtml.includes("/backend-api/estuary/content?id=file_")
-      ) {
+      if (!relaxedSnapshot?.uiError && isGeneratedImageAssistantAnswer(relaxedSnapshot)) {
         snapshot = relaxedSnapshot;
       }
     }
     const text = typeof snapshot?.text === "string" ? snapshot.text.trim() : "";
     const html = typeof snapshot?.html === "string" ? snapshot.html : "";
-    const hasGeneratedImage = html.includes("/backend-api/estuary/content?id=file_");
     if (!text || isImageOnlyUiChromeText(text)) {
       const images = await readAssistantGeneratedImages(
         Runtime,
@@ -380,7 +378,7 @@ async function pollGeneratedImageOrTextAssistantResponse(
         };
       }
     }
-    if (text && (hasGeneratedImage || !isImageOnlyUiChromeText(text))) {
+    if (text && !isImageOnlyUiChromeText(text)) {
       return {
         text,
         html,

@@ -1932,6 +1932,92 @@ describe("waitForAssistantResponse", () => {
     expect(result.text).toBe("Recovered assistant response.");
     expect(evaluate).toHaveBeenCalled();
   });
+
+  test("does not finish a streaming answer just because its html contains an estuary file URL", async () => {
+    vi.useFakeTimers();
+    try {
+      const streaming = {
+        text: "Here is the chart so far.",
+        html: '<p>Here is the chart so far.</p><img src="https://chatgpt.com/backend-api/estuary/content?id=file_abc">',
+        messageId: "mid",
+        turnId: "tid",
+      };
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return { result: { type: "object", value: streaming } };
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            return { result: { value: streaming } };
+          }
+          if (expression.includes("Find the LAST assistant turn")) {
+            return { result: { value: false } };
+          }
+          return { result: { value: false } };
+        });
+      let outcome: "pending" | "resolved" | "rejected" = "pending";
+      const tracked = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        2_000,
+        logger,
+      ).then(
+        () => {
+          outcome = "resolved";
+        },
+        () => {
+          outcome = "rejected";
+        },
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      expect(outcome).toBe("pending");
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(outcome).toBe("rejected");
+      await tracked;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each(["Generated image.", "Generated 3 images."])(
+    "still accepts an image-only extractor result %j without an action bar",
+    async (text) => {
+      vi.useFakeTimers();
+      try {
+        const imageOnly = {
+          text,
+          html: '<img src="https://chatgpt.com/backend-api/estuary/content?id=file_abc">',
+          messageId: "mid",
+          turnId: "tid",
+        };
+        const evaluate = vi
+          .fn()
+          .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+            if (params.awaitPromise) {
+              return { result: { type: "object", value: imageOnly } };
+            }
+            const expression = String(params.expression ?? "");
+            if (expression.includes("extractAssistantTurn")) {
+              return { result: { value: imageOnly } };
+            }
+            if (expression.includes("Find the LAST assistant turn")) {
+              return { result: { value: false } };
+            }
+            return { result: { value: false } };
+          });
+        const promise = waitForAssistantResponse(
+          { evaluate } as unknown as ChromeClient["Runtime"],
+          5_000,
+          logger,
+        );
+        await vi.advanceTimersByTimeAsync(2_000);
+        await expect(promise).resolves.toMatchObject({ text });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 });
 
 describe("composer attachment menu safety", () => {
