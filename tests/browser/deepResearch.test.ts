@@ -2178,6 +2178,44 @@ describe("waitForDeepResearchCompletion", () => {
     expect(result.isToolStub).toBe(false);
   });
 
+  it("does not treat a copy bar as finished while Stop is showing", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest();
+    const report =
+      "Partial Deep Research report that already has a copy control while Stop is still showing.";
+    const assistantTurn = {
+      textContent: report,
+      innerText: report,
+      dataset: {},
+      getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+      querySelector: () => ({}),
+      querySelectorAll: () => [],
+    };
+    const run = (stopPresent: boolean) =>
+      new vm.Script(expression).runInNewContext({
+        document: {
+          body: { innerText: report },
+          querySelector: (selector: string) =>
+            stopPresent && selector.includes("stop-button") ? {} : null,
+          querySelectorAll: (selector: string) => {
+            if (selector === "iframe") return [];
+            if (selector.includes("data-message-author-role") || selector.includes("data-turn")) {
+              return [assistantTurn];
+            }
+            return [];
+          },
+        },
+      }) as { finished?: boolean; stopVisible?: boolean; textLength?: number };
+
+    const whileStopping = run(true);
+    expect(whileStopping.stopVisible).toBe(true);
+    expect(whileStopping.textLength).toBeGreaterThanOrEqual(40);
+    expect(whileStopping.finished).toBe(false);
+
+    const afterStop = run(false);
+    expect(afterStop.stopVisible).toBe(false);
+    expect(afterStop.finished).toBe(true);
+  });
+
   it("throws on timeout with metadata", async () => {
     // All polls: never completed
     mockRuntime.evaluate.mockResolvedValue({

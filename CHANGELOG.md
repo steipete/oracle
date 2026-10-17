@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: keep waiting for a Deep Research report while Stop is showing, instead of saving it once a copy control and some text are visible; thanks @SebTardif.
 - Browser: add opt-in `--browser-no-focus` / `browser.noFocus` for background ChatGPT runs, attachment submission, and recovery; preserve foreground defaults, retain shared browser transports, and bring Chrome forward when sign-in or a challenge requires input; thanks @postoso and @Eotel.
 
 - Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.

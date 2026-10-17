@@ -1241,9 +1241,12 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
       (text.trimStart().startsWith('<system-reminder>') &&
         /<system-reminder>[\\s\\S]*#\\s*plan mode\\b/i.test(text)) ||
       tailIsPlanningPanel;
+    // Copy, rate, and share controls can render on the first tokens. Stop
+    // still means this report is being written.
     const finished = Boolean(lastTurn?.querySelector(${finishedSelector})) &&
       textLength >= 40 &&
-      !incompleteResult;
+      !incompleteResult &&
+      !stopVisible;
     const hasIframe = Array.from(document.querySelectorAll('iframe')).some(f => {
       const rect = f.getBoundingClientRect();
       return rect.width > 200 && rect.height > 200;
