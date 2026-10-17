@@ -614,7 +614,12 @@ function buildModelSelectionExpression(
       const parentMenu = menu || findUnifiedPickerMenu();
       const opener = findModelSubmenuOpener(parentMenu);
       if (!opener) return false;
-      const label = normalizeText(pickerNodeLabel(opener));
+      const openerLabel = normalizeText(pickerNodeLabel(opener));
+      // The opener text lists every radio, so a substring match would report GPT-6 or an
+      // earlier version selected while another radio is checked.
+      const checkedText = checkedAdvancedModelRadioText(parentMenu);
+      const checkedLabel = normalizeText(checkedText);
+      const label = checkedLabel || openerLabel;
       const version = versionFromLabel(label);
       if (desiredVersion && version !== desiredVersion) return false;
       if (desiredModelVariant && !label.split(' ').includes(desiredModelVariant)) return false;
@@ -622,17 +627,12 @@ function buildModelSelectionExpression(
       if (wantsInstant) return label.includes('instant');
       if (wantsThinking) return Boolean(desiredVersion) && !labelHasProWord(label);
       if (desiredVersion) return true;
-      // GPT-6 and its legacy Latest target must match the radio that is actually checked in the
-      // advanced view: the opener's text lists every radio label, so a substring test would
-      // report GPT-6 as selected while GPT-5.6 Sol is the checked model.
-      const checkedAdvancedRadio = findCheckedAdvancedModelRadio(parentMenu);
-      if (checkedAdvancedRadio) {
-        const checkedLabel = checkedAdvancedRadio.textContent ?? '';
+      if (checkedText) {
         return targetIsGpt6
-          ? isGpt6ModelLabel(checkedLabel)
-          : normalizedTokens.some((token) => token && normalizeText(checkedLabel) === token);
+          ? isGpt6ModelLabel(checkedText)
+          : normalizedTokens.some((token) => token && checkedLabel === token);
       }
-      return normalizedTokens.some((token) => token && label.includes(token));
+      return normalizedTokens.some((token) => token && openerLabel.includes(token));
     };
     const findCheckedAdvancedModelRadio = (menu = null) => {
       const scope = menu || findUnifiedPickerMenu() || document;
@@ -646,16 +646,22 @@ function buildModelSelectionExpression(
         null
       );
     };
+    const checkedAdvancedModelRadioText = (menu = null) => {
+      const radio = findCheckedAdvancedModelRadio(menu);
+      if (radio?.getAttribute?.('role') !== 'menuitemradio') return '';
+      return (radio.textContent ?? '').trim();
+    };
     const getAdvancedModelLabel = () => {
-      const opener = findModelSubmenuOpener(findUnifiedPickerMenu());
+      const menu = findUnifiedPickerMenu();
+      const checkedLabel = checkedAdvancedModelRadioText(menu);
+      if (checkedLabel) return checkedLabel;
+      const opener = findModelSubmenuOpener(menu);
       if (!opener) return '';
       const raw = (opener.textContent ?? '').trim();
       const normalized = normalizeText(pickerNodeLabel(opener));
       const version = versionFromLabel(normalized);
       if (!version) {
-        const checkedAdvancedRadio = findCheckedAdvancedModelRadio(findUnifiedPickerMenu());
-        const checkedLabel = (checkedAdvancedRadio?.textContent ?? '').trim();
-        return checkedLabel || raw;
+        return raw;
       }
       const [major, minor] = version.split('-');
       const suffix = normalized.split(' ').includes('sol') ? ' Sol' : '';

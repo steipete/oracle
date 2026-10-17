@@ -536,12 +536,16 @@ const evaluateAdvancedModelPickerExpression = async ({
   modelWord = "Model",
   advancedWord = "Advanced",
   effortWord = "Effort",
+  openerListsEveryRadio = false,
+  listedModels = "GPT-5.5\nGPT-5.6 Sol",
 }: {
   targetModel?: string;
   initialModel?: "GPT-5.5" | "GPT-5.6 Sol";
   modelWord?: string;
   advancedWord?: string;
   effortWord?: string;
+  openerListsEveryRadio?: boolean;
+  listedModels?: string;
 } = {}) => {
   class FakeEventTarget {
     dispatchEvent(_event: unknown): boolean {
@@ -588,6 +592,11 @@ const evaluateAdvancedModelPickerExpression = async ({
     private matchesSelector(selector: string): boolean {
       const role = this.attributes.role ?? "";
       const testId = this.attributes["data-testid"] ?? "";
+      // A descendant radio selector also contains the advanced-view test id.
+      // Match the checked radio itself, not the view that contains it.
+      if (selector.includes('role="menuitemradio"') && selector.includes('aria-checked="true"')) {
+        return role === "menuitemradio" && this.attributes["aria-checked"] === "true";
+      }
       if (selector.includes("composer-model-picker-slider-advanced-view")) {
         return testId === "composer-model-picker-slider-advanced-view";
       }
@@ -667,7 +676,9 @@ const evaluateAdvancedModelPickerExpression = async ({
       gpt55Row.setAttribute("data-state", "checked");
       gpt56Row.setAttribute("aria-checked", "false");
       gpt56Row.setAttribute("data-state", "unchecked");
-      modelOpener.textContent = `${modelWord}GPT-5.5`;
+      if (!openerListsEveryRadio) {
+        modelOpener.textContent = `${modelWord}GPT-5.5`;
+      }
     },
   );
   const gpt56Row = new FakeElement(
@@ -686,8 +697,11 @@ const evaluateAdvancedModelPickerExpression = async ({
     [gpt55Row, gpt56Row],
     () => modelSubmenuOpen,
   );
+  const openerText = openerListsEveryRadio
+    ? `${modelWord}\n${listedModels}`
+    : `${modelWord}${initialModel}`;
   modelOpener = new FakeElement(
-    `${modelWord}${initialModel}`,
+    openerText,
     {
       role: "menuitem",
       "aria-haspopup": "menu",
@@ -716,7 +730,9 @@ const evaluateAdvancedModelPickerExpression = async ({
   const advancedView = new FakeElement(
     `${modelWord}${initialModel}EffortHigh`,
     { "data-testid": "composer-model-picker-slider-advanced-view" },
-    [modelOpener, effortOpener],
+    openerListsEveryRadio
+      ? [modelOpener, effortOpener, gpt55Row, gpt56Row]
+      : [modelOpener, effortOpener],
     () => advancedVisible,
   );
   const advancedToggle = new FakeElement(
@@ -1990,6 +2006,50 @@ describe("browser model selection matchers", () => {
     expect(harness.clicks.model).toBe(0);
     expect(harness.clicks.gpt55).toBe(0);
     expect(harness.clicks.effort).toBe(0);
+  });
+
+  it("selects GPT-5.5 when the Model opener lists every radio but another model is checked", async () => {
+    const harness = await evaluateAdvancedModelPickerExpression({
+      openerListsEveryRadio: true,
+    });
+    expect(harness.result).toEqual({ status: "switched", label: "GPT-5.5" });
+    expect(harness.selectedModel).toBe("GPT-5.5");
+    expect(harness.clicks.model).toBeGreaterThan(0);
+    expect(harness.clicks.gpt55).toBeGreaterThan(0);
+    expect(harness.clicks.effort).toBe(0);
+  });
+
+  it("reports the checked radio when the Model opener also lists the other models", async () => {
+    const harness = await evaluateAdvancedModelPickerExpression({
+      initialModel: "GPT-5.5",
+      openerListsEveryRadio: true,
+    });
+    expect(harness.result).toEqual({ status: "already-selected", label: "GPT-5.5" });
+    expect(harness.selectedModel).toBe("GPT-5.5");
+    expect(harness.clicks.model).toBe(0);
+    expect(harness.clicks.gpt55).toBe(0);
+    expect(harness.clicks.effort).toBe(0);
+  });
+
+  it("does not treat Pro or Instant text from another listed radio as the checked model", async () => {
+    const instant = await evaluateAdvancedModelPickerExpression({
+      targetModel: "GPT-5.5 Instant",
+      openerListsEveryRadio: true,
+      listedModels: "GPT-5.5 Instant\nGPT-5.6 Sol",
+    });
+    expect(instant.result).toMatchObject({ status: "option-not-found" });
+    expect(instant.clicks.gpt55).toBe(0);
+    expect(instant.selectedModel).toBe("GPT-5.6 Sol");
+
+    const pro = await evaluateAdvancedModelPickerExpression({
+      targetModel: "GPT-5.5 Pro",
+      openerListsEveryRadio: true,
+      listedModels: "GPT-5.5 Pro\nGPT-5.6 Sol",
+    });
+    // A plain GPT-5.5 radio still matches the requested version. This only guards the
+    // false already-selected return from the other row's Pro word.
+    expect(pro.result).not.toMatchObject({ status: "already-selected" });
+    expect(pro.clicks.model).toBeGreaterThan(0);
   });
 
   it.each(["NFC", "NFD"] as const)(

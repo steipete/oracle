@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: treat the checked advanced-model radio as the selected model when the Model menu lists every option, so a request for another model is not skipped; thanks @SebTardif.
 - Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.
 - Dependencies: refresh the OpenAI SDK, dotenv, qs, Puppeteer and DevTools types within the two-day cooldown, plus CI and release action pins; retain Node >=24 and Undici 7.
 
