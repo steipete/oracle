@@ -652,6 +652,8 @@ export function buildThinkingActivePredicateJs(fnName: string): string {
 export interface ThinkingActivity {
   active: boolean;
   strong: boolean;
+  // False when this read failed. That is not a successful idle read.
+  known: boolean;
 }
 
 export function buildThinkingActivityDetailsPredicateJs(fnName: string): string {
@@ -662,17 +664,29 @@ export async function readThinkingActivity(
   Runtime: ChromeClient["Runtime"],
 ): Promise<ThinkingActivity> {
   try {
-    const { result } = await Runtime.evaluate({
+    const { result, exceptionDetails } = await Runtime.evaluate({
       expression: `(() => {
         ${buildThinkingActivityDetailsPredicateJs("readThinkingActivity")}
         return readThinkingActivity();
       })()`,
       returnByValue: true,
     });
-    const value = result?.value as Partial<ThinkingActivity> | undefined;
-    return { active: Boolean(value?.active), strong: Boolean(value?.strong) };
+    // A throw, an exception, or a missing value did not tell us whether thinking
+    // is running. A boolean or null still means the page check finished.
+    if (exceptionDetails || result?.value === undefined) {
+      return { active: false, strong: false, known: false };
+    }
+    const value = result.value as Partial<ThinkingActivity> | null;
+    if (value && typeof value === "object") {
+      return {
+        active: Boolean(value.active),
+        strong: Boolean(value.strong),
+        known: true,
+      };
+    }
+    return { active: false, strong: false, known: true };
   } catch {
-    return { active: false, strong: false };
+    return { active: false, strong: false, known: false };
   }
 }
 

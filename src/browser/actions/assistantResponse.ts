@@ -96,6 +96,8 @@ export interface TerminalSample {
   // Strong signals prove live work (stop/shimmer/aria-busy/status/progress). Weak activity is
   // limited to a heuristic sidecar match that can linger after completion.
   strongThinkingActive: boolean;
+  // Omitted means the thinking read succeeded. False means that read failed.
+  thinkingKnown?: boolean;
 }
 
 export function createTerminalGateState(now: number): TerminalGateState {
@@ -117,10 +119,16 @@ export function classifyTurnTerminal(
   const changed = !state.seen || sample.contentKey !== state.lastKey;
   const lastChangeAt = changed ? sample.now : state.lastChangeAt;
   // proofA debounce: weak/stale sidecar evidence may be overridden, but strong live activity
-  // must reset the debounce. It also resets on ANY content change so a bar that appears while
-  // the answer is still rendering (the transient-bar / first-tokens race) cannot finalize.
+  // must reset the debounce. A failed thinking read is not idle, so it resets too. The
+  // debounce also resets on ANY content change so a bar that appears while the answer is
+  // still rendering (the transient-bar / first-tokens race) cannot finalize.
+  const thinkingKnown = sample.thinkingKnown !== false;
   const barStableCycles =
-    sample.barVisible && !sample.stopVisible && !sample.strongThinkingActive && !changed
+    sample.barVisible &&
+    !sample.stopVisible &&
+    !sample.strongThinkingActive &&
+    thinkingKnown &&
+    !changed
       ? state.barStableCycles + 1
       : 0;
   const next: TerminalGateState = {
@@ -136,10 +144,11 @@ export function classifyTurnTerminal(
     // Debounced action bar AND content stable for a minimum time. The time-stability
     // requirement guards the documented race where finished-action controls surface while only
     // the first tokens have rendered. Weak sidecar evidence cannot hang a finished turn, but
-    // strong live activity vetoes this proof and restarts its debounce.
+    // strong live activity or a failed thinking read vetoes this proof and restarts its debounce.
     terminal =
       sample.barVisible &&
       !sample.strongThinkingActive &&
+      thinkingKnown &&
       barStableCycles >= config.barConfirmCycles &&
       stableMs >= config.minStableMs;
   }
@@ -789,6 +798,7 @@ async function pollAssistantCompletion(
           stopVisible,
           barVisible,
           strongThinkingActive: thinkingActivity.strong,
+          thinkingKnown: thinkingActivity.known,
         },
         TERMINAL_GATE_CONFIG,
       );

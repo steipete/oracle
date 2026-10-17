@@ -1842,6 +1842,47 @@ describe("waitForAssistantResponse", () => {
     }
   });
 
+  test("does not finish a stable action bar when the thinking read fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const answer = {
+        text: "The answer is still being reasoned about in the sidecar.",
+        html: "<p>The answer is still being reasoned about in the sidecar.</p>",
+        messageId: "mid",
+        turnId: "tid",
+      };
+      const evaluate = vi
+        .fn()
+        .mockImplementation(async (params: { expression?: string; awaitPromise?: boolean }) => {
+          if (params.awaitPromise) {
+            return { result: { type: "object", value: answer } };
+          }
+          const expression = String(params.expression ?? "");
+          if (expression.includes("extractAssistantTurn")) {
+            return { result: { value: answer } };
+          }
+          if (expression.includes("return readThinkingActivity()")) {
+            throw new Error("thinking evaluate failed");
+          }
+          if (expression.includes("Find the LAST assistant turn")) {
+            return { result: { value: true } };
+          }
+          return { result: { value: false } };
+        });
+
+      const promise = waitForAssistantResponse(
+        { evaluate } as unknown as ChromeClient["Runtime"],
+        6_000,
+        logger,
+      );
+      const assertion = expect(promise).rejects.toThrow(/refusing to finalize/i);
+      await vi.advanceTimersByTimeAsync(7_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("keeps a legitimate short completion after watchdog confirmation", async () => {
     vi.useFakeTimers();
     try {
