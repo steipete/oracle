@@ -175,18 +175,20 @@ function buildArchiveConversationExpression(): string {
       const headerCandidates = labelled
         .filter(({ rect }) => rect.top < 180 && rect.right > window.innerWidth - 420)
         .sort((a, b) => b.rect.right - a.rect.right);
-      return (headerCandidates[0] ?? labelled[0])?.element ?? null;
+      // A More control outside the header belongs to a different chat.
+      return headerCandidates[0]?.element ?? null;
     };
-	    const visibleMenuCandidates = () => {
+	    const visibleMenuCandidates = (allowDocumentFallback) => {
 	      const menuRoots = Array.from(document.querySelectorAll('[role="menu"]'))
 	        .filter((element) => element instanceof HTMLElement && isVisible(element));
-	      const roots = menuRoots.length > 0 ? menuRoots : [document];
+	      // A Restore control outside a menu is not this chat's unarchive item.
+	      const roots = menuRoots.length > 0 ? menuRoots : (allowDocumentFallback ? [document] : []);
 	      return roots.flatMap((root) =>
 	        Array.from(root.querySelectorAll('[role="menuitem"],[role="option"],button,div[tabindex],a')),
 	      ).filter((element) => element instanceof HTMLElement && isVisible(element));
 	    };
 	    const findArchiveMenuItem = () => {
-	      const candidates = visibleMenuCandidates();
+	      const candidates = visibleMenuCandidates(true);
 	      return candidates.find((element) => {
 	        const label = labelFor(element);
 	        if (!label) return false;
@@ -224,7 +226,7 @@ function buildArchiveConversationExpression(): string {
 	      }) ?? null;
 	    };
 	    const hasUnarchiveMenuItem = () => {
-	      const candidates = visibleMenuCandidates();
+	      const candidates = visibleMenuCandidates(false);
 	      return candidates.some((element) => {
 	        const label = labelFor(element);
 	        return (
@@ -237,19 +239,27 @@ function buildArchiveConversationExpression(): string {
 	      });
 	    };
 	    const hasArchiveConfirmation = () => {
-	      const visibleText = Array.from(document.querySelectorAll('[role="status"],[role="alert"],[data-testid*="toast"],[class*="toast"],[class*="snackbar"]'))
+	      const labels = Array.from(document.querySelectorAll('[role="status"],[role="alert"],[data-testid*="toast"],[class*="toast"],[class*="snackbar"]'))
 	        .filter((element) => element instanceof HTMLElement && isVisible(element))
-	        .map((element) => labelFor(element))
-	        .join(' ');
-	      return (
-	        visibleText.includes('archived') ||
-	        visibleText.includes('conversation archived') ||
-	        visibleText.includes('chat archived') ||
-	        visibleText.includes('zarchiwizowano') ||
-	        visibleText.includes('archiwum') ||
-	        visibleText.includes('アーカイブしました') ||
-	        visibleText.includes('アーカイブされました')
-	      );
+	        .map((element) => labelFor(element));
+	      // "unarchived" contains "archived", so each toast is judged on its own.
+	      return labels.some((label) => {
+	        if (!label) return false;
+	        if (
+	          label.includes('unarchive') ||
+	          label.includes('restore') ||
+	          label.includes('アーカイブを解除')
+	        ) return false;
+	        return (
+	          label.includes('archived') ||
+	          label.includes('conversation archived') ||
+	          label.includes('chat archived') ||
+	          label.includes('zarchiwizowano') ||
+	          label.includes('archiwum') ||
+	          label.includes('アーカイブしました') ||
+	          label.includes('アーカイブされました')
+	        );
+	      });
 	    };
 	    const waitForArchiveConfirmation = async () => {
 	      const deadline = Date.now() + 3000;

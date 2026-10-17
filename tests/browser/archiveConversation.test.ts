@@ -1,3 +1,4 @@
+import vm from "node:vm";
 import { describe, expect, test, vi } from "vitest";
 import {
   archiveChatGptConversation,
@@ -246,6 +247,7 @@ describe("archive expression locale label inventory", () => {
       expect(archiveItemSlice).toContain(quoted(label));
       expect(confirmButtonSlice).toContain(quoted(label));
       expect(unarchiveMenuSlice).toContain(quoted(label));
+      expect(confirmationToastSlice).toContain(quoted(label));
     }
     // Polish restore/unarchive words only appear in the standalone unarchive-detection matcher.
     for (const label of ["przywróć", "przywroc"]) {
@@ -265,5 +267,209 @@ describe("archive expression locale label inventory", () => {
     ]) {
       expect(confirmationToastSlice).toContain(quoted(label));
     }
+  });
+});
+
+// The expression sleeps on real timers. This clock advances on each sleep so a
+// rejected archive finishes without waiting out the three-second confirmation.
+const ARCHIVE_PAGE_HARNESS = `
+class HTMLElement {
+  constructor(tag, attrs, rect, text, children) {
+    this.tag = tag;
+    this.attrs = attrs || {};
+    this.rect = rect;
+    this.ownText = text || "";
+    this.children = children || [];
+    for (const child of this.children) child.parent = this;
+  }
+  get textContent() {
+    return [this.ownText].concat(this.children.map((child) => child.textContent)).join(" ").trim();
+  }
+  getAttribute(name) {
+    return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null;
+  }
+  getBoundingClientRect() {
+    return this.rect;
+  }
+  querySelectorAll(selector) {
+    return queryAll(this, selector);
+  }
+  dispatchEvent(event) {
+    if (!event || event.type !== "click") return;
+    globalThis.clicks.push(this.attrs["data-id"] || this.ownText || this.tag);
+    if (this.attrs["data-nav"]) globalThis.location.href = "https://chatgpt.com/";
+  }
+}
+function splitSelectors(selector) {
+  return selector.split(",").map((part) => part.trim()).filter(Boolean);
+}
+function matchesAttr(element, spec) {
+  if (!spec.startsWith("[") || !spec.endsWith("]")) return false;
+  const body = spec.slice(1, -1);
+  const containsAt = body.indexOf("*=");
+  if (containsAt !== -1) {
+    const name = body.slice(0, containsAt);
+    const value = body.slice(containsAt + 2).replace(/^"/, "").replace(/"$/, "");
+    return (element.attrs[name] || "").includes(value);
+  }
+  const equalsAt = body.indexOf("=");
+  if (equalsAt !== -1) {
+    const name = body.slice(0, equalsAt);
+    const value = body.slice(equalsAt + 1).replace(/^"/, "").replace(/"$/, "");
+    return (element.attrs[name] || "") === value;
+  }
+  return Object.prototype.hasOwnProperty.call(element.attrs, body);
+}
+function matchesSimple(element, spec) {
+  if (spec.startsWith("[")) return matchesAttr(element, spec);
+  const bracket = spec.indexOf("[");
+  const tag = bracket === -1 ? spec : spec.slice(0, bracket);
+  if (element.tag !== tag) return false;
+  return bracket === -1 ? true : matchesAttr(element, spec.slice(bracket));
+}
+function matchesSelector(element, selector) {
+  return splitSelectors(selector).some((alternative) => {
+    const parts = alternative.split(" ").filter(Boolean);
+    const last = parts[parts.length - 1];
+    if (!matchesSimple(element, last)) return false;
+    if (parts.length === 1) return true;
+    const ancestor = parts.slice(0, -1).join(" ");
+    let parent = element.parent;
+    while (parent) {
+      if (matchesSelector(parent, ancestor)) return true;
+      parent = parent.parent;
+    }
+    return false;
+  });
+}
+function queryAll(root, selector) {
+  const found = [];
+  const walk = (node) => {
+    for (const child of node.children || []) {
+      if (matchesSelector(child, selector)) found.push(child);
+      walk(child);
+    }
+  };
+  walk(root);
+  return found;
+}
+function box(top, left, width, height) {
+  return { top, left, right: left + width, bottom: top + height, width, height };
+}
+function el(tag, attrs, rect, text, children) {
+  return new HTMLElement(tag, attrs, rect, text, children);
+}
+function buildPage(kind) {
+  const header = box(24, 1124, 36, 36);
+  const side = box(400, 16, 36, 36);
+  const item = box(70, 1000, 160, 28);
+  const toast = box(700, 400, 240, 32);
+  const menuBox = box(60, 980, 200, 80);
+  const archiveItem = (nav) => el("div", nav ? { role: "menuitem", "data-nav": "1" } : { role: "menuitem" }, item, "Archive");
+  const menu = (nav) => el("div", { role: "menu" }, menuBox, "", [archiveItem(nav)]);
+  const headerMore = () => el("button", { "aria-label": "More" }, header, "More");
+  let children = [];
+  if (kind === "unarchive-toast") {
+    children = [headerMore(), menu(false), el("div", { role: "status" }, toast, "Chat unarchived")];
+  } else if (kind === "both-toasts") {
+    children = [
+      headerMore(),
+      menu(false),
+      el("div", { role: "status" }, toast, "Chat unarchived"),
+      el("div", { role: "status" }, box(740, 400, 240, 32), "Chat archived"),
+    ];
+  } else if (kind === "page-restore") {
+    children = [
+      headerMore(),
+      el("button", { "data-id": "archive-button" }, box(120, 400, 90, 28), "Archive"),
+      el("button", { "data-id": "restore-button" }, box(160, 400, 90, 28), "Restore"),
+    ];
+  } else if (kind === "sidebar-more") {
+    children = [
+      el("button", { "aria-label": "More", "data-id": "sidebar-more" }, side, "More"),
+      menu(false),
+      el("div", { role: "status" }, toast, "Chat archived"),
+    ];
+  } else if (kind === "header-archived") {
+    children = [headerMore(), menu(false), el("div", { role: "status" }, toast, "Chat archived")];
+  } else if (kind === "url-change") {
+    children = [headerMore(), menu(true)];
+  } else {
+    throw new Error("unknown archive page " + kind);
+  }
+  globalThis.clicks = [];
+  globalThis.window = { innerWidth: 1200 };
+  globalThis.location = { href: "https://chatgpt.com/c/open-chat" };
+  globalThis.getComputedStyle = () => ({ visibility: "visible", display: "block" });
+  globalThis.MouseEvent = class MouseEvent {
+    constructor(type) { this.type = type; }
+  };
+  globalThis.KeyboardEvent = class KeyboardEvent {
+    constructor(type) { this.type = type; }
+  };
+  globalThis.document = el("div", {}, box(0, 0, 1200, 800), "", children);
+}
+`;
+
+async function runArchivePage(kind: string): Promise<{
+  result: { status: string; reason?: string; conversationUrl?: string | null };
+  clicks: string[];
+}> {
+  const expression = buildArchiveConversationExpressionForTest();
+  let now = 1_000_000;
+  let sleeps = 0;
+  const sandbox: {
+    clicks?: string[];
+    Date: { now: () => number };
+    setTimeout: (fn: () => void, ms?: number) => number;
+  } = {
+    Date: {
+      now: () => now,
+    },
+    setTimeout: (fn, ms) => {
+      sleeps += 1;
+      if (sleeps > 80) throw new Error("archive expression slept too many times");
+      now += typeof ms === "number" ? ms : 0;
+      fn();
+      return 0;
+    },
+  };
+  const result = (await vm.runInNewContext(
+    `${ARCHIVE_PAGE_HARNESS}\nbuildPage(${JSON.stringify(kind)});\n${expression}`,
+    sandbox,
+  )) as { status: string; reason?: string; conversationUrl?: string | null };
+  return { result, clicks: sandbox.clicks ?? [] };
+}
+
+describe("archive expression page behavior", () => {
+  test("does not treat an unarchive toast as a finished archive", async () => {
+    const { result } = await runArchivePage("unarchive-toast");
+    expect(result).toMatchObject({ status: "skipped", reason: "archive-not-confirmed" });
+  });
+
+  test("keeps a real archived toast when another toast says the chat was unarchived", async () => {
+    const { result } = await runArchivePage("both-toasts");
+    expect(result).toMatchObject({ status: "archived" });
+  });
+
+  test("does not treat a page-wide Restore control as this chat's archive", async () => {
+    const { result } = await runArchivePage("page-restore");
+    expect(result).toMatchObject({ status: "skipped", reason: "archive-not-confirmed" });
+  });
+
+  test("does not archive through a More button outside the header", async () => {
+    const { result, clicks } = await runArchivePage("sidebar-more");
+    expect(result).toMatchObject({ status: "skipped", reason: "conversation-menu-not-found" });
+    expect(clicks).toEqual([]);
+  });
+
+  test("accepts a header Archive click when the toast says the chat was archived", async () => {
+    const { result } = await runArchivePage("header-archived");
+    expect(result).toMatchObject({ status: "archived" });
+  });
+
+  test("accepts a conversation URL change as archive confirmation", async () => {
+    const { result } = await runArchivePage("url-change");
+    expect(result).toMatchObject({ status: "archived" });
   });
 });
