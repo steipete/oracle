@@ -1643,6 +1643,89 @@ describe("waitForDeepResearchCompletion", () => {
     );
   });
 
+  it("does not accept a completed Deep Research iframe when the owner turn is unknown", async () => {
+    mockRuntime.evaluate.mockResolvedValue({
+      result: {
+        value: {
+          finished: false,
+          stopVisible: false,
+          textLength: 0,
+          hasIframe: true,
+          hasActiveScopedResearch: false,
+        },
+      },
+    });
+
+    const listeners = new Map<string, (params: unknown, sessionId?: string) => void>();
+    const deepResearchUrl =
+      "https://connector_openai_deep_research.web-sandbox.oaiusercontent.com/";
+    const foreignReport = "FOREIGN_REPORT https://example.com/other";
+    const mockClient = {
+      oraclePageSessionId: "page-session",
+      on: vi.fn((event: string, listener: (params: unknown, sessionId?: string) => void) => {
+        listeners.set(event, listener);
+      }),
+      removeListener: vi.fn(),
+      send: vi.fn(async (method: string, params?: unknown, sessionId?: string) => {
+        if (method === "Target.setAutoAttach" && (params as { autoAttach?: boolean })?.autoAttach) {
+          listeners.get("Target.attachedToTarget")?.(
+            {
+              sessionId: "foreign-session",
+              targetInfo: {
+                targetId: "foreign-target",
+                type: "iframe",
+                url: deepResearchUrl,
+              },
+            },
+            "page-session",
+          );
+          return {};
+        }
+        if (method === "Page.getFrameTree") {
+          return {
+            frameTree: {
+              frame: { id: `${sessionId}-frame`, name: "root", url: deepResearchUrl },
+            },
+          };
+        }
+        if (method === "Runtime.evaluate" && sessionId === "foreign-session") {
+          return {
+            result: {
+              value: {
+                completed: true,
+                inProgress: false,
+                textLength: foreignReport.length,
+                text: foreignReport,
+              },
+            },
+          };
+        }
+        return {};
+      }),
+    };
+
+    let nowCalls = 0;
+    const dateNowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      nowCalls += 1;
+      return nowCalls < 12 ? 1_000 : 2_000;
+    });
+    try {
+      await expect(
+        waitForDeepResearchCompletion(
+          mockRuntime as never,
+          mockLogger,
+          100,
+          null,
+          undefined,
+          mockClient as never,
+          { requireScopedTargetOwner: true },
+        ),
+      ).rejects.toThrow(/did not complete/);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
   it("prefers a completed page target over an earlier in-progress one", async () => {
     // A page can expose more than one Deep Research iframe target (e.g. a stale
     // in-progress one attached before the completed report). Scanning must not

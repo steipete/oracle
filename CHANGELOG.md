@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: ignore a completed Deep Research iframe when reattach does not know the owning turn, instead of saving another run's report; thanks @SebTardif.
 - Browser: add opt-in `--browser-no-focus` / `browser.noFocus` for background ChatGPT runs, attachment submission, and recovery; preserve foreground defaults, retain shared browser transports, and bring Chrome forward when sign-in or a challenge requires input; thanks @postoso and @Eotel.
 
 - Browser: attach and harvest only HTTPS tabs on the exact ChatGPT hosts, rejecting lookalike hosts and unrelated pages titled ChatGPT; thanks @SebTardif.

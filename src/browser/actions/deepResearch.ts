@@ -375,6 +375,12 @@ export async function waitForDeepResearchCompletion(
             client,
             ignoredTargetKeys,
             requireScopedTargetOwner ? minTurnLiteral : -1,
+            {
+              // Reattach sets the owner flag even when the turn index could not
+              // be read. -1 would skip the owner filter and accept any finished
+              // iframe, including a report from another run.
+              rejectCompletedWhenOwnerUnknown: requireScopedTargetOwner && minTurnLiteral < 0,
+            },
           ).catch(() => null)
         )?.read ?? null)
       : null;
@@ -665,6 +671,9 @@ async function readDeepResearchTargetResult(
   client: ChromeClient,
   ignoredTargetKeys: ReadonlySet<string> = new Set(),
   minTurnIndex = -1,
+  options?: {
+    rejectCompletedWhenOwnerUnknown?: boolean;
+  },
 ): Promise<DeepResearchTargetScanResult | null> {
   const rawClient = client as ChromeClient & {
     send?: (
@@ -777,6 +786,13 @@ async function readDeepResearchTargetResult(
         }
       }
       const value = sessionResult.read;
+      if (
+        options?.rejectCompletedWhenOwnerUnknown === true &&
+        minTurnIndex < 0 &&
+        value?.completed
+      ) {
+        continue;
+      }
       if (value?.completed) {
         completed = value;
       } else if (value && (value.inProgress || value.textLength > 0)) {
