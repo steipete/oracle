@@ -16,7 +16,9 @@ const MAX_CHATGPT_UI_WARNING_CHARS = 300;
 const MAX_CHATGPT_UI_WARNINGS = 3;
 
 export function classifyChatGptUiWarningText(text: string): ChatGptUiWarningType | null {
-  const normalized = text.toLowerCase();
+  // ChatGPT can show error codes such as `cloudflare_challenge`. `\b` treats `_` as a
+  // word character, so compare separator-joined codes as separate words.
+  const normalized = text.toLowerCase().replace(/[_-]+/g, " ");
   if (
     /\btoo many requests\b/.test(normalized) ||
     /\bsending too many requests\b/.test(normalized) ||
@@ -135,7 +137,7 @@ export async function collectChatGptUiWarnings(
           container !== element && (container.contains(element) || element.contains(container))
         ));
         const add = (element, entry) => {
-          if (!entry.text || !warningPattern.test(entry.text)) return;
+          if (!entry.text || !warningPattern.test(entry.text.replace(/[_-]+/g, ' '))) return;
           const key = entry.text + '|' + (entry.role || '') + '|' + (entry.ariaLive || '');
           if (seen.has(key)) return;
           seen.add(key);
