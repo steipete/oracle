@@ -4,6 +4,7 @@
 
 - Dependencies: refresh OpenAI, Inquirer, Puppeteer/DevTools types, and formatter/linter tooling after the two-day cooldown; retain Node >=24, Undici 7, and Markdansi 0.3.5 for terminal progress replay compatibility.
 - Browser: accept confirmed ChatGPT sessions with a visible authenticated app despite stray login controls, while preserving sign-out and auth-page checks.
+- Browser: retry the ChatGPT navigation once when `Page.navigate` reports an error or the tab is still on `about:blank`, a Chrome error page, or a loading document, instead of accepting any ready document (an `ERR_ABORTED` navigation first gets its readiness window, since a newer navigation may have replaced it); report a login probe from a tab that is still on a non-web page, including after a Welcome-back click, as a page that did not load rather than a missing session, without the manual-login wait, and print the latest failed probe detail without `--verbose`, with URLs reduced to scheme, host and path; thanks @postoso.
 
 ## 0.22.0 - 2026-10-20
 

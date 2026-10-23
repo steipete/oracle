@@ -9,6 +9,8 @@ import {
   runBrowserSessionExecution,
 } from "../../src/browser/sessionRunner.js";
 import { BrowserRunCancelledError } from "../../src/oracle/errors.js";
+import { ensureLoggedIn } from "../../src/browser/actions/navigation.js";
+import type { ChromeClient } from "../../src/browser/types.js";
 import {
   enableFocusEmulation,
   shouldActivateBeforeTrustedInput,
@@ -900,6 +902,107 @@ describe("runBrowserSessionExecution", () => {
       },
     );
     expect(log.mock.calls.some((call) => String(call[0]).includes("ChatGPT thinking"))).toBe(true);
+  });
+
+  test("prints the failed login probe detail without verbose mode", async () => {
+    const log = vi.fn();
+    const runtime = {
+      evaluate: vi.fn().mockResolvedValue({
+        result: {
+          value: {
+            ok: false,
+            status: 0,
+            backendStatus: 0,
+            pageUrl: "about:blank",
+            error: "TypeError: Failed to fetch",
+          },
+        },
+      }),
+    } as unknown as ChromeClient["Runtime"];
+    await expect(
+      runBrowserSessionExecution(
+        {
+          runOptions: { ...baseRunOptions, verbose: false },
+          browserConfig: baseConfig,
+          cwd: "/repo",
+          log,
+        },
+        {
+          assemblePrompt: async () => ({
+            markdown: "prompt",
+            composerText: "prompt",
+            estimatedInputTokens: 5,
+            attachments: [],
+            inlineFileCount: 0,
+            tokenEstimateIncludesInlineFiles: false,
+            attachmentsPolicy: "auto",
+            attachmentMode: "inline",
+            fallback: null,
+          }),
+          executeBrowser: async ({ log: automationLog }) => {
+            await ensureLoggedIn(runtime, automationLog ?? (() => {}), { appliedCookies: 0 });
+            throw new Error("unreachable");
+          },
+        },
+      ),
+    ).rejects.toThrow(/ChatGPT page did not load/);
+    expect(
+      log.mock.calls.some((call) =>
+        /^\[browser\] Login probe failed \(sessionStatus=0, .*url=about:blank/.test(
+          String(call[0]),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  test("keeps auth URL query and fragment values out of the always-printed probe line", async () => {
+    const log = vi.fn();
+    const runtime = {
+      evaluate: vi
+        .fn()
+        .mockResolvedValueOnce({
+          result: {
+            value: {
+              ok: false,
+              status: 200,
+              sessionResolved: true,
+              pageUrl:
+                "https://auth.openai.com/log-in?state=STATE_SENTINEL&login_hint=person%40example.test#frag=FRAG_SENTINEL",
+            },
+          },
+        })
+        .mockResolvedValue({
+          result: { value: { clicked: false, reason: "multiple-accounts", accountCount: 2 } },
+        }),
+    } as unknown as ChromeClient["Runtime"];
+    const error = await runBrowserSessionExecution(
+      {
+        runOptions: { ...baseRunOptions, verbose: false },
+        browserConfig: baseConfig,
+        cwd: "/repo",
+        log,
+      },
+      {
+        assemblePrompt: async () => ({
+          markdown: "prompt",
+          composerText: "prompt",
+          estimatedInputTokens: 5,
+          attachments: [],
+          inlineFileCount: 0,
+          tokenEstimateIncludesInlineFiles: false,
+          attachmentsPolicy: "auto",
+          attachmentMode: "inline",
+          fallback: null,
+        }),
+        executeBrowser: async ({ log: automationLog }) => {
+          await ensureLoggedIn(runtime, automationLog ?? (() => {}), { appliedCookies: 0 });
+          throw new Error("unreachable");
+        },
+      },
+    ).catch((caught: unknown) => caught);
+    const printed = [...log.mock.calls.map((call) => String(call[0])), String(error)].join("\n");
+    expect(printed).toContain("url=https://auth.openai.com/log-in,");
+    expect(printed).not.toMatch(/SENTINEL|login_hint|person/);
   });
 
   test("prints each approval wait and heartbeat without verbose mode", async () => {

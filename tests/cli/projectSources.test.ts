@@ -1,11 +1,19 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   buildProjectSourcesBrowserConfig,
   resolveProjectSourceFiles,
+  runProjectSourcesCliCommand,
 } from "../../src/cli/projectSources.js";
+import { navigateToChatGPT } from "../../src/browser/actions/navigation.js";
+import type { ChromeClient } from "../../src/browser/types.js";
+
+const projectSourcesRunner = vi.hoisted(() => ({ run: vi.fn() }));
+vi.mock("../../src/browser/projectSourcesRunner.js", () => ({
+  runBrowserProjectSources: projectSourcesRunner.run,
+}));
 
 describe("project sources CLI helpers", () => {
   const originalProfileDir = process.env.ORACLE_BROWSER_PROFILE_DIR;
@@ -16,6 +24,40 @@ describe("project sources CLI helpers", () => {
     } else {
       process.env.ORACLE_BROWSER_PROFILE_DIR = originalProfileDir;
     }
+  });
+
+  test("prints the project URL without userinfo, query or fragment in normal output", async () => {
+    // The runner's first step is the shared navigation helper; here its navigation fails.
+    projectSourcesRunner.run.mockImplementationOnce(
+      async ({ chatgptUrl, log }: { chatgptUrl: string; log: (message: string) => void }) => {
+        await navigateToChatGPT(
+          {
+            navigate: async () => ({ errorText: "net::ERR_NAME_NOT_RESOLVED" }),
+          } as unknown as ChromeClient["Page"],
+          {} as ChromeClient["Runtime"],
+          chatgptUrl,
+          log,
+        );
+      },
+    );
+    const printed: string[] = [];
+    const consoleLog = vi.spyOn(console, "log").mockImplementation((line?: unknown) => {
+      printed.push(String(line));
+    });
+    try {
+      await expect(
+        runProjectSourcesCliCommand("list", {
+          chatgptUrl:
+            "https://user:SECRET_PASS@chatgpt.com/g/p/project?state=STATE_SENTINEL#FRAG_SENTINEL",
+          verbose: false,
+        }),
+      ).rejects.toThrow(/Page did not load/);
+    } finally {
+      consoleLog.mockRestore();
+    }
+    const output = printed.join("\n").replace(/\u001b\[[0-9;]*m/g, "");
+    expect(output).toContain("Navigating to https://chatgpt.com/g/p/project");
+    expect(output).not.toMatch(/SENTINEL|SECRET_PASS|tab=sources/);
   });
 
   test("resolves files without reading their contents into memory", async () => {

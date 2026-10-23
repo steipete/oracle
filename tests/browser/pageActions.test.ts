@@ -25,6 +25,7 @@ import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDat
 import type { ChromeClient } from "../../src/browser/types.js";
 import { BrowserAutomationError } from "../../src/oracle/errors.js";
 import { FakeDocument, FakeElement, FakeInputElement } from "./domFixture.js";
+import { formatUserErrorMetadata } from "../../src/cli/sessionDisplay.js";
 
 const logger = vi.fn();
 
@@ -92,22 +93,290 @@ describe("ensureModelSelection", () => {
 });
 
 describe("navigateToChatGPT", () => {
-  test("navigates and waits for ready state", async () => {
-    const navigate = vi.fn().mockResolvedValue(undefined);
-    const runtime = {
-      evaluate: vi
-        .fn()
-        .mockResolvedValueOnce({ result: { value: "loading" } })
-        .mockResolvedValueOnce({ result: { value: "complete" } }),
-    } as unknown as ChromeClient["Runtime"];
-    await navigateToChatGPT(
-      { navigate } as unknown as ChromeClient["Page"],
-      runtime,
-      "https://chat.openai.com",
-      logger,
+  type TabState = { readyState: string; href: string };
+  type NavigationStep = TabState & { errorText?: string };
+
+  // A tab whose document changes on each Page.navigate. Runtime.evaluate runs the real readiness
+  // expression against that document, so the test checks what Oracle actually reads.
+  function fakeTab(
+    steps: NavigationStep[],
+    initial: TabState = { readyState: "complete", href: "about:blank" },
+  ) {
+    let current: TabState = initial;
+    let index = 0;
+    const navigate = vi.fn(async () => {
+      const step = steps[Math.min(index, steps.length - 1)];
+      index += 1;
+      current = { readyState: step.readyState, href: step.href };
+      return step.errorText
+        ? { frameId: "frame", errorText: step.errorText }
+        : { frameId: "frame" };
+    });
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      const value = new Function("document", "location", `return ${expression};`)(
+        { readyState: current.readyState },
+        { href: current.href },
+      );
+      return { result: { value } };
+    });
+    return {
+      Page: { navigate } as unknown as ChromeClient["Page"],
+      Runtime: { evaluate } as unknown as ChromeClient["Runtime"],
+      navigate,
+      settle: (state: TabState) => {
+        current = state;
+      },
+    };
+  }
+
+  async function navigateWithFakeTimers(tab: ReturnType<typeof fakeTab>, url: string) {
+    vi.useFakeTimers();
+    try {
+      const outcome = navigateToChatGPT(tab.Page, tab.Runtime, url, logger).then(
+        () => "loaded" as const,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(120_000);
+      return await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  test("navigates once and waits for the document to become ready", async () => {
+    const tab = fakeTab([{ readyState: "loading", href: "https://chatgpt.com/" }]);
+    vi.useFakeTimers();
+    try {
+      const outcome = navigateToChatGPT(tab.Page, tab.Runtime, "https://chatgpt.com/", logger);
+      await vi.advanceTimersByTimeAsync(300);
+      tab.settle({ readyState: "complete", href: "https://chatgpt.com/" });
+      await vi.advanceTimersByTimeAsync(300);
+      await expect(outcome).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(tab.navigate).toHaveBeenCalledTimes(1);
+    expect(tab.navigate).toHaveBeenCalledWith({ url: "https://chatgpt.com/" });
+  });
+
+  test("does not accept a tab left on about:blank as the loaded page, and retries once", async () => {
+    const tab = fakeTab([
+      { readyState: "complete", href: "about:blank" },
+      { readyState: "complete", href: "https://chatgpt.com/" },
+    ]);
+    await expect(navigateWithFakeTimers(tab, "https://chatgpt.com/")).resolves.toBe("loaded");
+    expect(tab.navigate).toHaveBeenCalledTimes(2);
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringMatching(/^\[browser\] Page did not load \(.*url=about:blank\); retrying/),
     );
-    expect(navigate).toHaveBeenCalledWith({ url: "https://chat.openai.com" });
-    expect(runtime.evaluate).toHaveBeenCalledTimes(2);
+  });
+
+  test("retries once when Page.navigate reports a navigation error", async () => {
+    const tab = fakeTab([
+      {
+        errorText: "net::ERR_CONNECTION_RESET",
+        readyState: "complete",
+        href: "chrome-error://chromewebdata/",
+      },
+      { readyState: "complete", href: "https://chatgpt.com/" },
+    ]);
+    await expect(navigateWithFakeTimers(tab, "https://chatgpt.com/")).resolves.toBe("loaded");
+    expect(tab.navigate).toHaveBeenCalledTimes(2);
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining("navigation failed: net::ERR_CONNECTION_RESET"),
+    );
+  });
+
+  test("fails with a next step when both navigations report an error", async () => {
+    const tab = fakeTab([
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        readyState: "complete",
+        href: "chrome-error://chromewebdata/",
+      },
+    ]);
+    const outcome = await navigateWithFakeTimers(tab, "https://chatgpt.com/?state=SENTINEL");
+    expect(outcome).toBeInstanceOf(BrowserAutomationError);
+    expect((outcome as Error).message).toBe(
+      "Page did not load (navigation failed: net::ERR_NAME_NOT_RESOLVED), including one navigation retry. Check that https://chatgpt.com/ opens in that Chrome window, then rerun.",
+    );
+    expect(tab.navigate).toHaveBeenCalledTimes(2);
+  });
+
+  test("retries once when the document stays loading", async () => {
+    const tab = fakeTab([
+      { readyState: "loading", href: "https://chatgpt.com/" },
+      { readyState: "interactive", href: "https://chatgpt.com/" },
+    ]);
+    await expect(navigateWithFakeTimers(tab, "https://chatgpt.com/")).resolves.toBe("loaded");
+    expect(tab.navigate).toHaveBeenCalledTimes(2);
+  });
+
+  test("fails after a single retry when the page never loads", async () => {
+    const tab = fakeTab([{ readyState: "complete", href: "about:blank" }]);
+    const outcome = await navigateWithFakeTimers(tab, "https://chatgpt.com/");
+    expect(outcome).toBeInstanceOf(BrowserAutomationError);
+    expect((outcome as Error).message).toMatch(
+      /Page did not reach ready state in time \(readyState=complete, url=about:blank\), including one navigation retry\. Check that https:\/\/chatgpt\.com\/ opens in that Chrome window, then rerun\.$/,
+    );
+    expect(tab.navigate).toHaveBeenCalledTimes(2);
+  });
+
+  test("still treats about:blank as loaded when it is the requested URL", async () => {
+    const tab = fakeTab([{ readyState: "complete", href: "about:blank" }]);
+    await expect(navigateWithFakeTimers(tab, "about:blank")).resolves.toBe("loaded");
+    expect(tab.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(["Execution context was destroyed.", "Inspected target navigated or closed"])(
+    "keeps polling through a navigation interruption (%s)",
+    async (message) => {
+      const tab = fakeTab([{ readyState: "complete", href: "https://chatgpt.com/" }]);
+      const evaluate = tab.Runtime.evaluate as unknown as ReturnType<typeof vi.fn>;
+      evaluate.mockRejectedValueOnce(new Error(message));
+      await expect(navigateWithFakeTimers(tab, "https://chatgpt.com/")).resolves.toBe("loaded");
+      expect(tab.navigate).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test("fails at once when the DevTools connection drops", async () => {
+    const tab = fakeTab([{ readyState: "loading", href: "https://chatgpt.com/" }]);
+    const evaluate = tab.Runtime.evaluate as unknown as ReturnType<typeof vi.fn>;
+    evaluate.mockRejectedValueOnce(new Error("WebSocket connection closed"));
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      let settledAt = 0;
+      const outcome = navigateToChatGPT(tab.Page, tab.Runtime, "https://chatgpt.com/", logger).then(
+        () => "loaded",
+        (error: unknown) => {
+          settledAt = Date.now();
+          return error;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(((await outcome) as Error).message).toBe("WebSocket connection closed");
+      expect(settledAt - start).toBeLessThan(1_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(tab.navigate).toHaveBeenCalledTimes(1);
+  });
+
+  test("waits for the successor page instead of re-navigating on ERR_ABORTED", async () => {
+    const tab = fakeTab([
+      {
+        errorText: "net::ERR_ABORTED",
+        readyState: "loading",
+        href: "https://auth.openai.com/log-in",
+      },
+    ]);
+    vi.useFakeTimers();
+    try {
+      const outcome = navigateToChatGPT(tab.Page, tab.Runtime, "https://chatgpt.com/", logger);
+      await vi.advanceTimersByTimeAsync(2_000);
+      tab.settle({ readyState: "complete", href: "https://chatgpt.com/" });
+      await vi.advanceTimersByTimeAsync(300);
+      await expect(outcome).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(tab.navigate).toHaveBeenCalledTimes(1);
+    expect(logger).not.toHaveBeenCalledWith(expect.stringContaining("retrying navigation"));
+  });
+
+  test("re-navigates after ERR_ABORTED only once the readiness window has passed", async () => {
+    const tab = fakeTab([
+      { errorText: "net::ERR_ABORTED", readyState: "complete", href: "about:blank" },
+      { readyState: "complete", href: "https://chatgpt.com/" },
+    ]);
+    vi.useFakeTimers();
+    try {
+      const outcome = navigateToChatGPT(tab.Page, tab.Runtime, "https://chatgpt.com/", logger);
+      await vi.advanceTimersByTimeAsync(44_000);
+      expect(tab.navigate).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(outcome).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(tab.navigate).toHaveBeenCalledTimes(2);
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Page did not load (navigation aborted (net::ERR_ABORTED); readyState=complete, url=about:blank)",
+      ),
+    );
+  });
+
+  test("retries after the first 45 s readiness window and fails after the second", async () => {
+    const tab = fakeTab([{ readyState: "loading", href: "https://chatgpt.com/" }]);
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const outcome = navigateToChatGPT(tab.Page, tab.Runtime, "https://chatgpt.com/", logger).then(
+        () => "loaded",
+        (error: unknown) => {
+          settled = true;
+          return error;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(44_500);
+      expect(tab.navigate).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(tab.navigate).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(43_500);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(settled).toBe(true);
+      expect(((await outcome) as Error).message).toMatch(
+        /^Page did not reach ready state in time \(readyState=loading/,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("prints observed and requested URLs without userinfo, query or fragment", async () => {
+    const tab = fakeTab([
+      {
+        readyState: "loading",
+        href: "https://user:SECRET_PASS@chatgpt.com/auth/x?state=STATE_SENTINEL#frag=FRAG_SENTINEL",
+      },
+    ]);
+    const outcome = await navigateWithFakeTimers(tab, "https://chatgpt.com/g/p?q=REQ_SENTINEL#R");
+    // Lines with the [browser] prefix and the error are what prints without --verbose.
+    const printed = [
+      ...logger.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith("[browser] ")),
+      (outcome as Error).message,
+    ].join("\n");
+    expect(printed).toContain("url=https://chatgpt.com/auth/x)");
+    expect(printed).toContain("retrying navigation to https://chatgpt.com/g/p once");
+    expect(printed).not.toMatch(/SENTINEL|SECRET_PASS|#R/);
+  });
+
+  test("keeps the requested URL's userinfo, query and fragment out of session error metadata", async () => {
+    const tab = fakeTab([
+      {
+        errorText: "net::ERR_NAME_NOT_RESOLVED",
+        readyState: "complete",
+        href: "chrome-error://chromewebdata/",
+      },
+    ]);
+    const outcome = await navigateWithFakeTimers(
+      tab,
+      "https://user:SECRET_PASS@chatgpt.com/g/p/project?state=STATE_SENTINEL#FRAG_SENTINEL",
+    );
+    const error = outcome as BrowserAutomationError;
+    // What `oracle session <id>` prints for a stored user error.
+    const metadata = formatUserErrorMetadata({
+      category: error.category,
+      message: error.message,
+      details: error.details,
+    });
+    expect(metadata).toContain('"url":"https://chatgpt.com/g/p/project"');
+    expect(metadata).not.toMatch(/SENTINEL|SECRET_PASS/);
   });
 });
 
@@ -1628,6 +1897,237 @@ describe("ensureLoggedIn", () => {
     await expect(ensureLoggedIn(runtime, logger, { appliedCookies: 2 })).rejects.toThrow(
       /ChatGPT session not detected/i,
     );
+  });
+
+  // A rendered page for the real login probe and Welcome-back expressions. Its visible buttons
+  // carry `labels`; `click` (a saved-account chip) can move the tab and change what fetches return.
+  type PageState = {
+    href: string;
+    fetchFails: boolean;
+    sessionStatus?: number;
+    signedIn?: boolean;
+    labels?: readonly string[];
+    readyState?: string;
+    // A visible composer and profile button: the authenticated-app signal.
+    app?: boolean;
+  };
+  async function runLoginOnPage(page: PageState & { afterClick?: PageState }) {
+    const state: PageState = { ...page };
+    const location = { href: state.href, pathname: new URL(state.href).pathname };
+    class FakeHTMLElement {
+      constructor(public textContent: string) {}
+      getAttribute() {
+        return "";
+      }
+      getBoundingClientRect() {
+        return { width: 120, height: 32 };
+      }
+      click() {
+        if (!page.afterClick) return;
+        Object.assign(state, page.afterClick);
+        location.href = state.href;
+        location.pathname = new URL(state.href).pathname;
+      }
+    }
+    const document = {
+      querySelectorAll: vi.fn(() =>
+        (state.labels ?? []).map((label) => new FakeHTMLElement(label)),
+      ),
+      querySelector: vi.fn((selector: string) =>
+        state.app &&
+        (selector === "#prompt-textarea" || selector === '[data-testid="accounts-profile-button"]')
+          ? new FakeHTMLElement("")
+          : null,
+      ),
+      get readyState() {
+        return state.readyState ?? "complete";
+      },
+    };
+    const window = {
+      getComputedStyle: vi.fn(() => ({ display: "block", visibility: "visible" })),
+    };
+    const fetch = vi.fn(async (url: string) => {
+      if (state.fetchFails) throw new TypeError("Failed to fetch");
+      const status = url === "/api/auth/session" ? (state.sessionStatus ?? 200) : 401;
+      const body = state.signedIn ? { user: { id: "test-user" } } : {};
+      return { status, json: async () => body, clone: () => ({ text: async () => "" }) };
+    });
+    const evaluate = vi.fn(async ({ expression }: { expression: string }) => {
+      const value = await new Function(
+        "document",
+        "window",
+        "HTMLElement",
+        "fetch",
+        "location",
+        `return ${expression};`,
+      )(document, window, FakeHTMLElement, fetch, location);
+      return { result: { value } };
+    });
+    vi.useFakeTimers();
+    try {
+      const outcome = ensureLoggedIn({ evaluate } as unknown as ChromeClient["Runtime"], logger, {
+        appliedCookies: 0,
+      }).then(
+        () => "passed" as const,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(60_000);
+      return await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  test("reports a tab that never reached ChatGPT as not loaded instead of signed out", async () => {
+    const error = await runLoginOnPage({ href: "about:blank", fetchFails: true });
+    expect(error).toBeInstanceOf(BrowserAutomationError);
+    expect((error as Error).message).toMatch(
+      /^ChatGPT page did not load \(url=about:blank, error=TypeError: Failed to fetch\)/,
+    );
+    expect((error as Error).message).not.toMatch(/session not detected|cookies|not a sign-out/i);
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^\[browser\] Login probe failed \(sessionStatus=0, .*url=about:blank, readyState=/,
+      ),
+    );
+    expect(logger).not.toHaveBeenCalledWith(
+      "Welcome back modal not detected after login probe failure.",
+    );
+  });
+
+  test("keeps a rendered sign-in page on the sign-in path when its fetches fail", async () => {
+    // The CTA detector matches English labels only, so a localized login button is invisible to
+    // it; failed fetches on a web page must still not be read as an unloaded page.
+    const error = await runLoginOnPage({
+      href: "https://chatgpt.com/",
+      fetchFails: true,
+      labels: ["登录"],
+    });
+    expect((error as Error).message).toMatch(/^ChatGPT session not detected\./);
+    expect(logger).toHaveBeenCalledWith(
+      "Welcome back modal not detected after login probe failure.",
+    );
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^\[browser\] Login probe failed \(sessionStatus=0, .*url=https:\/\/chatgpt\.com\//,
+      ),
+    );
+  });
+
+  test("still clicks the saved account when the picker's page fetches fail until then", async () => {
+    const outcome = await runLoginOnPage({
+      href: "https://chatgpt.com/",
+      fetchFails: true,
+      labels: ["only@example.test"],
+      afterClick: { href: "https://chatgpt.com/", fetchFails: false, signedIn: true },
+    });
+    expect(outcome).toBe("passed");
+    expect(logger).toHaveBeenCalledWith("Login restored via Welcome back account picker");
+  });
+
+  test("reports the Welcome-back redirect as not loaded when it leaves the tab off ChatGPT", async () => {
+    const error = await runLoginOnPage({
+      href: "https://chatgpt.com/",
+      fetchFails: false,
+      sessionStatus: 401,
+      labels: ["only@example.test"],
+      afterClick: { href: "about:blank", fetchFails: true },
+    });
+    expect(error).toBeInstanceOf(BrowserAutomationError);
+    expect((error as Error).message).toMatch(
+      /^ChatGPT page did not load after Welcome back \(url=about:blank, error=TypeError: Failed to fetch\)/,
+    );
+    expect(logger).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^\[browser\] Login probe failed after Welcome back \(sessionStatus=0, .*url=about:blank/,
+      ),
+    );
+  });
+
+  test.each([
+    [
+      "signed out",
+      { href: "https://chatgpt.com/", fetchFails: false },
+      /^ChatGPT session not detected\./,
+    ],
+    ["signed in", { href: "https://chatgpt.com/", fetchFails: false, signedIn: true }, "passed"],
+    [
+      "on a saved-account picker",
+      {
+        href: "https://chatgpt.com/",
+        fetchFails: true,
+        labels: ["only@example.test"],
+        afterClick: { href: "https://chatgpt.com/", fetchFails: false, signedIn: true },
+      },
+      "passed",
+    ],
+  ] as const)(
+    "treats a web page that is still loading as loaded when %s",
+    async (_label, page, expected) => {
+      const outcome = await runLoginOnPage({ ...page, readyState: "loading" });
+      if (expected === "passed") {
+        expect(outcome).toBe("passed");
+      } else {
+        expect((outcome as Error).message).toMatch(expected);
+      }
+      expect(String((outcome as Error)?.message ?? "")).not.toMatch(/did not load/);
+    },
+  );
+
+  test("restores the login after Welcome back when only a stray login control remains", async () => {
+    const outcome = await runLoginOnPage({
+      href: "https://chatgpt.com/",
+      fetchFails: false,
+      sessionStatus: 401,
+      labels: ["only@example.test"],
+      afterClick: {
+        href: "https://chatgpt.com/",
+        fetchFails: false,
+        sessionStatus: 200,
+        signedIn: true,
+        app: true,
+        labels: ["Log in"],
+      },
+    });
+    expect(outcome).toBe("passed");
+    expect(logger).toHaveBeenCalledWith("Login restored via Welcome back account picker");
+  });
+
+  test("names a login button from the latest probe in the final error", async () => {
+    const error = await runLoginOnPage({
+      href: "https://chatgpt.com/",
+      fetchFails: false,
+      sessionStatus: 401,
+      labels: ["only@example.test"],
+      afterClick: {
+        href: "https://chatgpt.com/",
+        fetchFails: false,
+        sessionStatus: 200,
+        labels: ["Log in"],
+      },
+    });
+    expect((error as Error).message).toMatch(
+      /^ChatGPT session not detected\. Login button detected on page\./,
+    );
+  });
+
+  test("prints the latest failed probe after a Welcome-back retry", async () => {
+    const error = await runLoginOnPage({
+      href: "https://chatgpt.com/",
+      fetchFails: false,
+      sessionStatus: 401,
+      labels: ["only@example.test"],
+      afterClick: { href: "https://chatgpt.com/", fetchFails: false, sessionStatus: 200 },
+    });
+    expect((error as Error).message).toMatch(/^ChatGPT session not detected\./);
+    const detail = logger.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith("[browser] Login probe failed"));
+    expect(detail).toEqual([
+      expect.stringMatching(
+        /^\[browser\] Login probe failed after Welcome back \(sessionStatus=200, .*sessionResolved=true/,
+      ),
+    ]);
   });
 
   test("treats welcome-back navigation during account click as login progress", async () => {

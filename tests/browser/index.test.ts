@@ -436,6 +436,53 @@ describe("manual-login profile setup gate", () => {
     expect(logger).toHaveBeenCalledWith(expect.stringContaining("[browser] Manual login required"));
   });
 
+  test("fails fast with a not-loaded error instead of waiting for a sign-in", async () => {
+    const evaluate = vi.fn().mockResolvedValue({
+      result: {
+        value: {
+          ok: false,
+          status: 0,
+          backendStatus: 0,
+          pageUrl: "about:blank",
+          error: "TypeError: Failed to fetch",
+        },
+      },
+    });
+    const logger = vi.fn();
+    const onLoginRequired = vi.fn(async () => {});
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      let settledAt = 0;
+      const outcome = __test__
+        .waitForLogin({
+          runtime: { evaluate } as never,
+          logger,
+          appliedCookies: 0,
+          manualLogin: true,
+          timeoutMs: 5000,
+          keepBrowser: false,
+          onLoginRequired,
+        })
+        .then(
+          () => "passed" as const,
+          (error: unknown) => {
+            settledAt = Date.now();
+            return error;
+          },
+        );
+      await vi.advanceTimersByTimeAsync(60_000);
+      const error = await outcome;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/^ChatGPT page did not load \(url=about:blank/);
+      expect(settledAt - start).toBeLessThan(1_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(onLoginRequired).not.toHaveBeenCalled();
+    expect(logger).not.toHaveBeenCalledWith(expect.stringContaining("Manual login required"));
+  });
+
   test("fails fast for an uninitialized manual-login profile unless setup keeps Chrome open", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "oracle-empty-profile-"));
     try {
