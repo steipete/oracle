@@ -5,6 +5,7 @@
 - CLI: update Markdansi to 0.3.7 and restore compatible updates after its terminal OSC progress replay fix.
 - Dependencies: refresh OpenAI, Inquirer, Puppeteer/DevTools types, and formatter/linter tooling after the two-day cooldown; retain Node >=24 and Undici 7.
 - Browser: accept confirmed ChatGPT sessions with a visible authenticated app despite stray login controls, while preserving sign-out and auth-page checks.
+- Browser: classify ChatGPT warnings shown as error codes, such as an inline `cloudflare_challenge` alert with Retry or `rate_limit_exceeded`, so timeout errors name the challenge or rate limit instead of reporting a generic timeout.
 
 ## 0.22.0 - 2026-10-20
 
