@@ -12,6 +12,8 @@
 - Dependencies: update Undici to 7.30.1 for upstream security fixes and refresh OpenAI, Google GenAI, MCP, Puppeteer, and DevTools types after the two-day cooldown; retain Node >=24.
 - Dependencies: update fast-uri to 4.2.3 and body-parser to 2.4.0 for upstream URI handling and compressed-request security fixes.
 
+[npm](https://www.npmjs.com/package/@steipete/oracle/v/0.22.2) · [Registry tarball](https://registry.npmjs.org/@steipete/oracle/-/oracle-0.22.2.tgz) · [Integrity metadata](https://registry.npmjs.org/@steipete%2foracle/0.22.2) · [CI proof](https://github.com/steipete/oracle/actions/runs/40343747307)
+
 ## 0.22.1 - 2026-10-23
 
 **Highlights:** Keep authenticated ChatGPT sessions working despite stray login controls and restore compatible terminal progress updates.
