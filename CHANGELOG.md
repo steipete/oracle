@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: recognize current ChatGPT composer controls, scoped Web Search menu rows, and semantic search pills; support English and Simplified Chinese labels while preserving navigation and full-prompt verification. Thanks @xiaozhi747 (#608).
+
 ## 0.22.2 - 2026-10-26
 
 **Highlights:** Recover failed ChatGPT page loads, honor explicit Pro effort requests, and include security fixes for Undici, fast-uri, and body-parser.

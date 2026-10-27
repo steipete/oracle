@@ -2764,7 +2764,10 @@ describe("composer attachment menu safety", () => {
 
     const expression = String(evaluate.mock.calls[0]?.[0]?.expression ?? "");
     expect(expression).toContain("#composer-plus-btn");
-    expect(expression).toContain('button[data-testid="composer-plus-btn"]');
+    expect(expression).toContain(JSON.stringify('button[data-testid="composer-plus-btn"]'));
+    expect(expression).toContain(
+      JSON.stringify('button[data-composer-navigation-target="add-context"]'),
+    );
     expect(expression).not.toContain('[data-testid*="plus"]');
     expect(expression).not.toContain('button[aria-label^="add" i]');
     expect(expression).not.toContain("getBoundingClientRect().left");

@@ -69,6 +69,12 @@ type ComposerPlusProbe = {
   focused?: boolean;
 };
 
+const COMPOSER_PLUS_SELECTORS = [
+  "#composer-plus-btn",
+  'button[data-testid="composer-plus-btn"]',
+  'button[data-composer-navigation-target="add-context"]',
+];
+
 export async function activateComposerPlus(
   runtime: ChromeClient["Runtime"],
   input?: ChromeClient["Input"],
@@ -85,7 +91,7 @@ export async function activateComposerPlus(
           return { status: 'work-selected', startUrl };
         }
         if (navigation.modeUnverified) return { status: 'mode-unverified', startUrl };
-        const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+        const selectors = ${JSON.stringify(COMPOSER_PLUS_SELECTORS)};
         for (const selector of selectors) {
           const node = document.querySelector(selector);
           if (!(node instanceof HTMLElement)) continue;
@@ -140,7 +146,11 @@ export async function activateComposerPlus(
           const navigation = ${buildComposerNavigationValidationExpression(startUrl)};
           const rect = button?.getBoundingClientRect();
           return { ...navigation, focused: button instanceof HTMLElement && button.isConnected &&
-            document.activeElement === button && document.querySelector('#composer-plus-btn, button[data-testid="composer-plus-btn"]') === button &&
+            document.activeElement === button && ${JSON.stringify(COMPOSER_PLUS_SELECTORS)}.map(selector => document.querySelector(selector)).find(node => {
+              if (!(node instanceof HTMLElement)) return false;
+              const bounds = node.getBoundingClientRect();
+              return bounds.width > 0 && bounds.height > 0;
+            }) === button &&
             !button.hasAttribute('disabled') && button.getAttribute('aria-disabled') !== 'true' &&
             rect.width > 0 && rect.height > 0 };
         };

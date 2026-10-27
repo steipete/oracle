@@ -16,6 +16,8 @@ export function matchesWebSearchMenuLabel(value: string): boolean {
     "searchfindontheweb",
     "websearch",
     "websearchfindreal-timenewsandinfo",
+    "网页搜索",
+    "网页搜索查找实时新闻和信息",
   ].includes(value.replace(/\s+/g, "").toLowerCase());
 }
 
@@ -24,7 +26,7 @@ export function buildWebSearchVerificationExpression(prompt: string): string {
     const visible = node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
     const editor = ${JSON.stringify(INPUT_SELECTORS)}.flatMap(selector => Array.from(document.querySelectorAll(selector))).find(visible);
     if (!editor) return { selected: false, promptMatches: false };
-    const chip = editor.querySelector('[data-inline-selection-pill][data-id="search"][data-system-hint-type="search"]');
+    const chip = editor.querySelector('[data-inline-selection-pill][data-system-hint-type="search"]');
     const copy = editor.cloneNode(true);
     copy.querySelectorAll('[data-inline-selection-pill], [data-inline-selection-pill-cursor-target]').forEach(node => node.remove());
     const readText = node => {
@@ -46,6 +48,8 @@ export function buildWebSearchSelectionExpression(navigationUrl: string): string
     const visible = node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
     const roots = Array.from(document.querySelectorAll('main .popover, [data-radix-popper-content-wrapper], [data-floating-ui-portal], [role="menu"], [role="listbox"]')).filter(visible);
     const candidates = roots.flatMap(root => Array.from(root.querySelectorAll('[data-radix-collection-item], [role="menuitem"], [role="option"], .__menu-item, [class*="menu-item"]')));
+    const composerRoots = Array.from(document.querySelectorAll('[data-composer-overlay-floating-ui="true"] [data-mention-section-id="chatgpt-primary"] [data-mention-section-items]')).filter(visible);
+    candidates.push(...composerRoots.flatMap(root => Array.from(root.querySelectorAll('button[data-list-navigation-item="true"]'))));
     const match = candidates.find(node => {
       if (!visible(node) || node.hasAttribute('disabled') || node.getAttribute('aria-disabled') === 'true') return false;
       return matchesLabel(node.textContent ?? '');
@@ -104,7 +108,7 @@ export async function activateWebSearch(
     } while (Date.now() < confirmationDeadline);
   }
   throw new BrowserAutomationError(
-    "Web Search selection could not be verified; the prompt was not submitted. This pilot supports the English ChatGPT Web search control.",
+    "Web Search selection could not be verified; the prompt was not submitted. This pilot supports the English and Chinese ChatGPT Web search controls.",
     { stage: "web-search-activate" },
   );
 }
