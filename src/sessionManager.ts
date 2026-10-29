@@ -914,6 +914,28 @@ async function reconcileSessionMetadata(
     if (current.lifecycle?.workerPid && isProcessAlive(current.lifecycle.workerPid)) {
       return current;
     }
+    if (current.lifecycle?.execution === "foreground") {
+      const message =
+        "Foreground session worker exited before the session reached a terminal state.";
+      const reconciled: SessionMetadata = {
+        ...current,
+        status: "error",
+        errorMessage: message,
+        completedAt: new Date().toISOString(),
+        response: current.response
+          ? {
+              ...current.response,
+              status: "error",
+              incompleteReason: current.response.incompleteReason ?? "incomplete-capture",
+            }
+          : { status: "error", incompleteReason: "incomplete-capture" },
+        error: { category: "internal", message },
+      };
+      if (persist) {
+        await writeSessionMetadataFile(current.id, reconciled);
+      }
+      return reconciled;
+    }
   }
   const runtimeChecked = await markDeadBrowser(current);
   const reconciled = await markZombie(runtimeChecked);
