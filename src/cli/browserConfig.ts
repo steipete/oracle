@@ -58,6 +58,7 @@ const BROWSER_MODEL_LABELS: [ModelName, string][] = [
   ["gemini-3.1-pro", "Gemini 3.1 Pro"],
   ["gemini-3-pro", "Gemini 3.1 Pro"],
   ["gemini-3-pro-deep-think", "gemini-3-deep-think"],
+  ["gemini-4-argon-high", "Gemini 4 Argon High"],
 ];
 
 export interface BrowserFlagOptions {

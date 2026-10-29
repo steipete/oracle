@@ -1919,12 +1919,23 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   const engineModelInputs = multiModelProvided
     ? options.models!
     : [normalizeModelOption(options.model) || DEFAULT_MODEL];
+  const browserModelRequested =
+    !multiModelProvided &&
+    !options.route &&
+    !options.preflight &&
+    (options.engine === "browser" ||
+      options.browser === true ||
+      (!options.engine &&
+        ((process.env.ORACLE_ENGINE ?? "").toLowerCase() === "browser" ||
+          userConfig.engine === "browser")));
   const engineModels = Array.from(
     new Set(
       engineModelInputs.map((entry) =>
-        isGpt6ProAlias(entry) && !options.route && !options.preflight
-          ? ("gpt-6-pro" as ModelName)
-          : resolveApiModel(entry),
+        browserModelRequested
+          ? inferModelFromLabel(entry)
+          : isGpt6ProAlias(entry) && !options.route && !options.preflight
+            ? ("gpt-6-pro" as ModelName)
+            : resolveApiModel(entry),
       ),
     ),
   );
@@ -2090,14 +2101,19 @@ async function runRootCommand(options: CliOptions): Promise<void> {
     throw new Error("--remote-host does not support --models yet. Use API engine locally instead.");
   }
   const resolvedModel: ModelName =
-    normalizedMultiModels[0] ?? (isGemini ? resolveApiModel(cliModelArg) : resolvedModelCandidate);
+    normalizedMultiModels[0] ??
+    (engine === "browser"
+      ? resolvedModelCandidate
+      : isGemini
+        ? resolveApiModel(cliModelArg)
+        : resolvedModelCandidate);
   // A user-config apiModel override (known models only) wins over Gemini alias
   // remapping and the bundled apiModel, so it becomes the on-wire request id.
   const apiModelOverrides = engine === "api" ? userConfig.modelOverrides : undefined;
   const overriddenApiModel = resolveOverriddenApiModel(resolvedModel, apiModelOverrides);
   const effectiveModelId =
     overriddenApiModel ??
-    (resolvedModel.startsWith("gemini")
+    (engine === "api" && resolvedModel.startsWith("gemini")
       ? resolveGeminiModelId(resolvedModel)
       : isKnownModel(resolvedModel)
         ? (MODEL_CONFIGS[resolvedModel].apiModel ?? resolvedModel)

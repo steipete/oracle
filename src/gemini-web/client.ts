@@ -372,6 +372,16 @@ export function isGeminiModelUnavailable(errorCode: number | undefined): boolean
   return errorCode === 1052;
 }
 
+/** Read the model name reported by Gemini itself, not the requested model header. */
+export function extractGeminiWebReportedModel(rawResponseText: string): string | null {
+  // The provider's model display label is embedded in a JSON-escaped response frame.
+  // Example: \"95a4c0abcba24364\",null,null,\"4 Argon High\".
+  const matches = Array.from(
+    rawResponseText.matchAll(/\\"[0-9a-f]{16}\\",null,null,\\"([^"\\]{1,40})\\"/gi),
+  );
+  return matches.at(-1)?.[1] ?? null;
+}
+
 export async function runGeminiWebOnce(input: GeminiWebRunInput): Promise<GeminiWebRunOutput> {
   const cookieHeader = buildCookieHeader(input.cookieMap);
   const at = await fetchGeminiAccessToken(input.cookieMap, input.signal);
@@ -462,6 +472,20 @@ export async function runGeminiWebWithFallback(
   input: Omit<GeminiWebRunInput, "model"> & { model: GeminiWebModelId },
 ): Promise<GeminiWebRunOutput & { effectiveModel: GeminiWebModelId }> {
   const attempt = await runGeminiWebOnce(input);
+  if (input.model === "gemini-4-argon-high") {
+    // Argon High is strict by design: even Google's silent downgrade must not count as success.
+    if (isGeminiModelUnavailable(attempt.errorCode)) {
+      throw new Error("Gemini 4 Argon High is unavailable; model fallback is disabled.");
+    }
+    const succeeded = assertGeminiWebRunSucceeded(attempt);
+    const reportedModel = extractGeminiWebReportedModel(succeeded.rawResponseText);
+    if (!reportedModel || !/^4\s+argon\s+high(?:\b|$)/i.test(reportedModel.trim())) {
+      throw new Error(
+        `Gemini 4 Argon High model verification failed: upstream reported ${reportedModel ?? "unknown"}.`,
+      );
+    }
+    return { ...succeeded, effectiveModel: input.model };
+  }
   if (isGeminiModelUnavailable(attempt.errorCode) && input.model !== FALLBACK_GEMINI_WEB_MODEL) {
     if (input.allowModelFallback === false) {
       throw new Error(
