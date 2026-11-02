@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: find the ChatGPT model/effort trigger by its composer-scoped `data-composer-navigation-target="reasoning"` attribute now that `data-codex-intelligence-trigger` is gone, fixing `Unable to locate the ChatGPT model selector button` on localized (ja-JP) UIs (#614).
+
 - Browser: recognize current ChatGPT composer controls, scoped Web Search menu rows, and semantic search pills; support English and Simplified Chinese labels while preserving navigation and full-prompt verification. Thanks @xiaozhi747 (#608).
 
 - Dependencies: update dotenv, the MCP SDK 1.x development client, and es-toolkit after the two-day cooldown; retain Node >=24 and Undici 7.
