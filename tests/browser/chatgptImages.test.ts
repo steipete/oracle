@@ -88,7 +88,14 @@ describe("readAssistantGeneratedImages", () => {
   function matchesSelector(element: FakeElement, selector: string): boolean {
     if (selector === "img") return element.tagName === "IMG";
     if (selector.includes('data-testid^="conversation-turn"')) {
-      return String(element.getAttribute("data-testid") ?? "").startsWith("conversation-turn");
+      return (
+        element.getAttribute("data-turn-key") !== null ||
+        String(element.getAttribute("data-testid") ?? "").startsWith("conversation-turn")
+      );
+    }
+    const conversationRole = /\[data-conversation-role="(\w+)"\]/.exec(selector)?.[1];
+    if (conversationRole && element.getAttribute("data-conversation-role") === conversationRole) {
+      return true;
     }
     if (selector.includes('data-message-author-role="assistant"')) {
       return element.getAttribute("data-message-author-role") === "assistant";
@@ -245,6 +252,44 @@ describe("readAssistantGeneratedImages", () => {
 
     expect(images).toHaveLength(1);
     expect(images[0]?.fileId).toBe("file_real");
+  });
+
+  test("finds image-only replies marked only by data-conversation-role", async () => {
+    const img = new FakeElement(
+      "img",
+      {
+        src: "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000002",
+        alt: "Generated image 1",
+        width: "1254",
+        height: "1254",
+      },
+      6,
+    );
+    const exchange = new FakeElement("div", { "data-turn-key": "turn-0" }, 1, [
+      new FakeElement(
+        "div",
+        {
+          "data-conversation-role": "user",
+          "data-chatgpt-search-unit-key": "fallback-turn-0:0:user",
+        },
+        2,
+      ),
+      new FakeElement("div", { "data-conversation-role": "assistant" }, 3, [
+        new FakeElement("div", { "data-testid": "generated-image-gallery" }, 4, [
+          new FakeElement("button", { "data-testid": "generated-image-preview" }, 5, [img]),
+        ]),
+      ]),
+    ]);
+    const runtime = {
+      evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+        result: { value: evaluateImageExpression(expression, [exchange]) },
+      })),
+    } as unknown as ChromeClient["Runtime"];
+
+    expect(await readAssistantGeneratedImages(runtime, 0)).toMatchObject([
+      { url: "blob:https://chatgpt.com/00000000-0000-4000-8000-000000000002", width: 1254 },
+    ]);
+    expect(await readAssistantGeneratedImages(runtime, 1)).toHaveLength(0);
   });
 
   test("finds generated images rendered outside assistant turn wrappers", async () => {
