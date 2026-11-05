@@ -200,7 +200,7 @@ function isChromeCommandForUserDataDir(command: string | null, userDataDir: stri
 
 function startsWithChromeExecutable(command: string): boolean {
   const names =
-    /^(?:google chrome(?: canary| beta| dev| for testing)?|google-chrome(?:-stable|-beta|-dev|-unstable)?|chrome|chromium|chromium-browser|chrome-headless-shell)(?:\.exe)?$/iu;
+    /^(?:google chrome(?: canary| beta| dev| for testing)?|google-chrome(?:-stable|-beta|-dev|-unstable)?|chrome|chromium|chromium-browser|chrome-headless-shell|brave(?:-browser)?(?:-stable|-beta|-nightly|-origin)?|\.brave-wrapped)(?:\.exe)?$/iu;
   const trimmed = command.trimStart();
   const quoted = trimmed.match(/^(?:"([^"]+)"|'([^']+)')(?=\s|$)/u);
   let executable: string;

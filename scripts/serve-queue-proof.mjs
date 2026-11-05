@@ -162,7 +162,8 @@ const chrome = new Launcher({
   ],
 });
 let browser;
-let interceptError;
+const interceptErrors = [];
+const sessionTargets = new Map();
 const interceptedTargets = new Set();
 function child(name, args, home, extra = {}) {
   const process = spawn(globalThis.process.execPath, args, {
@@ -472,6 +473,7 @@ try {
   browser = await CDP({ target: version.webSocketDebuggerUrl });
   browser.on("Target.attachedToTarget", ({ sessionId, targetInfo }) => {
     if (targetInfo.type !== "page") return;
+    sessionTargets.set(sessionId, targetInfo.targetId);
     void (async () => {
       await browser.send(
         "Fetch.enable",
@@ -481,7 +483,7 @@ try {
       interceptedTargets.add(targetInfo.targetId);
       await browser.send("Runtime.runIfWaitingForDebugger", {}, sessionId);
     })().catch((e) => {
-      interceptError = e;
+      interceptErrors.push({ error: e, targetId: sessionTargets.get(sessionId) });
     });
   });
   browser.on("Fetch.requestPaused", (event, sessionId) => {
@@ -498,7 +500,7 @@ try {
         sessionId,
       )
       .catch((e) => {
-        interceptError = e;
+        interceptErrors.push({ error: e, targetId: sessionTargets.get(sessionId) });
       });
   });
   await browser.Target.setAutoAttach({
@@ -1020,7 +1022,18 @@ try {
       lateChromeClosed: true,
       temporaryProfileRemoved: true,
     });
-    assert.equal(interceptError, undefined);
+    const { targetInfos } = await browser.Target.getTargets();
+    const liveTargets = new Set(targetInfos.map((target) => target.targetId));
+    // Cancellation can close a target while an intercepted request is being fulfilled.
+    // Only that exact protocol error on a confirmed closed target is expected.
+    const unexpectedIntercept = interceptErrors.find(
+      ({ error, targetId }) =>
+        !targetId ||
+        liveTargets.has(targetId) ||
+        error?.response?.code !== -32001 ||
+        error?.response?.message !== "Session with given id not found.",
+    );
+    assert.equal(unexpectedIntercept?.error, undefined);
     assert.equal((await registry()).length, 0);
   }
   console.log(JSON.stringify({ provider: "synthetic local renderer", results }, null, 2));
