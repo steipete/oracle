@@ -38,3 +38,5 @@ Future Windows gotchas belong here. Update this doc when you learn something new
 - After merging a dependency update that changes oxfmt, CRLF checkouts may fail format checks across otherwise unchanged files. Normalize tracked text working copies to LF and use `git -c core.autocrlf=false` for staging; verify the resulting diff contains only intended changes.
 
 Provider-native conversation evidence uses the existing browser connection on Windows too. Files follow the account/directory ACLs; the POSIX owner-only file mode assertion is skipped on Windows. Capture failures leave the normal answer available.
+
+- Synthetic attach-running proofs must isolate `LOCALAPPDATA` as well as `os.homedir()`. Windows DevTools discovery recursively walks `LOCALAPPDATA` before probing the endpoint; inheriting the runner's application-data tree makes the proof depend on unrelated files and can exhaust its client deadline. Keep the deadline explicit and require exit 1 for synthetic refusals.
