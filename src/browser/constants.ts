@@ -101,6 +101,9 @@ export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR =
   'button[aria-label="Select ChatGPT model"], ' +
   'button[data-codex-intelligence-trigger="true"], ' +
+  // 2026-11: ChatGPT dropped data-codex-intelligence-trigger; the composer-scoped
+  // navigation target is locale-independent (ja-JP aria-label is "ChatGPT モデルを選択").
+  'form[data-chatgpt-composer] button[data-composer-navigation-target="reasoning"], ' +
   '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"]';
 export const COMPOSER_MODEL_SIGNAL_SELECTOR = '[data-testid="composer-footer-actions"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
