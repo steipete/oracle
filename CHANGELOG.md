@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Browser: find the ChatGPT model/effort trigger by its composer-scoped `data-composer-navigation-target="reasoning"` attribute now that `data-codex-intelligence-trigger` is gone, fixing `Unable to locate the ChatGPT model selector button` on localized (ja-JP) UIs (#614).
+- Browser/TUI: honor saved browser settings in the interactive wizard and recognize Linux Brave executables during owned-profile cleanup; fixes #616 and #617, thanks @OmerFarukOruc.
+
+- Browser: find the ChatGPT model/effort trigger by its composer-scoped `data-composer-navigation-target="reasoning"` attribute now that `data-codex-intelligence-trigger` is gone, fixing `Unable to locate the ChatGPT model selector button` on localized (ja-JP) UIs (#614). Thanks @kiyo-e and @masahiroono36.
 
 - Browser: recognize current ChatGPT composer controls, scoped Web Search menu rows, and semantic search pills; support English and Simplified Chinese labels while preserving navigation and full-prompt verification. Thanks @xiaozhi747 (#608).
 

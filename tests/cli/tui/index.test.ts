@@ -131,6 +131,42 @@ describe("askOracleFlow", () => {
     };
     expect(creationArgs.models).toEqual([DEFAULT_MODEL, "gemini-3-pro"]);
   });
+
+  test("inherits saved browser settings and lets wizard answers override them", async () => {
+    promptMock.mockResolvedValue({
+      promptInput: "Hello browser",
+      mode: "browser",
+      model: DEFAULT_MODEL,
+      files: [],
+      hideWindow: false,
+      keepBrowser: true,
+    });
+    await tui.askOracleFlow("0.22.2", {
+      browser: {
+        manualLogin: true,
+        chromePath: "/opt/brave/brave",
+        chromeProfile: "Profile 2",
+        hideWindow: true,
+        keepBrowser: false,
+      },
+    });
+    expect(performSessionRunMock.mock.calls[0]?.[0].browserConfig).toMatchObject({
+      manualLogin: true,
+      chromePath: "/opt/brave/brave",
+      chromeProfile: "Profile 2",
+      hideWindow: undefined,
+      keepBrowser: true,
+    });
+    const questions = promptMock.mock.calls[0]?.[0];
+    expect(
+      questions
+        .find((question: { name: string }) => question.name === "chromeProfile")
+        .when({ mode: "browser" }),
+    ).toBe(false);
+    expect(
+      questions.find((question: { name: string }) => question.name === "hideWindow").default,
+    ).toBe(true);
+  });
 });
 
 afterAll(() => {
