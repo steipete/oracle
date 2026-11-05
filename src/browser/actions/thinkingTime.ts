@@ -1232,15 +1232,25 @@ function buildThinkingTimeExpression(
       // The aria-label is localized ("ChatGPT モデルを選択" in ja-JP); the trigger
       // attribute is not, so it identifies the Chat/Work composer owner in any locale.
       'form[data-chatgpt-composer] button[data-codex-intelligence-trigger="true"]',
+      // Current Chat/Work composer (2026-11) no longer sets the intelligence attribute.
+      'form[data-chatgpt-composer] button[data-composer-navigation-target="reasoning"]',
       'form button.__composer-pill',
       '[data-testid="composer-footer-actions"] button.__composer-pill',
       '.__composer-pill-composite button.__composer-pill',
     ];
+    // Locale-independent ownership: the legacy intelligence attribute, or the
+    // composer-scoped reasoning navigation target that replaced it (2026-11).
+    const isSemanticComposerTrigger = (button) =>
+      Boolean(
+        button?.getAttribute?.('data-codex-intelligence-trigger') === 'true' ||
+          (button?.getAttribute?.('data-composer-navigation-target') === 'reasoning' &&
+            button?.closest?.('form[data-chatgpt-composer]')),
+      );
     const findComposerEffortPill = () => {
       const currentAstraTrigger = findModelButton();
       if (
         TARGET_IS_ASTRA_GPT6 &&
-        currentAstraTrigger?.matches?.('button[data-codex-intelligence-trigger="true"]') &&
+        isSemanticComposerTrigger(currentAstraTrigger) &&
         isVisible(currentAstraTrigger)
       ) return currentAstraTrigger;
       const seen = new Set();
@@ -1250,7 +1260,7 @@ function buildThinkingTimeExpression(
           if (seen.has(button) || !isVisible(button)) continue;
           if (
             (button.getAttribute('aria-label') === 'Select ChatGPT model' ||
-              button.getAttribute('data-codex-intelligence-trigger') === 'true') &&
+              isSemanticComposerTrigger(button)) &&
             button.closest('form[data-chatgpt-composer]')
           ) return button;
           seen.add(button);
