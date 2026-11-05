@@ -217,6 +217,8 @@ oracle --engine browser \
 
 Oracle activates ChatGPT Deep Research through the composer tools menu, recognizing the English `Deep research` / `Get a detailed report` labels and the Chinese `深度研究` / `获取详细报告` variants. It waits for the research plan to auto-confirm, logs high-level progress, then captures the final report from the Deep Research report surface instead of trusting the assistant tool-call wrapper.
 
+In current ChatGPT layouts, Deep Research appears as an app mention in the composer. Oracle preserves that selection when pasting multiline prompts and continues waiting for the research report even if the surrounding chat turn already looks complete.
+
 When the research frame exposes a plan, Oracle logs its visible title and steps and saves its latest planning/researching phase and Edit/Update action under `browser.runtime.researchPlan` in the session metadata. It begins monitoring as soon as the frame reports researching, without waiting out a fixed plan countdown. This optional observation does not change terminal session status or retry a submitted prompt.
 
 Remote-service results carry the optional plan with the completed answer. Plan log lines are available while the remote run is in progress; no new MCP wait event or terminal-status policy is introduced.

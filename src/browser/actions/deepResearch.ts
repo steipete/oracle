@@ -4,6 +4,7 @@ import {
   DEEP_RESEARCH_DROPDOWN_ITEM_TEXT,
   DEEP_RESEARCH_PILL_LABEL,
   DEEP_RESEARCH_POLL_INTERVAL_MS,
+  DEEP_RESEARCH_SANDBOX_HOST,
   DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS,
   DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
   FINISHED_ACTIONS_SELECTOR,
@@ -987,7 +988,9 @@ function isConfirmedDeepResearchTarget(
 function isDeepResearchFrameDescriptor(url: string, name = ""): boolean {
   const descriptor = `${url}\n${name}`.toLowerCase();
   return (
-    descriptor.includes("connector_openai_deep_research") || descriptor.includes("deep-research")
+    descriptor.includes("connector_openai_deep_research") ||
+    descriptor.includes("deep-research") ||
+    descriptor.includes(DEEP_RESEARCH_SANDBOX_HOST)
   );
 }
 
@@ -1019,6 +1022,7 @@ function collectDeepResearchFrameIds(tree: DeepResearchFrameTree | undefined): s
   if (
     url.includes("connector_openai_deep_research") ||
     url.includes("deep-research") ||
+    url.includes(DEEP_RESEARCH_SANDBOX_HOST) ||
     name.includes("deep-research") ||
     name === "root"
   ) {
@@ -1271,12 +1275,14 @@ function buildDeepResearchCompletionPollExpression(minTurnIndex: number): string
       const rect = f.getBoundingClientRect();
       const descriptor = String(f.getAttribute('src') || '') + ' ' + String(f.getAttribute('name') || '');
       return rect.width > 200 && rect.height > 200 &&
-        /connector_openai_deep_research|deep-research/i.test(descriptor);
+        /connector_openai_deep_research|deep-research|${DEEP_RESEARCH_SANDBOX_HOST}/i.test(descriptor);
     });
     const hasActiveScopedResearch = scopedToNewTurns && Boolean(lastTurn) &&
       hasScopedDeepResearchIframe &&
       (textLength < 40 || isToolStub || tailIsPlanningPanel || /chatgpt\\s+said:?$/i.test(text));
-    return { finished, stopVisible, textLength, hasIframe, isToolStub, incompleteResult, researchActivity: tailIsPlanningPanel || (isToolStub && hasScopedDeepResearchIframe), hasActiveScopedResearch, accountBlocked };
+    // The chat turn that hosts the Deep research app shows its action bar while research runs;
+    // an iframe-hosted report finishes through the frame read instead.
+    return { finished: finished && !hasScopedDeepResearchIframe, stopVisible, textLength, hasIframe, isToolStub, incompleteResult, researchActivity: tailIsPlanningPanel || (isToolStub && hasScopedDeepResearchIframe), hasActiveScopedResearch, accountBlocked };
   })()`;
 }
 
@@ -1291,6 +1297,9 @@ export function buildDeepResearchCompletionPollExpressionForTest(minTurnIndex = 
 function buildFindDeepResearchPillExpression(functionName = "findDeepResearchPill"): string {
   const pillLabels = JSON.stringify([DEEP_RESEARCH_PILL_LABEL, "深度研究"]);
   return `const ${functionName} = () => {
+      // Current ChatGPT inserts Deep research as an app mention chip in the composer editor.
+      const mention = document.querySelector('[contenteditable="true"] [app-mention-name="deep-research"]');
+      if (mention) return mention;
       const labels = ${pillLabels}.map(label => label.toLowerCase());
       const selectors = [
         '.__composer-pill-composite',
@@ -1394,6 +1403,7 @@ function buildActivateDeepResearchExpression(): string {
       '[class*="popover"]',
       '[data-radix-popper-content-wrapper]',
       '[data-floating-ui-portal]',
+      '[data-composer-overlay-floating-ui]',
     ].join(',');
     const normalizeText = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
     const compactText = (value) => normalizeText(value).replace(/\\s+/g, '');

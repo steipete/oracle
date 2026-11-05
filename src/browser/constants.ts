@@ -116,6 +116,8 @@ export const ACTION_BAR_COPY_BUTTON_SELECTOR = [
 export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
 export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";
 export const DEEP_RESEARCH_PILL_LABEL = "Deep research";
+// ChatGPT serves the Deep research app from connector-id-<first 32 hex of sha256("connector_openai_deep_research")>.
+export const DEEP_RESEARCH_SANDBOX_HOST = "connector-id-dfbccc248e43b6fe7d187129e21b5ec8";
 export const DEEP_RESEARCH_POLL_INTERVAL_MS = 5_000;
 export const DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS = 70_000;
 export const DEEP_RESEARCH_DEFAULT_TIMEOUT_MS = 2_400_000;
