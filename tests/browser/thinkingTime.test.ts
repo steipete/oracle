@@ -3314,6 +3314,43 @@ describe("unified Intelligence picker with Advanced -> Effort submenu", () => {
     },
   );
 
+  function useNavigationTargetTrigger(dom: ReturnType<typeof buildDirectSlider>) {
+    // ja-JP composer observed 2026-11-02: data-codex-intelligence-trigger is gone; the
+    // trigger only carries a localized aria-label plus data-composer-navigation-target.
+    useSemanticSlider(dom);
+    dom.pill.setAttribute("aria-label", "ChatGPT モデルを選択");
+    dom.pill.setAttribute("data-composer-navigation-target", "reasoning");
+    dom.pill.setAttribute("data-selected-reasoning-effort", "medium");
+    dom.pill.setAttribute("class", "");
+    dom.pill.textContent = "思考量Pro";
+    const querySelectorAll = dom.documentStub.querySelectorAll;
+    dom.documentStub.querySelectorAll = (selector: string) => {
+      if (selector.includes('data-composer-navigation-target="reasoning"')) return [dom.pill];
+      if (selector.includes("data-codex-intelligence-trigger")) return [];
+      if (selector.includes("Select ChatGPT model")) return [];
+      if (selector.includes("__composer-pill")) return [];
+      return querySelectorAll(selector);
+    };
+    return dom;
+  }
+
+  it.each([
+    [1, ["ArrowRight", "ArrowRight", "ArrowRight"], "switched"],
+    [4, [], "already-selected"],
+  ] as const)(
+    "selects Pro on the ja-JP composer without the intelligence attribute from index %s",
+    async (index, expectedKeys, status) => {
+      const dom = useNavigationTargetTrigger(buildDirectSlider(index));
+      const labels = ["Instant", "Medium", "High", "Extra High", "Pro"];
+      dom.announcement.textContent = `${labels[index]}、5 件中 ${index + 1} 番目。`;
+      await expect(run(dom.documentStub, "pro", "GPT-6")).resolves.toEqual({
+        status,
+        label: "Pro",
+      });
+      expect(dom.keys).toEqual(expectedKeys);
+    },
+  );
+
   it("does not promote semantic four-tier Extra High to Pro", async () => {
     const dom = useSemanticSlider(buildDirectSlider(3, undefined, 3));
     dom.announcement.textContent = "Extra High, 4 of 4";

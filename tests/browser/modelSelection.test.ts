@@ -1969,6 +1969,9 @@ describe("browser model selection matchers", () => {
     expect(expression).toContain('data-testid="model-switcher-dropdown-button"');
     expect(expression).toContain("button.__composer-pill[aria-haspopup=");
     expect(expression).toContain('button[data-codex-intelligence-trigger="true"]');
+    expect(expression).toContain(
+      'form[data-chatgpt-composer] button[data-composer-navigation-target="reasoning"]',
+    );
     expect(expression).toContain("const findModelButton = () =>");
     expect(expression).toContain("button.__composer-pill')).find(looksLikeModelPill)");
   });
