@@ -4,6 +4,8 @@
 
 - Browser: capture ChatGPT image-only replies that current ChatGPT marks only with `data-conversation-role`, so `--generate-image` saves the image instead of waiting until the response timeout. Thanks @codjjj.
 
+- CLI: record foreground worker PIDs and report orphaned sessions as failed immediately when their worker exits, instead of leaving stale `running` sessions until the zombie timeout. Thanks @hubofvalley.
+
 - Browser/TUI: honor saved browser settings in the interactive wizard and recognize Linux Brave executables during owned-profile cleanup; fixes #616 and #617, thanks @OmerFarukOruc.
 
 - Browser: find the ChatGPT model/effort trigger by its composer-scoped `data-composer-navigation-target="reasoning"` attribute now that `data-codex-intelligence-trigger` is gone, fixing `Unable to locate the ChatGPT model selector button` on localized (ja-JP) UIs (#614). Thanks @kiyo-e and @masahiroono36.
