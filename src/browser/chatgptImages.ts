@@ -137,16 +137,18 @@ function buildAssistantImageExpression(
       if (turnAttr === 'assistant') return true;
       const role = (node.getAttribute('data-message-author-role') || (node.getAttribute?.('data-content-search-unit-key') || node.getAttribute?.('data-chatgpt-search-unit-key'))?.split(':').at(-1) || node.dataset?.messageAuthorRole || '').toLowerCase();
       if (role === 'assistant') return true;
+      // Image-only replies have no ":assistant" search-unit key; ChatGPT marks them only with data-conversation-role.
+      if ((node.getAttribute('data-conversation-role') || '').toLowerCase() === 'assistant') return true;
       const testId = (node.getAttribute('data-testid') || '').toLowerCase();
       if (testId.includes('assistant')) return true;
-      return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]'));
+      return Boolean(node.querySelector(ASSISTANT_SELECTOR) || node.querySelector('[data-testid*="assistant"]') || node.querySelector('[data-conversation-role="assistant"]'));
     };
     const turns = ${buildConversationTurnListExpression()};
     for (let index = turns.length - 1; index >= 0; index -= 1) {
       const turn = turns[index];
       if (!isAssistantTurn(turn)) continue;
       if (MIN_TURN_INDEX >= 0 && index < MIN_TURN_INDEX) continue;
-      const messageRoot = ${buildLastAssistantMessageExpression("turn")} || turn;
+      const messageRoot = ${buildLastAssistantMessageExpression("turn")} || Array.from(turn.querySelectorAll('[data-conversation-role="assistant"]')).at(-1) || turn;
       const images = serializeImages(messageRoot);
       if (images.length > 0) return images;
     }
@@ -159,7 +161,7 @@ function buildAssistantImageExpression(
       return turn.getAttribute('data-message-author-role') === 'user' ||
         turn.getAttribute('data-turn') === 'user' ||
         /:user$/.test(turn.getAttribute('data-content-search-unit-key') || turn.getAttribute('data-chatgpt-search-unit-key') || '') ||
-        Boolean(turn.querySelector('[data-message-author-role="user"]'));
+        Boolean(turn.querySelector('[data-message-author-role="user"], [data-conversation-role="user"]'));
     });
     return Array.from(document.querySelectorAll('img'))
       .filter(isGeneratedImage)
