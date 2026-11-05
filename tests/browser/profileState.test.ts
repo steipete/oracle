@@ -192,6 +192,24 @@ describe("profileState", () => {
     expect(profileState.isChromeCommandForUserDataDirForTest("node worker.js", dir)).toBe(false);
   });
 
+  test.each(["brave", "brave-browser", "brave-origin", ".brave-wrapped", "brave-browser-stable"])(
+    "recognizes the Brave executable %s only for the owned profile",
+    (executable) => {
+      const dir = "/home/example/.oracle/browser-profile";
+      const command = `/opt/brave/${executable} --user-data-dir=${dir}`;
+      expect(profileState.isChromeCommandForUserDataDirForTest(command, dir)).toBe(true);
+      expect(profileState.isChromeCommandForUserDataDirForTest(command, `${dir}-other`)).toBe(
+        false,
+      );
+      expect(
+        profileState.isChromeCommandForUserDataDirForTest(
+          `node ${executable} --user-data-dir=${dir}`,
+          dir,
+        ),
+      ).toBe(false);
+    },
+  );
+
   test.runIf(process.platform === "win32")(
     "matches recorded Windows Chrome commands case-insensitively",
     () => {
