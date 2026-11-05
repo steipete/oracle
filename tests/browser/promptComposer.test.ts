@@ -1,4 +1,5 @@
 import { FakeDocument, FakeElement, FakeInputElement } from "./domFixture.js";
+import vm from "node:vm";
 import { describe, expect, test, vi } from "vitest";
 import {
   __test__ as promptComposer,
@@ -498,6 +499,88 @@ describe("promptComposer", () => {
       });
       await expect(outcome).rejects.toMatchObject({ details: { code: "prompt-paste-incomplete" } });
     });
+
+    test.each(["line one\n\nline two", "  line one\nline two", "\nline one\nline two"])(
+      "checks the pasted text after a Deep research app mention chip: %j",
+      async (prompt) => {
+        let pasteExpression = "";
+        const runtime = {
+          evaluate: vi.fn(async ({ expression }: { expression: string }) => {
+            if (expression.includes("ClipboardEvent('paste'")) {
+              pasteExpression = expression;
+              throw new Error("captured");
+            }
+            return { result: { value: { focused: true, ready: true, composer: true } } };
+          }),
+        };
+        await expect(
+          submitPrompt(
+            { runtime: runtime as never, input: { insertText: vi.fn() } as never },
+            prompt,
+            Object.assign(vi.fn(), { verbose: false }) as never,
+          ),
+        ).rejects.toThrow("captured");
+
+        type Node = {
+          nodeType: number;
+          nodeName: string;
+          nodeValue?: string;
+          childNodes?: Node[];
+          classList?: { contains: () => boolean };
+          hasAttribute?: (name: string) => boolean;
+        };
+        const text = (value: string): Node => ({
+          nodeType: 3,
+          nodeName: "#text",
+          nodeValue: value,
+        });
+        const element = (nodeName: string, childNodes: Node[], attrs: string[] = []): Node => ({
+          nodeType: 1,
+          nodeName,
+          childNodes,
+          classList: { contains: () => false },
+          hasAttribute: (name: string) => attrs.includes(name),
+        });
+        const chip = element("SPAN", [text("Deep research")], ["app-mention-name"]);
+        const lines: Node[] = [element("P", [chip, text(" ")])];
+        const editor = {
+          ...element("DIV", lines),
+          isContentEditable: true,
+          getBoundingClientRect: () => ({ width: 600, height: 40 }),
+          focus() {},
+          querySelector: (selector: string) => (selector === "[app-mention-name]" ? chip : null),
+          // ProseMirror puts each pasted line in its own paragraph after the chip.
+          dispatchEvent(event: { clipboardData: Map<string, string> }) {
+            for (const line of String(event.clipboardData.get("text/plain")).split("\n")) {
+              lines.push(element("P", line ? [text(line)] : []));
+            }
+            return true;
+          },
+        };
+        class FakeDataTransfer extends Map<string, string> {
+          setData(type: string, value: string) {
+            this.set(type, value);
+          }
+        }
+        const result = new vm.Script(pasteExpression).runInNewContext({
+          document: {
+            querySelector: () => editor,
+            querySelectorAll: () => [],
+            createElement: () => ({ style: {}, textContent: "", outerHTML: "<p></p>" }),
+          },
+          HTMLTextAreaElement: class {},
+          DataTransfer: FakeDataTransfer,
+          ClipboardEvent: class {
+            readonly clipboardData: FakeDataTransfer;
+            constructor(_type: string, init: { clipboardData: FakeDataTransfer }) {
+              this.clipboardData = init.clipboardData;
+            }
+          },
+        }) as { complete?: boolean };
+
+        expect(result.complete).toBe(true);
+      },
+    );
 
     test("continues when the whole prompt landed", async () => {
       const { outcome, input } = await attempt({
