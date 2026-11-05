@@ -141,6 +141,8 @@ oracle status --clear --hours 168   # delete sessions older than a week
 - `--zombie-timeout <ms|s|m|h>` — cutoff for "stale."
 - `--zombie-last-activity` — use last log entry instead of session start.
 
+New foreground CLI sessions record their worker process. If that worker exits before saving a terminal result, Oracle marks the session as an incomplete-capture error immediately, without waiting for the zombie timeout. Browser conversation metadata remains available for recovery. Older sessions without a recorded worker retain their existing stale-session behavior.
+
 ## Slugs
 
 Every run gets a default slug derived from the prompt. Override with `--slug "my-thing"` for stable names you can reference later (`oracle session my-thing`).
