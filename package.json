@@ -87,16 +87,16 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/node": "^26.6.5",
-    "@vitest/coverage-v8": "5.0.5",
-    "devtools-protocol": "0.0.1727723",
+    "@vitest/coverage-v8": "5.1.0",
+    "devtools-protocol": "0.0.1733639",
     "es-toolkit": "^1.53.0",
     "esbuild": "^0.28.2",
-    "oxfmt": "0.75.0",
+    "oxfmt": "0.76.0",
     "oxlint": "^1.89.0",
     "puppeteer-core": "^25.16.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "5.0.5"
+    "vitest": "5.1.0"
   },
   "devEngines": {
     "runtime": [
