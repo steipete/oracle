@@ -448,6 +448,51 @@ module.exports = () => ({
   );
 
   test(
+    "keeps browser-only Gemini model IDs in browser dry-runs and rejects Argon via API",
+    async () => {
+      const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-gemini-browser-model-"));
+      try {
+        const env: NodeJS.ProcessEnv = {
+          ...process.env,
+          ORACLE_HOME_DIR: oracleHome,
+          ORACLE_DISABLE_KEYTAR: "1",
+          DOTENV_CONFIG_PATH: "/tmp/nonexistent-oracle-env",
+        };
+        delete env.ORACLE_ENGINE;
+        delete env.OPENAI_API_KEY;
+        delete env.GEMINI_API_KEY;
+        delete env.OPENROUTER_API_KEY;
+
+        for (const [model, label] of [
+          ["gemini-3-deep-think", "gemini-3-pro-deep-think"],
+          ["gemini-4-argon-high", "gemini-4-argon-high"],
+          ["gemini-4-argon-thinking", "gemini-4-argon-high"],
+          ["4 Argon High", "gemini-4-argon-high"],
+        ] as const) {
+          const preview = await execCli(
+            ["--engine", "browser", "--model", model, "--dry-run", "summary", "-p", "Hello"],
+            { env, timeout: INTEGRATION_TIMEOUT },
+          );
+          expect(preview.code).toBe(0);
+          expect(preview.stdout).toContain(`requested=${label}`);
+        }
+
+        for (const model of ["gemini-4-argon-high", "gemini-4-argon-thinking", "4 Argon High"]) {
+          const api = await execCli(
+            ["--engine", "api", "--model", model, "--dry-run", "summary", "-p", "Hello"],
+            { env, timeout: INTEGRATION_TIMEOUT },
+          );
+          expect(api.code).not.toBe(0);
+          expect(`${api.stdout}\n${api.stderr}`).toContain("Gemini 4 Argon High is browser-only");
+        }
+      } finally {
+        await rm(oracleHome, { recursive: true, force: true });
+      }
+    },
+    INTEGRATION_TIMEOUT,
+  );
+
+  test(
     "keeps Gemini dry-runs in browser mode when Azure env is present",
     async () => {
       const oracleHome = await mkdtemp(path.join(os.tmpdir(), "oracle-provider-gemini-azure-"));

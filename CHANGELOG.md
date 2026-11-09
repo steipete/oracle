@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Gemini web: add experimental, browser-only Gemini 4 Argon High routing with explicit response-model verification; preserve browser-only Gemini aliases during CLI model resolution rather than rejecting them as API models.
+
 ## 0.23.0 - 2026-11-05
 
 **Highlights:** Run current ChatGPT Deep Research flows, select models on localized pages, and recover image-only replies and exited sessions.

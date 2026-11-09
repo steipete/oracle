@@ -24,7 +24,8 @@
     "vendor/oracle-notifier/OracleNotifier.app/**",
     "vendor/oracle-notifier/build-notifier.sh",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "third-party-notices/gemini-web2api-go-MIT.txt"
   ],
   "type": "module",
   "main": "dist/bin/oracle-cli.js",

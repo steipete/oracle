@@ -49,6 +49,11 @@ oracle --engine browser --browser-manual-login \
   --model gemini-3-deep-think \
   --prompt "Think carefully, then answer in one paragraph."
 
+# Experimental Gemini 4 Argon High web route (requires account access)
+oracle --engine browser --browser-manual-login \
+  --model gemini-4-argon-high --no-gemini-fallback \
+  --prompt "Analyze the tradeoffs and recommend a choice."
+
 # Generate an image (writes an output file)
 oracle --engine browser --model gemini-3.1-pro \
   --prompt "a cute robot holding a banana" \
@@ -62,7 +67,7 @@ oracle --engine browser --model gemini-3.1-pro \
 
 Notes:
 
-- Current explicit IDs are `gemini-3.1-flash-lite`, `gemini-3.5-flash`, and `gemini-3.1-pro`.
+- Current explicit web IDs include `gemini-3.1-flash-lite`, `gemini-3.5-flash`, `gemini-3.1-pro`, and the experimental `gemini-4-argon-high`.
 - Legacy `gemini-3-pro`, `gemini-2.5-pro`, and `gemini-2.5-flash` browser names remain accepted and map to current Gemini web models.
 - If your logged-in Gemini account can’t access the requested model, Oracle auto-falls back to Gemini 3.1 Flash-Lite and logs the fallback in verbose mode.
 - Pass `--no-gemini-fallback` to fail instead when the requested web model is unavailable.
@@ -72,6 +77,7 @@ Notes:
 - Gemini browser runs also support `--remote-host`. Upgrade both endpoints, sign into Gemini on the service host, then run `oracle --engine browser --model gemini-3.5-flash --remote-host <host:port> --remote-token <token> --prompt "Say OK."`. New runs and restarts dispatch the Gemini web executor on that host; Google cookies and browser state stay there. Host manual-login profiles and `oracle serve --browser-attach-running` are supported. Text, file attachments, YouTube prompts, thoughts, and `--no-gemini-fallback` are forwarded; image generation/editing still require a local Gemini run.
 - `--browser-model-strategy` only affects ChatGPT automation; Gemini web always uses the explicit Gemini model ID.
 - `gemini-3-deep-think` is browser-only for now. `--engine api` rejects it instead of silently falling back to regular Gemini Pro.
+- `gemini-4-argon-high` is a **browser-only Oracle alias**, not a Gemini API model ID. It uses an undocumented Gemini Web protocol mapping that may change without notice. It requires a Gemini account with Argon High access, and it fails closed when the upstream response does not explicitly identify `4 Argon High` (including silent model downgrade or missing label); it does not retry through Flash-Lite. This check is based on the model label reported in the web response, not an attested proof of backend execution.
 - Oracle intentionally does not expose generic `low` / `medium` / `high` Gemini aliases. Explicit IDs keep model choice, billing, and thinking-effort configuration distinct.
 - If Chrome cookie extraction fails, the missing-cookie error now includes any cookie-reader warnings plus `--browser-manual-login` / `--browser-inline-cookies-file` guidance.
 

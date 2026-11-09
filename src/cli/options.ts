@@ -221,6 +221,18 @@ function isGeminiDeepThinkAlias(normalized: string): boolean {
   );
 }
 
+function isGeminiArgonHighAlias(normalized: string): boolean {
+  const canonical = normalized
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+  return (
+    canonical === "gemini-4-argon-high" ||
+    canonical === "gemini-4-argon-thinking" ||
+    canonical === "4-argon-high"
+  );
+}
+
 export function resolveApiModel(modelValue: string): ModelName {
   const normalized = normalizeModelOption(modelValue).toLowerCase();
   if (normalized in MODEL_CONFIGS) {
@@ -289,6 +301,11 @@ export function resolveApiModel(modelValue: string): ModelName {
       );
     }
     return "gpt-5.1-codex";
+  }
+  if (isGeminiArgonHighAlias(normalized)) {
+    throw new InvalidArgumentError(
+      "Gemini 4 Argon High is browser-only. Use --engine browser --model gemini-4-argon-high.",
+    );
   }
   if (isGeminiDeepThinkAlias(normalized)) {
     throw new InvalidArgumentError(
@@ -365,6 +382,9 @@ export function inferModelFromLabel(modelValue: string): ModelName {
   }
   if (isGeminiDeepThinkAlias(normalized)) {
     return "gemini-3-pro-deep-think" as ModelName;
+  }
+  if (isGeminiArgonHighAlias(normalized)) {
+    return "gemini-4-argon-high" as ModelName;
   }
   if (normalized.includes("gemini")) {
     if (normalized.includes("3.5") && normalized.includes("flash")) {

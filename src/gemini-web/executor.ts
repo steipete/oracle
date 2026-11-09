@@ -158,7 +158,9 @@ async function loadGeminiCookiesFromCDP(
 
     throw new Error("Timed out waiting for Google sign-in (5 minutes). Please sign in and retry.");
   } finally {
+    log?.("[gemini-web] Closing cookie-capture CDP connection...");
     await session.close();
+    log?.("[gemini-web] Cookie-capture CDP connection closed.");
   }
 }
 
@@ -402,6 +404,7 @@ export function createGeminiWebExecutor(
         if (!hasRequiredGeminiCookies(cookieResult.cookieMap)) {
           throw new Error(formatGeminiCookieError(cookieResult.warnings));
         }
+        log?.("[gemini-web] Auth cookies ready; preparing Gemini HTTP request.");
 
         const configTimeout =
           typeof runOptions.config?.timeoutMs === "number" &&
@@ -505,6 +508,9 @@ export function createGeminiWebExecutor(
               signal: deliverySignal,
               allowModelFallback: geminiOptions.allowModelFallback,
             });
+            if (model === "gemini-4-argon-high") {
+              log?.("[gemini-web] Upstream model confirmed: 4 Argon High (strict verification).");
+            }
             response = {
               text: out.text ?? null,
               thoughts: geminiOptions.showThoughts ? out.thoughts : null,

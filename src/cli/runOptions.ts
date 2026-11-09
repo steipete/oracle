@@ -60,16 +60,22 @@ export function resolveRunOptionsFromConfig({
 
   const cliModelArg = normalizeModelOption(model ?? userConfig?.model) || DEFAULT_MODEL;
   const isGpt6Pro = isGpt6ProAlias(cliModelArg);
+  const inferredBrowserModel =
+    resolvedEngine === "browser" ? inferModelFromLabel(cliModelArg) : undefined;
+  const isBrowserOnlyGemini =
+    inferredBrowserModel === "gemini-3-pro-deep-think" ||
+    inferredBrowserModel === "gemini-4-argon-high";
   const apiModel =
-    isGpt6Pro && (resolvedEngine === "browser" || browserEngineRequested)
+    isGpt6Pro && browserEngineRequested
       ? ("gpt-6-pro" as ModelName)
-      : resolveApiModel(cliModelArg);
-  // Browser label inference is intentionally engine-scoped: API model ids such as
-  // gpt-5.6-luna must remain provider values even though browser mode rejects
-  // unrecognized GPT-5.6 picker variants.
+      : isBrowserOnlyGemini
+        ? inferredBrowserModel
+        : resolveApiModel(cliModelArg);
+  // Preserve API identity for provider coercion (e.g. "sonnet" -> Claude API).
+  // Only the explicit browser-only Gemini models bypass API model validation.
   const browserModel =
     resolvedEngine === "browser"
-      ? normalizeChatGptModelForBrowser(inferModelFromLabel(cliModelArg))
+      ? normalizeChatGptModelForBrowser(inferredBrowserModel!)
       : apiModel;
   const isCodex = apiModel.startsWith("gpt-5.1-codex");
   const isClaude = apiModel.startsWith("claude");

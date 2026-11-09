@@ -24,6 +24,10 @@ describe("Gemini web model mapping", () => {
       "gemini-3-pro-deep-think",
       '[1,null,null,null,"e051ce1aa80aa576",null,null,1,[4,5,6,8],null,null,2,null,null,5,2,"client-proof"]',
     ],
+    [
+      "gemini-4-argon-high",
+      '[1,null,null,null,"95a4c0abcba24364",null,null,0,[4,5,6,8],null,null,1,null,null,8,2,"client-proof"]',
+    ],
   ] as const)("builds the captured %s header", (model, expected) => {
     expect(buildGeminiWebModelHeader(model, "client-proof")).toBe(expected);
   });
@@ -42,6 +46,8 @@ describe("Gemini web model mapping", () => {
     ["gemini-2.5-pro", "gemini-3.1-pro"],
     ["gemini-2.5-flash", "gemini-3.1-flash-lite"],
     ["gemini-3-deep-think", "gemini-3-pro-deep-think"],
+    ["gemini-4-argon-high", "gemini-4-argon-high"],
+    ["Gemini 4 Argon High", "gemini-4-argon-high"],
   ] as const)("resolves %s to %s", (input, expected) => {
     expect(resolveGeminiWebModel(input)).toBe(expected);
   });

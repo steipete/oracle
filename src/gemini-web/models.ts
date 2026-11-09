@@ -5,7 +5,8 @@ export type GeminiWebModelId =
   | "gemini-3.1-flash-lite"
   | "gemini-3.5-flash"
   | "gemini-3.1-pro"
-  | "gemini-3-pro-deep-think";
+  | "gemini-3-pro-deep-think"
+  | "gemini-4-argon-high";
 
 export const DEFAULT_GEMINI_WEB_MODEL: GeminiWebModelId = "gemini-3.1-pro";
 export const FALLBACK_GEMINI_WEB_MODEL: GeminiWebModelId = "gemini-3.1-flash-lite";
@@ -15,6 +16,7 @@ interface GeminiWebModelSpec {
   modelCode: number;
   thinkingCode: number;
   capacity: number;
+  headerFlag?: number;
 }
 
 const MODEL_SPECS: Record<GeminiWebModelId, GeminiWebModelSpec> = {
@@ -42,6 +44,14 @@ const MODEL_SPECS: Record<GeminiWebModelId, GeminiWebModelSpec> = {
     thinkingCode: 2,
     capacity: 2,
   },
+  // Experimental Argon Web route (third-party capture, not a documented Google API).
+  "gemini-4-argon-high": {
+    hash: "95a4c0abcba24364",
+    modelCode: 8,
+    thinkingCode: 2,
+    capacity: 1,
+    headerFlag: 0,
+  },
 };
 
 const clientId = randomUUID().toUpperCase();
@@ -56,7 +66,7 @@ export function buildGeminiWebModelHeader(model: GeminiWebModelId, webClientId =
     spec.hash,
     null,
     null,
-    1,
+    spec.headerFlag ?? 1,
     [4, 5, 6, 8],
     null,
     null,
@@ -100,6 +110,10 @@ export function resolveGeminiWebModel(
     case "gemini-3-pro-deepthink":
     case "gemini-3.1-pro-deep-think":
       return "gemini-3-pro-deep-think";
+    case "gemini-4-argon-high":
+    case "gemini-4-argon-thinking":
+    case "4-argon-high":
+      return "gemini-4-argon-high";
     case "gemini-2.5-pro":
       return "gemini-3.1-pro";
     case "gemini-2.5-flash":
