@@ -128,6 +128,7 @@ CLI flags and explicit override environment variables → effective config (proj
 - `ORACLE_MAX_FILE_SIZE_BYTES` overrides `maxFileSizeBytes` when set. Oracle validates it as a positive integer number of bytes before reading any `--file` inputs.
 - `browser.chatgptUrl` accepts either the root ChatGPT URL (`https://chatgpt.com/`) or a folder/workspace URL (e.g., `https://chatgpt.com/g/.../project`); `browser.url` remains as a legacy alias.
 - Browser automation defaults can be set under `browser.*`, including `browser.manualLogin`, `browser.manualLoginProfileDir`, `browser.attachRunning`, `browser.thinkingTime` (CLI override: `--browser-thinking-time`), and `browser.researchMode` (CLI override: `--browser-research`). On Windows, `browser.manualLogin` defaults to `true` when omitted.
+- `oracle tui` also applies saved browser defaults, including the executable path and manual-login profile. Wizard answers override those defaults; manual-login sessions skip cookie-source questions.
 
 If the config is missing or invalid, Oracle falls back to defaults and prints a warning for parse errors.
 

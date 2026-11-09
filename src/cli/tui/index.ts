@@ -16,7 +16,12 @@ import { sessionStore, pruneOldSessions } from "../../sessionStore.js";
 import { performSessionRun } from "../sessionRunner.js";
 import { MAX_RENDER_BYTES, trimBeforeFirstAnswer } from "../sessionDisplay.js";
 import { formatSessionTableHeader, formatSessionTableRow } from "../sessionTable.js";
-import { buildBrowserConfig, resolveBrowserModelLabel } from "../browserConfig.js";
+import {
+  buildBrowserConfig,
+  resolveBrowserModelLabel,
+  type BrowserFlagOptions,
+} from "../browserConfig.js";
+import { applyBrowserDefaultsFromConfig } from "../browserDefaults.js";
 import { resolveNotificationSettings } from "../notifier.js";
 import { loadUserConfig, type UserConfig } from "../../config.js";
 import { resolveConfiguredMaxFileSizeBytes } from "../fileSize.js";
@@ -424,27 +429,30 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
       name: "chromeProfile",
       type: "input",
       message: "Chrome profile to reuse cookies from:",
-      default: "Default",
-      when: (ans: WizardAnswers & { mode: SessionMode }) => ans.mode === "browser",
+      default: userConfig.browser?.chromeProfile ?? "Default",
+      when: (ans: WizardAnswers & { mode: SessionMode }) =>
+        ans.mode === "browser" && !userConfig.browser?.manualLogin,
     },
     {
       name: "chromeCookiePath",
       type: "input",
       message: "Cookie DB path (Chromium/Edge, optional):",
-      when: (ans: WizardAnswers & { mode: SessionMode }) => ans.mode === "browser",
+      default: userConfig.browser?.chromeCookiePath ?? undefined,
+      when: (ans: WizardAnswers & { mode: SessionMode }) =>
+        ans.mode === "browser" && !userConfig.browser?.manualLogin,
     },
     {
       name: "hideWindow",
       type: "confirm",
       message: "Hide Chrome window (macOS headful only)?",
-      default: false,
+      default: userConfig.browser?.hideWindow ?? false,
       when: (ans: WizardAnswers & { mode: SessionMode }) => ans.mode === "browser",
     },
     {
       name: "keepBrowser",
       type: "confirm",
       message: "Keep browser open after completion?",
-      default: false,
+      default: userConfig.browser?.keepBrowser ?? false,
       when: (ans: WizardAnswers & { mode: SessionMode }) => ans.mode === "browser",
     },
   ] as const;
@@ -501,17 +509,21 @@ async function askOracleFlow(version: string, userConfig: UserConfig): Promise<v
     background: undefined,
   };
 
-  const browserConfig: BrowserSessionConfig | undefined =
-    mode === "browser"
-      ? await buildBrowserConfig({
-          browserChromeProfile: answers.chromeProfile,
-          browserCookiePath: answers.chromeCookiePath,
-          browserHideWindow: answers.hideWindow,
-          browserKeepBrowser: answers.keepBrowser,
-          browserModelLabel: resolveBrowserModelLabel(undefined, answers.model),
-          model: answers.model,
-        })
-      : undefined;
+  let browserConfig: BrowserSessionConfig | undefined;
+  if (mode === "browser") {
+    const browserOptions: BrowserFlagOptions = {
+      browserChromeProfile: answers.chromeProfile,
+      browserCookiePath: answers.chromeCookiePath,
+      browserHideWindow: answers.hideWindow,
+      browserKeepBrowser: answers.keepBrowser,
+      browserModelLabel: resolveBrowserModelLabel(undefined, answers.model),
+      model: answers.model,
+    };
+    applyBrowserDefaultsFromConfig(browserOptions, userConfig, (key) =>
+      browserOptions[key] === undefined ? undefined : "cli",
+    );
+    browserConfig = await buildBrowserConfig(browserOptions);
+  }
 
   const notifications = resolveNotificationSettings({
     cliNotify: undefined,

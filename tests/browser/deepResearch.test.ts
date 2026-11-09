@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { createHash } from "node:crypto";
 import vm from "node:vm";
 
 // Mock delay to resolve instantly in tests
@@ -26,6 +27,7 @@ import {
   waitForDeepResearchCompletion,
   checkDeepResearchStatus,
 } from "../../src/browser/actions/deepResearch.js";
+import { DEEP_RESEARCH_SANDBOX_HOST } from "../../src/browser/constants.js";
 import type { BrowserLogger } from "../../src/browser/types.js";
 import { FakeDocument, FakeElement } from "./domFixture.js";
 
@@ -187,11 +189,37 @@ describe("Deep Research activation expression", () => {
     expect(expression).toContain("already-active");
   });
 
+  it("treats the Deep research app mention chip in the editor as active", async () => {
+    const expression = buildActivateDeepResearchExpressionForTest();
+    const chip = { getBoundingClientRect: () => ({ width: 90, height: 20 }) };
+    const result = (await new vm.Script(expression).runInNewContext({
+      document: {
+        querySelector: (selector: string) =>
+          selector === '[contenteditable="true"] [app-mention-name="deep-research"]' ? chip : null,
+        querySelectorAll: () => [],
+      },
+      window: { getComputedStyle: () => ({ visibility: "visible", display: "block" }) },
+      setTimeout: (callback: () => void) => {
+        callback();
+        return 0;
+      },
+    })) as { status?: string };
+
+    expect(result.status).toBe("already-active");
+  });
+
   it.each([
-    ["深度研究 获取详细报告", "深度研究", "添加文件等"],
-    ["DeepResearch", "Deep research", "Add files and more"],
-    ["Deep Research Get a detailed report", "Deep research", "Add files and more"],
-  ])("activates %s without clicking the GitHub connector", async (row, pill, plusLabel) => {
+    ["深度研究 获取详细报告", "深度研究", "添加文件等", "popover"],
+    ["DeepResearch", "Deep research", "Add files and more", "popover"],
+    ["Deep Research Get a detailed report", "Deep research", "Add files and more", "popover"],
+    // Current ChatGPT renders the + menu in a composer overlay, with label and description in separate spans.
+    [
+      "Deep researchGet a detailed report",
+      "Deep research",
+      "Add files and more",
+      "data-composer-overlay-floating-ui",
+    ],
+  ])("activates %s without clicking the GitHub connector", async (row, pill, plusLabel, menu) => {
     const expression = buildActivateDeepResearchExpressionForTest();
     let menuOpen = false;
     let activated = false;
@@ -227,7 +255,9 @@ describe("Deep Research activation expression", () => {
       }
 
       closest(selector: string) {
-        if (selector.includes("popover")) return this.inPopover ? popover : null;
+        if (selector.includes("popover")) {
+          return this.inPopover && selector.includes(menu) ? popover : null;
+        }
         return this;
       }
 
@@ -366,6 +396,32 @@ describe("Deep Research iframe helpers", () => {
         frame: { id: "other", name: "root", url: "https://example.com/" },
       }),
     ).toBeNull();
+  });
+
+  it("recognizes the Deep research app's connector-id sandbox host", () => {
+    expect(DEEP_RESEARCH_SANDBOX_HOST).toBe(
+      `connector-id-${createHash("sha256").update("connector_openai_deep_research").digest("hex").slice(0, 32)}`,
+    );
+    const host = `https://${DEEP_RESEARCH_SANDBOX_HOST}.web-sandbox.oaiusercontent.com/?app=skybridge`;
+    expect(
+      findDeepResearchFrameIdForTest({
+        frame: { id: "page", url: "https://chatgpt.com/" },
+        childFrames: [{ frame: { id: "deep", url: host } }],
+      }),
+    ).toBe("deep");
+    expect(
+      isConfirmedDeepResearchTargetForTest(host, {
+        frame: { id: "outer", url: host },
+        childFrames: [{ frame: { id: "inner", name: "root", url: host } }],
+      }),
+    ).toBe(true);
+    const otherApp =
+      "https://connector-id-00000000000000000000000000000000.web-sandbox.oaiusercontent.com/";
+    expect(
+      isConfirmedDeepResearchTargetForTest(otherApp, {
+        frame: { id: "other", name: "root", url: otherApp },
+      }),
+    ).toBe(false);
   });
 
   it("confirms target sessions from target metadata or frame-tree evidence", () => {
@@ -2462,6 +2518,44 @@ describe("checkDeepResearchStatus", () => {
 
     expect(result.finished).toBe(false);
     expect(result.incompleteResult).toBe(true);
+  });
+
+  it("does not finish a Deep research app turn while its report iframe is in the turn", () => {
+    const expression = buildDeepResearchCompletionPollExpressionForTest(0);
+    const iframe = {
+      getBoundingClientRect: () => ({ width: 800, height: 600 }),
+      getAttribute: (name: string) =>
+        name === "src"
+          ? `https://${DEEP_RESEARCH_SANDBOX_HOST}.web-sandbox.oaiusercontent.com/?app=skybridge`
+          : null,
+    };
+    // The exchange holds the prompt and a copy/share action bar while the app is still researching.
+    const text = "You said: Research the release cadence of a package. ChatGPT said:";
+    const run = (iframes: unknown[]) => {
+      const exchange = {
+        textContent: text,
+        innerText: text,
+        dataset: {},
+        getAttribute: (name: string) => (name === "data-message-author-role" ? "assistant" : null),
+        querySelector: () => ({}),
+        querySelectorAll: (selector: string) => (selector === "iframe" ? iframes : []),
+      };
+      return new vm.Script(expression).runInNewContext({
+        document: {
+          body: { innerText: text },
+          querySelector: () => null,
+          querySelectorAll: (selector: string) => {
+            if (selector === "iframe") return iframes;
+            if (selector.includes("conversation-turn")) return [exchange];
+            if (selector.includes("data-message-author-role")) return [exchange];
+            return [];
+          },
+        },
+      }) as { finished?: boolean };
+    };
+
+    expect(run([iframe]).finished).toBe(false);
+    expect(run([]).finished).toBe(true);
   });
 
   it("keeps short scoped iframe turns active", () => {

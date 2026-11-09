@@ -9,6 +9,8 @@ import {
   type GeminiWebModelId,
 } from "./models.js";
 
+import { runGeminiWebProcessSession } from "./webchannel.js";
+
 export type { GeminiWebModelId } from "./models.js";
 
 export interface GeminiWebRunInput {
@@ -383,6 +385,30 @@ export function extractGeminiWebReportedModel(rawResponseText: string): string |
 }
 
 export async function runGeminiWebOnce(input: GeminiWebRunInput): Promise<GeminiWebRunOutput> {
+  if (input.model === "gemini-4-argon-high") {
+    const rawResponseText = await runGeminiWebProcessSession(input);
+    try {
+      const parsed = parseGeminiStreamGenerateResponse(rawResponseText);
+      return {
+        rawResponseText,
+        text: parsed.text ?? "",
+        thoughts: parsed.thoughts,
+        metadata: parsed.metadata,
+        images: parsed.images,
+        errorCode: parsed.errorCode,
+      };
+    } catch (error) {
+      return {
+        rawResponseText,
+        text: "",
+        thoughts: null,
+        metadata: input.chatMetadata ?? null,
+        images: [],
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   const cookieHeader = buildCookieHeader(input.cookieMap);
   const at = await fetchGeminiAccessToken(input.cookieMap, input.signal);
 

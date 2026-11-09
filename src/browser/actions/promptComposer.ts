@@ -183,6 +183,7 @@ export async function submitPrompt(
         // boundaries instead, ignoring only ProseMirror's decorative trailing break.
         const readText = node => {
           if (node.nodeType === 3) return node.nodeValue || '';
+          if (node.nodeType === 1 && node.hasAttribute('app-mention-name')) return '';
           if (node.nodeName === 'BR') return node.classList.contains('ProseMirror-trailingBreak') ? '' : '\\n';
           const children = Array.from(node.childNodes || []);
           return children.map((child, index) => {
@@ -192,8 +193,14 @@ export async function submitPrompt(
           }).join('');
         };
         const normalize = value => value.replace(/\\r\\n?/g, '\\n');
-        const landed = normalize(readText(editor));
+        // An app mention chip (such as Deep research) stays ahead of the prompt; compare the text after it.
+        const landedRaw = normalize(readText(editor));
         const expected = normalize(text);
+        const prefixLength = landedRaw.length - expected.length;
+        const landed = editor.querySelector('[app-mention-name]') && prefixLength > 0 &&
+          /^\\s+$/.test(landedRaw.slice(0, prefixLength))
+          ? landedRaw.slice(prefixLength)
+          : landedRaw;
         const convertedToFile = chips() > chipsBefore;
         return { used: true, length: landed.length, expected: expected.length, complete: landed === expected, convertedToFile };
       })()`,

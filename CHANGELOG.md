@@ -4,9 +4,20 @@
 
 - Gemini web: add experimental, browser-only Gemini 4 Argon High routing with explicit response-model verification; preserve browser-only Gemini aliases during CLI model resolution rather than rejecting them as API models.
 
-- Browser: recognize current ChatGPT composer controls, scoped Web Search menu rows, and semantic search pills; support English and Simplified Chinese labels while preserving navigation and full-prompt verification. Thanks @xiaozhi747 (#608).
+## 0.23.0 - 2026-11-05
 
+**Highlights:** Run current ChatGPT Deep Research flows, select models on localized pages, and recover image-only replies and exited sessions.
+
+- Browser: run Deep Research in the current ChatGPT app: select it from the composer overlay menu, preserve multiline prompt whitespace beside its app mention chip, recognize its report iframe, and wait for the report to finish. Thanks @codjjj.
+- Browser: capture ChatGPT image-only replies that current ChatGPT marks only with `data-conversation-role`, so `--generate-image` saves the image instead of waiting until the response timeout. Thanks @codjjj.
+- Browser: find the ChatGPT model/effort trigger by its composer-scoped `data-composer-navigation-target="reasoning"` attribute now that `data-codex-intelligence-trigger` is gone, fixing `Unable to locate the ChatGPT model selector button` on localized (ja-JP) UIs (#614). Thanks @kiyo-e and @masahiroono36.
+- Browser: recognize current ChatGPT composer controls, scoped Web Search menu rows, and semantic search pills; support English and Simplified Chinese labels while preserving navigation and full-prompt verification. Thanks @xiaozhi747 (#608).
+- Browser/TUI: honor saved browser settings in the interactive wizard and recognize Linux Brave executables during owned-profile cleanup; fixes #616 and #617, thanks @OmerFarukOruc.
+- CLI: record foreground worker PIDs and report orphaned sessions as failed immediately when their worker exits, instead of leaving stale `running` sessions until the zombie timeout. Thanks @hubofvalley.
+- Dependencies: update Inquirer, OpenAI, qs, DevTools protocol types, and formatter/linter tooling after the two-day cooldown; retain Node >=24 and all security overrides.
 - Dependencies: update dotenv, the MCP SDK 1.x development client, and es-toolkit after the two-day cooldown; retain Node >=24 and Undici 7.
+
+[npm](https://www.npmjs.com/package/@steipete/oracle/v/0.23.0) · [Registry tarball](https://registry.npmjs.org/@steipete/oracle/-/oracle-0.23.0.tgz) · [Integrity metadata](https://registry.npmjs.org/@steipete%2foracle/0.23.0) · [CI proof](https://github.com/steipete/oracle/actions/runs/42072062870)
 
 ## 0.22.2 - 2026-10-26
 

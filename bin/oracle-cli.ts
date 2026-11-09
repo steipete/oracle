@@ -2505,6 +2505,7 @@ async function runRootCommand(options: CliOptions): Promise<void> {
   let lifecycle = buildSessionLifecycle({
     engine,
     detached: false,
+    workerPid: process.pid,
     reattachCommand: `oracle session ${sessionMeta.id}`,
   });
   const workerPid = !detachAllowed
@@ -2832,6 +2833,7 @@ async function restartSession(sessionId: string, options: RestartCommandOptions)
   let lifecycle = buildSessionLifecycle({
     engine,
     detached: false,
+    workerPid: process.pid,
     reattachCommand: `oracle session ${sessionMeta.id}`,
   });
   const workerPid = !detachAllowed

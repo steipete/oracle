@@ -101,6 +101,9 @@ export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR =
   'button[aria-label="Select ChatGPT model"], ' +
   'button[data-codex-intelligence-trigger="true"], ' +
+  // 2026-11: ChatGPT dropped data-codex-intelligence-trigger; the composer-scoped
+  // navigation target is locale-independent (ja-JP aria-label is "ChatGPT モデルを選択").
+  'form[data-chatgpt-composer] button[data-composer-navigation-target="reasoning"], ' +
   '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"]';
 export const COMPOSER_MODEL_SIGNAL_SELECTOR = '[data-testid="composer-footer-actions"]';
 export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
@@ -113,6 +116,8 @@ export const ACTION_BAR_COPY_BUTTON_SELECTOR = [
 export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
 export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";
 export const DEEP_RESEARCH_PILL_LABEL = "Deep research";
+// ChatGPT serves the Deep research app from connector-id-<first 32 hex of sha256("connector_openai_deep_research")>.
+export const DEEP_RESEARCH_SANDBOX_HOST = "connector-id-dfbccc248e43b6fe7d187129e21b5ec8";
 export const DEEP_RESEARCH_POLL_INTERVAL_MS = 5_000;
 export const DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS = 70_000;
 export const DEEP_RESEARCH_DEFAULT_TIMEOUT_MS = 2_400_000;

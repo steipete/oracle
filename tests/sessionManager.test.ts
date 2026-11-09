@@ -395,6 +395,33 @@ describe("session lifecycle", () => {
     expect(refreshed?.status).toBe("running");
   });
 
+  test("keeps legacy foreground browser sessions without workerPid on Chrome-runtime semantics", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Legacy foreground", model: "gpt-5.6-sol", mode: "browser" },
+      "/tmp/cwd",
+    );
+    await sessionModule.updateSessionMetadata(meta.id, {
+      status: "running",
+      mode: "browser",
+      lifecycle: {
+        engine: "browser",
+        execution: "foreground",
+        attached: true,
+        detached: false,
+        reattachCommand: `oracle session ${meta.id}`,
+      },
+      browser: {
+        runtime: {
+          chromePid: process.pid,
+        },
+      },
+    });
+
+    const refreshed = await sessionModule.readSessionMetadata(meta.id);
+    expect(refreshed?.status).toBe("running");
+    expect(refreshed?.lifecycle?.workerPid).toBeUndefined();
+  });
+
   test("keeps running browser sessions while their detached worker is alive", async () => {
     const meta = await sessionModule.initializeSession(
       { prompt: "Browser worker live", model: "gpt-5.2-pro", mode: "browser" },
@@ -428,6 +455,54 @@ describe("session lifecycle", () => {
       await readFile(path.join(sessionModule.getSessionsDir(), meta.id, "meta.json"), "utf8"),
     );
     expect(stored.status).toBe("running");
+  });
+
+  test("fails a foreground session immediately when its recorded worker has exited", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Dead foreground worker", model: "gemini-4-argon-high", mode: "browser" },
+      "/tmp/cwd",
+    );
+    await sessionModule.updateSessionMetadata(meta.id, {
+      status: "running",
+      startedAt: new Date().toISOString(),
+      mode: "browser",
+      lifecycle: {
+        engine: "browser",
+        execution: "foreground",
+        attached: true,
+        detached: false,
+        workerPid: 2_147_483_647,
+        reattachCommand: `oracle session ${meta.id}`,
+      },
+    });
+
+    const refreshed = await sessionModule.readSessionMetadata(meta.id);
+    expect(refreshed?.status).toBe("error");
+    expect(refreshed?.errorMessage).toMatch(/foreground session worker exited/i);
+    expect(refreshed?.response?.incompleteReason).toBe("incomplete-capture");
+  });
+
+  test("keeps a foreground session running while its recorded worker is alive", async () => {
+    const meta = await sessionModule.initializeSession(
+      { prompt: "Active foreground", model: "gpt-5.6-sol", mode: "browser" },
+      "/tmp/cwd",
+    );
+    await sessionModule.updateSessionMetadata(meta.id, {
+      status: "running",
+      startedAt: new Date(Date.now() - sessionModule.ZOMBIE_MAX_AGE_MS - 60_000).toISOString(),
+      mode: "browser",
+      lifecycle: {
+        engine: "browser",
+        execution: "foreground",
+        attached: true,
+        detached: false,
+        workerPid: process.pid,
+        reattachCommand: `oracle session ${meta.id}`,
+      },
+    });
+
+    const refreshed = await sessionModule.readSessionMetadata(meta.id);
+    expect(refreshed?.status).toBe("running");
   });
 
   test("marks running browser sessions as error when Chrome runtime is gone", async () => {
