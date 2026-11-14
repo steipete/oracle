@@ -4,6 +4,7 @@ import {
   classifyChatGptUiWarningText,
   collectChatGptUiWarnings,
   createAssistantTimeoutError,
+  throwChatGptUiWarningIfPresent,
 } from "../../src/browser/uiWarnings.js";
 import type { ChromeClient } from "../../src/browser/types.js";
 
@@ -36,6 +37,45 @@ function pageRuntime(children: FakeElement[]): ChromeClient["Runtime"] {
 }
 
 describe("ChatGPT UI warning error codes", () => {
+  test.each([
+    "No response from ChatGPT. Check your connection.",
+    "No response from ChatGPT.",
+    "Check your connection.",
+  ])("classifies connection failures: %s", (text) => {
+    expect(classifyChatGptUiWarningText(text)).toBe("temporary_unavailable");
+  });
+
+  test("fails immediately on a rendered connection alert without an assistant turn", async () => {
+    const Runtime = pageRuntime([
+      alertWithRetry("No response from ChatGPT. Check your connection."),
+    ]);
+    await expect(
+      throwChatGptUiWarningIfPresent({
+        Runtime,
+        logger: vi.fn() as never,
+        runtime: {},
+        stage: "assistant-wait",
+        waitTarget: "the assistant",
+      }),
+    ).rejects.toMatchObject({
+      details: {
+        stage: "assistant-wait",
+        code: "chatgpt-ui-warning",
+        uiWarning: { type: "temporary_unavailable" },
+      },
+    });
+  });
+
+  test("does not scan ordinary conversation prose for connection warnings", async () => {
+    const answer = new FakeElement(
+      "article",
+      { "data-turn": "assistant" },
+      [],
+      'The banner says "No response from ChatGPT. Check your connection."',
+    );
+    await expect(collectChatGptUiWarnings(pageRuntime([answer]))).resolves.toEqual([]);
+  });
+
   test("classifies separator-joined error codes like their spaced wording", () => {
     expect(classifyChatGptUiWarningText("cloudflare_challenge")).toBe("auth_or_challenge");
     expect(classifyChatGptUiWarningText("cloudflare_challenge Retry")).toBe("auth_or_challenge");

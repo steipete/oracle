@@ -2150,6 +2150,35 @@ describe("ensureLoggedIn", () => {
 });
 
 describe("waitForAssistantResponse", () => {
+  test("stops the observer promptly on a connection banner without an assistant turn", async () => {
+    const evaluate = vi.fn().mockImplementation(({ expression }) => {
+      if (expression.includes("const warningPattern")) {
+        return Promise.resolve({
+          result: {
+            value: [{ text: "No response from ChatGPT. Check your connection.", role: "alert" }],
+          },
+        });
+      }
+      if (expression.includes("new MutationObserver")) return new Promise(() => {});
+      return Promise.resolve({ result: { value: null } });
+    });
+    const terminateExecution = vi.fn().mockResolvedValue(undefined);
+    await expect(
+      waitForAssistantResponse(
+        { evaluate, terminateExecution } as unknown as ChromeClient["Runtime"],
+        100,
+        logger,
+      ),
+    ).rejects.toMatchObject({
+      details: {
+        stage: "assistant-wait",
+        code: "chatgpt-ui-warning",
+        uiWarning: { type: "temporary_unavailable" },
+      },
+    });
+    expect(terminateExecution).toHaveBeenCalledOnce();
+  });
+
   test("fails promptly when the submitted assistant turn offers Retry", async () => {
     const payload = {
       text: "Something went wrong while generating the response.",
