@@ -34,6 +34,8 @@ export function classifyChatGptUiWarningText(text: string): ChatGptUiWarningType
     /\btemporarily unavailable\b/.test(normalized) ||
     /\bsomething went wrong\b/.test(normalized) ||
     /\bfailed to generate\b/.test(normalized) ||
+    /\bno response from chatgpt\b/.test(normalized) ||
+    /\bcheck your connection\b/.test(normalized) ||
     /\btry again later\b/.test(normalized)
   ) {
     return "temporary_unavailable";
@@ -92,7 +94,7 @@ export async function collectChatGptUiWarnings(
       awaitPromise: true,
       returnByValue: true,
       expression: `(() => {
-        const warningPattern = /too many requests|sending too many requests|too quickly|temporarily limited access|please wait a few minutes|rate limit|rate limited|slow down|try again later|temporarily unavailable|something went wrong|failed to generate|verify you are human|unusual activity|cloudflare|challenge|login required|sign in/i;
+        const warningPattern = /too many requests|sending too many requests|too quickly|temporarily limited access|please wait a few minutes|rate limit|rate limited|slow down|try again later|temporarily unavailable|something went wrong|failed to generate|no response from chatgpt|check your connection|verify you are human|unusual activity|cloudflare|challenge|login required|sign in/i;
         const selectors = [
           '[role="alert"]',
           '[role="status"]',

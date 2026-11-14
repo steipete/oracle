@@ -29,6 +29,7 @@ import {
 import { buildClickDispatcher } from "./domEvents.js";
 import { buildReadCompletionAnnouncementExpression } from "./completionAnnouncement.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
+import { throwChatGptUiWarningIfPresent } from "../uiWarnings.js";
 
 const ASSISTANT_POLL_TIMEOUT_ERROR = "assistant-response-watchdog-timeout";
 const STOP_CONTROL_SELECTOR = STOP_BUTTON_SELECTORS.join(", ");
@@ -250,6 +251,7 @@ export function isAssistantTurnUiErrorText(value: unknown, retryVisible: boolean
   }
   if (!retryVisible) return false;
   return (
+    /^no response from chatgpt[.!]?(?:\s+check your connection[.!]?)?(?:\s+retry)?$/.test(text) ||
     text.includes("something went wrong") ||
     text.includes("failed to generate") ||
     text.includes("try again later")
@@ -329,6 +331,7 @@ export async function waitForAssistantResponse(
     minTurnIndex,
     expectedConversationId,
     pollerAbort.signal,
+    logger,
   ).then(
     (value) => ({ kind: "poll" as const, value }),
     (error) => {
@@ -742,6 +745,7 @@ async function pollAssistantCompletion(
   minTurnIndex?: number,
   expectedConversationId?: string,
   abortSignal?: AbortSignal,
+  logger: BrowserLogger = () => {},
 ): Promise<{
   text: string;
   html?: string;
@@ -809,6 +813,13 @@ async function pollAssistantCompletion(
         return normalized;
       }
     } else {
+      await throwChatGptUiWarningIfPresent({
+        Runtime,
+        logger,
+        runtime: {},
+        stage: "assistant-wait",
+        waitTarget: "the assistant",
+      });
       // The turn disappeared/reset (navigation, re-render): restart the gate so a stale
       // action-bar debounce cannot carry over onto a fresh turn.
       gate = createTerminalGateState(Date.now());

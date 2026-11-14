@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Browser: fail promptly on ChatGPT’s “No response from ChatGPT. Check your connection.” warning instead of waiting for the full response timeout, without retrying or resubmitting the prompt. Thanks @aaronedev (#625).
+
 ## 0.23.0 - 2026-11-05
 
 **Highlights:** Run current ChatGPT Deep Research flows, select models on localized pages, and recover image-only replies and exited sessions.

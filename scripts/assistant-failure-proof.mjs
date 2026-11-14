@@ -18,15 +18,28 @@ const chromePath = [process.env.CHROME_PATH, "/usr/bin/chromium", "/usr/bin/goog
   (candidate) => candidate && existsSync(candidate),
 );
 assert.ok(chromePath, "Set CHROME_PATH to an installed Chromium binary");
+const requestedCases = new Set(process.argv.slice(2));
 const cases = [
   { name: "without-retry", text: "Thinking failed", retry: false },
   { name: "with-retry", text: "Thinking failed", retry: true },
+  {
+    name: "connection-turn",
+    text: "No response from ChatGPT. Check your connection.",
+    retry: true,
+  },
+  {
+    name: "connection-banner",
+    text: "No response from ChatGPT. Check your connection.",
+    retry: true,
+    banner: true,
+  },
   {
     name: "with-feedback",
     text: "Thinking failed\nIs this conversation helpful so far?",
     retry: false,
   },
-];
+].filter(({ name }) => requestedCases.size === 0 || requestedCases.has(name));
+assert.ok(cases.length > 0, "Select at least one known failure case");
 const sends = new Map(cases.map(({ name }) => [name, 0]));
 const server = http.createServer(async (request, response) => {
   if (request.url.startsWith("/sent/")) {
@@ -60,6 +73,7 @@ document.querySelector('#send').onclick = async () => {
   await fetch('/sent/${test.name}', { method: 'POST' });
   const user = document.createElement('article'); user.dataset.testid='conversation-turn-0'; user.dataset.turn='user'; user.textContent=document.querySelector('textarea').value;
   document.querySelector('#turns').append(user); document.querySelector('textarea').value='';
+  ${test.banner ? `const alert=document.createElement('aside');alert.setAttribute('role','alert');alert.textContent=${JSON.stringify(test.text)};const alertRetry=document.createElement('button');alertRetry.textContent='Retry';alertRetry.onclick=()=>fetch('/sent/${test.name}',{method:'POST'});alert.append(alertRetry);document.querySelector('#turns').append(alert);return;` : ""}
   const turn=document.createElement('article'); turn.dataset.testid='conversation-turn-1'; turn.dataset.turn='assistant';
   turn.innerHTML='<div data-message-author-role="assistant" data-message-id="synthetic-failure"><div class="markdown"></div></div><button data-testid="copy-turn-action-button">Copy</button>';
   turn.querySelector('button').onclick=()=>navigator.clipboard.writeText(turn.querySelector('.markdown').innerText);
@@ -92,6 +106,18 @@ try {
     for (const probe of [
       { name: "terminal", text: "Thinking failed", expected: true },
       {
+        name: "connection failure",
+        text: "No response from ChatGPT. Check your connection.",
+        retry: true,
+        expected: true,
+      },
+      {
+        name: "connection prose",
+        text: 'The banner says "No response from ChatGPT. Check your connection."',
+        retry: true,
+        expected: false,
+      },
+      {
         name: "ordinary prose",
         text: 'The UI says "Thinking failed" on failure.',
         expected: false,
@@ -100,7 +126,7 @@ try {
       { name: "busy assistant", text: "Thinking failed", busy: true, expected: false },
       { name: "previous turn", text: "Thinking failed", minTurn: 2, expected: false },
     ]) {
-      const html = `<main><article data-testid="conversation-turn-0" data-turn="user">Synthetic prompt</article><article data-testid="conversation-turn-1" data-turn="assistant"><div data-message-author-role="assistant"><div class="markdown">${probe.text}</div></div>${probe.busy ? '<div aria-busy="true">Working</div>' : ""}</article></main><form>${probe.stop ? '<button data-testid="stop-button">Stop</button>' : ""}</form>`;
+      const html = `<main><article data-testid="conversation-turn-0" data-turn="user">Synthetic prompt</article><article data-testid="conversation-turn-1" data-turn="assistant"><div data-message-author-role="assistant"><div class="markdown">${probe.text}</div></div>${probe.busy ? '<div aria-busy="true">Working</div>' : ""}${probe.retry ? "<button>Retry</button>" : ""}</article></main><form>${probe.stop ? '<button data-testid="stop-button">Stop</button>' : ""}</form>`;
       await client.Runtime.evaluate({
         expression: `document.body.innerHTML = ${JSON.stringify(html)}`,
       });
@@ -130,7 +156,7 @@ try {
         "--chatgpt-url",
         `http://127.0.0.1:${server.address().port}/c/${test.name}`,
         "--browser-timeout",
-        "10s",
+        "30s",
         "--browser-input-timeout",
         "10s",
         "--browser-archive",
@@ -154,6 +180,7 @@ try {
       },
     );
     let output = "";
+    const startedAt = Date.now();
     child.stdout.on("data", (chunk) => {
       output += chunk;
     });
@@ -175,7 +202,16 @@ try {
         await fs.readFile(path.join(home, "sessions", ids[0], "meta.json"), "utf8"),
       );
       assert.equal(meta.status, "error", JSON.stringify(meta));
-      assert.match(output, /could not generate the submitted assistant turn/i);
+      assert.match(
+        output,
+        test.banner
+          ? /temporary-unavailable warning/i
+          : /could not generate the submitted assistant turn/i,
+      );
+      assert.ok(
+        Date.now() - startedAt < 20_000,
+        "Failure should precede the 30-second response timeout",
+      );
       console.log(
         JSON.stringify({
           case: test.name,

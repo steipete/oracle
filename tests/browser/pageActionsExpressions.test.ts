@@ -15,6 +15,16 @@ import {
 } from "../../src/browser/constants.ts";
 
 describe("browser automation expressions", () => {
+  test("recognizes a connection failure only with a visible Retry control", () => {
+    const text = "No response from ChatGPT. Check your connection.";
+    expect(isAssistantTurnUiErrorText(text, true)).toBe(true);
+    expect(isAssistantTurnUiErrorText(text, false)).toBe(false);
+    expect(isAssistantTurnUiErrorText(`The banner says "${text}"`, true)).toBe(false);
+    expect(isAssistantTurnUiErrorText("Check your connection before continuing.", true)).toBe(
+      false,
+    );
+  });
+
   test("classifies only a failed assistant turn with a visible Retry control", () => {
     expect(isAssistantTurnUiErrorText("Something went wrong.", true)).toBe(true);
     expect(isAssistantTurnUiErrorText("Something went wrong.", false)).toBe(false);
