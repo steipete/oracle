@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Dependencies: update runtime libraries, test tooling, DevTools protocol types, and pnpm setup; patch Hono and Undici security fixes while retaining Node >=24, Gemini SDK 2.x, and the two-day dependency cooldown.
+
 ## 0.23.0 - 2026-11-05
 
 **Highlights:** Run current ChatGPT Deep Research flows, select models on localized pages, and recover image-only replies and exited sessions.
