@@ -7,8 +7,9 @@
 **Highlights:** Fail promptly on ChatGPT connection warnings and include Hono and Undici security updates.
 
 - Browser: fail promptly on ChatGPT’s “No response from ChatGPT. Check your connection.” warning instead of waiting for the full response timeout, without retrying or resubmitting the prompt. Thanks @aaronedev (#625).
-
 - Dependencies: patch Hono to 4.13.16, its Node adapter to 2.1.6, and Undici to 7.30.2; refresh compatible provider, browser, and tooling dependencies while retaining Node >=24 and the two-day release cooldown.
+
+[npm](https://www.npmjs.com/package/@steipete/oracle/v/0.23.1) · [Registry tarball](https://registry.npmjs.org/@steipete/oracle/-/oracle-0.23.1.tgz) · [Integrity metadata](https://registry.npmjs.org/@steipete%2foracle/0.23.1) · [CI proof](https://github.com/steipete/oracle/actions/runs/43584380594)
 
 ## 0.23.0 - 2026-11-05
 
