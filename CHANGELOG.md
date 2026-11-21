@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refresh compatible cookie, rendering, OpenAI, Chrome protocol, lint, and test dependencies while retaining the Gemini API version and Node 24 runtime floor.
+
 ## 0.23.1 - 2026-11-15
 
 **Highlights:** Fail promptly on ChatGPT connection warnings and include Hono and Undici security updates.
