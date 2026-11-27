@@ -7,6 +7,7 @@ import path from "node:path";
 import { mkdir, mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { createRemoteServer, RunSlots, pickClientBrowserConfig } from "../../src/remote/server.js";
 import { createRemoteBrowserExecutor } from "../../src/remote/client.js";
+import { isAuthorizedBearer } from "../../src/remote/bearerAuth.js";
 import type { BrowserRunResult } from "../../src/browserMode.js";
 import type { RemoteArtifactDescriptor } from "../../src/remote/types.js";
 import { setOracleHomeDirOverrideForTest } from "../../src/oracleHome.js";
@@ -1807,5 +1808,109 @@ describe("advertised addresses", () => {
     expect(banner).not.toMatch(/\b100\.\d+\.\d+\.\d+\b/);
     expect(banner).not.toMatch(/\b192\.168\.\d+\.\d+\b/);
     await server.close();
+  });
+});
+
+async function httpStatus({
+  port,
+  method,
+  path,
+  authorization,
+}: {
+  port: number;
+  method: "GET" | "POST";
+  path: string;
+  authorization?: string;
+}): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path,
+        method,
+        headers: authorization === undefined ? undefined : { authorization },
+      },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve(res.statusCode ?? 0));
+      },
+    );
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+describe("bearer token check", () => {
+  // "secret" is 6 chars; every wrong value below is the same length as the real header
+  // ("Bearer secret"), so only a content comparison can reject it.
+  const sameLengthWrong = ["Bearer secreT", "Bearer Secret", "Bearer secrex", "bearer secret"];
+  const routes = [
+    { method: "GET", path: "/health" },
+    { method: "GET", path: "/runs/run-id/artifacts/artifact-id" },
+    { method: "POST", path: "/runs" },
+  ] as const;
+
+  test.skipIf(!CAN_LISTEN_LOCALHOST)(
+    "rejects same-length wrong, short, long and missing tokens on every authenticated route",
+    async () => {
+      const server = await createRemoteServer(
+        { host: "127.0.0.1", port: 0, token: "secret", logger: () => {} },
+        { runBrowser: vi.fn() as unknown as typeof runBrowserMode },
+      );
+      try {
+        for (const route of routes) {
+          for (const authorization of [
+            ...sameLengthWrong,
+            "Bearer secre",
+            "Bearer secretX",
+            "Bearer ",
+            "",
+            undefined,
+          ]) {
+            expect(
+              await httpStatus({ port: server.port, ...route, authorization }),
+              `${route.method} ${route.path} with ${JSON.stringify(authorization)}`,
+            ).toBe(401);
+          }
+        }
+        // The correct token is still accepted (anything but 401 means auth passed).
+        expect(
+          await httpStatus({
+            port: server.port,
+            method: "GET",
+            path: "/health",
+            authorization: "Bearer secret",
+          }),
+        ).toBe(200);
+        for (const route of routes.slice(1)) {
+          expect(
+            await httpStatus({ port: server.port, ...route, authorization: "Bearer secret" }),
+          ).not.toBe(401);
+        }
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+describe("isAuthorizedBearer", () => {
+  test("accepts only the exact bearer header", () => {
+    expect(isAuthorizedBearer("Bearer secret", "secret")).toBe(true);
+    expect(isAuthorizedBearer("Bearer secreT", "secret")).toBe(false);
+    expect(isAuthorizedBearer("Bearer secre", "secret")).toBe(false);
+    expect(isAuthorizedBearer("Bearer secretX", "secret")).toBe(false);
+    expect(isAuthorizedBearer("", "secret")).toBe(false);
+    expect(isAuthorizedBearer(undefined, "secret")).toBe(false);
+    expect(isAuthorizedBearer("Bearer ", "")).toBe(true);
+  });
+
+  test("distinguishes lone surrogates (UTF-16LE, not UTF-8)", () => {
+    // UTF-8 encodes both lone surrogates as U+FFFD (EF BF BD), so a UTF-8 buffer compare
+    // would treat these two different tokens as equal. UTF-16LE keeps them distinct.
+    expect(isAuthorizedBearer("Bearer \ud800", "\ud801")).toBe(false);
+    expect(isAuthorizedBearer("Bearer \ud800", "\ud800")).toBe(true);
+    expect(Buffer.from("\ud800").equals(Buffer.from("\ud801"))).toBe(true); // the UTF-8 trap
   });
 });

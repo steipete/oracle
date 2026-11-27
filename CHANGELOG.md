@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Remote: compare the `oracle serve` bearer token in constant time on `/health`, `/runs`, and artifact transfer instead of with `!==`.
 - Refresh compatible cookie, rendering, OpenAI, Chrome protocol, lint, and test dependencies while retaining the Gemini API version and Node 24 runtime floor.
 
 ## 0.23.1 - 2026-11-15

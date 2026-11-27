@@ -15,6 +15,7 @@ import type { runBrowserMode } from "../browserMode.js";
 import { resolveBrowserExecutor } from "../browser/executor.js";
 import { resolveBrowserConfig, resolveBrowserNoFocus } from "../browser/config.js";
 import { RunSlots } from "./runSlots.js";
+import { isAuthorizedBearer } from "./bearerAuth.js";
 export { RunSlots } from "./runSlots.js";
 import { loadUserConfig } from "../config.js";
 import type { BrowserRunResult } from "../browserMode.js";
@@ -196,8 +197,7 @@ export async function createRemoteServer(
       return;
     }
     if (req.method === "GET" && req.url === "/health") {
-      const authHeader = req.headers.authorization ?? "";
-      if (authHeader !== `Bearer ${authToken}`) {
+      if (!isAuthorizedBearer(req.headers.authorization, authToken)) {
         if (verbose) {
           logger(
             `[serve] Unauthorized /health attempt from ${formatSocket(req)} (missing/invalid token)`,
@@ -246,8 +246,7 @@ export async function createRemoteServer(
       return;
     }
 
-    const authHeader = req.headers.authorization ?? "";
-    if (authHeader !== `Bearer ${authToken}`) {
+    if (!isAuthorizedBearer(req.headers.authorization, authToken)) {
       if (verbose) {
         logger(
           `[serve] Unauthorized /runs attempt from ${formatSocket(req)} (missing/invalid token)`,
@@ -767,8 +766,7 @@ async function serveRemoteArtifact(params: {
   runId: string;
   artifactId: string;
 }): Promise<void> {
-  const authHeader = params.req.headers.authorization ?? "";
-  if (authHeader !== `Bearer ${params.authToken}`) {
+  if (!isAuthorizedBearer(params.req.headers.authorization, params.authToken)) {
     if (params.verbose) {
       params.logger(
         `[serve] Unauthorized artifact transfer attempt from ${formatSocket(params.req)} (missing/invalid token)`,
